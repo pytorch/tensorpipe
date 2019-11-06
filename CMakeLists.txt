@@ -15,4 +15,8 @@ if(SCCACHE_EXECUTABLE)
   endforeach()
 endif()
 
+# Make dependencies available (but don't build by default)
+add_subdirectory(third_party/googletest EXCLUDE_FROM_ALL)
+add_subdirectory(third_party/libuv EXCLUDE_FROM_ALL)
+
 add_subdirectory(tensorpipe)
