@@ -14,3 +14,5 @@ if(SCCACHE_EXECUTABLE)
     endif()
   endforeach()
 endif()
+
+add_subdirectory(tensorpipe)
