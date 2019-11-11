@@ -11,3 +11,7 @@ set(TENSORPIPE_HEADERS
 
 add_library(tensorpipe ${TENSORPIPE_SOURCES})
 target_include_directories(tensorpipe PUBLIC ${CMAKE_SOURCE_DIR})
+
+add_subdirectory(context/uv)
+
+add_subdirectory(test)
