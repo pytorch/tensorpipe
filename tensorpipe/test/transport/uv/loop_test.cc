@@ -1,11 +1,11 @@
 #include <gtest/gtest.h>
 
-#include <tensorpipe/context/uv/loop.h>
+#include <tensorpipe/transport/uv/loop.h>
 
-using namespace tensorpipe::context::uv;
+using namespace tensorpipe::transport::uv;
 
 namespace test {
-namespace context {
+namespace transport {
 namespace uv {
 
 TEST(Loop, Create) {
@@ -15,5 +15,5 @@ TEST(Loop, Create) {
 }
 
 } // namespace uv
-} // namespace context
+} // namespace transport
 } // namespace test

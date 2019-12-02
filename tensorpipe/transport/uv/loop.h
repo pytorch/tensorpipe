@@ -5,7 +5,7 @@
 #include <uv.h>
 
 namespace tensorpipe {
-namespace context {
+namespace transport {
 namespace uv {
 
 class Loop final {
@@ -23,5 +23,5 @@ class Loop final {
 };
 
 } // namespace uv
-} // namespace context
+} // namespace transport
 } // namespace tensorpipe

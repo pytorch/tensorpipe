@@ -1,9 +1,9 @@
-#include <tensorpipe/context/uv/loop.h>
+#include <tensorpipe/transport/uv/loop.h>
 
-#include <tensorpipe/context/uv/macros.h>
+#include <tensorpipe/transport/uv/macros.h>
 
 namespace tensorpipe {
-namespace context {
+namespace transport {
 namespace uv {
 
 std::shared_ptr<Loop> Loop::create() {
@@ -29,5 +29,5 @@ void Loop::close() {
 }
 
 } // namespace uv
-} // namespace context
+} // namespace transport
 } // namespace tensorpipe
