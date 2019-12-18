@@ -4,6 +4,7 @@ set(TENSORPIPE_SOURCES
   )
 
 set(TENSORPIPE_HEADERS
+  ${CMAKE_CURRENT_SOURCE_DIR}/common/optional.h
   ${CMAKE_CURRENT_SOURCE_DIR}/core/listener.h
   ${CMAKE_CURRENT_SOURCE_DIR}/core/message.h
   ${CMAKE_CURRENT_SOURCE_DIR}/core/pipe.h

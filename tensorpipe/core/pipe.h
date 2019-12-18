@@ -1,7 +1,7 @@
 #pragma once
 
+#include <tensorpipe/common/optional.h>
 #include <tensorpipe/core/message.h>
-#include <tensorpipe/util/optional.h>
 
 namespace tensorpipe {
 
@@ -32,11 +32,11 @@ class Pipe {
   //   5. Pipe is marked as having a message.
   //   6. User calls `getMessage()`.
   //
-  virtual tensorpipe::util::optional<Message> getMessageDescriptor() = 0;
+  virtual optional<Message> getMessageDescriptor() = 0;
 
   virtual void read(Message message) = 0;
 
-  virtual tensorpipe::util::optional<Message> getMessage() = 0;
+  virtual optional<Message> getMessage() = 0;
 
   // On the write side, the following happens:
   //
@@ -47,7 +47,7 @@ class Pipe {
   //
   virtual void write(Message message) = 0;
 
-  virtual tensorpipe::util::optional<Message> reclaimMessage() = 0;
+  virtual optional<Message> reclaimMessage() = 0;
 };
 
 } // namespace tensorpipe

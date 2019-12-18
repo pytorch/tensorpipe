@@ -99,7 +99,6 @@
 #endif
 
 namespace tensorpipe {
-namespace util {
 
 // 20.5.4, optional for object types
 template <class T>
@@ -993,14 +992,13 @@ constexpr optional<X&> make_optional(std::reference_wrapper<X> v) {
   return optional<X&>(v.get());
 }
 
-} // namespace util
 } // namespace tensorpipe
 
 namespace std {
 template <typename T>
-struct hash<tensorpipe::util::optional<T>> {
+struct hash<tensorpipe::optional<T>> {
   typedef typename hash<T>::result_type result_type;
-  typedef tensorpipe::util::optional<T> argument_type;
+  typedef tensorpipe::optional<T> argument_type;
 
   constexpr result_type operator()(argument_type const& arg) const {
     return arg ? std::hash<T>{}(*arg) : result_type{};
@@ -1008,9 +1006,9 @@ struct hash<tensorpipe::util::optional<T>> {
 };
 
 template <typename T>
-struct hash<tensorpipe::util::optional<T&>> {
+struct hash<tensorpipe::optional<T&>> {
   typedef typename hash<T>::result_type result_type;
-  typedef tensorpipe::util::optional<T&> argument_type;
+  typedef tensorpipe::optional<T&> argument_type;
 
   constexpr result_type operator()(argument_type const& arg) const {
     return arg ? std::hash<T>{}(*arg) : result_type{};
