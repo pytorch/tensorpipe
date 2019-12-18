@@ -1,2 +1,2 @@
-add_executable(ringbuffer_test ringbuffer_test.cc)
+add_executable(ringbuffer_test ringbuffer_test.cc shm_ringbuffer_test.cc)
 target_link_libraries(ringbuffer_test tensorpipe gtest gtest_main)
