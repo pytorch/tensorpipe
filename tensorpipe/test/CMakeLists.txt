@@ -1,3 +1,5 @@
+add_subdirectory(common)
+
 add_executable(tensorpipe_test
   ${CMAKE_CURRENT_SOURCE_DIR}/transport/uv/loop_test.cc
   )
