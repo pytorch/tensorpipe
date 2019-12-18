@@ -1,4 +1,5 @@
 add_subdirectory(common)
+add_subdirectory(util/ringbuffer)
 add_subdirectory(util/shm)
 
 add_executable(tensorpipe_test
