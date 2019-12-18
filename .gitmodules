@@ -4,3 +4,6 @@
 [submodule "third_party/libuv"]
 	path = third_party/libuv
 	url = https://github.com/libuv/libuv.git
+[submodule "third_party/filesystem"]
+	path = third_party/filesystem
+	url = https://github.com/gulrak/filesystem.git
