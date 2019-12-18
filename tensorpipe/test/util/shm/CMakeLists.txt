@@ -1,0 +1,2 @@
+add_executable(segment_test segment_test.cc)
+target_link_libraries(segment_test tensorpipe gtest_main)
