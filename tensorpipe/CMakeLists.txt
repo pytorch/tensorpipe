@@ -26,6 +26,7 @@ add_library(tensorpipe ${TENSORPIPE_SOURCES})
 target_include_directories(tensorpipe PUBLIC ${CMAKE_SOURCE_DIR})
 target_link_libraries(tensorpipe PRIVATE ghc_filesystem)
 
+add_subdirectory(transport/shm)
 add_subdirectory(transport/uv)
 
 add_subdirectory(test)

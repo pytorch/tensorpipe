@@ -1,4 +1,5 @@
 add_subdirectory(common)
+add_subdirectory(transport/shm)
 add_subdirectory(util/ringbuffer)
 add_subdirectory(util/shm)
 
