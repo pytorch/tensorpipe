@@ -66,6 +66,62 @@ TEST(Loop, RegisterUnregister) {
   loop->unregisterDescriptor(efd.fd());
 }
 
+TEST(Loop, Monitor) {
+  auto loop = std::make_shared<Loop>();
+  auto efd = Fd(eventfd(0, EFD_NONBLOCK));
+  constexpr uint64_t kValue = 1337;
+
+  {
+    std::mutex mutex;
+    std::condition_variable cv;
+    bool done = false;
+
+    // Test if writable (always).
+    auto monitor = loop->monitor(efd.fd(), EPOLLOUT, [&](Monitor& m) {
+      {
+        std::unique_lock<std::mutex> lock(mutex);
+        done = true;
+        efd.write<uint64_t>(kValue);
+      }
+      m.cancel();
+      cv.notify_all();
+    });
+
+    // Wait for monitor to trigger and perform a write.
+    std::unique_lock<std::mutex> lock(mutex);
+    while (!done) {
+      cv.wait(lock);
+    }
+  }
+
+  {
+    std::mutex mutex;
+    std::condition_variable cv;
+    bool done = false;
+    uint64_t value = 0;
+
+    // Test if readable (only if previously written to).
+    auto monitor = loop->monitor(efd.fd(), EPOLLIN, [&](Monitor& m) {
+      {
+        std::unique_lock<std::mutex> lock(mutex);
+        done = true;
+        value = efd.read<uint64_t>();
+      }
+      m.cancel();
+      cv.notify_all();
+    });
+
+    // Wait for monitor to trigger and perform a read.
+    std::unique_lock<std::mutex> lock(mutex);
+    while (!done) {
+      cv.wait(lock);
+    }
+
+    // Verify we read the correct value.
+    ASSERT_EQ(value, kValue);
+  }
+}
+
 } // namespace shm
 } // namespace transport
 } // namespace test
