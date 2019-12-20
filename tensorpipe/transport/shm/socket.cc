@@ -116,6 +116,91 @@ void Socket::connect(const Sockaddr& addr) {
   }
 }
 
+int Socket::sendFd(const Fd& fd) {
+  using TPayload = int;
+
+  // Build control message.
+  std::array<char, CMSG_SPACE(sizeof(TPayload))> buf;
+  struct cmsghdr* cmsg = reinterpret_cast<struct cmsghdr*>(buf.data());
+  cmsg->cmsg_len = CMSG_LEN(sizeof(TPayload));
+  cmsg->cmsg_level = SOL_SOCKET;
+  cmsg->cmsg_type = SCM_RIGHTS;
+  *reinterpret_cast<int*>(CMSG_DATA(cmsg)) = fd.fd();
+
+  // Build dummy iov with a single NUL byte.
+  struct iovec iov[1];
+  char nul = 0;
+  iov[0].iov_base = &nul;
+  iov[0].iov_len = sizeof(nul);
+
+  // Build message.
+  struct msghdr msg;
+  msg.msg_name = nullptr;
+  msg.msg_namelen = 0;
+  msg.msg_iov = iov;
+  msg.msg_iovlen = sizeof(iov) / sizeof(iov[0]);
+  msg.msg_control = cmsg;
+  msg.msg_controllen = CMSG_LEN(sizeof(TPayload));
+  msg.msg_flags = 0;
+
+  // Send message.
+  for (;;) {
+    auto rv = ::sendmsg(fd_, &msg, 0);
+    if (rv == -1 && errno == EINTR) {
+      continue;
+    }
+    if (rv != -1) {
+      TP_THROW_ASSERT_IF(rv != iov[0].iov_len) << "Partial write!";
+    }
+    return rv;
+  }
+}
+
+int Socket::recvFd(optional<Fd>* fd) {
+  using TPayload = int;
+
+  // Build control message.
+  std::array<char, CMSG_SPACE(sizeof(TPayload))> buf;
+  struct cmsghdr* cmsg = reinterpret_cast<struct cmsghdr*>(buf.data());
+  cmsg->cmsg_len = CMSG_LEN(sizeof(TPayload));
+  cmsg->cmsg_level = SOL_SOCKET;
+  cmsg->cmsg_type = SCM_RIGHTS;
+
+  // Build dummy iov with a single NUL byte.
+  struct iovec iov[1];
+  char nul = 0;
+  iov[0].iov_base = &nul;
+  iov[0].iov_len = sizeof(nul);
+
+  // Build message.
+  struct msghdr msg;
+  msg.msg_name = nullptr;
+  msg.msg_namelen = 0;
+  msg.msg_iov = iov;
+  msg.msg_iovlen = sizeof(iov) / sizeof(iov[0]);
+  msg.msg_control = cmsg;
+  msg.msg_controllen = CMSG_LEN(sizeof(TPayload));
+  msg.msg_flags = 0;
+
+  // Receive message.
+  int rv = -1;
+  for (;;) {
+    rv = ::recvmsg(fd_, &msg, 0);
+    if (rv == -1 && errno != EINTR) {
+      continue;
+    }
+    break;
+  }
+
+  if (rv == iov[0].iov_len) {
+    *fd = Fd(*reinterpret_cast<TPayload*>(CMSG_DATA(cmsg)));
+    return rv;
+  }
+
+  *fd = nullopt;
+  return rv;
+}
+
 } // namespace shm
 } // namespace transport
 } // namespace tensorpipe

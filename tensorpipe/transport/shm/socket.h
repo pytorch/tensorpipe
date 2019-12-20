@@ -5,6 +5,7 @@
 #include <chrono>
 #include <memory>
 
+#include <tensorpipe/common/optional.h>
 #include <tensorpipe/transport/shm/fd.h>
 
 namespace tensorpipe {
@@ -56,6 +57,12 @@ class Socket final : public Fd, public std::enable_shared_from_this<Socket> {
 
   // Connect to address.
   void connect(const Sockaddr& addr);
+
+  // Send file descriptor.
+  int sendFd(const Fd& fd);
+
+  // Receive file descriptor.
+  int recvFd(optional<Fd>* fd);
 
  private:
   // Configure send or recv timeout.
