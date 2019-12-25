@@ -6,10 +6,15 @@ namespace tensorpipe {
 namespace transport {
 namespace shm {
 
-Listener::Listener(std::shared_ptr<Loop> loop, const std::string& name)
-    : loop_(std::move(loop)), listener_(Socket::createForFamily(AF_UNIX)) {
+Listener::Listener(
+    std::shared_ptr<Loop> loop,
+    const Sockaddr& addr,
+    connection_callback_fn fn)
+    : loop_(std::move(loop)),
+      listener_(Socket::createForFamily(AF_UNIX)),
+      fn_(std::move(fn)) {
   // Bind socket to abstract socket address.
-  listener_->bind(Sockaddr::createAbstractUnixAddr(name));
+  listener_->bind(addr);
   listener_->block(false);
   listener_->listen(128);
 
@@ -32,7 +37,7 @@ void Listener::handleEvents(int events) {
       break;
     }
 
-    TP_LOG_INFO() << "Accepted connection!";
+    fn_(std::make_shared<Connection>(loop_, socket));
   }
 }
 
