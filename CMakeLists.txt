@@ -19,5 +19,6 @@ endif()
 add_subdirectory(third_party/googletest EXCLUDE_FROM_ALL)
 add_subdirectory(third_party/libuv EXCLUDE_FROM_ALL)
 add_subdirectory(third_party/filesystem EXCLUDE_FROM_ALL)
+add_subdirectory(third_party/backward-cpp EXCLUDE_FROM_ALL)
 
 add_subdirectory(tensorpipe)

@@ -7,3 +7,6 @@
 [submodule "third_party/filesystem"]
 	path = third_party/filesystem
 	url = https://github.com/gulrak/filesystem.git
+[submodule "third_party/backward-cpp"]
+	path = third_party/backward-cpp
+	url = https://github.com/bombela/backward-cpp.git
