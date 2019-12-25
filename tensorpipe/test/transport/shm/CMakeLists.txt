@@ -1,4 +1,4 @@
-add_executable(loop_test loop_test.cc)
-target_link_libraries(loop_test tensorpipe_shm gtest_main)
-add_executable(listener_test listener_test.cc)
-target_link_libraries(listener_test tensorpipe_shm gtest_main)
+add_tensorpipe_test(loop_test loop_test.cc)
+target_link_libraries(loop_test tensorpipe_shm)
+add_tensorpipe_test(listener_test listener_test.cc)
+target_link_libraries(listener_test tensorpipe_shm)
