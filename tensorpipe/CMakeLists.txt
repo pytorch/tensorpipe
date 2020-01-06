@@ -2,6 +2,7 @@ set(TENSORPIPE_SOURCES
   ${CMAKE_CURRENT_SOURCE_DIR}/common/system.cc
   ${CMAKE_CURRENT_SOURCE_DIR}/core/listener.cc
   ${CMAKE_CURRENT_SOURCE_DIR}/core/pipe.cc
+  ${CMAKE_CURRENT_SOURCE_DIR}/transport/error.cc
   ${CMAKE_CURRENT_SOURCE_DIR}/util/shm/segment.cc
   )
 
@@ -14,6 +15,7 @@ set(TENSORPIPE_HEADERS
   ${CMAKE_CURRENT_SOURCE_DIR}/core/pipe.h
   ${CMAKE_CURRENT_SOURCE_DIR}/transport/connection.h
   ${CMAKE_CURRENT_SOURCE_DIR}/transport/context.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/transport/error.h
   ${CMAKE_CURRENT_SOURCE_DIR}/transport/listener.h
   ${CMAKE_CURRENT_SOURCE_DIR}/util/ringbuffer/consumer.h
   ${CMAKE_CURRENT_SOURCE_DIR}/util/ringbuffer/producer.h
