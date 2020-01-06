@@ -109,7 +109,7 @@ class Segment {
     static_assert(
         !std::is_array<T>::value,
         "Did you mean to use the array version of Segment::create");
-    static_assert(std::is_trivially_copyable<T>::value);
+    static_assert(std::is_trivially_copyable<T>::value, "!");
 
     const auto byte_size = sizeof(T);
     auto creation_mode = CreationMode::allPerms(byte_size, link_flags);
@@ -160,8 +160,8 @@ class Segment {
         "You can use the non-template version of Segment::create");
 
     using TScalar = typename std::remove_extent<T>::type;
-    static_assert(std::is_trivially_copyable<TScalar>::value);
-    static_assert(!std::is_array<TScalar>::value);
+    static_assert(std::is_trivially_copyable<TScalar>::value, "!");
+    static_assert(!std::is_array<TScalar>::value, "!");
     static_assert(std::is_same<TScalar[], T>::value, "Type mismatch");
 
     size_t byte_size = sizeof(TScalar) * num_elements;
@@ -206,7 +206,7 @@ class Segment {
         std::rank<T>::value == 1,
         "Currently only rank one arrays are supported");
     using TScalar = typename std::remove_extent<T>::type;
-    static_assert(std::is_trivially_copyable<TScalar>::value);
+    static_assert(std::is_trivially_copyable<TScalar>::value, "!");
     // Lambda function to be called by segment shared_ptr destructor.
     // Do not delete ptr because it was built in place. Instead, release
     // segment to free the shared memory where object T was constructed.
@@ -241,7 +241,7 @@ class Segment {
     }
     // Destructor lambda captures a copy to segment's smart pointer and
     // will release it when the shared pointer to T is destroyed.
-    static_assert(std::is_trivially_copyable<T>::value);
+    static_assert(std::is_trivially_copyable<T>::value, "!");
     // Lambda function to be called by segment shared_ptr destructor.
     // Do not delete ptr because it was built in place. Instead, release
     // segment to free the shared memory where object T was constructed.

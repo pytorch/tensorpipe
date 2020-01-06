@@ -46,7 +46,7 @@ using CpuId = unsigned;
 // Used for CPU_* macros and for fixed size per-CPU arrays.
 // XXX: Expose this as a configuration parameter.
 constexpr unsigned kMaxCpus = 512;
-static_assert(kMaxCpus <= CPU_SETSIZE);
+static_assert(kMaxCpus <= CPU_SETSIZE, "!");
 
 struct CpuSet {
   // Bitset of CPUs.
