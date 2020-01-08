@@ -1,0 +1,1 @@
+add_tensorpipe_test(message_descriptor_test message_descriptor_test.cc)

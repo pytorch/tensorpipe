@@ -1,0 +1,23 @@
+syntax = "proto3";
+
+package tensorpipe.proto;
+
+enum DeviceType {
+  DEVICE_TYPE_UNSPECIFIED = 0;
+  DEVICE_TYPE_CPU = 1;
+}
+
+message MessageDescriptor {
+  message TensorDescriptor {
+    DeviceType device_type = 1;
+    int64 size_in_bytes = 2;
+
+    string side_channel_name = 3;
+    bytes side_channel_data = 4;
+
+    bytes user_data = 5;
+  }
+
+  int64 size_in_bytes = 1;
+  repeated TensorDescriptor tensor_descriptors = 2;
+}
