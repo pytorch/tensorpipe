@@ -3,6 +3,7 @@
 #include <unistd.h>
 
 #include <tensorpipe/common/defs.h>
+#include <tensorpipe/transport/error_macros.h>
 
 namespace tensorpipe {
 namespace transport {
@@ -40,21 +41,27 @@ ssize_t Fd::write(const void* buf, size_t count) {
 }
 
 // Call read and throw if it doesn't complete.
-void Fd::readFull(void* buf, size_t count) {
+Error Fd::readFull(void* buf, size_t count) {
   auto rv = read(buf, count);
   if (rv == -1) {
-    TP_THROW_SYSTEM(errno);
+    return TP_CREATE_ERROR(SystemError, "read", errno);
   }
-  TP_THROW_ASSERT_IF(rv < count) << "Partial read!";
+  if (rv != count) {
+    return TP_CREATE_ERROR(ShortReadError, count, rv);
+  }
+  return Error::kSuccess;
 }
 
 // Call write and throw if it doesn't complete.
-void Fd::writeFull(const void* buf, size_t count) {
+Error Fd::writeFull(const void* buf, size_t count) {
   auto rv = write(buf, count);
   if (rv == -1) {
-    TP_THROW_SYSTEM(errno);
+    return TP_CREATE_ERROR(SystemError, "write", errno);
   }
-  TP_THROW_ASSERT_IF(rv < count) << "Partial write!";
+  if (rv != count) {
+    return TP_CREATE_ERROR(ShortWriteError, count, rv);
+  }
+  return Error::kSuccess;
 }
 
 } // namespace shm

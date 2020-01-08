@@ -131,7 +131,7 @@ void Connection::handleEventIn() {
   }
 
   if (state_ == RECV_SEGMENT_PREFIX) {
-    auto segmentPrefix = socket_->read<SegmentPrefix>();
+    auto segmentPrefix = socket_->readOrThrow<SegmentPrefix>();
 
     // Load ringbuffer for outbox.
     outboxSegmentPrefix_ = segmentPrefix.str();
@@ -174,7 +174,7 @@ void Connection::handleEventOut() {
   }
 
   if (state_ == SEND_SEGMENT_PREFIX) {
-    socket_->write(SegmentPrefix(inboxSegmentPrefix_));
+    socket_->writeOrThrow(SegmentPrefix(inboxSegmentPrefix_));
     state_ = RECV_SEGMENT_PREFIX;
     loop_->registerDescriptor(socket_->fd(), EPOLLIN, this);
     return;
@@ -197,7 +197,7 @@ void Connection::handleInboxReadable() {
     return;
   }
 
-  const auto value = inboxEventFd_.read<uint64_t>();
+  const auto value = inboxEventFd_.readOrThrow<uint64_t>();
   readOperationsPending_ += value;
   processReadOperationsWhileHoldingLock();
 }
@@ -226,7 +226,7 @@ void Connection::processWriteOperationsWhileHoldingLock() {
     auto& writeOperation = writeOperations_.front();
     writeOperation.handleWrite(*outbox_);
     writeOperations_.pop_front();
-    outboxEventFd_.write<uint64_t>(1);
+    outboxEventFd_.writeOrThrow<uint64_t>(1);
   }
 }
 

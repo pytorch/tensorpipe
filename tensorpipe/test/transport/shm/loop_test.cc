@@ -55,12 +55,12 @@ TEST(Loop, RegisterUnregister) {
   // Test if writable (always).
   loop->registerDescriptor(efd.fd(), EPOLLOUT | EPOLLONESHOT, handler.get());
   ASSERT_EQ(handler->nextEvents(), EPOLLOUT);
-  efd.write<uint64_t>(1337);
+  efd.writeOrThrow<uint64_t>(1337);
 
   // Test if readable (only if previously written to).
   loop->registerDescriptor(efd.fd(), EPOLLIN | EPOLLONESHOT, handler.get());
   ASSERT_EQ(handler->nextEvents(), EPOLLIN);
-  ASSERT_EQ(efd.read<uint64_t>(), 1337);
+  ASSERT_EQ(efd.readOrThrow<uint64_t>(), 1337);
 
   // Test if we can unregister the descriptor.
   loop->unregisterDescriptor(efd.fd());
@@ -81,7 +81,7 @@ TEST(Loop, Monitor) {
       {
         std::unique_lock<std::mutex> lock(mutex);
         done = true;
-        efd.write<uint64_t>(kValue);
+        efd.writeOrThrow<uint64_t>(kValue);
       }
       m.cancel();
       cv.notify_all();
@@ -105,7 +105,7 @@ TEST(Loop, Monitor) {
       {
         std::unique_lock<std::mutex> lock(mutex);
         done = true;
-        value = efd.read<uint64_t>();
+        value = efd.readOrThrow<uint64_t>();
       }
       m.cancel();
       cv.notify_all();

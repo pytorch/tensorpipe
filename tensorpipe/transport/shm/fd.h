@@ -4,6 +4,8 @@
 
 #include <unistd.h>
 
+#include <tensorpipe/transport/error.h>
+
 namespace tensorpipe {
 namespace transport {
 namespace shm {
@@ -51,26 +53,32 @@ class Fd {
   // Proxy to write(2) with EINTR retry.
   ssize_t write(const void* buf, size_t count);
 
-  // Call read and throw if it doesn't complete.
-  void readFull(void* buf, size_t count);
+  // Call read and return error if it doesn't exactly read `count` bytes.
+  Error readFull(void* buf, size_t count);
 
-  // Call write and throw if it doesn't complete.
-  void writeFull(const void* buf, size_t count);
+  // Call write and return error if it doesn't exactly write `count` bytes.
+  Error writeFull(const void* buf, size_t count);
 
-  // Call `readFull` with trivially copyable type.
+  // Call `readFull` with trivially copyable type. Throws on errors.
   template <typename T>
-  T read() {
-    T t;
+  T readOrThrow() {
+    T tmp;
     static_assert(std::is_trivially_copyable<T>::value, "!");
-    readFull(&t, sizeof(T));
-    return t;
+    auto err = readFull(&tmp, sizeof(T));
+    if (err) {
+      throw std::runtime_error(err.what());
+    }
+    return tmp;
   }
 
-  // Call `writeFull` with trivially copyable type.
+  // Call `writeFull` with trivially copyable type. Throws on errors.
   template <typename T>
-  void write(const T& t) {
+  void writeOrThrow(const T& t) {
     static_assert(std::is_trivially_copyable<T>::value, "!");
-    writeFull(&t, sizeof(T));
+    auto err = writeFull(&t, sizeof(T));
+    if (err) {
+      throw std::runtime_error(err.what());
+    }
   }
 
  protected:
