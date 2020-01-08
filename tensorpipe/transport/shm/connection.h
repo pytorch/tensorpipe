@@ -76,6 +76,7 @@ class Connection final : public transport::Connection,
  private:
   std::mutex mutex_;
   State state_{INITIALIZING};
+  Error error_;
   std::shared_ptr<Loop> loop_;
   std::shared_ptr<Socket> socket_;
 
@@ -107,6 +108,8 @@ class Connection final : public transport::Connection,
     // Processes a pending read.
     void handleRead(TConsumer& consumer);
 
+    void handleError(const Error& error);
+
    private:
     std::unique_ptr<char*> ptr_{};
     size_t len_{0};
@@ -125,6 +128,8 @@ class Connection final : public transport::Connection,
     WriteOperation(const void* ptr, size_t len, write_callback_fn fn);
 
     void handleWrite(TProducer& producer);
+
+    void handleError(const Error& error);
 
    private:
     const void* ptr_{nullptr};
@@ -148,6 +153,9 @@ class Connection final : public transport::Connection,
   // Typically, writes are executed in line but if they are queued
   // before the connection is fully established, they are delayed.
   void processWriteOperationsWhileHoldingLock();
+
+  // Fail with error while holding mutex.
+  void failHoldingMutex(Error&&);
 
   // Close connection.
   void close();

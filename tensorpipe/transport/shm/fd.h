@@ -81,6 +81,20 @@ class Fd {
     }
   }
 
+  // Call `readFull` with trivially copyable type.
+  template <typename T>
+  Error read(T* t) {
+    static_assert(std::is_trivially_copyable<T>::value, "!");
+    return readFull(t, sizeof(T));
+  }
+
+  // Call `writeFull` with trivially copyable type.
+  template <typename T>
+  Error write(const T& t) {
+    static_assert(std::is_trivially_copyable<T>::value, "!");
+    return writeFull(&t, sizeof(T));
+  }
+
  protected:
   int fd_{-1};
 };

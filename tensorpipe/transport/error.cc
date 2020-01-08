@@ -28,5 +28,11 @@ std::string ShortWriteError::what() const {
   return ss.str();
 }
 
+std::string EOFError::what() const {
+  std::ostringstream ss;
+  ss << "eof";
+  return ss.str();
+}
+
 } // namespace transport
 } // namespace tensorpipe

@@ -95,5 +95,12 @@ class ShortWriteError final : public BaseError {
   const ssize_t actual_;
 };
 
+class EOFError final : public BaseError {
+ public:
+  EOFError() {}
+
+  std::string what() const override;
+};
+
 } // namespace transport
 } // namespace tensorpipe

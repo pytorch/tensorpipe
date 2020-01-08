@@ -4,6 +4,7 @@
 #include <sys/eventfd.h>
 
 #include <tensorpipe/common/defs.h>
+#include <tensorpipe/transport/error_macros.h>
 
 namespace tensorpipe {
 namespace transport {
@@ -110,14 +111,9 @@ void Connection::handleEvents(int events) {
 void Connection::handleEventIn() {
   if (state_ == RECV_EVENTFD) {
     optional<Fd> fd;
-    auto rv = socket_->recvFd(&fd);
-    if (rv == -1) {
-      TP_THROW_SYSTEM(errno);
-    }
-
-    if (rv == 0) {
-      TP_LOG_WARNING() << "Read EOF in RECV_EVENTFD";
-      closeHoldingMutex();
+    auto err = socket_->recvFd(&fd);
+    if (err) {
+      failHoldingMutex(std::move(err));
       return;
     }
 
@@ -131,7 +127,12 @@ void Connection::handleEventIn() {
   }
 
   if (state_ == RECV_SEGMENT_PREFIX) {
-    auto segmentPrefix = socket_->readOrThrow<SegmentPrefix>();
+    SegmentPrefix segmentPrefix;
+    auto err = socket_->read(&segmentPrefix);
+    if (err) {
+      failHoldingMutex(std::move(err));
+      return;
+    }
 
     // Load ringbuffer for outbox.
     outboxSegmentPrefix_ = segmentPrefix.str();
@@ -153,6 +154,10 @@ void Connection::handleEventIn() {
   }
 
   if (state_ == ESTABLISHED) {
+    // We don't expect to read anything on this socket once the
+    // connection has been established. If we do, assume it's a
+    // zero-byte read indicating EOF.
+    failHoldingMutex(TP_CREATE_ERROR(EOFError));
     return;
   }
 
@@ -161,9 +166,9 @@ void Connection::handleEventIn() {
 
 void Connection::handleEventOut() {
   if (state_ == SEND_EVENTFD) {
-    auto rv = socket_->sendFd(inboxEventFd_);
-    if (rv == -1) {
-      TP_LOG_WARNING() << "sendFd: " << strerror(errno);
+    auto err = socket_->sendFd(inboxEventFd_);
+    if (err) {
+      failHoldingMutex(std::move(err));
       return;
     }
 
@@ -174,7 +179,12 @@ void Connection::handleEventOut() {
   }
 
   if (state_ == SEND_SEGMENT_PREFIX) {
-    socket_->writeOrThrow(SegmentPrefix(inboxSegmentPrefix_));
+    auto err = socket_->write(SegmentPrefix(inboxSegmentPrefix_));
+    if (err) {
+      failHoldingMutex(std::move(err));
+      return;
+    }
+
     state_ = RECV_SEGMENT_PREFIX;
     loop_->registerDescriptor(socket_->fd(), EPOLLIN, this);
     return;
@@ -210,6 +220,13 @@ void Connection::processReadOperationsWhileHoldingLock() {
     readOperations_.pop_front();
     readOperationsPending_--;
   }
+
+  // If we're in an error state, trigger on remaining operations.
+  while (!readOperations_.empty() && error_) {
+    auto& readOperation = readOperations_.front();
+    readOperation.handleError(error_);
+    readOperations_.pop_front();
+  }
 }
 
 void Connection::processWriteOperationsWhileHoldingLock() {
@@ -223,6 +240,20 @@ void Connection::processWriteOperationsWhileHoldingLock() {
     writeOperation.handleWrite(*outbox_);
     writeOperations_.pop_front();
     outboxEventFd_.writeOrThrow<uint64_t>(1);
+  }
+}
+
+void Connection::failHoldingMutex(Error&& error) {
+  error_ = error;
+  while (!readOperations_.empty()) {
+    auto& readOperation = readOperations_.front();
+    readOperation.handleError(error_);
+    readOperations_.pop_front();
+  }
+  while (!writeOperations_.empty()) {
+    auto& writeOperation = writeOperations_.front();
+    writeOperation.handleError(error_);
+    writeOperations_.pop_front();
   }
 }
 
@@ -262,13 +293,17 @@ void Connection::ReadOperation::handleRead(TConsumer& inbox) {
     const auto ret = std::get<0>(tup);
     const auto ptr = std::get<1>(tup);
     TP_THROW_SYSTEM_IF(ret < 0, -ret);
-    fn_(Error(), ptr, ret);
+    fn_(Error::kSuccess, ptr, ret);
   }
 
   {
     const auto ret = inbox.commitTx();
     TP_THROW_SYSTEM_IF(ret < 0, -ret);
   }
+}
+
+void Connection::ReadOperation::handleError(const Error& error) {
+  fn_(error, nullptr, 0);
 }
 
 Connection::WriteOperation::WriteOperation(
@@ -297,7 +332,11 @@ void Connection::WriteOperation::handleWrite(TProducer& outbox) {
   ret = outbox.commitTx();
   TP_THROW_SYSTEM_IF(ret < 0, -ret);
 
-  fn_(Error());
+  fn_(Error::kSuccess);
+}
+
+void Connection::WriteOperation::handleError(const Error& error) {
+  fn_(error);
 }
 
 } // namespace shm

@@ -7,6 +7,7 @@
 #include <cstring>
 
 #include <tensorpipe/common/defs.h>
+#include <tensorpipe/transport/error_macros.h>
 
 namespace tensorpipe {
 namespace transport {
@@ -116,7 +117,7 @@ void Socket::connect(const Sockaddr& addr) {
   }
 }
 
-int Socket::sendFd(const Fd& fd) {
+Error Socket::sendFd(const Fd& fd) {
   using TPayload = int;
 
   // Build control message.
@@ -146,17 +147,22 @@ int Socket::sendFd(const Fd& fd) {
   // Send message.
   for (;;) {
     auto rv = ::sendmsg(fd_, &msg, 0);
-    if (rv == -1 && errno == EINTR) {
-      continue;
+    if (rv == -1) {
+      if (errno == EINTR) {
+        continue;
+      }
+      return TP_CREATE_ERROR(SystemError, "sendmsg", errno);
     }
-    if (rv != -1) {
-      TP_THROW_ASSERT_IF(rv != iov[0].iov_len) << "Partial write!";
+    if (rv != iov[0].iov_len) {
+      return TP_CREATE_ERROR(ShortWriteError, iov[0].iov_len, rv);
     }
-    return rv;
+    break;
   }
+
+  return Error::kSuccess;
 }
 
-int Socket::recvFd(optional<Fd>* fd) {
+Error Socket::recvFd(optional<Fd>* fd) {
   using TPayload = int;
 
   // Build control message.
@@ -183,22 +189,23 @@ int Socket::recvFd(optional<Fd>* fd) {
   msg.msg_flags = 0;
 
   // Receive message.
-  int rv = -1;
+  *fd = nullopt;
   for (;;) {
-    rv = ::recvmsg(fd_, &msg, 0);
-    if (rv == -1 && errno != EINTR) {
-      continue;
+    auto rv = ::recvmsg(fd_, &msg, 0);
+    if (rv == -1) {
+      if (errno == EINTR) {
+        continue;
+      }
+      return TP_CREATE_ERROR(SystemError, "recvmsg", errno);
+    }
+    if (rv != iov[0].iov_len) {
+      return TP_CREATE_ERROR(ShortReadError, iov[0].iov_len, rv);
     }
     break;
   }
 
-  if (rv == iov[0].iov_len) {
-    *fd = Fd(*reinterpret_cast<TPayload*>(CMSG_DATA(cmsg)));
-    return rv;
-  }
-
-  *fd = nullopt;
-  return rv;
+  *fd = Fd(*reinterpret_cast<TPayload*>(CMSG_DATA(cmsg)));
+  return Error::kSuccess;
 }
 
 } // namespace shm
