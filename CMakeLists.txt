@@ -21,4 +21,14 @@ add_subdirectory(third_party/libuv EXCLUDE_FROM_ALL)
 add_subdirectory(third_party/filesystem EXCLUDE_FROM_ALL)
 add_subdirectory(third_party/backward-cpp EXCLUDE_FROM_ALL)
 
+# Add include paths for libuv targets.
+# These are defined as relative paths in third_party/libuv/CMakeLists.txt,
+# but they don't propagate to downstream targets that depend on libuv.
+set_target_properties(uv PROPERTIES
+  INTERFACE_INCLUDE_DIRECTORIES "${libuv_SOURCE_DIR}/include"
+  )
+set_target_properties(uv_a PROPERTIES
+  INTERFACE_INCLUDE_DIRECTORIES "${libuv_SOURCE_DIR}/include"
+  )
+
 add_subdirectory(tensorpipe)
