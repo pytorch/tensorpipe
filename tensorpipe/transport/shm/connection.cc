@@ -203,10 +203,6 @@ void Connection::handleInboxReadable() {
 }
 
 void Connection::processReadOperationsWhileHoldingLock() {
-  if (!readOperationsPending_) {
-    return;
-  }
-
   // Process read operations in FIFO order.
   while (!readOperations_.empty() && readOperationsPending_) {
     auto& readOperation = readOperations_.front();
