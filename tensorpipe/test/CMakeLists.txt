@@ -11,6 +11,7 @@ function(add_tensorpipe_test)
 endfunction()
 
 add_subdirectory(common)
+add_subdirectory(proto)
 add_subdirectory(transport/shm)
 add_subdirectory(util/ringbuffer)
 add_subdirectory(util/shm)
