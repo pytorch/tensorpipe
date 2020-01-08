@@ -30,7 +30,7 @@ jobs:
           name: Install apt packages
           command: |
             apt-get update
-            apt-get install -y build-essential cmake << parameters.apt_get >>
+            apt-get install -y build-essential cmake libprotobuf-dev protobuf-compiler << parameters.apt_get >>
       - run:
           name: Build
           command: |
