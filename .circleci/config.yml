@@ -22,15 +22,15 @@ jobs:
     steps:
       - checkout
       - run:
+          name: Install apt packages
+          command: |
+            apt-get update
+            apt-get install -y git-core build-essential cmake libprotobuf-dev protobuf-compiler << parameters.apt_get >>
+      - run:
           name: Initialize submodules
           command: |
             git submodule init
             git submodule update --remote
-      - run:
-          name: Install apt packages
-          command: |
-            apt-get update
-            apt-get install -y build-essential cmake libprotobuf-dev protobuf-compiler << parameters.apt_get >>
       - run:
           name: Build
           command: |
