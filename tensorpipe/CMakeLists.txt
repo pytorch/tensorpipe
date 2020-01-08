@@ -1,6 +1,6 @@
 find_package(Protobuf 3 REQUIRED)
 include_directories(${Protobuf_INCLUDE_DIRS})
-include_directories(${CMAKE_CURRENT_BINARY_DIR})
+include_directories(${CMAKE_BINARY_DIR})
 protobuf_generate_cpp(
   PROTOBUF_SOURCES
   PROTOBUF_HEADERS
