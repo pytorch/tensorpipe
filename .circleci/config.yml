@@ -37,7 +37,7 @@ jobs:
             cmake ../ \
               << parameters.cmake_compiler >> \
               << parameters.cmake_args >>
-            make
+            make V=1
 
 workflows:
   build:
