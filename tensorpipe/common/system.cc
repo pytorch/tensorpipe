@@ -145,7 +145,7 @@ CpuSet makeCpuSet(optional<cpu_set_t> cpus) {
       max_cpu_id_online = std::max(max_cpu_id_online, c);
     }
   }
-  static_assert(kMaxCpus > 0);
+  static_assert(kMaxCpus > 0, "!");
   if (max_cpu_id_online > kMaxCpus - 1) {
     TP_THROW_SYSTEM(ENOTSUP)
         << "Larger online  CPU ID found to be " << max_cpu_id_online

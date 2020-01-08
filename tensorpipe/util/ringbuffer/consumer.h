@@ -80,8 +80,8 @@ class Consumer : public RingBufferWrapper<THeaderExtraData> {
   // Pointer may become invalid in next read or when transaction completes.
   template <class T>
   std::pair<ssize_t, const T*> readInTx() noexcept {
-    static_assert(std::is_trivial<T>::value);
-    static_assert(std::is_standard_layout<T>::value);
+    static_assert(std::is_trivial<T>::value, "!");
+    static_assert(std::is_standard_layout<T>::value, "!");
 
     ssize_t ret;
     const void* ptr;
@@ -301,7 +301,7 @@ class Consumer : public RingBufferWrapper<THeaderExtraData> {
   /// Makes a copy to <t>.
   template <class T>
   [[nodiscard]] ssize_t copy(T& t) noexcept {
-    static_assert(std::is_trivially_copyable<T>::value);
+    static_assert(std::is_trivially_copyable<T>::value, "!");
     return copy(sizeof(T), &t);
   }
 
