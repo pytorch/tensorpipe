@@ -2,20 +2,13 @@
 
 #include <functional>
 
+#include <tensorpipe/transport/error.h>
+
 namespace tensorpipe {
 namespace transport {
 
 class Connection {
  public:
-  class Error final {
-   public:
-    explicit Error() {}
-
-    operator bool() const {
-      return false;
-    }
-  };
-
   virtual ~Connection() = default;
 
   using read_callback_fn =

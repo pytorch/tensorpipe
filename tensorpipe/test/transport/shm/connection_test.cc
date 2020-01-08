@@ -7,6 +7,8 @@
 
 using namespace tensorpipe::transport::shm;
 
+using tensorpipe::transport::Error;
+
 namespace test {
 namespace transport {
 namespace shm {
@@ -86,21 +88,42 @@ TEST(Connection, Initialization) {
       addr,
       [&](std::shared_ptr<Connection> conn) {
         Queue<size_t> reads;
-        conn->read([&](const Connection::Error& error,
-                       const void* ptr,
-                       size_t len) { reads.push(len); });
+        conn->read([&](const Error& error, const void* ptr, size_t len) {
+          ASSERT_FALSE(error) << error.what();
+          reads.push(len);
+        });
         // Wait for the read callback to be called.
         ASSERT_EQ(numBytes, reads.pop());
       },
       [&](std::shared_ptr<Connection> conn) {
         Queue<bool> writes;
         std::array<char, numBytes> garbage;
-        conn->write(
-            garbage.data(),
-            garbage.size(),
-            [&](const Connection::Error& error) { writes.push(true); });
+        conn->write(garbage.data(), garbage.size(), [&](const Error& error) {
+          ASSERT_FALSE(error) << error.what();
+          writes.push(true);
+        });
         // Wait for the write callback to be called.
         writes.pop();
+      });
+}
+
+TEST(Connection, InitializationError) {
+  auto loop = std::make_shared<Loop>();
+  auto addr = Sockaddr::createAbstractUnixAddr("foobar");
+
+  initializePeers(
+      loop,
+      addr,
+      [&](std::shared_ptr<Connection> conn) {
+        // Closes connection
+      },
+      [&](std::shared_ptr<Connection> conn) {
+        Queue<Error> errors;
+        conn->read([&](const Error& error, const void* ptr, size_t len) {
+          errors.push(error);
+        });
+        auto error = errors.pop();
+        ASSERT_TRUE(error);
       });
 }
 

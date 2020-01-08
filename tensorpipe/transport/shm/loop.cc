@@ -144,7 +144,7 @@ void Loop::waitForLoopTick() {
 
 void Loop::wakeup() {
   // Perform a write to eventfd to wake up epoll_wait(2).
-  eventFd_.write<uint64_t>(1);
+  eventFd_.writeOrThrow<uint64_t>(1);
 }
 
 void Loop::run() {
@@ -168,7 +168,7 @@ void Loop::run() {
         // Must be a readability event on the eventfd.
         if (event.data.fd == eventFd_.fd()) {
           // Read and discard value from eventfd.
-          eventFd_.read<uint64_t>();
+          eventFd_.readOrThrow<uint64_t>();
         }
       }
     }
