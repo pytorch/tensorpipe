@@ -17,8 +17,7 @@ class Listener final : public transport::Listener,
                        public std::enable_shared_from_this<Listener>,
                        public EventHandler {
  public:
-  using connection_callback_fn =
-      std::function<void(std::shared_ptr<Connection>)>;
+  using transport::Listener::connection_callback_fn;
 
   Listener(
       std::shared_ptr<Loop> loop,
