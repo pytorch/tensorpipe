@@ -1,7 +1,3 @@
 #include <tensorpipe/core/listener.h>
 
-namespace tensorpipe {
-
-Listener::~Listener() {}
-
-} // namespace tensorpipe
+namespace tensorpipe {} // namespace tensorpipe

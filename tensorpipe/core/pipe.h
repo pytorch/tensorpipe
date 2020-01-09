@@ -2,6 +2,7 @@
 
 #include <tensorpipe/common/optional.h>
 #include <tensorpipe/core/message.h>
+#include <tensorpipe/transport/error.h>
 
 namespace tensorpipe {
 
@@ -21,33 +22,20 @@ namespace tensorpipe {
 //
 class Pipe {
  public:
-  virtual ~Pipe();
+  using read_descriptor_callback_fn =
+      std::function<void(const transport::Error&, const Message&)>;
 
-  // On the read side, the following happens:
-  //
-  //   1. Pipe is marked as having a message descriptor.
-  //   2. User calls `getMessageDescriptor()`.
-  //   3. User populates the message descriptor with valid pointers.
-  //   4. User calls `read(Message)`.
-  //   5. Pipe is marked as having a message.
-  //   6. User calls `getMessage()`.
-  //
-  virtual optional<Message> getMessageDescriptor() = 0;
+  void readDescriptor(read_descriptor_callback_fn fn);
 
-  virtual void read(Message message) = 0;
+  using read_callback_fn =
+      std::function<void(const transport::Error&, const Message&)>;
 
-  virtual optional<Message> getMessage() = 0;
+  void read(Message message, read_callback_fn fn);
 
-  // On the write side, the following happens:
-  //
-  //   1. User calls `write(Message)` with a valid message.
-  //   2. The message is written to the remote side of the pipe.
-  //   3. Upon completion, the pipe is marked as having flushed.
-  //   4. User calls `reclaimMessage()` to acknowledge.
-  //
-  virtual void write(Message message) = 0;
+  using write_callback_fn =
+      std::function<void(const transport::Error&, const Message&)>;
 
-  virtual optional<Message> reclaimMessage() = 0;
+  void write(Message message, write_callback_fn fn);
 };
 
 } // namespace tensorpipe

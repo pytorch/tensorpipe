@@ -3,6 +3,7 @@
 #include <memory>
 
 #include <tensorpipe/core/pipe.h>
+#include <tensorpipe/transport/error.h>
 
 namespace tensorpipe {
 
@@ -19,9 +20,10 @@ namespace tensorpipe {
 //
 class Listener {
  public:
-  virtual ~Listener();
+  using accept_callback_fn =
+      std::function<void(const transport::Error&, std::shared_ptr<Pipe>)>;
 
-  virtual std::shared_ptr<Pipe> accept() = 0;
+  void accept(accept_callback_fn fn);
 };
 
 } // namespace tensorpipe
