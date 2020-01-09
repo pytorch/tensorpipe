@@ -9,10 +9,6 @@
 
 using namespace tensorpipe::transport::shm;
 
-namespace test {
-namespace transport {
-namespace shm {
-
 namespace {
 
 class Handler : public EventHandler {
@@ -121,7 +117,3 @@ TEST(Loop, Monitor) {
     ASSERT_EQ(value, kValue);
   }
 }
-
-} // namespace shm
-} // namespace transport
-} // namespace test
