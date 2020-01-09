@@ -3,6 +3,7 @@
 #include <memory>
 
 #include <tensorpipe/core/pipe.h>
+#include <tensorpipe/transport/error.h>
 
 namespace tensorpipe {
 
@@ -17,11 +18,12 @@ namespace tensorpipe {
 // fully established. This means that both its connection and all its
 // side channels have been established.
 //
-class Listener {
+class Listener final {
  public:
-  virtual ~Listener();
+  using accept_callback_fn =
+      std::function<void(const transport::Error&, std::shared_ptr<Pipe>)>;
 
-  virtual std::shared_ptr<Pipe> accept() = 0;
+  void accept(accept_callback_fn);
 };
 
 } // namespace tensorpipe

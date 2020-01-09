@@ -9,6 +9,7 @@ protobuf_generate_cpp(
 
 set(TENSORPIPE_SOURCES
   ${CMAKE_CURRENT_SOURCE_DIR}/common/system.cc
+  ${CMAKE_CURRENT_SOURCE_DIR}/core/context.cc
   ${CMAKE_CURRENT_SOURCE_DIR}/core/listener.cc
   ${CMAKE_CURRENT_SOURCE_DIR}/core/pipe.cc
   ${CMAKE_CURRENT_SOURCE_DIR}/transport/error.cc
@@ -20,6 +21,7 @@ set(TENSORPIPE_HEADERS
   ${CMAKE_CURRENT_SOURCE_DIR}/common/defs.h
   ${CMAKE_CURRENT_SOURCE_DIR}/common/optional.h
   ${CMAKE_CURRENT_SOURCE_DIR}/common/system.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/core/context.h
   ${CMAKE_CURRENT_SOURCE_DIR}/core/listener.h
   ${CMAKE_CURRENT_SOURCE_DIR}/core/message.h
   ${CMAKE_CURRENT_SOURCE_DIR}/core/pipe.h
