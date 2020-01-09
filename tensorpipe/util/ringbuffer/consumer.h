@@ -243,7 +243,7 @@ class Consumer : public RingBufferWrapper<THeaderExtraData> {
     return {ret, &this->data_[start]};
   }
 
-      [[nodiscard]] ssize_t cancelTx() noexcept {
+  [[nodiscard]] ssize_t cancelTx() noexcept {
     if (unlikely(!inTx())) {
       return -EINVAL;
     }

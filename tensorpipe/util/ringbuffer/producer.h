@@ -47,7 +47,7 @@ class Producer : public RingBufferWrapper<THeaderExtraData> {
     return 0;
   }
 
-      [[nodiscard]] ssize_t writeInTx(size_t size, const void* data) noexcept {
+  [[nodiscard]] ssize_t writeInTx(size_t size, const void* data) noexcept {
     if (unlikely(!inTx())) {
       return -EINVAL;
     }
