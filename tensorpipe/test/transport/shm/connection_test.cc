@@ -5,13 +5,7 @@
 
 #include <gtest/gtest.h>
 
-using namespace tensorpipe::transport::shm;
-
-using tensorpipe::transport::Error;
-
-namespace test {
-namespace transport {
-namespace shm {
+using namespace tensorpipe::transport;
 
 namespace {
 
@@ -48,15 +42,15 @@ class Queue {
 };
 
 void initializePeers(
-    std::shared_ptr<Loop> loop,
-    Sockaddr addr,
+    std::shared_ptr<shm::Loop> loop,
+    shm::Sockaddr addr,
     std::function<void(std::shared_ptr<Connection>)> listeningFn,
     std::function<void(std::shared_ptr<Connection>)> connectingFn) {
   Queue<std::shared_ptr<Connection>> queue;
 
   // Listener runs callback for every new connection.
   // We only care about a single one for tests.
-  auto listener = std::make_shared<Listener>(
+  auto listener = std::make_shared<shm::Listener>(
       loop, addr, [&](std::shared_ptr<Connection> conn) {
         queue.push(std::move(conn));
       });
@@ -66,9 +60,9 @@ void initializePeers(
 
   // Start thread for connecting side.
   std::thread connectingThread([&]() {
-    auto socket = Socket::createForFamily(AF_UNIX);
+    auto socket = shm::Socket::createForFamily(AF_UNIX);
     socket->connect(addr);
-    connectingFn(std::make_shared<Connection>(loop, std::move(socket)));
+    connectingFn(std::make_shared<shm::Connection>(loop, std::move(socket)));
   });
 
   // Wait for completion.
@@ -79,8 +73,8 @@ void initializePeers(
 } // namespace
 
 TEST(Connection, Initialization) {
-  auto loop = std::make_shared<Loop>();
-  auto addr = Sockaddr::createAbstractUnixAddr("foobar");
+  auto loop = std::make_shared<shm::Loop>();
+  auto addr = shm::Sockaddr::createAbstractUnixAddr("foobar");
   constexpr size_t numBytes = 13;
 
   initializePeers(
@@ -108,8 +102,8 @@ TEST(Connection, Initialization) {
 }
 
 TEST(Connection, InitializationError) {
-  auto loop = std::make_shared<Loop>();
-  auto addr = Sockaddr::createAbstractUnixAddr("foobar");
+  auto loop = std::make_shared<shm::Loop>();
+  auto addr = shm::Sockaddr::createAbstractUnixAddr("foobar");
 
   initializePeers(
       loop,
@@ -126,7 +120,3 @@ TEST(Connection, InitializationError) {
         ASSERT_TRUE(error);
       });
 }
-
-} // namespace shm
-} // namespace transport
-} // namespace test
