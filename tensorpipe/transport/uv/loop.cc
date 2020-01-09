@@ -16,7 +16,7 @@ std::shared_ptr<Loop> Loop::create() {
 
 Loop::Loop(std::unique_ptr<uv_loop_t> loop) : loop_(std::move(loop)) {}
 
-Loop::~Loop() {
+Loop::~Loop() noexcept {
   if (loop_) {
     close();
   }

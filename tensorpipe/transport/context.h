@@ -17,9 +17,7 @@ class Context {
 
   virtual std::shared_ptr<Connection> connect(address_t addr) = 0;
 
-  virtual std::shared_ptr<Listener> listen(
-      address_t addr,
-      Listener::connection_callback_fn fn) = 0;
+  virtual std::shared_ptr<Listener> listen(address_t addr) = 0;
 };
 
 } // namespace transport
