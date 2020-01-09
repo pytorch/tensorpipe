@@ -15,9 +15,7 @@ class Context final : public transport::Context {
 
   std::shared_ptr<transport::Connection> connect(address_t addr) override;
 
-  std::shared_ptr<transport::Listener> listen(
-      address_t addr,
-      transport::Listener::connection_callback_fn fn) override;
+  std::shared_ptr<transport::Listener> listen(address_t addr) override;
 
  private:
   std::shared_ptr<Loop> loop_;

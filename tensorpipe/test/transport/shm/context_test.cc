@@ -14,12 +14,12 @@ TEST(Context, Basics) {
   std::vector<std::shared_ptr<Connection>> connections;
 
   // Listener runs callback for every new connection.
-  auto listener =
-      context->listen(addr, [&](std::shared_ptr<Connection> connection) {
-        std::lock_guard<std::mutex> lock(mutex);
-        connections.push_back(std::move(connection));
-        cv.notify_one();
-      });
+  auto listener = context->listen(addr);
+  listener->accept([&](std::shared_ptr<Connection> connection) {
+    std::lock_guard<std::mutex> lock(mutex);
+    connections.push_back(std::move(connection));
+    cv.notify_one();
+  });
 
   // Connect to listener.
   auto conn = context->connect(addr);

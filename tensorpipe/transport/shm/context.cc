@@ -18,11 +18,9 @@ std::shared_ptr<transport::Connection> Context::connect(address_t addr) {
   return std::make_shared<Connection>(loop_, std::move(socket));
 }
 
-std::shared_ptr<transport::Listener> Context::listen(
-    address_t addr,
-    transport::Listener::connection_callback_fn fn) {
+std::shared_ptr<transport::Listener> Context::listen(address_t addr) {
   auto sockaddr = Sockaddr::createAbstractUnixAddr(addr);
-  return std::make_shared<Listener>(loop_, sockaddr, std::move(fn));
+  return std::make_shared<Listener>(loop_, sockaddr);
 }
 
 } // namespace shm

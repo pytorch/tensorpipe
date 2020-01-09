@@ -10,10 +10,12 @@ class Connection;
 
 class Listener {
  public:
-  using connection_callback_fn =
+  virtual ~Listener() = default;
+
+  using accept_callback_fn =
       std::function<void(std::shared_ptr<Connection>)>;
 
-  virtual ~Listener() = default;
+  virtual void accept(accept_callback_fn fn) = 0;
 };
 
 } // namespace transport

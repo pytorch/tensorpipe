@@ -4,6 +4,7 @@
 #include <memory>
 #include <vector>
 
+#include <tensorpipe/common/optional.h>
 #include <tensorpipe/transport/listener.h>
 #include <tensorpipe/transport/shm/connection.h>
 #include <tensorpipe/transport/shm/loop.h>
@@ -17,21 +18,20 @@ class Listener final : public transport::Listener,
                        public std::enable_shared_from_this<Listener>,
                        public EventHandler {
  public:
-  using transport::Listener::connection_callback_fn;
+  using transport::Listener::accept_callback_fn;
 
-  Listener(
-      std::shared_ptr<Loop> loop,
-      const Sockaddr& addr,
-      connection_callback_fn fn);
+  Listener(std::shared_ptr<Loop> loop, const Sockaddr& addr);
 
   ~Listener() override;
+
+  void accept(accept_callback_fn fn) override;
 
   void handleEvents(int events) override;
 
  private:
   std::shared_ptr<Loop> loop_;
   std::shared_ptr<Socket> listener_;
-  connection_callback_fn fn_;
+  optional<accept_callback_fn> fn_;
 };
 
 } // namespace shm

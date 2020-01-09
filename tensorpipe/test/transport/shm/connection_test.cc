@@ -50,10 +50,9 @@ void initializePeers(
 
   // Listener runs callback for every new connection.
   // We only care about a single one for tests.
-  auto listener = std::make_shared<shm::Listener>(
-      loop, addr, [&](std::shared_ptr<Connection> conn) {
-        queue.push(std::move(conn));
-      });
+  auto listener = std::make_shared<shm::Listener>(loop, addr);
+  listener->accept(
+      [&](std::shared_ptr<Connection> conn) { queue.push(std::move(conn)); });
 
   // Start thread for listening side.
   std::thread listeningThread([&]() { listeningFn(queue.pop()); });
