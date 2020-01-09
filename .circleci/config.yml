@@ -38,6 +38,28 @@ jobs:
               << parameters.cmake_compiler >> \
               << parameters.cmake_args >>
             make VERBOSE=1
+  format:
+    docker:
+      - image: ubuntu:18.04
+    steps:
+      - checkout
+      - run:
+          name: Install clang-format
+          command: |
+            apt-get update
+            apt-get install -y git-core clang-format-8
+      - run:
+          name: Verify clang-format
+          command: |
+             git ls-files | grep -E  '.[cc|h]$' | xargs clang-format-8 -i
+             if git diff --quiet; then
+               echo "Formatting OK!"
+             else
+               echo "Formatting not OK!"
+               echo "------------------"
+               git --no-pager diff --color
+               exit 1
+             fi
 
 workflows:
   build:
@@ -52,3 +74,5 @@ workflows:
           docker_image: ubuntu:18.04
           apt_get: "clang-6.0"
           cmake_compiler: -DCMAKE_C_COMPILER=clang-6.0 -DCMAKE_CXX_COMPILER=clang++-6.0
+      - format:
+          name: clang-format
