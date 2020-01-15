@@ -1,2 +1,4 @@
 add_tensorpipe_test(uv_loop_test loop_test.cc)
 target_link_libraries(uv_loop_test tensorpipe_uv)
+add_tensorpipe_test(uv_sockaddr_test sockaddr_test.cc)
+target_link_libraries(uv_sockaddr_test tensorpipe_uv)
