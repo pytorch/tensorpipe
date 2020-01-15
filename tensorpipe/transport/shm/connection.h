@@ -74,7 +74,7 @@ class Connection final : public transport::Connection,
   void handleInboxReadable();
 
  private:
-  std::mutex mutex_;
+  std::recursive_mutex mutex_;
   State state_{INITIALIZING};
   Error error_;
   std::shared_ptr<Loop> loop_;
