@@ -2,8 +2,8 @@
 
 #include <memory>
 
+#include <tensorpipe/core/error.h>
 #include <tensorpipe/core/pipe.h>
-#include <tensorpipe/transport/error.h>
 
 namespace tensorpipe {
 
@@ -21,7 +21,7 @@ namespace tensorpipe {
 class Listener final {
  public:
   using accept_callback_fn =
-      std::function<void(const transport::Error&, std::shared_ptr<Pipe>)>;
+      std::function<void(const Error&, std::shared_ptr<Pipe>)>;
 
   void accept(accept_callback_fn);
 };
