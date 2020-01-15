@@ -42,6 +42,7 @@ jobs:
           name: Test
           command: |
             build/tensorpipe/test/transport/shm/transport_shm_test
+            build/tensorpipe/test/core/core_context_test
   format:
     docker:
       - image: ubuntu:18.04
