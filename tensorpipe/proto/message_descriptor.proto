@@ -21,3 +21,22 @@ message MessageDescriptor {
   int64 size_in_bytes = 1;
   repeated TensorDescriptor tensor_descriptors = 2;
 }
+
+message Message {
+  message Tensor {
+    bytes data = 1;
+  }
+
+  bytes data = 1;
+  repeated Tensor tensors = 2;
+}
+
+message Request {}
+
+message Packet {
+  oneof type {
+    MessageDescriptor message_descriptor = 1;
+    Message message = 2;
+    Request request = 3;
+  }
+}

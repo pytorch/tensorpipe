@@ -1,6 +1,8 @@
 #pragma once
 
 #include <cstddef>
+#include <memory>
+#include <string>
 #include <vector>
 
 namespace tensorpipe {
@@ -12,18 +14,18 @@ namespace tensorpipe {
 // buffers that accompany the primary buffer. These separate buffers may
 // point to any type of memory, host-side or device-side.
 //
-struct Message final {
-  void* ptr{nullptr};
+class Message final {
+ public:
+  std::unique_ptr<uint8_t[]> data;
   size_t length{0};
 
   struct Tensor {
-    void* ptr{nullptr};
+    std::unique_ptr<uint8_t[]> data;
     size_t length{0};
 
     // Users may include arbitrary metadata in the following fields.
     // This may contain allocation hints for the receiver, for example.
-    const void* user_ptr{nullptr};
-    size_t user_length{0};
+    std::string metadata;
   };
 
   // Holds the tensors that are offered to the side channels.
@@ -31,7 +33,12 @@ struct Message final {
 
   // Opaque pointer to be used by downstream callers. May be used to
   // ensure the memory pointed to by this message is kept alive.
-  void* privdata;
+  void* privateData{nullptr};
+
+ private:
+  Message copyWithoutData();
+
+  friend class Pipe;
 };
 
 } // namespace tensorpipe
