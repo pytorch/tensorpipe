@@ -1,8 +1,8 @@
 #pragma once
 
 #include <tensorpipe/common/optional.h>
+#include <tensorpipe/core/error.h>
 #include <tensorpipe/core/message.h>
-#include <tensorpipe/transport/error.h>
 
 namespace tensorpipe {
 
@@ -23,17 +23,15 @@ namespace tensorpipe {
 class Pipe final {
  public:
   using read_descriptor_callback_fn =
-      std::function<void(const transport::Error&, const Message&)>;
+      std::function<void(const Error&, const Message&)>;
 
   void readDescriptor(read_descriptor_callback_fn);
 
-  using read_callback_fn =
-      std::function<void(const transport::Error&, const Message&)>;
+  using read_callback_fn = std::function<void(const Error&, const Message&)>;
 
   void read(Message, read_callback_fn);
 
-  using write_callback_fn =
-      std::function<void(const transport::Error&, const Message&)>;
+  using write_callback_fn = std::function<void(const Error&, const Message&)>;
 
   void write(Message, write_callback_fn);
 };
