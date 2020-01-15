@@ -1,0 +1,2 @@
+add_tensorpipe_test(uv_loop_test loop_test.cc)
+target_link_libraries(uv_loop_test tensorpipe_uv)
