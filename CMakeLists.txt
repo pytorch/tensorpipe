@@ -15,6 +15,13 @@ if(SCCACHE_EXECUTABLE)
   endforeach()
 endif()
 
+# Define sanitizer option, if specified.
+if(SANITIZE)
+  add_definitions("-fsanitize=${SANITIZE}")
+  add_definitions("-fno-omit-frame-pointer")
+  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fsanitize=${SANITIZE}")
+endif()
+
 # Make dependencies available (but don't build by default)
 add_subdirectory(third_party/googletest EXCLUDE_FROM_ALL)
 add_subdirectory(third_party/libuv EXCLUDE_FROM_ALL)
