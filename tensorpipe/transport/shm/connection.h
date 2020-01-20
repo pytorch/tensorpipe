@@ -145,14 +145,25 @@ class Connection final : public transport::Connection,
   std::deque<WriteOperation> writeOperations_;
   size_t writeOperationsPending_;
 
-  // Process pending read operations upon receiving a notification
-  // from our peer that it has added one or more new messages.
-  void processReadOperationsWhileHoldingLock();
+  // Defer execution of processReadOperations to loop thread.
+  void triggerProcessReadOperations();
 
-  // Process pending write operations.
-  // Typically, writes are executed in line but if they are queued
-  // before the connection is fully established, they are delayed.
-  void processWriteOperationsWhileHoldingLock();
+  // Process pending read operations if in an operational state.
+  void processReadOperations(std::unique_lock<std::recursive_mutex> lock);
+
+  // Process pending read operations if in an error state.
+  void processReadOperationsInErrorState(
+      std::unique_lock<std::recursive_mutex> lock);
+
+  // Defer execution of processWriteOperations to loop thread.
+  void triggerProcessWriteOperations();
+
+  // Process pending write operations if in an operational state.
+  void processWriteOperations(std::unique_lock<std::recursive_mutex> lock);
+
+  // Process pending write operations if in an error state.
+  void processWriteOperationsInErrorState(
+      std::unique_lock<std::recursive_mutex> lock);
 
   // Fail with error while holding mutex.
   void failHoldingMutex(Error&&);

@@ -3,6 +3,8 @@
 #include <string.h>
 #include <sys/eventfd.h>
 
+#include <vector>
+
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/transport/error_macros.h>
 
@@ -72,7 +74,14 @@ Connection::~Connection() {
 void Connection::read(read_callback_fn fn) {
   std::unique_lock<std::recursive_mutex> guard(mutex_);
   readOperations_.emplace_back(std::move(fn));
-  processReadOperationsWhileHoldingLock();
+
+  // If there are pending read operations, make sure the event loop
+  // processes them, now that we have an additional callback. If
+  // `readPendingOperations_ == 0`, we'll have to wait for a new read
+  // to be signaled, and don't need to force processing.
+  if (readOperationsPending_ > 0 || error_) {
+    triggerProcessReadOperations();
+  }
 }
 
 // Implementation of transport::Connection.
@@ -85,7 +94,7 @@ void Connection::read(void* ptr, size_t length, read_callback_fn fn) {
 void Connection::write(const void* ptr, size_t length, write_callback_fn fn) {
   std::unique_lock<std::recursive_mutex> guard(mutex_);
   writeOperations_.emplace_back(ptr, length, std::move(fn));
-  processWriteOperationsWhileHoldingLock();
+  triggerProcessWriteOperations();
 }
 
 void Connection::handleEvents(int events) {
@@ -149,7 +158,7 @@ void Connection::handleEventIn() {
 
     // The connection is usable now.
     state_ = ESTABLISHED;
-    processWriteOperationsWhileHoldingLock();
+    triggerProcessWriteOperations();
     return;
   }
 
@@ -209,37 +218,112 @@ void Connection::handleInboxReadable() {
 
   const auto value = inboxEventFd_.readOrThrow<uint64_t>();
   readOperationsPending_ += value;
-  processReadOperationsWhileHoldingLock();
+  processReadOperations(std::move(lock));
 }
 
-void Connection::processReadOperationsWhileHoldingLock() {
-  // Process read operations in FIFO order.
+void Connection::triggerProcessReadOperations() {
+  loop_->run([&] {
+    std::unique_lock<std::recursive_mutex> lock(mutex_);
+    processReadOperations(std::move(lock));
+  });
+}
+
+void Connection::processReadOperations(
+    std::unique_lock<std::recursive_mutex> lock) {
+  TP_DCHECK(lock.owns_lock());
+
+  // Forward call if we're in an error state.
+  if (error_) {
+    processReadOperationsInErrorState(std::move(lock));
+    return;
+  }
+
+  // If we're in an operational state, trigger once for every pending
+  // read operation, given there are enough registered read
+  // operations.
+  std::vector<ReadOperation> localReadOperations;
+  localReadOperations.reserve(
+      std::min(readOperations_.size(), readOperationsPending_));
   while (!readOperations_.empty() && readOperationsPending_) {
     auto& readOperation = readOperations_.front();
-    readOperation.handleRead(*inbox_);
+    localReadOperations.push_back(std::move(readOperation));
     readOperations_.pop_front();
     readOperationsPending_--;
   }
 
-  // If we're in an error state, trigger on remaining operations.
-  while (!readOperations_.empty() && error_) {
-    auto& readOperation = readOperations_.front();
-    readOperation.handleError(error_);
-    readOperations_.pop_front();
+  // Release lock so that we can trigger these read operations knowing
+  // that they can call into this connection's public API without
+  // requiring reentrant locking.
+  lock.unlock();
+  for (auto& readOperation : localReadOperations) {
+    readOperation.handleRead(*inbox_);
   }
 }
 
-void Connection::processWriteOperationsWhileHoldingLock() {
+void Connection::processReadOperationsInErrorState(
+    std::unique_lock<std::recursive_mutex> lock) {
+  TP_DCHECK(lock.owns_lock());
+  TP_DCHECK(error_);
+
+  // If we're in an error state, trigger all remaining operations.
+  decltype(readOperations_) localReadOperations;
+  std::swap(localReadOperations, readOperations_);
+
+  // Release lock so that we can execute these read operations knowing
+  // that they can call into this connection's public API without
+  // requiring reentrant locking.
+  lock.unlock();
+  for (auto& readOperation : localReadOperations) {
+    readOperation.handleError(error_);
+  }
+}
+
+void Connection::triggerProcessWriteOperations() {
+  loop_->run([&] {
+    std::unique_lock<std::recursive_mutex> lock(mutex_);
+    processWriteOperations(std::move(lock));
+  });
+}
+
+void Connection::processWriteOperations(
+    std::unique_lock<std::recursive_mutex> lock) {
   if (state_ < ESTABLISHED) {
     return;
   }
 
-  // Process write operations in FIFO order.
-  while (!writeOperations_.empty()) {
-    auto& writeOperation = writeOperations_.front();
+  // Forward call if we're in an error state.
+  if (error_) {
+    processWriteOperationsInErrorState(std::move(lock));
+    return;
+  }
+
+  decltype(writeOperations_) localWriteOperations;
+  std::swap(localWriteOperations, writeOperations_);
+
+  // Release lock so that we can execute these write operations
+  // knowing that they can call into this connection's public API
+  // without requiring reentrant locking.
+  lock.unlock();
+  for (auto& writeOperation : localWriteOperations) {
     writeOperation.handleWrite(*outbox_);
-    writeOperations_.pop_front();
     outboxEventFd_.writeOrThrow<uint64_t>(1);
+  }
+}
+
+void Connection::processWriteOperationsInErrorState(
+    std::unique_lock<std::recursive_mutex> lock) {
+  TP_DCHECK(lock.owns_lock());
+  TP_DCHECK(error_);
+
+  decltype(writeOperations_) localWriteOperations;
+  std::swap(localWriteOperations, writeOperations_);
+
+  // Release lock so that we can execute these write operations
+  // knowing that they can call into this connection's public API
+  // without requiring reentrant locking.
+  lock.unlock();
+  for (auto& writeOperation : localWriteOperations) {
+    writeOperation.handleError(error_);
   }
 }
 
