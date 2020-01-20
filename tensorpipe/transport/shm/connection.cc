@@ -72,7 +72,7 @@ Connection::~Connection() {
 
 // Implementation of transport::Connection.
 void Connection::read(read_callback_fn fn) {
-  std::unique_lock<std::recursive_mutex> guard(mutex_);
+  std::unique_lock<std::mutex> guard(mutex_);
   readOperations_.emplace_back(std::move(fn));
 
   // If there are pending read operations, make sure the event loop
@@ -86,19 +86,19 @@ void Connection::read(read_callback_fn fn) {
 
 // Implementation of transport::Connection.
 void Connection::read(void* ptr, size_t length, read_callback_fn fn) {
-  std::unique_lock<std::recursive_mutex> guard(mutex_);
+  std::unique_lock<std::mutex> guard(mutex_);
   TP_THROW_EINVAL();
 }
 
 // Implementation of transport::Connection
 void Connection::write(const void* ptr, size_t length, write_callback_fn fn) {
-  std::unique_lock<std::recursive_mutex> guard(mutex_);
+  std::unique_lock<std::mutex> guard(mutex_);
   writeOperations_.emplace_back(ptr, length, std::move(fn));
   triggerProcessWriteOperations();
 }
 
 void Connection::handleEvents(int events) {
-  std::unique_lock<std::recursive_mutex> lock(mutex_, std::try_to_lock);
+  std::unique_lock<std::mutex> lock(mutex_, std::try_to_lock);
   if (!lock) {
     return;
   }
@@ -211,7 +211,7 @@ void Connection::handleEventHup() {
 }
 
 void Connection::handleInboxReadable() {
-  std::unique_lock<std::recursive_mutex> lock(mutex_, std::try_to_lock);
+  std::unique_lock<std::mutex> lock(mutex_, std::try_to_lock);
   if (!lock) {
     return;
   }
@@ -223,13 +223,12 @@ void Connection::handleInboxReadable() {
 
 void Connection::triggerProcessReadOperations() {
   loop_->run([&] {
-    std::unique_lock<std::recursive_mutex> lock(mutex_);
+    std::unique_lock<std::mutex> lock(mutex_);
     processReadOperations(std::move(lock));
   });
 }
 
-void Connection::processReadOperations(
-    std::unique_lock<std::recursive_mutex> lock) {
+void Connection::processReadOperations(std::unique_lock<std::mutex> lock) {
   TP_DCHECK(lock.owns_lock());
 
   // Forward call if we're in an error state.
@@ -261,7 +260,7 @@ void Connection::processReadOperations(
 }
 
 void Connection::processReadOperationsInErrorState(
-    std::unique_lock<std::recursive_mutex> lock) {
+    std::unique_lock<std::mutex> lock) {
   TP_DCHECK(lock.owns_lock());
   TP_DCHECK(error_);
 
@@ -280,13 +279,12 @@ void Connection::processReadOperationsInErrorState(
 
 void Connection::triggerProcessWriteOperations() {
   loop_->run([&] {
-    std::unique_lock<std::recursive_mutex> lock(mutex_);
+    std::unique_lock<std::mutex> lock(mutex_);
     processWriteOperations(std::move(lock));
   });
 }
 
-void Connection::processWriteOperations(
-    std::unique_lock<std::recursive_mutex> lock) {
+void Connection::processWriteOperations(std::unique_lock<std::mutex> lock) {
   if (state_ < ESTABLISHED) {
     return;
   }
@@ -311,7 +309,7 @@ void Connection::processWriteOperations(
 }
 
 void Connection::processWriteOperationsInErrorState(
-    std::unique_lock<std::recursive_mutex> lock) {
+    std::unique_lock<std::mutex> lock) {
   TP_DCHECK(lock.owns_lock());
   TP_DCHECK(error_);
 
@@ -342,7 +340,7 @@ void Connection::failHoldingMutex(Error&& error) {
 }
 
 void Connection::close() {
-  std::unique_lock<std::recursive_mutex> guard(mutex_);
+  std::unique_lock<std::mutex> guard(mutex_);
   closeHoldingMutex();
 }
 

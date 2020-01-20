@@ -74,7 +74,7 @@ class Connection final : public transport::Connection,
   void handleInboxReadable();
 
  private:
-  std::recursive_mutex mutex_;
+  std::mutex mutex_;
   State state_{INITIALIZING};
   Error error_;
   std::shared_ptr<Loop> loop_;
@@ -149,21 +149,19 @@ class Connection final : public transport::Connection,
   void triggerProcessReadOperations();
 
   // Process pending read operations if in an operational state.
-  void processReadOperations(std::unique_lock<std::recursive_mutex> lock);
+  void processReadOperations(std::unique_lock<std::mutex> lock);
 
   // Process pending read operations if in an error state.
-  void processReadOperationsInErrorState(
-      std::unique_lock<std::recursive_mutex> lock);
+  void processReadOperationsInErrorState(std::unique_lock<std::mutex> lock);
 
   // Defer execution of processWriteOperations to loop thread.
   void triggerProcessWriteOperations();
 
   // Process pending write operations if in an operational state.
-  void processWriteOperations(std::unique_lock<std::recursive_mutex> lock);
+  void processWriteOperations(std::unique_lock<std::mutex> lock);
 
   // Process pending write operations if in an error state.
-  void processWriteOperationsInErrorState(
-      std::unique_lock<std::recursive_mutex> lock);
+  void processWriteOperationsInErrorState(std::unique_lock<std::mutex> lock);
 
   // Fail with error while holding mutex.
   void failHoldingMutex(Error&&);
