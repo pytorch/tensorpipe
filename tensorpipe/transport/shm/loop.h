@@ -71,8 +71,6 @@ class Loop final : public std::enable_shared_from_this<Loop> {
 
   void unregisterDescriptor(int fd);
 
-  void run();
-
   // Returns if the calling thread is the same as the loop thread.
   bool isThisTheLoopThread() const;
 
@@ -88,6 +86,9 @@ class Loop final : public std::enable_shared_from_this<Loop> {
 
   // Wake up the event loop.
   void wakeup();
+
+  // Main loop function.
+  void loop();
 
   Fd epollFd_;
   Fd eventFd_;
