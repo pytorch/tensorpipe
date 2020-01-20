@@ -3,6 +3,8 @@
 #include <atomic>
 #include <condition_variable>
 #include <functional>
+#include <future>
+#include <list>
 #include <memory>
 #include <mutex>
 #include <thread>
@@ -63,6 +65,8 @@ class Monitor : public EventHandler {
 
 class Loop final : public std::enable_shared_from_this<Loop> {
  public:
+  using TFunction = std::function<void()>;
+
   explicit Loop();
 
   ~Loop();
@@ -70,6 +74,8 @@ class Loop final : public std::enable_shared_from_this<Loop> {
   void registerDescriptor(int fd, int events, EventHandler* h);
 
   void unregisterDescriptor(int fd);
+
+  std::future<void> run(TFunction fn);
 
   // Returns if the calling thread is the same as the loop thread.
   bool isThisTheLoopThread() const;
@@ -98,6 +104,9 @@ class Loop final : public std::enable_shared_from_this<Loop> {
 
   std::mutex m_;
   std::condition_variable cv_;
+
+  // List of functions to run on the next event loop tick.
+  std::list<TFunction> deferredFunctions_;
 };
 
 } // namespace shm

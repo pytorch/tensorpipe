@@ -125,6 +125,26 @@ void Loop::unregisterDescriptor(int fd) {
   waitForLoopTick();
 }
 
+std::future<void> Loop::run(TFunction fn) {
+  std::unique_lock<std::mutex> lock(m_);
+
+  // Must use a copyable wrapper around std::promise because
+  // we use it from a std::function which must be copyable.
+  auto promise = std::make_shared<std::promise<void>>();
+  auto future = promise->get_future();
+  deferredFunctions_.push_back(
+      [promise{std::move(promise)}, fn{std::move(fn)}]() mutable {
+        try {
+          fn();
+          promise->set_value();
+        } catch (...) {
+          promise->set_exception(std::current_exception());
+        }
+      });
+  wakeup();
+  return future;
+}
+
 void Loop::waitForLoopTick() {
   // No need to wait if the event loop thread calls this function,
   // because it means it's not blocking on epoll_wait(2).
@@ -173,13 +193,22 @@ void Loop::loop() {
       }
     }
 
-    // Wake up threads waiting for a loop tick to finish.
+    // Store functions to run on the event loop thread on the stack.
+    decltype(deferredFunctions_) fns;
+
     {
       std::unique_lock<std::mutex> lock(m_);
+      std::swap(fns, deferredFunctions_);
       loopTicks_++;
     }
 
+    // Wake up threads waiting for a loop tick to finish.
     cv_.notify_all();
+
+    // Run deferred functions.
+    for (auto& fn : fns) {
+      fn();
+    }
   }
 }
 
