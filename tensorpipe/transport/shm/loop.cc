@@ -92,7 +92,7 @@ Loop::Loop() {
   TP_THROW_SYSTEM_IF(rv == -1, errno);
 
   // Start epoll(2) thread.
-  loop_.reset(new std::thread(&Loop::run, this));
+  loop_.reset(new std::thread(&Loop::loop, this));
 }
 
 Loop::~Loop() {
@@ -147,7 +147,7 @@ void Loop::wakeup() {
   eventFd_.writeOrThrow<uint64_t>(1);
 }
 
-void Loop::run() {
+void Loop::loop() {
   std::array<struct epoll_event, capacity_> events;
   while (!done_) {
     auto nfds = epoll_wait(epollFd_.fd(), events.data(), events.size(), -1);
