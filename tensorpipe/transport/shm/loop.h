@@ -104,6 +104,9 @@ class Loop final : public std::enable_shared_from_this<Loop> {
     return handler;
   }
 
+  // Tell loop to terminate when no more handlers remain.
+  void join();
+
  private:
   static constexpr auto capacity_ = 64;
 
@@ -124,6 +127,7 @@ class Loop final : public std::enable_shared_from_this<Loop> {
   // Store weak_ptr for every registered fd.
   std::vector<std::weak_ptr<EventHandler>> handlers_;
   std::mutex handlersMutex_;
+  std::atomic<uint64_t> handlerCount_{0};
 
   // List of functions to run on the next event loop tick.
   std::list<TFunction> functions_;

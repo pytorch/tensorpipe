@@ -8,6 +8,17 @@ namespace tensorpipe {
 namespace transport {
 namespace shm {
 
+namespace {
+
+// Checks if the specified weak_ptr is uninitialized.
+template <typename T>
+bool is_uninitialized(const std::weak_ptr<T>& weak) {
+  const std::weak_ptr<T> empty{};
+  return !weak.owner_before(empty) && !empty.owner_before(weak);
+}
+
+} // namespace
+
 FunctionEventHandler::FunctionEventHandler(
     std::shared_ptr<Loop> loop,
     int fd,
@@ -64,11 +75,7 @@ Loop::Loop() {
 }
 
 Loop::~Loop() {
-  if (loop_) {
-    done_ = true;
-    wakeup();
-    loop_->join();
-  }
+  TP_DCHECK(done_);
 }
 
 void Loop::registerDescriptor(
@@ -83,6 +90,9 @@ void Loop::registerDescriptor(
     std::lock_guard<std::mutex> lock(handlersMutex_);
     if (fd >= handlers_.size()) {
       handlers_.resize(fd + 1);
+    }
+    if (is_uninitialized(handlers_[fd])) {
+      handlerCount_++;
     }
     handlers_[fd] = h;
   }
@@ -100,6 +110,9 @@ void Loop::unregisterDescriptor(int fd) {
 
   {
     std::lock_guard<std::mutex> lock(handlersMutex_);
+    if (!is_uninitialized(handlers_[fd])) {
+      handlerCount_--;
+    }
     handlers_[fd].reset();
   }
 }
@@ -131,7 +144,7 @@ void Loop::wakeup() {
 
 void Loop::loop() {
   std::array<struct epoll_event, capacity_> events;
-  while (!done_) {
+  for (;;) {
     auto nfds = epoll_wait(epollFd_.fd(), events.data(), events.size(), -1);
     if (nfds == -1) {
       if (errno == EINTR) {
@@ -161,19 +174,42 @@ void Loop::loop() {
       }
     }
 
-    // Store functions to run on the event loop thread on the stack.
-    decltype(functions_) stackFunctions;
-
+    // Process deferred functions. Note that we keep continue running
+    // until there are no more functions remaining. This is necessary
+    // such that we can assert in the block below that if there are no
+    // more handlers, we are done.
     {
       std::unique_lock<std::mutex> lock(m_);
-      std::swap(stackFunctions, functions_);
+      while (!functions_.empty()) {
+        decltype(functions_) stackFunctions;
+        std::swap(stackFunctions, functions_);
+        lock.unlock();
+
+        // Run deferred functions.
+        for (auto& fn : stackFunctions) {
+          fn();
+
+          // Reset function to destroy resources associated with it
+          // before re-acquiring the lock.
+          fn = nullptr;
+        }
+
+        lock.lock();
+      }
     }
 
-    // Run deferred functions.
-    for (auto& fn : stackFunctions) {
-      fn();
+    // Return if another thread is waiting in `join` and there is
+    // nothing left to be done.
+    if (done_ && handlerCount_ == 0) {
+      return;
     }
   }
+}
+
+void Loop::join() {
+  done_ = true;
+  wakeup();
+  loop_->join();
 }
 
 } // namespace shm

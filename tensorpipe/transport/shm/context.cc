@@ -23,6 +23,10 @@ std::shared_ptr<transport::Listener> Context::listen(address_t addr) {
   return Listener::create(loop_, sockaddr);
 }
 
+void Context::join() {
+  loop_->join();
+}
+
 } // namespace shm
 } // namespace transport
 } // namespace tensorpipe

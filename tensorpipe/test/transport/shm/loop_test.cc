@@ -40,7 +40,7 @@ class Handler : public EventHandler {
 TEST(Loop, Create) {
   auto loop = std::make_shared<Loop>();
   ASSERT_TRUE(loop);
-  loop.reset();
+  loop->join();
 }
 
 TEST(Loop, RegisterUnregister) {
@@ -48,18 +48,22 @@ TEST(Loop, RegisterUnregister) {
   auto handler = std::make_shared<Handler>();
   auto efd = Fd(eventfd(0, EFD_NONBLOCK));
 
-  // Test if writable (always).
-  loop->registerDescriptor(efd.fd(), EPOLLOUT | EPOLLONESHOT, handler);
-  ASSERT_EQ(handler->nextEvents(), EPOLLOUT);
-  efd.writeOrThrow<uint64_t>(1337);
+  {
+    // Test if writable (always).
+    loop->registerDescriptor(efd.fd(), EPOLLOUT | EPOLLONESHOT, handler);
+    ASSERT_EQ(handler->nextEvents(), EPOLLOUT);
+    efd.writeOrThrow<uint64_t>(1337);
 
-  // Test if readable (only if previously written to).
-  loop->registerDescriptor(efd.fd(), EPOLLIN | EPOLLONESHOT, handler);
-  ASSERT_EQ(handler->nextEvents(), EPOLLIN);
-  ASSERT_EQ(efd.readOrThrow<uint64_t>(), 1337);
+    // Test if readable (only if previously written to).
+    loop->registerDescriptor(efd.fd(), EPOLLIN | EPOLLONESHOT, handler);
+    ASSERT_EQ(handler->nextEvents(), EPOLLIN);
+    ASSERT_EQ(efd.readOrThrow<uint64_t>(), 1337);
 
-  // Test if we can unregister the descriptor.
-  loop->unregisterDescriptor(efd.fd());
+    // Test if we can unregister the descriptor.
+    loop->unregisterDescriptor(efd.fd());
+  }
+
+  loop->join();
 }
 
 TEST(Loop, Monitor) {
@@ -122,4 +126,6 @@ TEST(Loop, Monitor) {
     // Verify we read the correct value.
     ASSERT_EQ(value, kValue);
   }
+
+  loop->join();
 }
