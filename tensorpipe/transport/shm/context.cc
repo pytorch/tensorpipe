@@ -15,12 +15,12 @@ std::shared_ptr<transport::Connection> Context::connect(address_t addr) {
   auto sockaddr = Sockaddr::createAbstractUnixAddr(addr);
   auto socket = Socket::createForFamily(AF_UNIX);
   socket->connect(sockaddr);
-  return std::make_shared<Connection>(loop_, std::move(socket));
+  return Connection::create(loop_, std::move(socket));
 }
 
 std::shared_ptr<transport::Listener> Context::listen(address_t addr) {
   auto sockaddr = Sockaddr::createAbstractUnixAddr(addr);
-  return std::make_shared<Listener>(loop_, sockaddr);
+  return Listener::create(loop_, sockaddr);
 }
 
 } // namespace shm
