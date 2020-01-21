@@ -13,11 +13,11 @@ class Context final : public transport::Context {
 
   ~Context() override;
 
+  void join() override;
+
   std::shared_ptr<transport::Connection> connect(address_t addr) override;
 
   std::shared_ptr<transport::Listener> listen(address_t addr) override;
-
-  void join();
 
  private:
   std::shared_ptr<Loop> loop_;
