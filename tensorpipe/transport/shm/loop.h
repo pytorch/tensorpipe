@@ -82,9 +82,6 @@ class Loop final : public std::enable_shared_from_this<Loop> {
 
   std::future<void> run(TFunction fn);
 
-  // Returns if the calling thread is the same as the loop thread.
-  bool isThisTheLoopThread() const;
-
   // Instantiates an event monitor for the specified fd.
   template <typename T>
   std::shared_ptr<FunctionEventHandler> monitor(

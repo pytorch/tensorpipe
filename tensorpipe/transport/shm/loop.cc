@@ -176,10 +176,6 @@ void Loop::loop() {
   }
 }
 
-bool Loop::isThisTheLoopThread() const {
-  return std::this_thread::get_id() == loop_->get_id();
-}
-
 } // namespace shm
 } // namespace transport
 } // namespace tensorpipe
