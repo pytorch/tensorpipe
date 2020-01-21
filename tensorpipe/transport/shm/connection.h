@@ -27,6 +27,12 @@ class Connection final : public transport::Connection,
   using TProducer = util::ringbuffer::Producer<RingBufferExtraData>;
   using TConsumer = util::ringbuffer::Consumer<RingBufferExtraData>;
 
+  // The constructor needs to be public (so that make_shared can invoke it) but
+  // in order to prevent external users from calling it (to force them to use
+  // the `create` static member function) we make it accept an instance of this
+  // private class.
+  struct ConstructorToken {};
+
  public:
   static constexpr auto kDefaultSize = 2 * 1024 * 1024;
 
@@ -45,7 +51,10 @@ class Connection final : public transport::Connection,
       std::shared_ptr<Loop> loop,
       std::shared_ptr<Socket> socket);
 
-  Connection(std::shared_ptr<Loop> loop, std::shared_ptr<Socket> socket);
+  Connection(
+      ConstructorToken,
+      std::shared_ptr<Loop> loop,
+      std::shared_ptr<Socket> socket);
 
   ~Connection() override;
 
