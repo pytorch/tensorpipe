@@ -124,23 +124,6 @@ std::future<void> Loop::run(TFunction fn) {
   return future;
 }
 
-void Loop::waitForLoopTick() {
-  // No need to wait if the event loop thread calls this function,
-  // because it means it's not blocking on epoll_wait(2).
-  if (std::this_thread::get_id() == loop_->get_id()) {
-    return;
-  }
-
-  // Wait for loop tick count to change. This means epoll_wait(2)
-  // has returned and handlers have been executed.
-  std::unique_lock<std::mutex> lock(m_);
-  const auto loopTickSnapshot = loopTicks_;
-  wakeup();
-  while (loopTickSnapshot == loopTicks_) {
-    cv_.wait(lock);
-  }
-}
-
 void Loop::wakeup() {
   // Perform a write to eventfd to wake up epoll_wait(2).
   eventFd_.writeOrThrow<uint64_t>(1);
@@ -184,11 +167,7 @@ void Loop::loop() {
     {
       std::unique_lock<std::mutex> lock(m_);
       std::swap(fns, deferredFunctions_);
-      loopTicks_++;
     }
-
-    // Wake up threads waiting for a loop tick to finish.
-    cv_.notify_all();
 
     // Run deferred functions.
     for (auto& fn : fns) {

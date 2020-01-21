@@ -110,10 +110,6 @@ class Loop final : public std::enable_shared_from_this<Loop> {
  private:
   static constexpr auto capacity_ = 64;
 
-  // Wait for epoll_wait(2) to have returned
-  // and handlers to have been executed.
-  void waitForLoopTick();
-
   // Wake up the event loop.
   void wakeup();
 
@@ -127,7 +123,6 @@ class Loop final : public std::enable_shared_from_this<Loop> {
   std::unique_ptr<std::thread> loop_;
 
   std::mutex m_;
-  std::condition_variable cv_;
 
   // Store weak_ptr for every registered fd.
   std::vector<std::weak_ptr<EventHandler>> handlers_;
