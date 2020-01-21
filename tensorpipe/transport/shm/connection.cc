@@ -158,7 +158,8 @@ void Connection::handleEventIn(std::unique_lock<std::mutex> lock) {
     // inbox ringbuffer and is waking us up to process it.
     inboxMonitor_ =
         loop_->monitor(inboxEventFd_.fd(), EPOLLIN, [this](Monitor& monitor) {
-          handleInboxReadable();
+          std::unique_lock<std::mutex> lock(mutex_);
+          handleInboxReadable(std::move(lock));
         });
 
     // The connection is usable now.
@@ -170,8 +171,11 @@ void Connection::handleEventIn(std::unique_lock<std::mutex> lock) {
   if (state_ == ESTABLISHED) {
     // We don't expect to read anything on this socket once the
     // connection has been established. If we do, assume it's a
-    // zero-byte read indicating EOF.
-    failHoldingMutex(TP_CREATE_ERROR(EOFError));
+    // zero-byte read indicating EOF. But, before we fail pending
+    // operations, see if there is anything in the inbox.
+    readInboxEventFd();
+    setErrorHoldingMutex(TP_CREATE_ERROR(EOFError));
+    processReadOperations(std::move(lock));
     return;
   }
 
@@ -215,15 +219,19 @@ void Connection::handleEventHup(std::unique_lock<std::mutex> lock) {
   closeHoldingMutex();
 }
 
-void Connection::handleInboxReadable() {
-  std::unique_lock<std::mutex> lock(mutex_, std::try_to_lock);
-  if (!lock) {
+void Connection::handleInboxReadable(std::unique_lock<std::mutex> lock) {
+  readInboxEventFd();
+  processReadOperations(std::move(lock));
+}
+
+void Connection::readInboxEventFd() {
+  uint64_t value = 0;
+  auto err = inboxEventFd_.read(&value);
+  if (err) {
     return;
   }
 
-  const auto value = inboxEventFd_.readOrThrow<uint64_t>();
   readOperationsPending_ += value;
-  processReadOperations(std::move(lock));
 }
 
 void Connection::triggerProcessReadOperations() {
@@ -304,8 +312,12 @@ void Connection::processWriteOperations(std::unique_lock<std::mutex> lock) {
   }
 }
 
-void Connection::failHoldingMutex(Error&& error) {
+void Connection::setErrorHoldingMutex(Error&& error) {
   error_ = error;
+}
+
+void Connection::failHoldingMutex(Error&& error) {
+  setErrorHoldingMutex(std::move(error));
   while (!readOperations_.empty()) {
     auto& readOperation = readOperations_.front();
     readOperation.handleError(error_);
