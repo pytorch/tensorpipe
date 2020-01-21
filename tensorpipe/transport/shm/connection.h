@@ -66,16 +66,16 @@ class Connection final : public transport::Connection,
   void handleEvents(int events) override;
 
   // Handle events of type EPOLLIN.
-  void handleEventIn();
+  void handleEventIn(std::unique_lock<std::mutex> lock);
 
   // Handle events of type EPOLLOUT.
-  void handleEventOut();
+  void handleEventOut(std::unique_lock<std::mutex> lock);
 
   // Handle events of type EPOLLERR.
-  void handleEventErr();
+  void handleEventErr(std::unique_lock<std::mutex> lock);
 
   // Handle events of type EPOLLHUP.
-  void handleEventHup();
+  void handleEventHup(std::unique_lock<std::mutex> lock);
 
   // Handle inbox being readable.
   // Note that this is triggered from the monitor of the eventfd,
