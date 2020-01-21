@@ -108,17 +108,30 @@ void Connection::write(const void* ptr, size_t length, write_callback_fn fn) {
 }
 
 void Connection::handleEvents(int events) {
+  std::unique_lock<std::mutex> lock(mutex_);
+
+  // Handle only one of the events in the mask. Events on the control
+  // file descriptor are rare enough for the cost of having epoll call
+  // into this function multiple times to not matter. The benefit is
+  // that we never have to acquire the lock more than once and that
+  // every handler can close and unregister the control file
+  // descriptor from the event loop, without worrying about the next
+  // handler trying to do so as well.
   if (events & EPOLLIN) {
-    handleEventIn(std::unique_lock<std::mutex>(mutex_));
+    handleEventIn(std::move(lock));
+    return;
   }
   if (events & EPOLLOUT) {
-    handleEventOut(std::unique_lock<std::mutex>(mutex_));
+    handleEventOut(std::move(lock));
+    return;
   }
   if (events & EPOLLERR) {
-    handleEventErr(std::unique_lock<std::mutex>(mutex_));
+    handleEventErr(std::move(lock));
+    return;
   }
   if (events & EPOLLHUP) {
-    handleEventHup(std::unique_lock<std::mutex>(mutex_));
+    handleEventHup(std::move(lock));
+    return;
   }
 }
 
@@ -177,6 +190,7 @@ void Connection::handleEventIn(std::unique_lock<std::mutex> lock) {
     // operations, see if there is anything in the inbox.
     readInboxEventFd();
     setErrorHoldingMutex(TP_CREATE_ERROR(EOFError));
+    closeHoldingMutex();
     processReadOperations(std::move(lock));
     return;
   }
@@ -214,11 +228,17 @@ void Connection::handleEventOut(std::unique_lock<std::mutex> lock) {
 }
 
 void Connection::handleEventErr(std::unique_lock<std::mutex> lock) {
+  readInboxEventFd();
+  setErrorHoldingMutex(TP_CREATE_ERROR(EOFError));
   closeHoldingMutex();
+  processReadOperations(std::move(lock));
 }
 
 void Connection::handleEventHup(std::unique_lock<std::mutex> lock) {
+  readInboxEventFd();
+  setErrorHoldingMutex(TP_CREATE_ERROR(EOFError));
   closeHoldingMutex();
+  processReadOperations(std::move(lock));
 }
 
 void Connection::handleInboxReadable() {
