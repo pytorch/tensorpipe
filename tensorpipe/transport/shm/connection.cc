@@ -241,48 +241,31 @@ void Connection::triggerProcessReadOperations() {
 void Connection::processReadOperations(std::unique_lock<std::mutex> lock) {
   TP_DCHECK(lock.owns_lock());
 
-  // Forward call if we're in an error state.
-  if (error_) {
-    processReadOperationsInErrorState(std::move(lock));
-    return;
-  }
-
-  // If we're in an operational state, trigger once for every pending
-  // read operation, given there are enough registered read
-  // operations.
-  std::vector<ReadOperation> localReadOperations;
-  localReadOperations.reserve(
-      std::min(readOperations_.size(), readOperationsPending_));
+  // Process all read operations that we can immediately serve.
+  std::deque<ReadOperation> operationsToRead;
   while (!readOperations_.empty() && readOperationsPending_) {
     auto& readOperation = readOperations_.front();
-    localReadOperations.push_back(std::move(readOperation));
+    operationsToRead.push_back(std::move(readOperation));
     readOperations_.pop_front();
     readOperationsPending_--;
+  }
+
+  // If we're in an error state, process all remaining read operations.
+  std::deque<ReadOperation> operationsToError;
+  if (error_) {
+    std::swap(operationsToError, readOperations_);
   }
 
   // Release lock so that we can trigger these read operations knowing
   // that they can call into this connection's public API without
   // requiring reentrant locking.
   lock.unlock();
-  for (auto& readOperation : localReadOperations) {
+
+  for (auto& readOperation : operationsToRead) {
     readOperation.handleRead(*inbox_);
   }
-}
 
-void Connection::processReadOperationsInErrorState(
-    std::unique_lock<std::mutex> lock) {
-  TP_DCHECK(lock.owns_lock());
-  TP_DCHECK(error_);
-
-  // If we're in an error state, trigger all remaining operations.
-  decltype(readOperations_) localReadOperations;
-  std::swap(localReadOperations, readOperations_);
-
-  // Release lock so that we can execute these read operations knowing
-  // that they can call into this connection's public API without
-  // requiring reentrant locking.
-  lock.unlock();
-  for (auto& readOperation : localReadOperations) {
+  for (auto& readOperation : operationsToError) {
     readOperation.handleError(error_);
   }
 }
@@ -295,42 +278,33 @@ void Connection::triggerProcessWriteOperations() {
 }
 
 void Connection::processWriteOperations(std::unique_lock<std::mutex> lock) {
+  TP_DCHECK(lock.owns_lock());
+
   if (state_ < ESTABLISHED) {
     return;
   }
 
-  // Forward call if we're in an error state.
-  if (error_) {
-    processWriteOperationsInErrorState(std::move(lock));
-    return;
+  std::deque<WriteOperation> operationsToWrite;
+  if (!error_) {
+    std::swap(operationsToWrite, writeOperations_);
   }
 
-  decltype(writeOperations_) localWriteOperations;
-  std::swap(localWriteOperations, writeOperations_);
+  std::deque<WriteOperation> operationsToError;
+  if (error_) {
+    std::swap(operationsToError, writeOperations_);
+  }
 
   // Release lock so that we can execute these write operations
   // knowing that they can call into this connection's public API
   // without requiring reentrant locking.
   lock.unlock();
-  for (auto& writeOperation : localWriteOperations) {
+
+  for (auto& writeOperation : operationsToWrite) {
     writeOperation.handleWrite(*outbox_);
     outboxEventFd_.writeOrThrow<uint64_t>(1);
   }
-}
 
-void Connection::processWriteOperationsInErrorState(
-    std::unique_lock<std::mutex> lock) {
-  TP_DCHECK(lock.owns_lock());
-  TP_DCHECK(error_);
-
-  decltype(writeOperations_) localWriteOperations;
-  std::swap(localWriteOperations, writeOperations_);
-
-  // Release lock so that we can execute these write operations
-  // knowing that they can call into this connection's public API
-  // without requiring reentrant locking.
-  lock.unlock();
-  for (auto& writeOperation : localWriteOperations) {
+  for (auto& writeOperation : operationsToError) {
     writeOperation.handleError(error_);
   }
 }

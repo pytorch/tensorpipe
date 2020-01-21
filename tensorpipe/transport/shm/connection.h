@@ -160,17 +160,11 @@ class Connection final : public transport::Connection,
   // Process pending read operations if in an operational state.
   void processReadOperations(std::unique_lock<std::mutex> lock);
 
-  // Process pending read operations if in an error state.
-  void processReadOperationsInErrorState(std::unique_lock<std::mutex> lock);
-
   // Defer execution of processWriteOperations to loop thread.
   void triggerProcessWriteOperations();
 
   // Process pending write operations if in an operational state.
   void processWriteOperations(std::unique_lock<std::mutex> lock);
-
-  // Process pending write operations if in an error state.
-  void processWriteOperationsInErrorState(std::unique_lock<std::mutex> lock);
 
   // Fail with error while holding mutex.
   void failHoldingMutex(Error&&);
