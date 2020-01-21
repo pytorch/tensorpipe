@@ -15,7 +15,7 @@ TEST(Listener, Basics) {
   std::vector<std::shared_ptr<Connection>> connections;
 
   // Listener runs callback for every new connection.
-  auto listener = std::make_shared<shm::Listener>(loop, addr);
+  auto listener = shm::Listener::create(loop, addr);
   listener->accept([&](std::shared_ptr<Connection> connection) {
     std::lock_guard<std::mutex> lock(mutex);
     connections.push_back(std::move(connection));

@@ -46,12 +46,14 @@ class SegmentPrefix {
 std::shared_ptr<Connection> Connection::create(
     std::shared_ptr<Loop> loop,
     std::shared_ptr<Socket> socket) {
-  auto conn = std::make_shared<Connection>(std::move(loop), std::move(socket));
+  auto conn = std::make_shared<Connection>(
+      ConstructorToken(), std::move(loop), std::move(socket));
   conn->start();
   return conn;
 }
 
 Connection::Connection(
+    ConstructorToken /* unused */,
     std::shared_ptr<Loop> loop,
     std::shared_ptr<Socket> socket)
     : loop_(std::move(loop)), socket_(std::move(socket)) {
