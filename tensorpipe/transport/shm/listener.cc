@@ -6,6 +6,12 @@ namespace tensorpipe {
 namespace transport {
 namespace shm {
 
+std::shared_ptr<Listener> Listener::create(
+    std::shared_ptr<Loop> loop,
+    const Sockaddr& addr) {
+  return std::make_shared<Listener>(std::move(loop), addr);
+}
+
 Listener::Listener(std::shared_ptr<Loop> loop, const Sockaddr& addr)
     : loop_(std::move(loop)), listener_(Socket::createForFamily(AF_UNIX)) {
   // Bind socket to abstract socket address.

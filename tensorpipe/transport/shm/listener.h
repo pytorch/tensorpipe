@@ -18,6 +18,10 @@ class Listener final : public transport::Listener,
                        public std::enable_shared_from_this<Listener>,
                        public EventHandler {
  public:
+  static std::shared_ptr<Listener> create(
+      std::shared_ptr<Loop> loop,
+      const Sockaddr& addr);
+
   using transport::Listener::accept_callback_fn;
 
   Listener(std::shared_ptr<Loop> loop, const Sockaddr& addr);
