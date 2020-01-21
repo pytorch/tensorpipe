@@ -36,34 +36,35 @@ class Loop;
 //
 // The lifetime of an instance dictates when the specified function
 // may be called. The function is guaranteed to not be called after
-// the monitor has been destructed. If the monitor hasn't been
-// cancelled already, it is cancelled from the destructor. Be aware
-// that this operation can block and wait for the event loop thread.
+// the monitor has been destructed.
 //
-class Monitor : public EventHandler,
-                public std::enable_shared_from_this<Monitor> {
+class FunctionEventHandler
+    : public EventHandler,
+      public std::enable_shared_from_this<FunctionEventHandler> {
  public:
-  using TFunction = std::function<void(Monitor&)>;
+  using TFunction = std::function<void(FunctionEventHandler&)>;
 
-  Monitor(std::shared_ptr<Loop> loop, int fd, int event, TFunction fn);
+  FunctionEventHandler(
+      std::shared_ptr<Loop> loop,
+      int fd,
+      int event,
+      TFunction fn);
 
-  ~Monitor() override;
+  ~FunctionEventHandler() override;
 
   void start();
 
-  void handleEvents(int events) override;
-
   void cancel();
+
+  void handleEvents(int events) override;
 
  private:
   std::shared_ptr<Loop> loop_;
-  int fd_;
-  int event_;
+  const int fd_;
+  const int event_;
   TFunction fn_;
 
   std::mutex mutex_;
-  std::condition_variable cv_;
-  bool cancelling_{false};
   bool cancelled_{false};
 };
 
@@ -85,7 +86,26 @@ class Loop final : public std::enable_shared_from_this<Loop> {
   bool isThisTheLoopThread() const;
 
   // Instantiates an event monitor for the specified fd.
-  std::shared_ptr<Monitor> monitor(int fd, int event, Monitor::TFunction fn);
+  template <typename T>
+  std::shared_ptr<FunctionEventHandler> monitor(
+      std::shared_ptr<T> shared,
+      int fd,
+      int event,
+      std::function<void(T&, FunctionEventHandler&)> fn) {
+    auto handler = std::make_shared<FunctionEventHandler>(
+        shared_from_this(),
+        fd,
+        event,
+        [weak{std::weak_ptr<T>{shared}},
+         fn{std::move(fn)}](FunctionEventHandler& handler) {
+          auto shared = weak.lock();
+          if (shared) {
+            fn(*shared, handler);
+          }
+        });
+    handler->start();
+    return handler;
+  }
 
  private:
   static constexpr auto capacity_ = 64;
