@@ -1,8 +1,7 @@
-add_tensorpipe_test(loop_test loop_test.cc)
-target_link_libraries(loop_test tensorpipe_shm)
-add_tensorpipe_test(listener_test listener_test.cc)
-target_link_libraries(listener_test tensorpipe_shm)
-add_tensorpipe_test(connection_test connection_test.cc)
-target_link_libraries(connection_test tensorpipe_shm)
-add_tensorpipe_test(context_test context_test.cc)
-target_link_libraries(context_test tensorpipe_shm)
+add_tensorpipe_test(transport_shm_test
+  connection_test.cc
+  context_test.cc
+  listener_test.cc
+  loop_test.cc
+  )
+target_link_libraries(transport_shm_test tensorpipe_shm)
