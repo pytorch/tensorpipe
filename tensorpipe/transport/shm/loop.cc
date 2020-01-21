@@ -9,12 +9,14 @@ namespace transport {
 namespace shm {
 
 Monitor::Monitor(std::shared_ptr<Loop> loop, int fd, int event, TFunction fn)
-    : loop_(std::move(loop)), fd_(fd), event_(event), fn_(std::move(fn)) {
-  loop_->registerDescriptor(fd_, event, this);
-}
+    : loop_(std::move(loop)), fd_(fd), event_(event), fn_(std::move(fn)) {}
 
 Monitor::~Monitor() {
   cancel();
+}
+
+void Monitor::start() {
+  loop_->registerDescriptor(fd_, event_, shared_from_this());
 }
 
 void Monitor::handleEvents(int events) {
@@ -87,7 +89,8 @@ Loop::Loop() {
   // eventfd is special cased in the loop's body.
   struct epoll_event ev;
   ev.events = EPOLLIN;
-  ev.data.ptr = nullptr;
+  ev.data.fd = eventFd_.fd();
+  handlers_.resize(eventFd_.fd() + 1);
   auto rv = epoll_ctl(epollFd_.fd(), EPOLL_CTL_ADD, eventFd_.fd(), &ev);
   TP_THROW_SYSTEM_IF(rv == -1, errno);
 
@@ -103,10 +106,21 @@ Loop::~Loop() {
   }
 }
 
-void Loop::registerDescriptor(int fd, int events, EventHandler* h) {
+void Loop::registerDescriptor(
+    int fd,
+    int events,
+    std::shared_ptr<EventHandler> h) {
   struct epoll_event ev;
   ev.events = events;
-  ev.data.ptr = h;
+  ev.data.fd = fd;
+
+  {
+    std::lock_guard<std::mutex> lock(handlersMutex_);
+    if (fd >= handlers_.size()) {
+      handlers_.resize(fd + 1);
+    }
+    handlers_[fd] = h;
+  }
 
   auto rv = epoll_ctl(epollFd_.fd(), EPOLL_CTL_ADD, fd, &ev);
   if (rv == -1 && errno == EEXIST) {
@@ -119,10 +133,10 @@ void Loop::unregisterDescriptor(int fd) {
   auto rv = epoll_ctl(epollFd_.fd(), EPOLL_CTL_DEL, fd, nullptr);
   TP_THROW_SYSTEM_IF(rv == -1, errno);
 
-  // Wait for loop to tick before returning, to make sure that the
-  // event handler for this fd is guaranteed to not be called once
-  // this function returns.
-  waitForLoopTick();
+  {
+    std::lock_guard<std::mutex> lock(handlersMutex_);
+    handlers_[fd].reset();
+  }
 }
 
 std::future<void> Loop::run(TFunction fn) {
@@ -179,16 +193,22 @@ void Loop::loop() {
     }
 
     // Process events returned by epoll_wait(2).
-    for (auto i = 0; i < nfds; i++) {
-      const auto& event = events[i];
-      auto h = reinterpret_cast<EventHandler*>(event.data.ptr);
-      if (h) {
-        h->handleEvents(events[i].events);
-      } else {
-        // Must be a readability event on the eventfd.
-        if (event.data.fd == eventFd_.fd()) {
-          // Read and discard value from eventfd.
-          eventFd_.readOrThrow<uint64_t>();
+    {
+      std::unique_lock<std::mutex> lock(handlersMutex_);
+      for (auto i = 0; i < nfds; i++) {
+        const auto& event = events[i];
+        const auto fd = event.data.fd;
+        auto h = handlers_[fd].lock();
+        if (h) {
+          lock.unlock();
+          // Trigger callback. Note that the object is kept alive
+          // through the shared_ptr that we acquired by locking the
+          // weak_ptr in the handlers vector.
+          h->handleEvents(events[i].events);
+          // Reset the handler shared_ptr before reacquiring the lock.
+          // This may trigger destruction of the object.
+          h.reset();
+          lock.lock();
         }
       }
     }
@@ -216,12 +236,14 @@ bool Loop::isThisTheLoopThread() const {
   return std::this_thread::get_id() == loop_->get_id();
 }
 
-std::unique_ptr<Monitor> Loop::monitor(
+std::shared_ptr<Monitor> Loop::monitor(
     int fd,
     int event,
     Monitor::TFunction fn) {
-  return std::make_unique<Monitor>(
-      shared_from_this(), fd, event, std::move(fn));
+  auto monitor =
+      std::make_shared<Monitor>(shared_from_this(), fd, event, std::move(fn));
+  monitor->start();
+  return monitor;
 }
 
 } // namespace shm

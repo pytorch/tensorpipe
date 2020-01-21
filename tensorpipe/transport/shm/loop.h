@@ -8,6 +8,7 @@
 #include <memory>
 #include <mutex>
 #include <thread>
+#include <vector>
 
 #include <sys/epoll.h>
 
@@ -39,13 +40,16 @@ class Loop;
 // cancelled already, it is cancelled from the destructor. Be aware
 // that this operation can block and wait for the event loop thread.
 //
-class Monitor : public EventHandler {
+class Monitor : public EventHandler,
+                public std::enable_shared_from_this<Monitor> {
  public:
   using TFunction = std::function<void(Monitor&)>;
 
   Monitor(std::shared_ptr<Loop> loop, int fd, int event, TFunction fn);
 
   ~Monitor() override;
+
+  void start();
 
   void handleEvents(int events) override;
 
@@ -71,7 +75,7 @@ class Loop final : public std::enable_shared_from_this<Loop> {
 
   ~Loop();
 
-  void registerDescriptor(int fd, int events, EventHandler* h);
+  void registerDescriptor(int fd, int events, std::shared_ptr<EventHandler> h);
 
   void unregisterDescriptor(int fd);
 
@@ -81,7 +85,7 @@ class Loop final : public std::enable_shared_from_this<Loop> {
   bool isThisTheLoopThread() const;
 
   // Instantiates an event monitor for the specified fd.
-  std::unique_ptr<Monitor> monitor(int fd, int event, Monitor::TFunction fn);
+  std::shared_ptr<Monitor> monitor(int fd, int event, Monitor::TFunction fn);
 
  private:
   static constexpr auto capacity_ = 64;
@@ -104,6 +108,10 @@ class Loop final : public std::enable_shared_from_this<Loop> {
 
   std::mutex m_;
   std::condition_variable cv_;
+
+  // Store weak_ptr for every registered fd.
+  std::vector<std::weak_ptr<EventHandler>> handlers_;
+  std::mutex handlersMutex_;
 
   // List of functions to run on the next event loop tick.
   std::list<TFunction> deferredFunctions_;

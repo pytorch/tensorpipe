@@ -61,7 +61,7 @@ void initializePeers(
   std::thread connectingThread([&]() {
     auto socket = shm::Socket::createForFamily(AF_UNIX);
     socket->connect(addr);
-    connectingFn(std::make_shared<shm::Connection>(loop, std::move(socket)));
+    connectingFn(shm::Connection::create(loop, std::move(socket)));
   });
 
   // Wait for completion.

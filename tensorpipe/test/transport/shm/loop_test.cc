@@ -49,12 +49,12 @@ TEST(Loop, RegisterUnregister) {
   auto efd = Fd(eventfd(0, EFD_NONBLOCK));
 
   // Test if writable (always).
-  loop->registerDescriptor(efd.fd(), EPOLLOUT | EPOLLONESHOT, handler.get());
+  loop->registerDescriptor(efd.fd(), EPOLLOUT | EPOLLONESHOT, handler);
   ASSERT_EQ(handler->nextEvents(), EPOLLOUT);
   efd.writeOrThrow<uint64_t>(1337);
 
   // Test if readable (only if previously written to).
-  loop->registerDescriptor(efd.fd(), EPOLLIN | EPOLLONESHOT, handler.get());
+  loop->registerDescriptor(efd.fd(), EPOLLIN | EPOLLONESHOT, handler);
   ASSERT_EQ(handler->nextEvents(), EPOLLIN);
   ASSERT_EQ(efd.readOrThrow<uint64_t>(), 1337);
 

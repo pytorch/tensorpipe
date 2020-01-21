@@ -24,7 +24,7 @@ void Listener::accept(accept_callback_fn fn) {
   fn_.emplace(std::move(fn));
 
   // Register with loop for readability events.
-  loop_->registerDescriptor(listener_->fd(), EPOLLIN, this);
+  loop_->registerDescriptor(listener_->fd(), EPOLLIN, shared_from_this());
 }
 
 void Listener::handleEvents(int events) {
@@ -42,7 +42,7 @@ void Listener::handleEvents(int events) {
   auto fn = std::move(fn_).value();
   loop_->unregisterDescriptor(listener_->fd());
   fn_.reset();
-  fn(std::make_shared<Connection>(loop_, socket));
+  fn(Connection::create(loop_, socket));
 }
 
 } // namespace shm

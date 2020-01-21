@@ -43,6 +43,14 @@ class SegmentPrefix {
 
 } // namespace
 
+std::shared_ptr<Connection> Connection::create(
+    std::shared_ptr<Loop> loop,
+    std::shared_ptr<Socket> socket) {
+  auto conn = std::make_shared<Connection>(std::move(loop), std::move(socket));
+  conn->start();
+  return conn;
+}
+
 Connection::Connection(
     std::shared_ptr<Loop> loop,
     std::shared_ptr<Socket> socket)
@@ -60,14 +68,16 @@ Connection::Connection(
   inboxSegmentPrefix_ = buildSegmentPrefix(inboxEventFd_);
   inbox_.emplace(util::ringbuffer::shm::create<TRingBuffer>(
       inboxSegmentPrefix_, kDefaultSize, false));
-
-  // We're going to send the eventfd first, so wait for writability.
-  state_ = SEND_EVENTFD;
-  loop_->registerDescriptor(socket_->fd(), EPOLLOUT, this);
 }
 
 Connection::~Connection() {
   close();
+}
+
+void Connection::start() {
+  // We're going to send the eventfd first, so wait for writability.
+  state_ = SEND_EVENTFD;
+  loop_->registerDescriptor(socket_->fd(), EPOLLOUT, shared_from_this());
 }
 
 // Implementation of transport::Connection.
@@ -131,7 +141,7 @@ void Connection::handleEventIn() {
 
     // Start ringbuffer prefix exchange.
     state_ = SEND_SEGMENT_PREFIX;
-    loop_->registerDescriptor(socket_->fd(), EPOLLOUT, this);
+    loop_->registerDescriptor(socket_->fd(), EPOLLOUT, shared_from_this());
     return;
   }
 
@@ -183,7 +193,7 @@ void Connection::handleEventOut() {
 
     // Sent our eventfd. Wait for eventfd from peer.
     state_ = RECV_EVENTFD;
-    loop_->registerDescriptor(socket_->fd(), EPOLLIN, this);
+    loop_->registerDescriptor(socket_->fd(), EPOLLIN, shared_from_this());
     return;
   }
 
@@ -195,7 +205,7 @@ void Connection::handleEventOut() {
     }
 
     state_ = RECV_SEGMENT_PREFIX;
-    loop_->registerDescriptor(socket_->fd(), EPOLLIN, this);
+    loop_->registerDescriptor(socket_->fd(), EPOLLIN, shared_from_this());
     return;
   }
 
@@ -222,7 +232,7 @@ void Connection::handleInboxReadable() {
 }
 
 void Connection::triggerProcessReadOperations() {
-  loop_->run([&] {
+  loop_->run([ptr{shared_from_this()}, this] {
     std::unique_lock<std::mutex> lock(mutex_);
     processReadOperations(std::move(lock));
   });
@@ -278,7 +288,7 @@ void Connection::processReadOperationsInErrorState(
 }
 
 void Connection::triggerProcessWriteOperations() {
-  loop_->run([&] {
+  loop_->run([ptr{shared_from_this()}, this] {
     std::unique_lock<std::mutex> lock(mutex_);
     processWriteOperations(std::move(lock));
   });
