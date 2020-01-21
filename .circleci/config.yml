@@ -38,6 +38,10 @@ jobs:
               << parameters.cmake_compiler >> \
               << parameters.cmake_args >>
             make VERBOSE=1
+      - run:
+          name: Test
+          command: |
+            build/tensorpipe/test/transport/shm/transport_shm_test
   format:
     docker:
       - image: ubuntu:18.04
