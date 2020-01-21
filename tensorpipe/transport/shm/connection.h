@@ -40,9 +40,18 @@ class Connection final : public transport::Connection,
     DESTROYING,
   };
 
+ public:
+  static std::shared_ptr<Connection> create(
+      std::shared_ptr<Loop> loop,
+      std::shared_ptr<Socket> socket);
+
   Connection(std::shared_ptr<Loop> loop, std::shared_ptr<Socket> socket);
 
   ~Connection() override;
+
+  // Kickstart connection state machine. Must be called outside
+  // constructor because it calls `shared_from_this()`.
+  void start();
 
   // Implementation of transport::Connection.
   void read(read_callback_fn fn) override;
@@ -91,7 +100,7 @@ class Connection final : public transport::Connection,
   optional<TProducer> outbox_;
 
   // Monitors the eventfd of the inbox.
-  std::unique_ptr<Monitor> inboxMonitor_;
+  std::shared_ptr<Monitor> inboxMonitor_;
 
   // Reads happen only if the user supplied a callback (and optionally
   // a destination buffer). The callback is run from the event loop
