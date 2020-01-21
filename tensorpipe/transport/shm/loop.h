@@ -129,7 +129,7 @@ class Loop final : public std::enable_shared_from_this<Loop> {
   std::mutex handlersMutex_;
 
   // List of functions to run on the next event loop tick.
-  std::list<TFunction> deferredFunctions_;
+  std::list<TFunction> functions_;
 };
 
 } // namespace shm

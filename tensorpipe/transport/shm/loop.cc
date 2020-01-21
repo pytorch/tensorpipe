@@ -111,7 +111,7 @@ std::future<void> Loop::run(TFunction fn) {
   // we use it from a std::function which must be copyable.
   auto promise = std::make_shared<std::promise<void>>();
   auto future = promise->get_future();
-  deferredFunctions_.push_back(
+  functions_.push_back(
       [promise{std::move(promise)}, fn{std::move(fn)}]() mutable {
         try {
           fn();
@@ -162,15 +162,15 @@ void Loop::loop() {
     }
 
     // Store functions to run on the event loop thread on the stack.
-    decltype(deferredFunctions_) fns;
+    decltype(functions_) stackFunctions;
 
     {
       std::unique_lock<std::mutex> lock(m_);
-      std::swap(fns, deferredFunctions_);
+      std::swap(stackFunctions, functions_);
     }
 
     // Run deferred functions.
-    for (auto& fn : fns) {
+    for (auto& fn : stackFunctions) {
       fn();
     }
   }
