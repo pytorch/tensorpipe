@@ -98,6 +98,8 @@ TEST(Connection, Initialization) {
         // Wait for the write callback to be called.
         writes.pop();
       });
+
+  loop->join();
 }
 
 TEST(Connection, InitializationError) {
@@ -118,4 +120,6 @@ TEST(Connection, InitializationError) {
         auto error = errors.pop();
         ASSERT_TRUE(error);
       });
+
+  loop->join();
 }
