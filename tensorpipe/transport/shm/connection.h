@@ -80,7 +80,7 @@ class Connection final : public transport::Connection,
   // Handle inbox being readable.
   // Note that this is triggered from the monitor of the eventfd,
   // so the instance lock must be acquired here.
-  void handleInboxReadable();
+  void handleInboxReadable(std::unique_lock<std::mutex> lock);
 
  private:
   std::mutex mutex_;
@@ -154,6 +154,11 @@ class Connection final : public transport::Connection,
   std::deque<WriteOperation> writeOperations_;
   size_t writeOperationsPending_;
 
+  // Read value from the inbox eventfd and increment
+  // readOperationsPending_ if applicable. If the eventfd is not
+  // readable, this is a no-op.
+  void readInboxEventFd();
+
   // Defer execution of processReadOperations to loop thread.
   void triggerProcessReadOperations();
 
@@ -165,6 +170,9 @@ class Connection final : public transport::Connection,
 
   // Process pending write operations if in an operational state.
   void processWriteOperations(std::unique_lock<std::mutex> lock);
+
+  // Set error object while holding mutex.
+  void setErrorHoldingMutex(Error&&);
 
   // Fail with error while holding mutex.
   void failHoldingMutex(Error&&);
