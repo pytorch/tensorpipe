@@ -108,26 +108,21 @@ void Connection::write(const void* ptr, size_t length, write_callback_fn fn) {
 }
 
 void Connection::handleEvents(int events) {
-  std::unique_lock<std::mutex> lock(mutex_, std::try_to_lock);
-  if (!lock) {
-    return;
+  if (events & EPOLLIN) {
+    handleEventIn(std::unique_lock<std::mutex>(mutex_));
   }
-
-  if ((events & EPOLLIN) && socket_) {
-    handleEventIn();
+  if (events & EPOLLOUT) {
+    handleEventOut(std::unique_lock<std::mutex>(mutex_));
   }
-  if ((events & EPOLLOUT) && socket_) {
-    handleEventOut();
+  if (events & EPOLLERR) {
+    handleEventErr(std::unique_lock<std::mutex>(mutex_));
   }
-  if ((events & EPOLLERR) && socket_) {
-    handleEventErr();
-  }
-  if ((events & EPOLLHUP) && socket_) {
-    handleEventHup();
+  if (events & EPOLLHUP) {
+    handleEventHup(std::unique_lock<std::mutex>(mutex_));
   }
 }
 
-void Connection::handleEventIn() {
+void Connection::handleEventIn(std::unique_lock<std::mutex> lock) {
   if (state_ == RECV_EVENTFD) {
     optional<Fd> fd;
     auto err = socket_->recvFd(&fd);
@@ -183,7 +178,7 @@ void Connection::handleEventIn() {
   TP_LOG_WARNING() << "handleEventIn not handled";
 }
 
-void Connection::handleEventOut() {
+void Connection::handleEventOut(std::unique_lock<std::mutex> lock) {
   if (state_ == SEND_EVENTFD) {
     auto err = socket_->sendFd(inboxEventFd_);
     if (err) {
@@ -212,11 +207,11 @@ void Connection::handleEventOut() {
   TP_LOG_WARNING() << "handleEventOut not handled";
 }
 
-void Connection::handleEventErr() {
+void Connection::handleEventErr(std::unique_lock<std::mutex> lock) {
   closeHoldingMutex();
 }
 
-void Connection::handleEventHup() {
+void Connection::handleEventHup(std::unique_lock<std::mutex> lock) {
   closeHoldingMutex();
 }
 
