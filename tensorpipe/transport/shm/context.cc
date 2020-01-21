@@ -11,6 +11,10 @@ Context::Context() : loop_(std::make_shared<Loop>()) {}
 
 Context::~Context() {}
 
+void Context::join() {
+  loop_->join();
+}
+
 std::shared_ptr<transport::Connection> Context::connect(address_t addr) {
   auto sockaddr = Sockaddr::createAbstractUnixAddr(addr);
   auto socket = Socket::createForFamily(AF_UNIX);
@@ -21,10 +25,6 @@ std::shared_ptr<transport::Connection> Context::connect(address_t addr) {
 std::shared_ptr<transport::Listener> Context::listen(address_t addr) {
   auto sockaddr = Sockaddr::createAbstractUnixAddr(addr);
   return Listener::create(loop_, sockaddr);
-}
-
-void Context::join() {
-  loop_->join();
 }
 
 } // namespace shm
