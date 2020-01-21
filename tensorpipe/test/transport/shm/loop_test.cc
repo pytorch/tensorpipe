@@ -73,15 +73,18 @@ TEST(Loop, Monitor) {
     bool done = false;
 
     // Test if writable (always).
-    auto monitor = loop->monitor(efd.fd(), EPOLLOUT, [&](Monitor& m) {
-      {
-        std::unique_lock<std::mutex> lock(mutex);
-        done = true;
-        efd.writeOrThrow<uint64_t>(kValue);
-      }
-      m.cancel();
-      cv.notify_all();
-    });
+    auto shared = std::make_shared<int>(1338);
+    auto monitor = loop->monitor<int>(
+        shared, efd.fd(), EPOLLOUT, [&](int& i, FunctionEventHandler& handler) {
+          ASSERT_EQ(i, 1338);
+          {
+            std::unique_lock<std::mutex> lock(mutex);
+            done = true;
+            efd.writeOrThrow<uint64_t>(kValue);
+          }
+          handler.cancel();
+          cv.notify_all();
+        });
 
     // Wait for monitor to trigger and perform a write.
     std::unique_lock<std::mutex> lock(mutex);
@@ -97,15 +100,18 @@ TEST(Loop, Monitor) {
     uint64_t value = 0;
 
     // Test if readable (only if previously written to).
-    auto monitor = loop->monitor(efd.fd(), EPOLLIN, [&](Monitor& m) {
-      {
-        std::unique_lock<std::mutex> lock(mutex);
-        done = true;
-        value = efd.readOrThrow<uint64_t>();
-      }
-      m.cancel();
-      cv.notify_all();
-    });
+    auto shared = std::make_shared<int>(1338);
+    auto monitor = loop->monitor<int>(
+        shared, efd.fd(), EPOLLIN, [&](int& i, FunctionEventHandler& handler) {
+          ASSERT_EQ(i, 1338);
+          {
+            std::unique_lock<std::mutex> lock(mutex);
+            done = true;
+            value = efd.readOrThrow<uint64_t>();
+          }
+          handler.cancel();
+          cv.notify_all();
+        });
 
     // Wait for monitor to trigger and perform a read.
     std::unique_lock<std::mutex> lock(mutex);

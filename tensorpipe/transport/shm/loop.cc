@@ -8,67 +8,32 @@ namespace tensorpipe {
 namespace transport {
 namespace shm {
 
-Monitor::Monitor(std::shared_ptr<Loop> loop, int fd, int event, TFunction fn)
+FunctionEventHandler::FunctionEventHandler(
+    std::shared_ptr<Loop> loop,
+    int fd,
+    int event,
+    TFunction fn)
     : loop_(std::move(loop)), fd_(fd), event_(event), fn_(std::move(fn)) {}
 
-Monitor::~Monitor() {
+FunctionEventHandler::~FunctionEventHandler() {
   cancel();
 }
 
-void Monitor::start() {
+void FunctionEventHandler::start() {
   loop_->registerDescriptor(fd_, event_, shared_from_this());
 }
 
-void Monitor::handleEvents(int events) {
-  if (events & event_) {
-    fn_(*this);
+void FunctionEventHandler::cancel() {
+  std::unique_lock<std::mutex> lock(mutex_);
+  if (!cancelled_) {
+    loop_->unregisterDescriptor(fd_);
+    cancelled_ = true;
   }
 }
 
-// Cancel this event monitor.
-//
-// This function can be called by any thread, including the event
-// loop thread (e.g. from the function called from `handleEvents`).
-//
-// Take extreme care to make this function re-entrant and that it
-// doesn't take a false dependency (e.g. have the event loop thread
-// wait on cancellation to complete while some other thread is
-// waiting for an event loop tick).
-//
-void Monitor::cancel() {
-  std::unique_lock<std::mutex> lock(mutex_);
-
-  // If this monitor was not yet cancelled, cancel it now.
-  if (!cancelled_) {
-    if (!cancelling_) {
-      cancelling_ = true;
-
-      // Unlock before unregistering because unregistering waits for
-      // an event loop tick to finish. If the monitor function calls
-      // this function, it must not deadlock.
-      lock.unlock();
-      loop_->unregisterDescriptor(fd_);
-
-      lock.lock();
-      cancelled_ = true;
-      lock.unlock();
-
-      cv_.notify_all();
-      return;
-    }
-
-    // Some other thread started cancellation and may be waiting for
-    // an event loop tick. If this is the event loop thread, we
-    // cannot block, or we'll block the thread that started
-    // cancellation, waiting on a tick in `unregisterDescriptor`.
-    if (loop_->isThisTheLoopThread()) {
-      return;
-    }
-
-    // Wait for cancellation to complete.
-    while (!cancelled_) {
-      cv_.wait(lock);
-    }
+void FunctionEventHandler::handleEvents(int events) {
+  if (events & event_) {
+    fn_(*this);
   }
 }
 
@@ -234,16 +199,6 @@ void Loop::loop() {
 
 bool Loop::isThisTheLoopThread() const {
   return std::this_thread::get_id() == loop_->get_id();
-}
-
-std::shared_ptr<Monitor> Loop::monitor(
-    int fd,
-    int event,
-    Monitor::TFunction fn) {
-  auto monitor =
-      std::make_shared<Monitor>(shared_from_this(), fd, event, std::move(fn));
-  monitor->start();
-  return monitor;
 }
 
 } // namespace shm

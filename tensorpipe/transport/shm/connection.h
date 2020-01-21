@@ -89,7 +89,7 @@ class Connection final : public transport::Connection,
   // Handle inbox being readable.
   // Note that this is triggered from the monitor of the eventfd,
   // so the instance lock must be acquired here.
-  void handleInboxReadable(std::unique_lock<std::mutex> lock);
+  void handleInboxReadable();
 
  private:
   std::mutex mutex_;
@@ -109,7 +109,7 @@ class Connection final : public transport::Connection,
   optional<TProducer> outbox_;
 
   // Monitors the eventfd of the inbox.
-  std::shared_ptr<Monitor> inboxMonitor_;
+  std::shared_ptr<FunctionEventHandler> inboxMonitor_;
 
   // Reads happen only if the user supplied a callback (and optionally
   // a destination buffer). The callback is run from the event loop

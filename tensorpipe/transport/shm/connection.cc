@@ -158,10 +158,12 @@ void Connection::handleEventIn(std::unique_lock<std::mutex> lock) {
     // Monitor eventfd of inbox for reads.
     // If it is readable, it means our peer placed a message in our
     // inbox ringbuffer and is waking us up to process it.
-    inboxMonitor_ =
-        loop_->monitor(inboxEventFd_.fd(), EPOLLIN, [this](Monitor& monitor) {
-          std::unique_lock<std::mutex> lock(mutex_);
-          handleInboxReadable(std::move(lock));
+    inboxMonitor_ = loop_->monitor<Connection>(
+        shared_from_this(),
+        inboxEventFd_.fd(),
+        EPOLLIN,
+        [](Connection& conn, FunctionEventHandler& /* unused */) {
+          conn.handleInboxReadable();
         });
 
     // The connection is usable now.
@@ -221,7 +223,8 @@ void Connection::handleEventHup(std::unique_lock<std::mutex> lock) {
   closeHoldingMutex();
 }
 
-void Connection::handleInboxReadable(std::unique_lock<std::mutex> lock) {
+void Connection::handleInboxReadable() {
+  std::unique_lock<std::mutex> lock(mutex_);
   readInboxEventFd();
   processReadOperations(std::move(lock));
 }
