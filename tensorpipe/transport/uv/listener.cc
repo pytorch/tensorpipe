@@ -55,10 +55,16 @@ void Listener::connectionCallback(int status) {
     return;
   }
 
-  // TODO: accept connection from loop.
-  if (fn_) {
-    fn_.value()(Connection::create(loop_));
+  auto connection = loop_->createHandle<TCPHandle>();
+  listener_->accept(connection);
+  if (!fn_) {
+    TP_LOG_WARNING() << "closing accepted connection because listener "
+                     << "doesn't have an accept callback";
+    connection->close();
+    return;
   }
+
+  fn_.value()(Connection::create(loop_, std::move(connection)));
 }
 
 } // namespace uv

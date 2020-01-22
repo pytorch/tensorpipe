@@ -121,6 +121,16 @@ class StreamHandle : public BaseHandle<T, U> {
     });
   }
 
+  template <typename V>
+  void accept(std::shared_ptr<V> other) {
+    this->loop_->run([&] {
+      auto rv = uv_accept(
+          reinterpret_cast<uv_stream_t*>(this->ptr()),
+          reinterpret_cast<uv_stream_t*>(other->ptr()));
+      TP_THROW_UV_IF(rv < 0, rv);
+    });
+  }
+
  protected:
   std::mutex mutex_;
   optional<TConnectionCallback> fn_;
