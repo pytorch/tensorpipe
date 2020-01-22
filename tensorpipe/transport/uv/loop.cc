@@ -39,18 +39,25 @@ void Loop::join() {
 }
 
 void Loop::run(std::function<void()> fn) {
-  std::future<void> future;
+  // If we're running on the event loop thread, run function
+  // immediately. Otherwise, schedule it to be run by the event loop
+  // thread and wake it up.
+  if (std::this_thread::get_id() == thread_->get_id()) {
+    fn();
+  } else {
+    std::future<void> future;
 
-  {
-    std::unique_lock<std::mutex> lock(mutex_);
-    fns_.emplace_back(std::move(fn));
-    future = fns_.back().p_.get_future();
-    auto rv = uv_async_send(async_.get());
-    TP_THROW_UV_IF(rv < 0, rv);
+    {
+      std::unique_lock<std::mutex> lock(mutex_);
+      fns_.emplace_back(std::move(fn));
+      future = fns_.back().p_.get_future();
+      auto rv = uv_async_send(async_.get());
+      TP_THROW_UV_IF(rv < 0, rv);
+    }
+
+    // Wait for function to run.
+    future.get();
   }
-
-  // Wait for function to run.
-  future.get();
 }
 
 void Loop::loop() {
