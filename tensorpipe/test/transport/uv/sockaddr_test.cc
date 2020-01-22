@@ -48,12 +48,14 @@ TEST(Sockaddr, Inet) {
     auto sa = uv::Sockaddr::createInetSockAddr("1.2.3.4:0");
     ASSERT_EQ(family(sa), AF_INET);
     ASSERT_EQ(port(sa), 0);
+    ASSERT_EQ(sa.str(), "1.2.3.4:0");
   }
 
   {
     auto sa = uv::Sockaddr::createInetSockAddr("1.2.3.4");
     ASSERT_EQ(family(sa), AF_INET);
     ASSERT_EQ(port(sa), 0);
+    ASSERT_EQ(sa.str(), "1.2.3.4:0");
   }
 }
 
@@ -78,11 +80,13 @@ TEST(Sockaddr, Inet6) {
     auto sa = uv::Sockaddr::createInetSockAddr("[::1]:0");
     ASSERT_EQ(family(sa), AF_INET6);
     ASSERT_EQ(port(sa), 0);
+    ASSERT_EQ(sa.str(), "[::1]:0");
   }
 
   {
     auto sa = uv::Sockaddr::createInetSockAddr("::1");
     ASSERT_EQ(family(sa), AF_INET6);
     ASSERT_EQ(port(sa), 0);
+    ASSERT_EQ(sa.str(), "[::1]:0");
   }
 }
