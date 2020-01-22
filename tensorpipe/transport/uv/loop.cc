@@ -23,27 +23,19 @@ Loop::Loop()
 }
 
 Loop::~Loop() noexcept {
-  if (thread_) {
-    close();
-  }
+  // Thread must have been joined before destructing the loop.
+  TP_DCHECK(!thread_);
+  // Release resources associated with loop.
+  auto rv = uv_loop_close(loop_.get());
+  TP_DCHECK(rv == 0);
 }
 
-void Loop::close() {
-  // Close our internal async handle and tell event loop to stop as
-  // soon as possible. If there are other active handles or requests,
-  // uv_run returns a non-zero value and the event loop thread throws.
-  run([&] {
-    uv_close(reinterpret_cast<uv_handle_t*>(async_.get()), nullptr);
-    uv_stop(loop_.get());
-  });
+void Loop::join() {
+  run([&] { uv_close(reinterpret_cast<uv_handle_t*>(async_.get()), nullptr); });
 
   // Wait for event loop thread to terminate.
   thread_->join();
   thread_.reset();
-
-  // Destruct loop.
-  auto rv = uv_loop_close(loop_.get());
-  TP_THROW_UV_IF(rv < 0, rv);
 }
 
 void Loop::run(std::function<void()> fn) {

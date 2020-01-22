@@ -21,7 +21,7 @@ class Loop final : public std::enable_shared_from_this<Loop> {
 
   ~Loop() noexcept;
 
-  void close();
+  void join();
 
   void run(std::function<void()> fn);
 
