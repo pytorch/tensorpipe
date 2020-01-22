@@ -1,11 +1,13 @@
 #include <tensorpipe/transport/uv/sockaddr.h>
 
 #include <cstring>
+#include <sstream>
 #include <utility>
 
-#include <tensorpipe/common/defs.h>
-
 #include <uv.h>
+
+#include <tensorpipe/common/defs.h>
+#include <tensorpipe/transport/uv/macros.h>
 
 namespace tensorpipe {
 namespace transport {
@@ -85,8 +87,27 @@ Sockaddr Sockaddr::createInetSockAddr(const std::string& str) {
   TP_THROW_EINVAL() << str;
 }
 
-Sockaddr::Sockaddr(const struct sockaddr_storage& addr, socklen_t addrlen)
-    : addr_(addr), addrlen_(addrlen) {}
+std::string Sockaddr::str() const {
+  std::ostringstream oss;
+
+  if (addr_.ss_family == AF_INET) {
+    std::array<char, 64> buf;
+    auto in = reinterpret_cast<const struct sockaddr_in*>(&addr_);
+    auto rv = uv_inet_ntop(AF_INET, &in->sin_addr, buf.data(), buf.size());
+    TP_THROW_UV_IF(rv < 0, rv);
+    oss << buf.data() << ":" << htons(in->sin_port);
+  } else if (addr_.ss_family == AF_INET6) {
+    std::array<char, 64> buf;
+    auto in6 = reinterpret_cast<const struct sockaddr_in6*>(&addr_);
+    auto rv = uv_inet_ntop(AF_INET6, &in6->sin6_addr, buf.data(), buf.size());
+    TP_THROW_UV_IF(rv < 0, rv);
+    oss << "[" << buf.data() << "]:" << htons(in6->sin6_port);
+  } else {
+    TP_THROW_EINVAL() << "invalid address family: " << addr_.ss_family;
+  }
+
+  return oss.str();
+}
 
 } // namespace uv
 } // namespace transport

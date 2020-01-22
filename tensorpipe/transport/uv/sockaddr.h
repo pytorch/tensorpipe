@@ -27,6 +27,8 @@ class Sockaddr final {
     return addrlen_;
   }
 
+  std::string str() const;
+
  private:
   struct sockaddr_storage addr_;
   socklen_t addrlen_;
