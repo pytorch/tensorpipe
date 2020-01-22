@@ -25,6 +25,27 @@ class Loop final : public std::enable_shared_from_this<Loop> {
 
   void run(std::function<void()> fn);
 
+  uv_loop_t* ptr() {
+    return loop_.get();
+  }
+
+  template <typename T, typename... Args>
+  std::shared_ptr<T> createHandle(Args&&... args) {
+    auto handle =
+        std::make_shared<T>(shared_from_this(), std::forward<Args>(args)...);
+    handle->leak();
+    handle->init();
+    return handle;
+  }
+
+  template <typename T, typename... Args>
+  std::shared_ptr<T> createRequest(Args&&... args) {
+    auto request =
+        std::make_shared<T>(shared_from_this(), std::forward<Args>(args)...);
+    request->leak();
+    return request;
+  }
+
  private:
   std::unique_ptr<uv_loop_t> loop_;
   std::unique_ptr<uv_async_t> async_;

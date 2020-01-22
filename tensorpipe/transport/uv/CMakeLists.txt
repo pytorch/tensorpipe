@@ -1,2 +1,2 @@
-add_library(tensorpipe_uv loop.cc sockaddr.cc)
+add_library(tensorpipe_uv loop.cc sockaddr.cc uv.cc)
 target_link_libraries(tensorpipe_uv tensorpipe uv)
