@@ -4,6 +4,7 @@
 
 #include <tensorpipe/transport/connection.h>
 #include <tensorpipe/transport/uv/loop.h>
+#include <tensorpipe/transport/uv/sockaddr.h>
 
 namespace tensorpipe {
 namespace transport {
@@ -24,18 +25,16 @@ class Connection : public transport::Connection,
   using transport::Connection::read_callback_fn;
   using transport::Connection::write_callback_fn;
 
-  // Create a connection that is not yet connected.
-  static std::shared_ptr<Connection> create(std::shared_ptr<Loop> loop);
+  // Create a connection that connects to the specified address.
+  static std::shared_ptr<Connection> create(
+      std::shared_ptr<Loop> loop,
+      const Sockaddr& addr);
 
   // Create a connection that is already connected (e.g. from a listener).
   static std::shared_ptr<Connection> create(
       std::shared_ptr<Loop> loop,
       std::shared_ptr<TCPHandle> handle);
 
-  // Construct a connection that is not yet connected.
-  Connection(ConstructorToken, std::shared_ptr<Loop> loop);
-
-  // Construct a connection that is already connected (e.g. from a listener).
   Connection(
       ConstructorToken,
       std::shared_ptr<Loop> loop,

@@ -7,23 +7,21 @@ namespace tensorpipe {
 namespace transport {
 namespace uv {
 
-std::shared_ptr<Connection> Connection::create(std::shared_ptr<Loop> loop) {
-  auto conn = std::make_shared<Connection>(ConstructorToken(), std::move(loop));
-  return conn;
+std::shared_ptr<Connection> Connection::create(
+    std::shared_ptr<Loop> loop,
+    const Sockaddr& addr) {
+  auto handle = loop->createHandle<TCPHandle>();
+  handle->connect(addr);
+  return std::make_shared<Connection>(
+      ConstructorToken(), std::move(loop), std::move(handle));
 }
 
 std::shared_ptr<Connection> Connection::create(
     std::shared_ptr<Loop> loop,
     std::shared_ptr<TCPHandle> handle) {
-  auto conn = std::make_shared<Connection>(
+  return std::make_shared<Connection>(
       ConstructorToken(), std::move(loop), std::move(handle));
-  return conn;
 }
-
-Connection::Connection(
-    ConstructorToken /* unused */,
-    std::shared_ptr<Loop> loop)
-    : loop_(std::move(loop)) {}
 
 Connection::Connection(
     ConstructorToken /* unused */,
