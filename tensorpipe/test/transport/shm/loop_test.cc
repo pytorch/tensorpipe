@@ -38,13 +38,13 @@ class Handler : public EventHandler {
 } // namespace
 
 TEST(Loop, Create) {
-  auto loop = std::make_shared<Loop>();
+  auto loop = Loop::create();
   ASSERT_TRUE(loop);
   loop->join();
 }
 
 TEST(Loop, RegisterUnregister) {
-  auto loop = std::make_shared<Loop>();
+  auto loop = Loop::create();
   auto handler = std::make_shared<Handler>();
   auto efd = Fd(eventfd(0, EFD_NONBLOCK));
 
@@ -67,7 +67,7 @@ TEST(Loop, RegisterUnregister) {
 }
 
 TEST(Loop, Monitor) {
-  auto loop = std::make_shared<Loop>();
+  auto loop = Loop::create();
   auto efd = Fd(eventfd(0, EFD_NONBLOCK));
   constexpr uint64_t kValue = 1337;
 

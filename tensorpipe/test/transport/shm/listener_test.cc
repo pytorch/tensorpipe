@@ -7,7 +7,7 @@
 using namespace tensorpipe::transport;
 
 TEST(Listener, Basics) {
-  auto loop = std::make_shared<shm::Loop>();
+  auto loop = shm::Loop::create();
   auto addr = shm::Sockaddr::createAbstractUnixAddr("foobar");
 
   {
