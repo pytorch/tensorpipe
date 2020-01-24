@@ -64,16 +64,6 @@ Loop::Loop(ConstructorToken /* unused */) {
     eventFd_ = Fd(rv);
   }
 
-  // Register for readability on eventfd(2).
-  // The user data is left empty here because reading from the
-  // eventfd is special cased in the loop's body.
-  struct epoll_event ev;
-  ev.events = EPOLLIN;
-  ev.data.fd = eventFd_.fd();
-  handlers_.resize(eventFd_.fd() + 1);
-  auto rv = epoll_ctl(epollFd_.fd(), EPOLL_CTL_ADD, eventFd_.fd(), &ev);
-  TP_THROW_SYSTEM_IF(rv == -1, errno);
-
   // Start epoll(2) thread.
   loop_.reset(new std::thread(&Loop::loop, this));
 }
@@ -148,6 +138,17 @@ void Loop::wakeup() {
 
 void Loop::loop() {
   std::array<struct epoll_event, capacity_> events;
+
+  // Monitor eventfd for readability. Always read from the eventfd so
+  // that it is no longer readable on the next call to epoll_wait(2).
+  // Note: this is allocated on the stack so that we destroy it upon
+  // terminating the event loop thread.
+  auto wakeupHandler = std::make_shared<FunctionEventHandler>(
+      this, eventFd_.fd(), EPOLLIN, [this](FunctionEventHandler& /* unused */) {
+        eventFd_.readOrThrow<uint64_t>();
+      });
+  wakeupHandler->start();
+
   for (;;) {
     auto nfds = epoll_wait(epollFd_.fd(), events.data(), events.size(), -1);
     if (nfds == -1) {
@@ -203,8 +204,9 @@ void Loop::loop() {
     }
 
     // Return if another thread is waiting in `join` and there is
-    // nothing left to be done.
-    if (done_ && handlerCount_ == 0) {
+    // nothing left to be done. The handler count is equal to 1
+    // because we're always monitoring the eventfd for wakeups.
+    if (done_ && handlerCount_ == 1) {
       return;
     }
   }
