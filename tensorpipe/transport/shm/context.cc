@@ -7,7 +7,7 @@ namespace tensorpipe {
 namespace transport {
 namespace shm {
 
-Context::Context() : loop_(std::make_shared<Loop>()) {}
+Context::Context() : loop_(Loop::create()) {}
 
 Context::~Context() {}
 

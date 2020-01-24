@@ -72,7 +72,7 @@ void initializePeers(
 } // namespace
 
 TEST(Connection, Initialization) {
-  auto loop = std::make_shared<shm::Loop>();
+  auto loop = shm::Loop::create();
   auto addr = shm::Sockaddr::createAbstractUnixAddr("foobar");
   constexpr size_t numBytes = 13;
 
@@ -103,7 +103,7 @@ TEST(Connection, Initialization) {
 }
 
 TEST(Connection, InitializationError) {
-  auto loop = std::make_shared<shm::Loop>();
+  auto loop = shm::Loop::create();
   auto addr = shm::Sockaddr::createAbstractUnixAddr("foobar");
 
   initializePeers(

@@ -48,7 +48,11 @@ void FunctionEventHandler::handleEvents(int events) {
   }
 }
 
-Loop::Loop() {
+std::shared_ptr<Loop> Loop::create() {
+  return std::make_shared<Loop>(ConstructorToken());
+}
+
+Loop::Loop(ConstructorToken /* unused */) {
   {
     auto rv = epoll_create(1);
     TP_THROW_SYSTEM_IF(rv == -1, errno);
