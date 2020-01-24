@@ -44,11 +44,7 @@ class FunctionEventHandler
  public:
   using TFunction = std::function<void(FunctionEventHandler&)>;
 
-  FunctionEventHandler(
-      std::shared_ptr<Loop> loop,
-      int fd,
-      int event,
-      TFunction fn);
+  FunctionEventHandler(Loop* loop, int fd, int event, TFunction fn);
 
   ~FunctionEventHandler() override;
 
@@ -59,7 +55,7 @@ class FunctionEventHandler
   void handleEvents(int events) override;
 
  private:
-  std::shared_ptr<Loop> loop_;
+  Loop* loop_;
   const int fd_;
   const int event_;
   TFunction fn_;
@@ -97,11 +93,17 @@ class Loop final : public std::enable_shared_from_this<Loop> {
       int fd,
       int event,
       std::function<void(T&, FunctionEventHandler&)> fn) {
+    // Note: we capture a shared_ptr to the loop in the lambda below
+    // in order to keep the loop alive from the function event handler
+    // instance. We cannot have the instance store a shared_ptr to the
+    // loop itself, because that would cause a reference cycle when
+    // the loop stores an instance itself.
     auto handler = std::make_shared<FunctionEventHandler>(
-        shared_from_this(),
+        this,
         fd,
         event,
-        [weak{std::weak_ptr<T>{shared}},
+        [loop{shared_from_this()},
+         weak{std::weak_ptr<T>{shared}},
          fn{std::move(fn)}](FunctionEventHandler& handler) {
           auto shared = weak.lock();
           if (shared) {
