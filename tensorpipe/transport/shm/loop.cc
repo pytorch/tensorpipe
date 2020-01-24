@@ -20,11 +20,11 @@ bool is_uninitialized(const std::weak_ptr<T>& weak) {
 } // namespace
 
 FunctionEventHandler::FunctionEventHandler(
-    std::shared_ptr<Loop> loop,
+    Loop* loop,
     int fd,
     int event,
     TFunction fn)
-    : loop_(std::move(loop)), fd_(fd), event_(event), fn_(std::move(fn)) {}
+    : loop_(loop), fd_(fd), event_(event), fn_(std::move(fn)) {}
 
 FunctionEventHandler::~FunctionEventHandler() {
   cancel();
