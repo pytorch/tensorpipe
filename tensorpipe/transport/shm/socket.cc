@@ -7,7 +7,6 @@
 #include <cstring>
 
 #include <tensorpipe/common/defs.h>
-#include <tensorpipe/transport/error_macros.h>
 
 namespace tensorpipe {
 namespace transport {
@@ -115,97 +114,6 @@ void Socket::connect(const Sockaddr& addr) {
     }
     break;
   }
-}
-
-Error Socket::sendFd(const Fd& fd) {
-  using TPayload = int;
-
-  // Build control message.
-  std::array<char, CMSG_SPACE(sizeof(TPayload))> buf;
-  struct cmsghdr* cmsg = reinterpret_cast<struct cmsghdr*>(buf.data());
-  cmsg->cmsg_len = CMSG_LEN(sizeof(TPayload));
-  cmsg->cmsg_level = SOL_SOCKET;
-  cmsg->cmsg_type = SCM_RIGHTS;
-  *reinterpret_cast<int*>(CMSG_DATA(cmsg)) = fd.fd();
-
-  // Build dummy iov with a single NUL byte.
-  struct iovec iov[1];
-  char nul = 0;
-  iov[0].iov_base = &nul;
-  iov[0].iov_len = sizeof(nul);
-
-  // Build message.
-  struct msghdr msg;
-  msg.msg_name = nullptr;
-  msg.msg_namelen = 0;
-  msg.msg_iov = iov;
-  msg.msg_iovlen = sizeof(iov) / sizeof(iov[0]);
-  msg.msg_control = cmsg;
-  msg.msg_controllen = CMSG_LEN(sizeof(TPayload));
-  msg.msg_flags = 0;
-
-  // Send message.
-  for (;;) {
-    auto rv = ::sendmsg(fd_, &msg, 0);
-    if (rv == -1) {
-      if (errno == EINTR) {
-        continue;
-      }
-      return TP_CREATE_ERROR(SystemError, "sendmsg", errno);
-    }
-    if (rv != iov[0].iov_len) {
-      return TP_CREATE_ERROR(ShortWriteError, iov[0].iov_len, rv);
-    }
-    break;
-  }
-
-  return Error::kSuccess;
-}
-
-Error Socket::recvFd(optional<Fd>* fd) {
-  using TPayload = int;
-
-  // Build control message.
-  std::array<char, CMSG_SPACE(sizeof(TPayload))> buf;
-  struct cmsghdr* cmsg = reinterpret_cast<struct cmsghdr*>(buf.data());
-  cmsg->cmsg_len = CMSG_LEN(sizeof(TPayload));
-  cmsg->cmsg_level = SOL_SOCKET;
-  cmsg->cmsg_type = SCM_RIGHTS;
-
-  // Build dummy iov with a single NUL byte.
-  struct iovec iov[1];
-  char nul = 0;
-  iov[0].iov_base = &nul;
-  iov[0].iov_len = sizeof(nul);
-
-  // Build message.
-  struct msghdr msg;
-  msg.msg_name = nullptr;
-  msg.msg_namelen = 0;
-  msg.msg_iov = iov;
-  msg.msg_iovlen = sizeof(iov) / sizeof(iov[0]);
-  msg.msg_control = cmsg;
-  msg.msg_controllen = CMSG_LEN(sizeof(TPayload));
-  msg.msg_flags = 0;
-
-  // Receive message.
-  *fd = nullopt;
-  for (;;) {
-    auto rv = ::recvmsg(fd_, &msg, 0);
-    if (rv == -1) {
-      if (errno == EINTR) {
-        continue;
-      }
-      return TP_CREATE_ERROR(SystemError, "recvmsg", errno);
-    }
-    if (rv != iov[0].iov_len) {
-      return TP_CREATE_ERROR(ShortReadError, iov[0].iov_len, rv);
-    }
-    break;
-  }
-
-  *fd = Fd(*reinterpret_cast<TPayload*>(CMSG_DATA(cmsg)));
-  return Error::kSuccess;
 }
 
 } // namespace shm
