@@ -48,35 +48,6 @@ constexpr PageType getDefaultPageType(uint64_t size) {
   }
 }
 
-/// Parameters to create a new Segment.
-struct CreationMode {
-  // Default mode for directories created in shared memory file system.
-  static constexpr mode_t kDefaultDirMode = S_IRWXU | S_IRWXG | S_IRWXO;
-
-  enum LinkFlags {
-    None = 0x0,
-    // Link to file path right after creation
-    // (do not require an explicit link call).
-    LinkOnCreation = 0x1,
-    // Unlink when Segment object is destroyed.
-    UnlinkOnDestruction = 0x2
-  };
-
-  size_t byte_size;
-  LinkFlags link_flags;
-  mode_t dir; // Creation mode for directories that contain shared memory file.
-  mode_t shm_file; // Creation mode for shared memory files.
-
-  // Factory function to make CreatioMode with permissive modes.
-  static auto allPerms(size_t byte_size, LinkFlags link_flags) {
-    return CreationMode{
-        .byte_size = byte_size,
-        .link_flags = link_flags,
-        .dir = kDefaultDirMode,
-        .shm_file = S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH};
-  }
-};
-
 class Segment {
  public:
   // Default base path for all segments created.
@@ -85,14 +56,9 @@ class Segment {
   Segment(const Segment&) = delete;
   Segment(Segment&&) = delete;
 
-  /// If creation_mode == nullopt, then shm file must
-  /// already exists, otherwise, create directory path
-  /// and new shm file using modes in <creation_mode>.
-  Segment(
-      const std::string& name,
-      bool perm_write,
-      optional<PageType> page_type,
-      optional<CreationMode> creation_mode);
+  Segment(size_t byte_size, bool perm_write, optional<PageType> page_type);
+
+  Segment(int fd, bool perm_write, optional<PageType> page_type);
 
   /// Create read and size shared memory to contain an object of class T.
   ///
@@ -101,10 +67,8 @@ class Segment {
   /// Caller can use the shared_ptr to the underlying Segment.
   template <class T, class... Args>
   static std::pair<std::shared_ptr<T>, std::shared_ptr<Segment>> create(
-      const std::string& name,
       bool perm_write,
       optional<PageType> page_type,
-      CreationMode::LinkFlags link_flags,
       Args&&... args) {
     static_assert(
         !std::is_array<T>::value,
@@ -112,9 +76,7 @@ class Segment {
     static_assert(std::is_trivially_copyable<T>::value, "!");
 
     const auto byte_size = sizeof(T);
-    auto creation_mode = CreationMode::allPerms(byte_size, link_flags);
-    auto segment =
-        std::make_shared<Segment>(name, perm_write, page_type, creation_mode);
+    auto segment = std::make_shared<Segment>(byte_size, perm_write, page_type);
     TP_DCHECK_EQ(segment->getSize(), byte_size);
 
     // Initialize in place. Forward T's constructor arguments.
@@ -134,10 +96,8 @@ class Segment {
   template <class T>
   static std::pair<std::shared_ptr<T>, std::shared_ptr<Segment>> create(
       size_t num_elements,
-      const std::string& name,
       bool perm_write,
-      optional<PageType> page_type,
-      CreationMode::LinkFlags link_flags) {
+      optional<PageType> page_type) {
     static_assert(
         std::is_trivially_copyable<T>::value,
         "Shared memory segments are restricted to only store objects that "
@@ -158,9 +118,7 @@ class Segment {
     static_assert(std::is_same<TScalar[], T>::value, "Type mismatch");
 
     size_t byte_size = sizeof(TScalar) * num_elements;
-    auto creation_mode = CreationMode::allPerms(byte_size, link_flags);
-    auto segment =
-        std::make_shared<Segment>(name, perm_write, page_type, creation_mode);
+    auto segment = std::make_shared<Segment>(byte_size, perm_write, page_type);
     TP_DCHECK_EQ(segment->getSize(), byte_size);
 
     // Initialize in place.
@@ -181,11 +139,10 @@ class Segment {
   /// identical to create<>().
   template <class T, std::enable_if_t<std::is_array<T>::value, int> = 0>
   static std::pair<std::shared_ptr<T>, std::shared_ptr<Segment>> load(
-      const std::string& name,
+      int fd,
       bool perm_write,
       optional<PageType> page_type) {
-    auto segment =
-        std::make_shared<Segment>(name, perm_write, page_type, nullopt);
+    auto segment = std::make_shared<Segment>(fd, perm_write, page_type);
     const size_t size = segment->getSize();
     static_assert(
         std::rank<T>::value == 1,
@@ -203,11 +160,10 @@ class Segment {
   /// identical to create<>().
   template <class T, std::enable_if_t<!std::is_array<T>::value, int> = 0>
   static std::pair<std::shared_ptr<T>, std::shared_ptr<Segment>> load(
-      const std::string& name,
+      int fd,
       bool perm_write,
       optional<PageType> page_type) {
-    auto segment =
-        std::make_shared<Segment>(name, perm_write, page_type, nullopt);
+    auto segment = std::make_shared<Segment>(fd, perm_write, page_type);
     const size_t size = segment->getSize();
     // XXX: Do some checking other than the size that we are loading
     // the right type.
@@ -223,20 +179,9 @@ class Segment {
     return {std::shared_ptr<T>(segment, ptr), segment};
   }
 
-  /// Make Segment's underlying shm file visible to others in file path
-  /// provided at construction.
-  ///
-  /// This is implemented following man 2 open in O_TMPFILE,
-  /// Uses O_TMPFILE and delayed linking to avoid race conditions between
-  /// file initialization and opening by other processes.
-  void link();
-
-  /// Auxiliar function to unlink a file segment. Useful when creator
-  /// has set <unlink_on_destruction> to false.
-  static void unlink(const std::string& name);
-
-  /// Create a temporal directory whose path starts with prefix.
-  static std::string createTempDir(const std::string& prefix);
+  const int getFd() const {
+    return fd_;
+  }
 
   void* getPtr() {
     return base_ptr_;
@@ -257,12 +202,6 @@ class Segment {
   ~Segment();
 
  protected:
-  // Unique identifier for memory segment. It must be a canonical path.
-  const std::string name_;
-
-  // If true, unlink the file when Segment is destroyed.
-  const optional<CreationMode> creation_mode_;
-
   // The page used to mmap the segment.
   PageType page_type_;
 
@@ -275,7 +214,7 @@ class Segment {
   // The file descriptor of the shared memory file.
   int fd_ = -1;
 
-  bool linked_ = false;
+  void mmap(bool perm_write, optional<PageType> page_type);
 };
 
 } // namespace shm

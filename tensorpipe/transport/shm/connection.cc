@@ -12,37 +12,6 @@ namespace tensorpipe {
 namespace transport {
 namespace shm {
 
-namespace {
-
-std::string buildSegmentPrefix(const Fd& fd) {
-  std::ostringstream ss;
-  ss << "tensorpipe/" << getpid() << "/" << fd.fd();
-  return ss.str();
-}
-
-// Segment prefix wrapper as a trivially copyable struct.
-// Used to easily send the segment prefix over our socket
-// as a fixed length message.
-class SegmentPrefix {
- public:
-  /* implicit */ SegmentPrefix() {}
-
-  explicit SegmentPrefix(const std::string& name) {
-    TP_ARG_CHECK_LE(name.size(), sizeof(prefix_) - 1);
-    std::memset(prefix_, 0, sizeof(prefix_));
-    std::memcpy(prefix_, name.c_str(), name.size());
-  };
-
-  std::string str() const {
-    return std::string(prefix_, strlen(prefix_));
-  }
-
- private:
-  char prefix_[256];
-};
-
-} // namespace
-
 std::shared_ptr<Connection> Connection::create(
     std::shared_ptr<Loop> loop,
     std::shared_ptr<Socket> socket) {
@@ -67,9 +36,10 @@ Connection::Connection(
   inboxEventFd_ = Fd(fd);
 
   // Create ringbuffer for inbox.
-  inboxSegmentPrefix_ = buildSegmentPrefix(inboxEventFd_);
-  inbox_.emplace(util::ringbuffer::shm::create<TRingBuffer>(
-      inboxSegmentPrefix_, kDefaultSize, false));
+  std::shared_ptr<TRingBuffer> inboxRingBuffer;
+  std::tie(inboxHeaderFd_, inboxDataFd_, inboxRingBuffer) =
+      util::ringbuffer::shm::create<TRingBuffer>(kDefaultSize);
+  inbox_.emplace(std::move(inboxRingBuffer));
 }
 
 Connection::~Connection() {
@@ -78,7 +48,7 @@ Connection::~Connection() {
 
 void Connection::start() {
   // We're going to send the eventfd first, so wait for writability.
-  state_ = SEND_EVENTFD;
+  state_ = SEND_FDS;
   loop_->registerDescriptor(socket_->fd(), EPOLLOUT, shared_from_this());
 }
 
@@ -138,31 +108,16 @@ void Connection::handleEvents(int events) {
 }
 
 void Connection::handleEventIn(std::unique_lock<std::mutex> lock) {
-  if (state_ == RECV_EVENTFD) {
-    auto err = socket_->recvFds(outboxEventFd_);
-    if (err) {
-      failHoldingMutex(std::move(err));
-      return;
-    }
-
-    // Start ringbuffer prefix exchange.
-    state_ = SEND_SEGMENT_PREFIX;
-    loop_->registerDescriptor(socket_->fd(), EPOLLOUT, shared_from_this());
-    return;
-  }
-
-  if (state_ == RECV_SEGMENT_PREFIX) {
-    SegmentPrefix segmentPrefix;
-    auto err = socket_->read(&segmentPrefix);
+  if (state_ == RECV_FDS) {
+    auto err = socket_->recvFds(outboxEventFd_, outboxHeaderFd_, outboxDataFd_);
     if (err) {
       failHoldingMutex(std::move(err));
       return;
     }
 
     // Load ringbuffer for outbox.
-    outboxSegmentPrefix_ = segmentPrefix.str();
-    outbox_.emplace(
-        util::ringbuffer::shm::load<TRingBuffer>(outboxSegmentPrefix_));
+    outbox_.emplace(util::ringbuffer::shm::load<TRingBuffer>(
+        outboxHeaderFd_, outboxDataFd_));
 
     // Monitor eventfd of inbox for reads.
     // If it is readable, it means our peer placed a message in our
@@ -197,27 +152,15 @@ void Connection::handleEventIn(std::unique_lock<std::mutex> lock) {
 }
 
 void Connection::handleEventOut(std::unique_lock<std::mutex> lock) {
-  if (state_ == SEND_EVENTFD) {
-    auto err = socket_->sendFds(inboxEventFd_);
+  if (state_ == SEND_FDS) {
+    auto err = socket_->sendFds(inboxEventFd_, inboxHeaderFd_, inboxDataFd_);
     if (err) {
       failHoldingMutex(std::move(err));
       return;
     }
 
-    // Sent our eventfd. Wait for eventfd from peer.
-    state_ = RECV_EVENTFD;
-    loop_->registerDescriptor(socket_->fd(), EPOLLIN, shared_from_this());
-    return;
-  }
-
-  if (state_ == SEND_SEGMENT_PREFIX) {
-    auto err = socket_->write(SegmentPrefix(inboxSegmentPrefix_));
-    if (err) {
-      failHoldingMutex(std::move(err));
-      return;
-    }
-
-    state_ = RECV_SEGMENT_PREFIX;
+    // Sent our fds. Wait for fds from peer.
+    state_ = RECV_FDS;
     loop_->registerDescriptor(socket_->fd(), EPOLLIN, shared_from_this());
     return;
   }

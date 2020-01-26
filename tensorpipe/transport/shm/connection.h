@@ -38,10 +38,8 @@ class Connection final : public transport::Connection,
 
   enum State {
     INITIALIZING = 1,
-    SEND_EVENTFD,
-    RECV_EVENTFD,
-    SEND_SEGMENT_PREFIX,
-    RECV_SEGMENT_PREFIX,
+    SEND_FDS,
+    RECV_FDS,
     ESTABLISHED,
     DESTROYING,
   };
@@ -100,12 +98,14 @@ class Connection final : public transport::Connection,
 
   // Inbox.
   Fd inboxEventFd_;
-  std::string inboxSegmentPrefix_;
+  int inboxHeaderFd_;
+  int inboxDataFd_;
   optional<TConsumer> inbox_;
 
   // Outbox.
   Fd outboxEventFd_;
-  std::string outboxSegmentPrefix_;
+  int outboxHeaderFd_;
+  int outboxDataFd_;
   optional<TProducer> outbox_;
 
   // Monitors the eventfd of the inbox.

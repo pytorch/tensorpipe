@@ -1,10 +1,15 @@
+#include <tensorpipe/transport/shm/socket.h>
 #include <tensorpipe/util/shm/segment.h>
+
+#include <sys/eventfd.h>
+#include <sys/socket.h>
 
 #include <thread>
 
 #include <gtest/gtest.h>
 
 using namespace tensorpipe::util::shm;
+using namespace tensorpipe::transport::shm;
 
 // Same process produces and consumes share memory through different mappings.
 TEST(Segment, SameProducerConsumer_Scalar) {
@@ -15,16 +20,13 @@ TEST(Segment, SameProducerConsumer_Scalar) {
   CPU_SET(0, &cpuset);
   sched_setaffinity(0, sizeof(cpu_set_t), &cpuset);
 
-  // Make unique file name for shared memory
-  auto base_name = Segment::createTempDir("tensorpipe_test");
-  std::string name_id =
-      base_name + "afolder/b/SameProducerConsumer_Scalar__test";
-
+  // This must stay alive for the file descriptor to remain open.
+  std::shared_ptr<Segment> producer_segment;
   {
     // Producer part.
     std::shared_ptr<int> my_int_ptr;
-    std::tie(my_int_ptr, std::ignore) = Segment::create<int>(
-        name_id, true, PageType::Default, CreationMode::LinkOnCreation);
+    std::tie(my_int_ptr, producer_segment) =
+        Segment::create<int>(true, PageType::Default);
     int& my_int = *my_int_ptr;
     my_int = 1000;
   }
@@ -35,62 +37,88 @@ TEST(Segment, SameProducerConsumer_Scalar) {
     std::shared_ptr<int> my_int_ptr;
     std::shared_ptr<Segment> segment;
     std::tie(my_int_ptr, segment) =
-        Segment::load<int>(name_id, true, PageType::Default);
+        Segment::load<int>(producer_segment->getFd(), true, PageType::Default);
     EXPECT_EQ(segment->getSize(), sizeof(int));
     EXPECT_EQ(*my_int_ptr, 1000);
   }
-
-  // All done. Unlink to cleanup.
-  Segment::unlink(name_id);
 };
 
 TEST(SegmentManager, SingleProducer_SingleConsumer_Array) {
-  // Make unique file name for shared memory
-  auto base_name = Segment::createTempDir("tensorpipe_test");
-  std::string name_id = base_name + "SingleProducer_SingleConsumer_Array__test";
-
   size_t num_floats = 330000;
 
-  int pid = fork();
+  int sock_fds[2];
+  {
+    int rv = socketpair(AF_UNIX, SOCK_STREAM, 0, sock_fds);
+    if (rv != 0) {
+      TP_THROW_SYSTEM(errno) << "Failed to create socket pair";
+    }
+  }
 
-  EXPECT_GE(pid, 0) << "Fork failed";
+  int event_fd = eventfd(0, 0);
+  if (event_fd < 0) {
+    TP_THROW_SYSTEM(errno) << "Failed to create event fd";
+  }
+
+  int pid = fork();
+  if (pid < 0) {
+    TP_THROW_SYSTEM(errno) << "Failed to fork";
+  }
 
   if (pid == 0) {
-    // children, the producer
+    // child, the producer
+    // Make a scope so shared_ptr's are released even on exit(0).
+    {
+      // use huge pages in creation and not in loading. This should only affects
+      // TLB overhead.
+      std::shared_ptr<float[]> my_floats;
+      std::shared_ptr<Segment> segment;
+      std::tie(my_floats, segment) =
+          Segment::create<float[]>(num_floats, true, PageType::HugeTLB_2MB);
 
-    // use huge pages in creation and not in loading. This should only affects
-    // TLB overhead.
-    std::shared_ptr<float[]> my_floats;
-    std::shared_ptr<Segment> segment;
-    std::tie(my_floats, segment) = Segment::create<float[]>(
-        num_floats,
-        name_id,
-        true,
-        PageType::HugeTLB_2MB,
-        CreationMode::LinkOnCreation);
+      for (int i = 0; i < num_floats; ++i) {
+        my_floats[i] = i;
+      }
 
-    for (int i = 0; i < num_floats; ++i) {
-      my_floats[i] = i;
+      {
+        auto err = sendFdsToSocket(sock_fds[0], segment->getFd());
+        if (err) {
+          TP_THROW_ASSERT() << err.what();
+        }
+      }
+      {
+        uint64_t c;
+        ::read(event_fd, &c, sizeof(uint64_t));
+      }
     }
-
-    sleep(1); // Wait for children to find and open file before unlinking it.
-    Segment::unlink(name_id);
-    // Children exits, releases shm segment shared_ptr first because exit()
-    // won't do so.
-    my_floats = nullptr;
+    // Child exits. Careful when calling exit() directly, because
+    // it does not call destructors. We ensured shared_ptrs were
+    // destroyed before by calling exit(0).
     exit(0);
   }
 
-  // parent
-
-  // wait for other process to create buffer.
-  sleep(1);
+  // parent, the consumer
+  int segment_fd;
+  {
+    auto err = recvFdsFromSocket(sock_fds[1], segment_fd);
+    if (err) {
+      TP_THROW_ASSERT() << err.what();
+    }
+  }
   std::shared_ptr<float[]> my_floats;
   std::shared_ptr<Segment> segment;
   std::tie(my_floats, segment) =
-      Segment::load<float[]>(name_id, false, PageType::Default);
+      Segment::load<float[]>(segment_fd, false, PageType::Default);
   EXPECT_EQ(num_floats * sizeof(float), segment->getSize());
   for (int i = 0; i < num_floats; ++i) {
     EXPECT_EQ(my_floats[i], i);
   }
+  {
+    uint64_t c = 1;
+    ::write(event_fd, &c, sizeof(uint64_t));
+  }
+  ::close(event_fd);
+  ::close(sock_fds[0]);
+  ::close(sock_fds[1]);
+  // Wait for child to make gtest happy.
+  ::wait(nullptr);
 };

@@ -10,14 +10,6 @@ namespace util {
 namespace ringbuffer {
 namespace shm {
 
-namespace {
-
-std::pair<std::string, std::string> segmentNames(const std::string& prefix) {
-  return {prefix + "/rb/header", prefix + "/rb/data"};
-}
-
-} // namespace
-
 /// Creates ringbuffer on shared memory.
 ///
 /// RingBuffer's data can have any <tensorpipe::util::shm::PageType>
@@ -32,65 +24,40 @@ std::pair<std::string, std::string> segmentNames(const std::string& prefix) {
 /// of a RingBuffer (or each CPU's RingBuffer).
 ///
 template <class TRingBuffer>
-auto create(
-    const std::string& segment_prefix,
+std::tuple<int, int, std::shared_ptr<TRingBuffer>> create(
     size_t min_rb_byte_size,
-    bool persistent,
     optional<tensorpipe::util::shm::PageType> data_page_type = nullopt,
     bool perm_write = true) {
-  std::string header_name;
-  std::string data_name;
-  std::tie(header_name, data_name) = segmentNames(segment_prefix);
-  // if buffer is not persistent, it's underlying shared memory segment will
-  // be unlinked with it.
-  // Do not link the shared memory segment to a path on creation because
-  // the ringbuffer needs to be initialized first.
-  const auto link_flags = persistent
-      ? tensorpipe::util::shm::CreationMode::None
-      : tensorpipe::util::shm::CreationMode::UnlinkOnDestruction;
-
   std::shared_ptr<typename TRingBuffer::THeader> header;
   std::shared_ptr<tensorpipe::util::shm::Segment> header_segment;
   std::tie(header, header_segment) =
       tensorpipe::util::shm::Segment::create<typename TRingBuffer::THeader>(
-          header_name,
           perm_write,
           tensorpipe::util::shm::PageType::Default,
-          link_flags,
           min_rb_byte_size);
 
   std::shared_ptr<uint8_t[]> data;
   std::shared_ptr<tensorpipe::util::shm::Segment> data_segment;
   std::tie(data, data_segment) =
       tensorpipe::util::shm::Segment::create<uint8_t[]>(
-          header->kDataPoolByteSize,
-          data_name,
-          perm_write,
-          data_page_type,
-          link_flags);
+          header->kDataPoolByteSize, perm_write, data_page_type);
 
-  auto rb = std::make_shared<TRingBuffer>(std::move(header), std::move(data));
-
-  // Link to make accessible to others.
-  header_segment->link();
-  data_segment->link();
-  return rb;
+  return {header_segment->getFd(),
+          data_segment->getFd(),
+          std::make_shared<TRingBuffer>(std::move(header), std::move(data))};
 }
 
 template <class TRingBuffer>
 std::shared_ptr<TRingBuffer> load(
-    const std::string& segment_prefix,
+    int header_fd,
+    int data_fd,
     optional<tensorpipe::util::shm::PageType> data_page_type = nullopt,
     bool perm_write = true) {
-  std::string header_name;
-  std::string data_name;
-  std::tie(header_name, data_name) = segmentNames(segment_prefix);
-
   std::shared_ptr<typename TRingBuffer::THeader> header;
   std::shared_ptr<tensorpipe::util::shm::Segment> header_segment;
   std::tie(header, header_segment) =
       tensorpipe::util::shm::Segment::load<typename TRingBuffer::THeader>(
-          header_name, perm_write, tensorpipe::util::shm::PageType::Default);
+          header_fd, perm_write, tensorpipe::util::shm::PageType::Default);
   constexpr auto kHeaderSize = sizeof(typename TRingBuffer::THeader);
   if (unlikely(kHeaderSize != header_segment->getSize())) {
     TP_THROW_SYSTEM(EPERM) << "Header segment of unexpected size";
@@ -100,23 +67,12 @@ std::shared_ptr<TRingBuffer> load(
   std::shared_ptr<tensorpipe::util::shm::Segment> data_segment;
   std::tie(data, data_segment) =
       tensorpipe::util::shm::Segment::load<uint8_t[]>(
-          data_name, perm_write, data_page_type);
+          data_fd, perm_write, data_page_type);
   if (unlikely(header->kDataPoolByteSize != data_segment->getSize())) {
     TP_THROW_SYSTEM(EPERM) << "Data segment of unexpected size";
   }
 
   return std::make_shared<TRingBuffer>(std::move(header), std::move(data));
-}
-
-// This function Keep template parameter because we may need to make the segment
-// names depend on the ringbuffer type.
-template <class TRingBuffer>
-inline void unlink(const std::string& segment_prefix) {
-  std::string header_name;
-  std::string data_name;
-  std::tie(header_name, data_name) = segmentNames(segment_prefix);
-  tensorpipe::util::shm::Segment::unlink(header_name);
-  tensorpipe::util::shm::Segment::unlink(data_name);
 }
 
 } // namespace shm
