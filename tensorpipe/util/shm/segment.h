@@ -125,14 +125,7 @@ class Segment {
           << " address. Some aligment assumption was incorrect";
     }
 
-    // Destructor lambda captures a shared pointer to segment and
-    // will destroy it when the shared pointer to T is destroyed,
-    // guaranteeing that the segment is not destroyed before this
-    // instance of T.
-    auto deleter = [segment]([[maybe_unused]] T* ptr) mutable {
-      segment.reset();
-    };
-    return {std::shared_ptr<T>(static_cast<T*>(ptr), deleter), segment};
+    return {std::shared_ptr<T>(segment, ptr), segment};
   }
 
   /// One-dimensional array version of create<T, ...Args>.
@@ -178,13 +171,7 @@ class Segment {
           << " address. Some aligment assumption was incorrect";
     }
 
-    // Destructor lambda captures a copy to segment's smart pointer and
-    // will release it when the shared pointer to T is destroyed.
-    auto deleter = [segment]([[maybe_unused]] TScalar* ptr) mutable {
-      segment.reset();
-    };
-    return {std::shared_ptr<TScalar[]>(static_cast<TScalar*>(ptr), deleter),
-            segment};
+    return {std::shared_ptr<TScalar[]>(segment, ptr), segment};
   }
 
   /// Load an already created shared memory Segment that holds an
@@ -200,21 +187,13 @@ class Segment {
     auto segment =
         std::make_shared<Segment>(name, perm_write, page_type, nullopt);
     const size_t size = segment->getSize();
-    // Destructor lambda captures a copy to segment's smart pointer and
-    // will release it when the shared pointer to T is destroyed.
     static_assert(
         std::rank<T>::value == 1,
         "Currently only rank one arrays are supported");
     using TScalar = typename std::remove_extent<T>::type;
     static_assert(std::is_trivially_copyable<TScalar>::value, "!");
-    // Lambda function to be called by segment shared_ptr destructor.
-    // Do not delete ptr because it was built in place. Instead, release
-    // segment to free the shared memory where object T was constructed.
-    auto deleter = [segment]([[maybe_unused]] T ptr) mutable {
-      segment.reset();
-    };
     auto ptr = static_cast<TScalar*>(segment->getPtr());
-    return {std::shared_ptr<T>(ptr, deleter), segment};
+    return {std::shared_ptr<T>(segment, ptr), segment};
   }
 
   /// Load an already created shared memory Segment that holds an
@@ -239,17 +218,9 @@ class Segment {
           << "If there is a race between creation and loading of segments, "
           << "consider linking segment after it has been fully initialized.";
     }
-    // Destructor lambda captures a copy to segment's smart pointer and
-    // will release it when the shared pointer to T is destroyed.
     static_assert(std::is_trivially_copyable<T>::value, "!");
-    // Lambda function to be called by segment shared_ptr destructor.
-    // Do not delete ptr because it was built in place. Instead, release
-    // segment to free the shared memory where object T was constructed.
-    auto deleter = [segment]([[maybe_unused]] T* ptr) mutable {
-      segment.reset();
-    };
     auto ptr = static_cast<T*>(segment->getPtr());
-    return {std::shared_ptr<T>(ptr, deleter), segment};
+    return {std::shared_ptr<T>(segment, ptr), segment};
   }
 
   /// Make Segment's underlying shm file visible to others in file path
