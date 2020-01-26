@@ -26,9 +26,21 @@ struct MockExtraData {
   }
 };
 
+using TRingBufferHeader = RingBufferHeader<MockExtraData>;
 using TRingBuffer = RingBuffer<MockExtraData>;
 using TProducer = Producer<MockExtraData>;
 using TConsumer = Consumer<MockExtraData>;
+
+std::shared_ptr<TRingBuffer> makeRingBuffer(
+    size_t size,
+    optional<CpuId> cpu = nullopt) {
+  auto header = std::make_shared<TRingBufferHeader>(size, cpu);
+  // In C++20 use std::make_shared<uint8_t[]>(size)
+  auto data = std::shared_ptr<uint8_t[]>(
+      new uint8_t[header->kDataPoolByteSize],
+      [](uint8_t* ptr) { delete[] ptr; });
+  return std::make_shared<TRingBuffer>(std::move(header), std::move(data));
+}
 
 TEST(RingBuffer, WriteCopy) {
   EXPECT_EQ(sizeof(TestData), 6);
@@ -36,7 +48,7 @@ TEST(RingBuffer, WriteCopy) {
   // 16 bytes buffer. Fits two full TestData (each 6).
   size_t size = 1u << 4;
 
-  auto rb = std::make_shared<TRingBuffer>(size);
+  auto rb = makeRingBuffer(size);
   // Make a producer.
   TProducer p{rb};
   // Make a consumer.
@@ -100,7 +112,7 @@ TEST(RingBuffer, ReadWriteString) {
   size_t size = 1u << 5;
   EXPECT_EQ(size, 32);
 
-  auto rb = std::make_shared<TRingBuffer>(size);
+  auto rb = makeRingBuffer(size);
   // Make a producer.
   TProducer p{rb};
   // Make a consumer.
@@ -178,7 +190,7 @@ TEST(RingBuffer, ReadMultipleElems) {
   // 256 bytes buffer.
   size_t size = 1u << 8u;
 
-  auto rb = std::make_shared<TRingBuffer>(size);
+  auto rb = makeRingBuffer(size);
   // Make a producer.
   TProducer p{rb};
   // Make a consumer.
@@ -253,7 +265,7 @@ TEST(RingBuffer, CopyWrapping) {
   // 8 bytes buffer.
   size_t size = 1u << 3;
 
-  auto rb = std::make_shared<TRingBuffer>(size);
+  auto rb = makeRingBuffer(size);
   // Make a producer.
   TProducer p{rb};
   // Make a consumer.
@@ -307,7 +319,7 @@ TEST(RingBuffer, ReadTxWrappingOneCons) {
   // 8 bytes buffer.
   size_t size = 1u << 3;
 
-  auto rb = std::make_shared<TRingBuffer>(size);
+  auto rb = makeRingBuffer(size);
   // Make a producer.
   TProducer p{rb};
   // Make a consumer.
@@ -444,7 +456,7 @@ TEST(RingBuffer, ReadTxWrapping) {
   // 8 bytes buffer.
   size_t size = 1u << 3;
 
-  auto rb = std::make_shared<TRingBuffer>(size);
+  auto rb = makeRingBuffer(size);
   // Make a producer.
   TProducer p{rb};
   // Make consumers.
@@ -593,7 +605,7 @@ TEST(RingBuffer, InTx) {
   // Enough to fit the bytes required to fit all writes.
   size_t size = (1 + 4) + 2 + 2 + 2;
 
-  auto rb = std::make_shared<TRingBuffer>(size);
+  auto rb = makeRingBuffer(size);
   // Make a producer.
   TProducer p{rb};
 
