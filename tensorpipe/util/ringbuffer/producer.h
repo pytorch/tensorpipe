@@ -30,19 +30,17 @@ class Producer : public RingBufferWrapper<THeaderExtraData> {
   // *InTx* operations that fail do not cancel transaction.
   //
   bool inTx() const noexcept {
-    return this->header_.in_write_tx;
+    return this->inTx_;
   }
 
   [[nodiscard]] ssize_t startTx() {
     if (unlikely(inTx())) {
       return -EBUSY;
     }
-    bool f = false;
-    // Weak exchange is fine because caller must
-    // handle unpredictable failures.
-    if (!this->header_.in_write_tx.compare_exchange_weak(f, true)) {
+    if (this->header_.in_write_tx.test_and_set(std::memory_order_acquire)) {
       return -EAGAIN;
     }
+    this->inTx_ = true;
     TP_DCHECK_EQ(this->tx_size_, 0);
     return 0;
   }
@@ -94,7 +92,8 @@ class Producer : public RingBufferWrapper<THeaderExtraData> {
     this->tx_size_ = 0;
     // <in_write_tx> flags that we are in a transaction,
     // so enforce no stores pass it.
-    this->header_.in_write_tx.store(false, std::memory_order_release);
+    this->inTx_ = false;
+    this->header_.in_write_tx.clear(std::memory_order_release);
     return 0;
   }
 
@@ -105,7 +104,8 @@ class Producer : public RingBufferWrapper<THeaderExtraData> {
     this->tx_size_ = 0;
     // <in_write_tx> flags that we are in a transaction,
     // so enforce no stores pass it.
-    this->header_.in_write_tx.store(false, std::memory_order_release);
+    this->inTx_ = false;
+    this->header_.in_write_tx.clear(std::memory_order_release);
     return 0;
   }
 
@@ -174,6 +174,8 @@ class Producer : public RingBufferWrapper<THeaderExtraData> {
   }
 
  protected:
+  bool inTx_{false};
+
   // Return 0 if succeded, otherwise return negative error code.
   // If successful, increases tx_size_ by size.
   [[nodiscard]] ssize_t copyToRingBuffer_(

@@ -71,6 +71,8 @@ class RingBufferHeader {
     TP_DCHECK_LE(kDataPoolByteSize, std::numeric_limits<int>::max())
         << "Logic piggy-backs read/write size on ints, to be safe forbid"
            " buffer to ever be larger than what an int can hold";
+    in_write_tx.clear();
+    in_read_tx.clear();
   }
 
   // Get size that is only guaranteed to be correct when producers and consumers
@@ -103,9 +105,9 @@ class RingBufferHeader {
   }
 
   // acquired by producers.
-  std::atomic_bool in_write_tx{false};
+  std::atomic_flag in_write_tx;
   // acquired by consumers.
-  std::atomic_bool in_read_tx{false};
+  std::atomic_flag in_read_tx;
 
   TExtraData extra_data;
 
@@ -128,12 +130,6 @@ class RingBufferHeader {
   //     "Only lock-free atomics are supported");
   // static_assert(
   //     decltype(atomicTail_)::is_always_lock_free,
-  //     "Only lock-free atomics are supported");
-  // static_assert(
-  //     decltype(in_write_tx)::is_always_lock_free,
-  //     "Only lock-free atomics are supported");
-  // static_assert(
-  //     decltype(in_read_tx)::is_always_lock_free,
   //     "Only lock-free atomics are supported");
 };
 

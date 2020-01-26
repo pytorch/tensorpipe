@@ -45,19 +45,17 @@ class Consumer : public RingBufferWrapper<THeaderExtraData> {
   // *InTx* operations that fail do not cancel transaction.
   //
   bool inTx() const noexcept {
-    return this->header_.in_read_tx;
+    return this->inTx_;
   }
 
   [[nodiscard]] ssize_t startTx() noexcept {
     if (unlikely(inTx())) {
       return -EBUSY;
     }
-    bool f = false;
-    // Weak exchange is fine because caller must
-    // handle unpredictable failures.
-    if (!this->header_.in_read_tx.compare_exchange_weak(f, true)) {
+    if (this->header_.in_read_tx.test_and_set(std::memory_order_acquire)) {
       return -EAGAIN;
     }
+    this->inTx_ = true;
     TP_DCHECK_EQ(this->tx_size_, 0);
     return 0;
   }
@@ -160,9 +158,8 @@ class Consumer : public RingBufferWrapper<THeaderExtraData> {
     }
     this->header_.incTail(this->tx_size_);
     this->tx_size_ = 0;
-    // <in_read_tx> flags that we are in a transaction,
-    // so enforce no stores pass it.
-    this->header_.in_read_tx.store(false, std::memory_order_release);
+    this->inTx_ = false;
+    this->header_.in_read_tx.clear(std::memory_order_release);
     return 0;
   }
 
@@ -250,7 +247,8 @@ class Consumer : public RingBufferWrapper<THeaderExtraData> {
     this->tx_size_ = 0;
     // <in_read_tx> flags that we are in a transaction,
     // so enforce no stores pass it.
-    this->header_.in_read_tx.store(false, std::memory_order_release);
+    this->inTx_ = false;
+    this->header_.in_read_tx.clear(std::memory_order_release);
     return 0;
   }
 
@@ -261,7 +259,8 @@ class Consumer : public RingBufferWrapper<THeaderExtraData> {
     }
     this->tx_size_ = 0;
     this->header_.drop();
-    this->header_.in_read_tx.store(false, std::memory_order_release);
+    this->inTx_ = false;
+    this->header_.in_read_tx.clear(std::memory_order_release);
     return 0;
   }
 
@@ -429,6 +428,7 @@ class Consumer : public RingBufferWrapper<THeaderExtraData> {
  protected:
   uint8_t* aux_buffer_ = nullptr;
   size_t aux_buffer_size_ = 0;
+  bool inTx_{false};
 
   // Get a pointer to next contiguous <size> bytes in ringbuffer's data.
   // May copy to auxiliar buffer if no contiguous.
