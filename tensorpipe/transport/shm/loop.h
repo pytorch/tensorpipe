@@ -80,8 +80,26 @@ class Loop final : public std::enable_shared_from_this<Loop> {
 
   ~Loop();
 
+  // Register file descriptor with event loop.
+  //
+  // Trigger the handler if any of the epoll events in the `events`
+  // mask occurs. The loop stores a weak_ptr to the handler, so it is
+  // the responsibility of the caller to keep the handler alive. If an
+  // event is triggered, the loop first acquires a shared_ptr to the
+  // handler before calling into its handler function. This ensures
+  // that the handler is alive for the duration of this function.
+  //
   void registerDescriptor(int fd, int events, std::shared_ptr<EventHandler> h);
 
+  // Unregister file descriptor from event loop.
+  //
+  // This resets the weak_ptr to the event handler that was registered
+  // in `registerDescriptor`. Upon returning, the handler can no
+  // longer be called, even if there were pending events for the file
+  // descriptor. Only if the loop had acquired a shared_ptr to the
+  // handler prior to this function being called, can the handler
+  // function still be called.
+  //
   void unregisterDescriptor(int fd);
 
   // Run function on event loop thread.
