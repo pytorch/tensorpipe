@@ -157,11 +157,11 @@ class Connection final : public transport::Connection,
 
   // Pending read operations.
   std::deque<ReadOperation> readOperations_;
-  size_t readOperationsPending_;
+  size_t readOperationsPending_{0};
 
   // Pending write operations.
   std::deque<WriteOperation> writeOperations_;
-  size_t writeOperationsPending_;
+  size_t writeOperationsPending_{0};
 
   // Read value from the inbox eventfd and increment
   // readOperationsPending_ if applicable. If the eventfd is not
