@@ -139,15 +139,11 @@ void Connection::handleEvents(int events) {
 
 void Connection::handleEventIn(std::unique_lock<std::mutex> lock) {
   if (state_ == RECV_EVENTFD) {
-    optional<Fd> fd;
-    auto err = socket_->recvFd(&fd);
+    auto err = socket_->recvFds(outboxEventFd_);
     if (err) {
       failHoldingMutex(std::move(err));
       return;
     }
-
-    // Successfully received our peer's eventfd.
-    outboxEventFd_ = std::move(fd.value());
 
     // Start ringbuffer prefix exchange.
     state_ = SEND_SEGMENT_PREFIX;
@@ -202,7 +198,7 @@ void Connection::handleEventIn(std::unique_lock<std::mutex> lock) {
 
 void Connection::handleEventOut(std::unique_lock<std::mutex> lock) {
   if (state_ == SEND_EVENTFD) {
-    auto err = socket_->sendFd(inboxEventFd_);
+    auto err = socket_->sendFds(inboxEventFd_);
     if (err) {
       failHoldingMutex(std::move(err));
       return;
