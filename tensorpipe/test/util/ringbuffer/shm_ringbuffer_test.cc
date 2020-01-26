@@ -1,9 +1,12 @@
+#include <tensorpipe/transport/shm/socket.h>
 #include <tensorpipe/util/ringbuffer/consumer.h>
 #include <tensorpipe/util/ringbuffer/producer.h>
 #include <tensorpipe/util/ringbuffer/ringbuffer.h>
 #include <tensorpipe/util/ringbuffer/shm.h>
 #include <tensorpipe/util/shm/segment.h>
 
+#include <sys/eventfd.h>
+#include <sys/socket.h>
 #include <sys/types.h>
 
 #include <thread>
@@ -12,6 +15,7 @@
 
 using namespace tensorpipe;
 using namespace tensorpipe::util::ringbuffer;
+using namespace tensorpipe::transport::shm;
 
 struct MockExtraData {
   int dummy_data;
@@ -23,17 +27,17 @@ using TConsumer = Consumer<MockExtraData>;
 
 // Same process produces and consumes share memory through different mappings.
 TEST(ShmRingBuffer, SameProducerConsumer) {
-  // Make unique file name for shared memory
-  auto base_name =
-      tensorpipe::util::shm::Segment::createTempDir("tensorpipe_test");
-  std::string name_id = base_name + "SameProducerConsumer__test";
-
+  // This must stay alive for the file descriptors to remain open.
+  std::shared_ptr<TRingBuffer> producer_rb;
+  int header_fd = -1;
+  int data_fd = -1;
   {
     // Producer part.
     // Buffer large enough to fit all data and persistent
     // (needs to be unlinked up manually).
-    auto rb = shm::create<TRingBuffer>(name_id, 256 * 1024, true);
-    TProducer prod{rb};
+    std::tie(header_fd, data_fd, producer_rb) =
+        shm::create<TRingBuffer>(256 * 1024);
+    TProducer prod{producer_rb};
 
     // Producer loop. It all fits in buffer.
     int i = 0;
@@ -47,7 +51,7 @@ TEST(ShmRingBuffer, SameProducerConsumer) {
   {
     // Consumer part.
     // Map file again (to a different address) and consume it.
-    auto rb = shm::load<TRingBuffer>(name_id);
+    auto rb = shm::load<TRingBuffer>(header_fd, data_fd);
     TConsumer cons{rb};
 
     int i = 0;
@@ -59,16 +63,21 @@ TEST(ShmRingBuffer, SameProducerConsumer) {
       ++i;
     }
   }
-
-  // All done. Unlink to cleanup.
-  shm::unlink<TRingBuffer>(name_id);
 };
 
 TEST(ShmRingBuffer, SingleProducer_SingleConsumer) {
-  // Make unique file name for shared memory
-  auto base_name =
-      tensorpipe::util::shm::Segment::createTempDir("tensorpipe_test");
-  std::string name_id = base_name + "SingleProducer_SingleConsumer__test";
+  int sock_fds[2];
+  {
+    int rv = socketpair(AF_UNIX, SOCK_STREAM, 0, sock_fds);
+    if (rv != 0) {
+      TP_THROW_SYSTEM(errno) << "Failed to create socket pair";
+    }
+  }
+
+  int event_fd = eventfd(0, 0);
+  if (event_fd < 0) {
+    TP_THROW_SYSTEM(errno) << "Failed to create event fd";
+  }
 
   int pid = fork();
   if (pid < 0) {
@@ -77,14 +86,20 @@ TEST(ShmRingBuffer, SingleProducer_SingleConsumer) {
 
   if (pid == 0) {
     // child, the producer
+    // Make a scope so shared_ptr's are released even on exit(0).
     {
-      // Make a scope so shared_ptr's are released even on exit(0).
-      //
-      // Shared memory segment is set to be non-persistent. It will be
-      // removed when rb goes out of scope.
-      //
-      auto rb = shm::create<TRingBuffer>(name_id, 1024, false);
+      int header_fd;
+      int data_fd;
+      std::shared_ptr<TRingBuffer> rb;
+      std::tie(header_fd, data_fd, rb) = shm::create<TRingBuffer>(1024);
       TProducer prod{rb};
+
+      {
+        auto err = sendFdsToSocket(sock_fds[0], header_fd, data_fd);
+        if (err) {
+          TP_THROW_ASSERT() << err.what();
+        }
+      }
 
       int i = 0;
       while (i < 2000) {
@@ -98,40 +113,51 @@ TEST(ShmRingBuffer, SingleProducer_SingleConsumer) {
       }
       // Because of buffer size smaller than amount of data written,
       // producer cannot have completed the loop before consumer
-      // started consuming the data. This guarantees that children can
-      // complete (and unlink before, since it's set to be
-      // non-persistent) safely.
-    }
+      // started consuming the data.
 
-    // Children exits. Careful when calling exit() directly, because
+      {
+        uint64_t c;
+        ::read(event_fd, &c, sizeof(uint64_t));
+      }
+    }
+    // Child exits. Careful when calling exit() directly, because
     // it does not call destructors. We ensured shared_ptrs were
     // destroyed before by calling exit(0).
     exit(0);
-  } else {
-    // parent, the consumer
-    {
-      // Wait for other process to create buffer, one second wait is
-      // long enough to reasonably guarantee that the buffer has been
-      // created. XXX: this should use semaphores to remove sleep.
-      sleep(1);
-      auto rb = shm::load<TRingBuffer>(name_id);
-      TConsumer cons{rb};
-
-      int i = 0;
-      while (i < 2000) {
-        int value;
-        ssize_t ret = cons.copy(value);
-        if (ret == -ENODATA) {
-          std::this_thread::yield();
-          continue;
-        }
-        EXPECT_EQ(ret, sizeof(value));
-        EXPECT_EQ(value, i);
-        ++i;
-      }
-    }
-
-    // Wait for children to make gtest happy.
-    wait(nullptr);
   }
+  // parent, the consumer
+
+  // Wait for other process to create buffer.
+  int header_fd;
+  int data_fd;
+  {
+    auto err = recvFdsFromSocket(sock_fds[1], header_fd, data_fd);
+    if (err) {
+      TP_THROW_ASSERT() << err.what();
+    }
+  }
+  auto rb = shm::load<TRingBuffer>(header_fd, data_fd);
+  TConsumer cons{rb};
+
+  int i = 0;
+  while (i < 2000) {
+    int value;
+    ssize_t ret = cons.copy(value);
+    if (ret == -ENODATA) {
+      std::this_thread::yield();
+      continue;
+    }
+    EXPECT_EQ(ret, sizeof(value));
+    EXPECT_EQ(value, i);
+    ++i;
+  }
+  {
+    uint64_t c = 1;
+    ::write(event_fd, &c, sizeof(uint64_t));
+  }
+  ::close(event_fd);
+  ::close(sock_fds[0]);
+  ::close(sock_fds[1]);
+  // Wait for child to make gtest happy.
+  ::wait(nullptr);
 };
