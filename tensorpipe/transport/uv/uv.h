@@ -91,6 +91,32 @@ class BaseRequest : public BaseResource<T, U> {
   U request_;
 };
 
+class WriteRequest final : public BaseRequest<WriteRequest, uv_write_t> {
+  static void uv__write_cb(uv_write_t* req, int status) {
+    WriteRequest* request = reinterpret_cast<WriteRequest*>(req->data);
+    request->writeCallback(status);
+    request->unleak();
+  }
+
+ public:
+  using TWriteCallback = std::function<void(int status)>;
+
+  WriteRequest(std::shared_ptr<Loop> loop, TWriteCallback fn)
+      : BaseRequest<WriteRequest, uv_write_t>(std::move(loop)),
+        fn_(std::move(fn)) {}
+
+  uv_write_cb callback() {
+    return uv__write_cb;
+  }
+
+  void writeCallback(int status) {
+    fn_(status);
+  }
+
+ protected:
+  TWriteCallback fn_;
+};
+
 template <typename T, typename U>
 class StreamHandle : public BaseHandle<T, U> {
   static void uv__connection_cb(uv_stream_t* server, int status) {
@@ -127,6 +153,23 @@ class StreamHandle : public BaseHandle<T, U> {
       auto rv = uv_accept(
           reinterpret_cast<uv_stream_t*>(this->ptr()),
           reinterpret_cast<uv_stream_t*>(other->ptr()));
+      TP_THROW_UV_IF(rv < 0, rv);
+    });
+  }
+
+  void write(
+      const uv_buf_t bufs[],
+      unsigned int nbufs,
+      WriteRequest::TWriteCallback fn) {
+    auto request =
+        this->loop_->template createRequest<WriteRequest>(std::move(fn));
+    this->loop_->run([&] {
+      auto rv = uv_write(
+          request->ptr(),
+          reinterpret_cast<uv_stream_t*>(this->ptr()),
+          bufs,
+          nbufs,
+          request->callback());
       TP_THROW_UV_IF(rv < 0, rv);
     });
   }
