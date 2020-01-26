@@ -69,10 +69,7 @@ auto create(
           data_page_type,
           link_flags);
 
-  // Custom destructor to release shared_ptr's captured by lambda.
-  auto deleter = [header, data](TRingBuffer* rb) { delete rb; };
-  auto rb = std::shared_ptr<TRingBuffer>(
-      new TRingBuffer(header.get(), data.get()), deleter);
+  auto rb = std::make_shared<TRingBuffer>(std::move(header), std::move(data));
 
   // Link to make accessible to others.
   header_segment->link();
@@ -108,10 +105,7 @@ std::shared_ptr<TRingBuffer> load(
     TP_THROW_SYSTEM(EPERM) << "Data segment of unexpected size";
   }
 
-  // Custom destructor to release shared_ptr's captured by lambda.
-  auto deleter = [header, data](TRingBuffer* rb) { delete rb; };
-  return std::shared_ptr<TRingBuffer>(
-      new TRingBuffer(header.get(), data.get()), deleter);
+  return std::make_shared<TRingBuffer>(std::move(header), std::move(data));
 }
 
 // This function Keep template parameter because we may need to make the segment

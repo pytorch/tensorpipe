@@ -148,24 +148,10 @@ class RingBuffer final {
   RingBuffer(const RingBuffer&) = delete;
   RingBuffer(RingBuffer&&) = delete;
 
-  RingBuffer(THeader* header, uint8_t* data)
-      : owns_data{false}, header_{header}, data_{data} {
+  RingBuffer(std::shared_ptr<THeader> header, std::shared_ptr<uint8_t[]> data)
+      : header_{std::move(header)}, data_{std::move(data)} {
     TP_THROW_IF_NULLPTR(header_) << "Header cannot be nullptr";
     TP_THROW_IF_NULLPTR(data_) << "Data cannot be nullptr";
-  }
-
-  /// Allocate header and data. Throwing function
-  RingBuffer(size_t size, optional<CpuId> cpu = nullopt) noexcept(false)
-      : owns_data{true} {
-    header_ = new THeader(size, cpu);
-    data_ = new uint8_t[header_->kDataPoolByteSize];
-  }
-
-  ~RingBuffer() {
-    if (owns_data) {
-      delete header_;
-      delete[] this->data_;
-    }
   }
 
   const THeader& getHeader() const {
@@ -177,11 +163,11 @@ class RingBuffer final {
   }
 
   const uint8_t* getData() const {
-    return data_;
+    return data_.get();
   }
 
   uint8_t* getData() {
-    return data_;
+    return data_.get();
   }
 
   auto& getExtraData() {
@@ -193,9 +179,8 @@ class RingBuffer final {
   }
 
  protected:
-  const bool owns_data;
-  THeader* header_;
-  uint8_t* data_;
+  std::shared_ptr<THeader> header_;
+  std::shared_ptr<uint8_t[]> data_;
 };
 
 ///
