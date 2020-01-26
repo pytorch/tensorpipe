@@ -59,8 +59,7 @@ class RingBufferHeader {
   // Implementation uses power of 2 arithmetic to avoid costly modulo.
   // So build the largest RingBuffer with size of the smallest power of 2 >=
   // <byte_size>.
-  // Use <cpu> for NUMA.
-  RingBufferHeader(size_t min_data_byte_size, optional<CpuId> cpu = nullopt)
+  RingBufferHeader(size_t min_data_byte_size)
       : kDataPoolByteSize{nextPow2(min_data_byte_size)},
         kDataModMask{kDataPoolByteSize - 1} {
     // Minimum size where implementation of bit shift arithmetic works.
@@ -143,7 +142,6 @@ class RingBuffer final {
   // Typenames in class namespace for templates that take RingBuffer.
   using THeader = RingBufferHeader<THeaderExtraData>;
   using TExtraData = THeaderExtraData;
-  using TCpuDesc = CpuId;
 
   RingBuffer(const RingBuffer&) = delete;
   RingBuffer(RingBuffer&&) = delete;

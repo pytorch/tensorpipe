@@ -31,10 +31,8 @@ using TRingBuffer = RingBuffer<MockExtraData>;
 using TProducer = Producer<MockExtraData>;
 using TConsumer = Consumer<MockExtraData>;
 
-std::shared_ptr<TRingBuffer> makeRingBuffer(
-    size_t size,
-    optional<CpuId> cpu = nullopt) {
-  auto header = std::make_shared<TRingBufferHeader>(size, cpu);
+std::shared_ptr<TRingBuffer> makeRingBuffer(size_t size) {
+  auto header = std::make_shared<TRingBufferHeader>(size);
   // In C++20 use std::make_shared<uint8_t[]>(size)
   auto data = std::shared_ptr<uint8_t[]>(
       new uint8_t[header->kDataPoolByteSize],
