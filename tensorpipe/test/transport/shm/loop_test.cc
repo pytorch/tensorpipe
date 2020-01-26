@@ -129,3 +129,13 @@ TEST(Loop, Monitor) {
 
   loop->join();
 }
+
+TEST(Loop, Defer) {
+  auto loop = Loop::create();
+  auto promise = std::make_shared<std::promise<void>>();
+  auto future = promise->get_future();
+  loop->defer([promise]() { promise->set_value(); });
+  future.wait();
+  ASSERT_TRUE(future.valid());
+  loop->join();
+}

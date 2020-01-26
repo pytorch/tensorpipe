@@ -260,7 +260,7 @@ void Connection::readInboxEventFd() {
 }
 
 void Connection::triggerProcessReadOperations() {
-  loop_->run([ptr{shared_from_this()}, this] {
+  loop_->defer([ptr{shared_from_this()}, this] {
     std::unique_lock<std::mutex> lock(mutex_);
     processReadOperations(std::move(lock));
   });
@@ -299,7 +299,7 @@ void Connection::processReadOperations(std::unique_lock<std::mutex> lock) {
 }
 
 void Connection::triggerProcessWriteOperations() {
-  loop_->run([ptr{shared_from_this()}, this] {
+  loop_->defer([ptr{shared_from_this()}, this] {
     std::unique_lock<std::mutex> lock(mutex_);
     processWriteOperations(std::move(lock));
   });
