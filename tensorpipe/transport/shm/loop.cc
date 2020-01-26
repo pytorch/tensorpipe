@@ -111,24 +111,10 @@ void Loop::unregisterDescriptor(int fd) {
   }
 }
 
-std::future<void> Loop::run(TFunction fn) {
+void Loop::defer(std::function<void()> fn) {
   std::unique_lock<std::mutex> lock(m_);
-
-  // Must use a copyable wrapper around std::promise because
-  // we use it from a std::function which must be copyable.
-  auto promise = std::make_shared<std::promise<void>>();
-  auto future = promise->get_future();
-  functions_.push_back(
-      [promise{std::move(promise)}, fn{std::move(fn)}]() mutable {
-        try {
-          fn();
-          promise->set_value();
-        } catch (...) {
-          promise->set_exception(std::current_exception());
-        }
-      });
+  functions_.push_back(std::move(fn));
   wakeup();
-  return future;
 }
 
 void Loop::wakeup() {

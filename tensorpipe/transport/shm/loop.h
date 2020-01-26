@@ -84,7 +84,9 @@ class Loop final : public std::enable_shared_from_this<Loop> {
 
   void unregisterDescriptor(int fd);
 
-  std::future<void> run(TFunction fn);
+  // Run function on event loop thread.
+  // If the function throws, the event loop crashes.
+  void defer(std::function<void()> fn);
 
   // Instantiates an event monitor for the specified fd.
   template <typename T>
