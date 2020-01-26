@@ -528,11 +528,11 @@ TEST(RingBuffer, ReadTxWrapping) {
   }
 
   {
-    // Try to read before c1 completing and get -EBUSY because buffer is busy.
+    // Try to read before c1 completing and get -EAGAIN because buffer is busy.
     ssize_t ret;
     const uint64_t* ptrn;
     std::tie(ret, ptrn) = c2.template startReadTx<uint64_t>();
-    EXPECT_EQ(ret, -EBUSY);
+    EXPECT_EQ(ret, -EAGAIN);
     EXPECT_TRUE(ptrn == nullptr);
   }
 
