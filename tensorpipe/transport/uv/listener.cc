@@ -40,7 +40,7 @@ void Listener::start() {
       })));
 }
 
-Sockaddr Listener::addr() {
+Sockaddr Listener::sockaddr() {
   return listener_->sockName();
 }
 

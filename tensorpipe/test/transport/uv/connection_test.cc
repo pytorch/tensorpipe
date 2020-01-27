@@ -25,7 +25,7 @@ void initializePeers(
       [&](std::shared_ptr<Connection> conn) { queue.push(std::move(conn)); });
 
   // Capture real listener address.
-  auto listenerAddr = listener->addr();
+  auto listenerAddr = listener->sockaddr();
 
   // Start thread for listening side.
   std::thread listeningThread([&]() { listeningFn(queue.pop()); });

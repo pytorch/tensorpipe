@@ -37,7 +37,7 @@ class Listener : public transport::Listener,
   void start();
 
  public:
-  Sockaddr addr();
+  Sockaddr sockaddr();
 
   void accept(accept_callback_fn fn) override;
 

@@ -26,7 +26,7 @@ TEST(Listener, Basics) {
 
     // Connect to listener.
     auto socket = loop->createHandle<uv::TCPHandle>();
-    socket->connect(listener->addr());
+    socket->connect(listener->sockaddr());
     socket->close();
 
     // Wait for new connection
