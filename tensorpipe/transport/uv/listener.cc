@@ -48,6 +48,10 @@ void Listener::accept(accept_callback_fn fn) {
   fn_.emplace(std::move(fn));
 }
 
+address_t Listener::addr() const {
+  return listener_->sockName().str();
+}
+
 void Listener::connectionCallback(int status) {
   if (status != 0) {
     TP_LOG_WARNING() << "connection callback called with status " << status

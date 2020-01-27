@@ -16,7 +16,9 @@ Listener::Listener(
     ConstructorToken /* unused */,
     std::shared_ptr<Loop> loop,
     const Sockaddr& addr)
-    : loop_(std::move(loop)), listener_(Socket::createForFamily(AF_UNIX)) {
+    : loop_(std::move(loop)),
+      listener_(Socket::createForFamily(AF_UNIX)),
+      addr_(addr) {
   // Bind socket to abstract socket address.
   listener_->bind(addr);
   listener_->block(false);
@@ -34,6 +36,10 @@ void Listener::accept(accept_callback_fn fn) {
 
   // Register with loop for readability events.
   loop_->registerDescriptor(listener_->fd(), EPOLLIN, shared_from_this());
+}
+
+address_t Listener::addr() const {
+  return addr_.str();
 }
 
 void Listener::handleEvents(int events) {
