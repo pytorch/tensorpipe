@@ -38,41 +38,21 @@ void Loop::join() {
   thread_.reset();
 }
 
-void Loop::run(std::function<void()> fn) {
-  // If we're running on the event loop thread, run function
-  // immediately. Otherwise, schedule it to be run by the event loop
-  // thread and wake it up.
-  if (std::this_thread::get_id() == thread_->get_id()) {
-    fn();
-  } else {
-    std::future<void> future;
+void Loop::defer(std::function<void()> fn) {
+  std::unique_lock<std::mutex> lock(mutex_);
+  fns_.push_back(std::move(fn));
+  wakeup();
+}
 
-    {
-      std::unique_lock<std::mutex> lock(mutex_);
-      fns_.emplace_back(std::move(fn));
-      future = fns_.back().p_.get_future();
-      auto rv = uv_async_send(async_.get());
-      TP_THROW_UV_IF(rv < 0, rv);
-    }
-
-    // Wait for function to run.
-    future.get();
-  }
+void Loop::wakeup() {
+  auto rv = uv_async_send(async_.get());
+  TP_THROW_UV_IF(rv < 0, rv);
 }
 
 void Loop::loop() {
   auto rv = uv_run(loop_.get(), UV_RUN_DEFAULT);
   TP_THROW_ASSERT_IF(rv != 0)
       << ": uv_run returned with active handles or requests";
-}
-
-void Loop::Function::run() {
-  try {
-    fn_();
-    p_.set_value();
-  } catch (...) {
-    p_.set_exception(std::current_exception());
-  }
 }
 
 void Loop::uv__async_cb(uv_async_t* handle) {
@@ -89,7 +69,7 @@ void Loop::runFunctions() {
   }
 
   for (auto& fn : fns) {
-    fn.run();
+    fn();
   }
 }
 
