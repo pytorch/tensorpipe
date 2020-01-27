@@ -158,7 +158,7 @@ class LogEntry final {
 #define __TP_DCHECK_CMP(a, b, op)                        \
   if (unlikely(!((a)op(b))))                             \
   TP_THROW_ASSERT() << "Expected " << __TP_EXPAND_OPD(a) \
-                    << " " TP_STRINGIFY(_op_) << " " << __TP_EXPAND_OPD(b)
+                    << " " TP_STRINGIFY(op) << " " << __TP_EXPAND_OPD(b)
 
 // Expand macro only in debug mode.
 #ifdef NDEBUG
