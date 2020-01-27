@@ -51,9 +51,7 @@ class Error final {
   }
 
   // Like `std::exception` but returns a `std::string`.
-  std::string what() const {
-    return error_->what();
-  }
+  std::string what() const;
 
  private:
   std::shared_ptr<BaseError> error_;
