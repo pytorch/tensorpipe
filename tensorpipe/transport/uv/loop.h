@@ -2,10 +2,10 @@
 
 #include <functional>
 #include <future>
-#include <list>
 #include <memory>
 #include <mutex>
 #include <thread>
+#include <vector>
 
 #include <uv.h>
 
@@ -23,7 +23,31 @@ class Loop final : public std::enable_shared_from_this<Loop> {
 
   void join();
 
-  void run(std::function<void()> fn);
+  template <typename F>
+  void run(F&& fn) {
+    // If we're running on the event loop thread, run function
+    // immediately. Otherwise, schedule it to be run by the event loop
+    // thread and wake it up.
+    if (std::this_thread::get_id() == thread_->get_id()) {
+      fn();
+    } else {
+      // Must use a copyable wrapper around std::promise because
+      // we use it from a std::function which must be copyable.
+      auto promise = std::make_shared<std::promise<void>>();
+      auto future = promise->get_future();
+      defer([promise, fn{std::move(fn)}]() {
+        try {
+          fn();
+          promise->set_value();
+        } catch (...) {
+          promise->set_exception(std::current_exception());
+        }
+      });
+      future.get();
+    }
+  }
+
+  void defer(std::function<void()> fn);
 
   uv_loop_t* ptr() {
     return loop_.get();
@@ -53,22 +77,14 @@ class Loop final : public std::enable_shared_from_this<Loop> {
   std::unique_ptr<std::thread> thread_;
   std::mutex mutex_;
 
+  // Wake up the event loop.
+  void wakeup();
+
   // Event loop thread entry function.
   void loop();
 
-  // Wrapper for a deferred function and its promise.
-  struct Function {
-    explicit Function(std::function<void()>&& fn) : fn_(fn) {}
-
-    std::function<void()> fn_;
-    std::promise<void> p_;
-
-    // Run function and finalize promise.
-    void run();
-  };
-
   // List of deferred functions to run when the loop is ready.
-  std::list<Function> fns_;
+  std::vector<std::function<void()>> fns_;
 
   // This function is called by the event loop thread whenever
   // we have to run a number of deferred functions.
