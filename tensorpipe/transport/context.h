@@ -1,9 +1,9 @@
 #pragma once
 
 #include <memory>
-#include <string>
 
 #include <tensorpipe/transport/connection.h>
+#include <tensorpipe/transport/defs.h>
 #include <tensorpipe/transport/listener.h>
 
 namespace tensorpipe {
@@ -11,8 +11,6 @@ namespace transport {
 
 class Context {
  public:
-  using address_t = std::string;
-
   virtual ~Context() = default;
 
   virtual void join() = 0;

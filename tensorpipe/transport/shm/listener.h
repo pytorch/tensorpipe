@@ -36,11 +36,14 @@ class Listener final : public transport::Listener,
 
   void accept(accept_callback_fn fn) override;
 
+  address_t addr() const override;
+
   void handleEvents(int events) override;
 
  private:
   std::shared_ptr<Loop> loop_;
   std::shared_ptr<Socket> listener_;
+  Sockaddr addr_;
   optional<accept_callback_fn> fn_;
 };
 
