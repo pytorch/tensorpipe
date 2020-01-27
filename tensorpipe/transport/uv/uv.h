@@ -124,10 +124,28 @@ class StreamHandle : public BaseHandle<T, U> {
     ref.connectionCallback(status);
   }
 
+  static void uv__alloc_cb(
+      uv_handle_t* handle,
+      size_t /* unused */,
+      uv_buf_t* buf) {
+    T& ref = *reinterpret_cast<T*>(handle->data);
+    ref.allocCallback(buf);
+  }
+
+  static void uv__read_cb(
+      uv_stream_t* server,
+      ssize_t nread,
+      const uv_buf_t* buf) {
+    T& ref = *reinterpret_cast<T*>(server->data);
+    ref.readCallback(nread, buf);
+  }
+
   static constexpr int kBacklog = 128;
 
  public:
   using TConnectionCallback = std::function<void(int status)>;
+  using TAllocCallback = std::function<void(uv_buf_t* buf)>;
+  using TReadCallback = std::function<void(ssize_t nread, const uv_buf_t* buf)>;
 
   using BaseHandle<T, U>::BaseHandle;
 
@@ -157,6 +175,29 @@ class StreamHandle : public BaseHandle<T, U> {
     });
   }
 
+  void readStart(TAllocCallback allocCallback, TReadCallback readCallback) {
+    this->loop_->run([&] {
+      auto rv = uv_read_start(
+          reinterpret_cast<uv_stream_t*>(this->ptr()),
+          uv__alloc_cb,
+          uv__read_cb);
+      TP_THROW_UV_IF(rv < 0, rv);
+
+      // Assign callbacks from event loop thread. By doing so, we
+      // don't have to worry about mutual exclusion when the thread
+      // calling `readStart` races with the event loop thread.
+      allocCallback_ = std::move(allocCallback);
+      readCallback_ = std::move(readCallback);
+    });
+  }
+
+  void readStop() {
+    this->loop_->run([&] {
+      auto rv = uv_read_stop(reinterpret_cast<uv_stream_t*>(this->ptr()));
+      TP_THROW_UV_IF(rv < 0, rv);
+    });
+  }
+
   void write(
       const uv_buf_t bufs[],
       unsigned int nbufs,
@@ -177,10 +218,24 @@ class StreamHandle : public BaseHandle<T, U> {
  protected:
   std::mutex mutex_;
   optional<TConnectionCallback> fn_;
+  optional<TAllocCallback> allocCallback_;
+  optional<TReadCallback> readCallback_;
 
   void connectionCallback(int status) {
     if (fn_) {
       fn_.value()(status);
+    }
+  }
+
+  void allocCallback(uv_buf_t* buf) {
+    if (allocCallback_) {
+      allocCallback_.value()(buf);
+    }
+  }
+
+  void readCallback(ssize_t nread, const uv_buf_t* buf) {
+    if (readCallback_) {
+      readCallback_.value()(nread, buf);
     }
   }
 };

@@ -1,4 +1,5 @@
 add_tensorpipe_test(transport_uv_test
+  connection_test.cc
   listener_test.cc
   loop_test.cc
   sockaddr_test.cc
