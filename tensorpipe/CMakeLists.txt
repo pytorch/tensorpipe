@@ -46,7 +46,6 @@ set(TENSORPIPE_HEADERS
 
 add_library(tensorpipe ${TENSORPIPE_SOURCES})
 target_include_directories(tensorpipe PUBLIC ${CMAKE_SOURCE_DIR})
-target_link_libraries(tensorpipe PRIVATE ghc_filesystem)
 target_link_libraries(tensorpipe PRIVATE ${Protobuf_LIBRARIES})
 
 add_subdirectory(transport/shm)
