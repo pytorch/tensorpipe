@@ -163,6 +163,8 @@ class Sockaddr final {
     return addrlen_;
   }
 
+  std::string str() const;
+
  private:
   explicit Sockaddr(struct sockaddr* addr, socklen_t addrlen);
 

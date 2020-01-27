@@ -34,6 +34,14 @@ Sockaddr::Sockaddr(struct sockaddr* addr, socklen_t addrlen) {
   addrlen_ = addrlen;
 }
 
+std::string Sockaddr::str() const {
+  const struct sockaddr_un* sun{
+      reinterpret_cast<const struct sockaddr_un*>(&addr_)};
+  constexpr size_t offset = 1;
+  const size_t len = addrlen_ - sizeof(sun->sun_family) - offset - 1;
+  return std::string(&sun->sun_path[offset], len);
+}
+
 std::shared_ptr<Socket> Socket::createForFamily(sa_family_t ai_family) {
   auto rv = socket(ai_family, SOCK_STREAM | SOCK_NONBLOCK, 0);
   TP_THROW_SYSTEM_IF(rv == -1, errno);
