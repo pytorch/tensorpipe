@@ -36,7 +36,7 @@ std::tuple<int, int, std::shared_ptr<TRingBuffer>> create(
           tensorpipe::util::shm::PageType::Default,
           min_rb_byte_size);
 
-  std::shared_ptr<uint8_t[]> data;
+  std::shared_ptr<uint8_t> data;
   std::shared_ptr<tensorpipe::util::shm::Segment> data_segment;
   std::tie(data, data_segment) =
       tensorpipe::util::shm::Segment::create<uint8_t[]>(
@@ -63,7 +63,7 @@ std::shared_ptr<TRingBuffer> load(
     TP_THROW_SYSTEM(EPERM) << "Header segment of unexpected size";
   }
 
-  std::shared_ptr<uint8_t[]> data;
+  std::shared_ptr<uint8_t> data;
   std::shared_ptr<tensorpipe::util::shm::Segment> data_segment;
   std::tie(data, data_segment) =
       tensorpipe::util::shm::Segment::load<uint8_t[]>(

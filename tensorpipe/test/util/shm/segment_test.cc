@@ -70,13 +70,13 @@ TEST(SegmentManager, SingleProducer_SingleConsumer_Array) {
     {
       // use huge pages in creation and not in loading. This should only affects
       // TLB overhead.
-      std::shared_ptr<float[]> my_floats;
+      std::shared_ptr<float> my_floats;
       std::shared_ptr<Segment> segment;
       std::tie(my_floats, segment) =
           Segment::create<float[]>(num_floats, true, PageType::HugeTLB_2MB);
 
       for (int i = 0; i < num_floats; ++i) {
-        my_floats[i] = i;
+        my_floats.get()[i] = i;
       }
 
       {
@@ -104,13 +104,13 @@ TEST(SegmentManager, SingleProducer_SingleConsumer_Array) {
       TP_THROW_ASSERT() << err.what();
     }
   }
-  std::shared_ptr<float[]> my_floats;
+  std::shared_ptr<float> my_floats;
   std::shared_ptr<Segment> segment;
   std::tie(my_floats, segment) =
       Segment::load<float[]>(segment_fd, false, PageType::Default);
   EXPECT_EQ(num_floats * sizeof(float), segment->getSize());
   for (int i = 0; i < num_floats; ++i) {
-    EXPECT_EQ(my_floats[i], i);
+    EXPECT_EQ(my_floats.get()[i], i);
   }
   {
     uint64_t c = 1;
