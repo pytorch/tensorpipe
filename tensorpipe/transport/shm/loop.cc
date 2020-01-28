@@ -162,6 +162,11 @@ void Loop::loop() {
           // This may trigger destruction of the object.
           h.reset();
           lock.lock();
+        } else {
+          TP_LOG_WARNING()
+              << "file descriptor " << fd << " is still registered but its "
+              << "handler is gone (this could be a benign race condition if it "
+              << "happens only once)";
         }
       }
     }
