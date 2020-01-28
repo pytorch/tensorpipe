@@ -22,6 +22,14 @@ if(SANITIZE)
   set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fsanitize=${SANITIZE}")
 endif()
 
+# We use the [[nodiscard]] attribute, which GCC 5 complains about.
+# Silence this warning if GCC 5 is used.
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+  if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS 6)
+    add_definitions("-Wno-attributes")
+  endif()
+endif()
+
 # Make dependencies available (but don't build by default)
 add_subdirectory(third_party/googletest EXCLUDE_FROM_ALL)
 add_subdirectory(third_party/libuv EXCLUDE_FROM_ALL)
