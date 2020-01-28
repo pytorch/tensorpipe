@@ -42,9 +42,12 @@ std::tuple<int, int, std::shared_ptr<TRingBuffer>> create(
       tensorpipe::util::shm::Segment::create<uint8_t[]>(
           header->kDataPoolByteSize, perm_write, data_page_type);
 
-  return {header_segment->getFd(),
-          data_segment->getFd(),
-          std::make_shared<TRingBuffer>(std::move(header), std::move(data))};
+  // Note: cannot use implicit construction from initializer list on GCC 5.5:
+  // "converting to XYZ from initializer list would use explicit constructor".
+  return std::make_tuple(
+      header_segment->getFd(),
+      data_segment->getFd(),
+      std::make_shared<TRingBuffer>(std::move(header), std::move(data)));
 }
 
 template <class TRingBuffer>
