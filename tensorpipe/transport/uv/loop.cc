@@ -7,10 +7,10 @@ namespace transport {
 namespace uv {
 
 std::shared_ptr<Loop> Loop::create() {
-  return std::make_shared<Loop>();
+  return std::make_shared<Loop>(ConstructorToken());
 }
 
-Loop::Loop()
+Loop::Loop(ConstructorToken /* unused */)
     : loop_(std::make_unique<uv_loop_t>()),
       async_(std::make_unique<uv_async_t>()) {
   int rv;
