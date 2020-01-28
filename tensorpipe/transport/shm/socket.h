@@ -141,7 +141,7 @@ Error recvFdsFromSocket(int socketFd, Fds&... fds) {
   // Read control message.
   struct cmsghdr* cmsg;
   cmsg = CMSG_FIRSTHDR(&msg);
-  TP_DCHECK_NE(cmsg, NULL);
+  TP_DCHECK_NE(cmsg, static_cast<void*>(nullptr));
   TP_DCHECK_EQ(cmsg->cmsg_level, SOL_SOCKET);
   TP_DCHECK_EQ(cmsg->cmsg_type, SCM_RIGHTS);
   TP_DCHECK_EQ(cmsg->cmsg_len, CMSG_LEN(sizeof(TPayload) * sizeof...(Fds)));
