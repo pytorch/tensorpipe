@@ -37,7 +37,7 @@ jobs:
             cmake ../ \
               << parameters.cmake_compiler >> \
               << parameters.cmake_args >>
-            make VERBOSE=1
+            make
       - run:
           name: Test
           command: |
