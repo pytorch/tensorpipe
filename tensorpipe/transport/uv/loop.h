@@ -34,7 +34,7 @@ class Loop final : public std::enable_shared_from_this<Loop> {
     // If we're running on the event loop thread, run function
     // immediately. Otherwise, schedule it to be run by the event loop
     // thread and wake it up.
-    if (std::this_thread::get_id() == thread_->get_id()) {
+    if (std::this_thread::get_id() == thread_.get_id()) {
       fn();
     } else {
       // Must use a copyable wrapper around std::promise because
@@ -77,11 +77,10 @@ class Loop final : public std::enable_shared_from_this<Loop> {
   }
 
  private:
+  std::mutex mutex_;
+  std::thread thread_;
   std::unique_ptr<uv_loop_t> loop_;
   std::unique_ptr<uv_async_t> async_;
-
-  std::unique_ptr<std::thread> thread_;
-  std::mutex mutex_;
 
   // Wake up the event loop.
   void wakeup();

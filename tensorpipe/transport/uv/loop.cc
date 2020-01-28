@@ -19,12 +19,12 @@ Loop::Loop(ConstructorToken /* unused */)
   rv = uv_async_init(loop_.get(), async_.get(), uv__async_cb);
   TP_THROW_UV_IF(rv < 0, rv);
   async_->data = this;
-  thread_.reset(new std::thread(&Loop::loop, this));
+  thread_ = std::thread(&Loop::loop, this);
 }
 
 Loop::~Loop() noexcept {
   // Thread must have been joined before destructing the loop.
-  TP_DCHECK(!thread_);
+  TP_DCHECK(!thread_.joinable());
   // Release resources associated with loop.
   auto rv = uv_loop_close(loop_.get());
   TP_DCHECK(rv == 0);
@@ -34,8 +34,7 @@ void Loop::join() {
   run([&] { uv_close(reinterpret_cast<uv_handle_t*>(async_.get()), nullptr); });
 
   // Wait for event loop thread to terminate.
-  thread_->join();
-  thread_.reset();
+  thread_.join();
 }
 
 void Loop::defer(std::function<void()> fn) {
