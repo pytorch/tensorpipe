@@ -146,7 +146,7 @@ class RingBuffer final {
   RingBuffer(const RingBuffer&) = delete;
   RingBuffer(RingBuffer&&) = delete;
 
-  RingBuffer(std::shared_ptr<THeader> header, std::shared_ptr<uint8_t[]> data)
+  RingBuffer(std::shared_ptr<THeader> header, std::shared_ptr<uint8_t> data)
       : header_{std::move(header)}, data_{std::move(data)} {
     TP_THROW_IF_NULLPTR(header_) << "Header cannot be nullptr";
     TP_THROW_IF_NULLPTR(data_) << "Data cannot be nullptr";
@@ -178,7 +178,10 @@ class RingBuffer final {
 
  protected:
   std::shared_ptr<THeader> header_;
-  std::shared_ptr<uint8_t[]> data_;
+
+  // Note: this is a std::shared_ptr<uint8_t[]> semantically.
+  // A shared_ptr with array type is supported in C++17 and higher.
+  std::shared_ptr<uint8_t> data_;
 };
 
 ///

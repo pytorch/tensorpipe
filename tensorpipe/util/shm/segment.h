@@ -93,8 +93,8 @@ class Segment {
   /// One-dimensional array version of create<T, ...Args>.
   /// Caller can use the shared_ptr to the underlying Segment.
   // XXX: Fuse all versions of create.
-  template <class T>
-  static std::pair<std::shared_ptr<T>, std::shared_ptr<Segment>> create(
+  template <class T, typename TScalar = typename std::remove_extent<T>::type>
+  static std::pair<std::shared_ptr<TScalar>, std::shared_ptr<Segment>> create(
       size_t num_elements,
       bool perm_write,
       optional<PageType> page_type) {
@@ -112,7 +112,6 @@ class Segment {
         "Currently, only one-dimensional arrays are supported. "
         "You can use the non-template version of Segment::create");
 
-    using TScalar = typename std::remove_extent<T>::type;
     static_assert(std::is_trivially_copyable<TScalar>::value, "!");
     static_assert(!std::is_array<TScalar>::value, "!");
     static_assert(std::is_same<TScalar[], T>::value, "Type mismatch");
@@ -129,7 +128,7 @@ class Segment {
           << " address. Some aligment assumption was incorrect";
     }
 
-    return {std::shared_ptr<TScalar[]>(segment, ptr), segment};
+    return {std::shared_ptr<TScalar>(segment, ptr), segment};
   }
 
   /// Load an already created shared memory Segment that holds an
@@ -137,8 +136,11 @@ class Segment {
   ///
   /// Lifecycle of shared_ptr and Segment's reference_wrapper is
   /// identical to create<>().
-  template <class T, std::enable_if_t<std::is_array<T>::value, int> = 0>
-  static std::pair<std::shared_ptr<T>, std::shared_ptr<Segment>> load(
+  template <
+      class T,
+      typename TScalar = typename std::remove_extent<T>::type,
+      std::enable_if_t<std::is_array<T>::value, int> = 0>
+  static std::pair<std::shared_ptr<TScalar>, std::shared_ptr<Segment>> load(
       int fd,
       bool perm_write,
       optional<PageType> page_type) {
@@ -147,10 +149,9 @@ class Segment {
     static_assert(
         std::rank<T>::value == 1,
         "Currently only rank one arrays are supported");
-    using TScalar = typename std::remove_extent<T>::type;
     static_assert(std::is_trivially_copyable<TScalar>::value, "!");
     auto ptr = static_cast<TScalar*>(segment->getPtr());
-    return {std::shared_ptr<T>(segment, ptr), segment};
+    return {std::shared_ptr<TScalar>(segment, ptr), segment};
   }
 
   /// Load an already created shared memory Segment that holds an

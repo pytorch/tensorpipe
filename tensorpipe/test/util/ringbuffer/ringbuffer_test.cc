@@ -34,9 +34,8 @@ using TConsumer = Consumer<MockExtraData>;
 std::shared_ptr<TRingBuffer> makeRingBuffer(size_t size) {
   auto header = std::make_shared<TRingBufferHeader>(size);
   // In C++20 use std::make_shared<uint8_t[]>(size)
-  auto data = std::shared_ptr<uint8_t[]>(
-      new uint8_t[header->kDataPoolByteSize],
-      [](uint8_t* ptr) { delete[] ptr; });
+  auto data = std::shared_ptr<uint8_t>(
+      new uint8_t[header->kDataPoolByteSize], std::default_delete<uint8_t[]>());
   return std::make_shared<TRingBuffer>(std::move(header), std::move(data));
 }
 

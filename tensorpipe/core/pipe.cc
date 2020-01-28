@@ -21,8 +21,11 @@ void writeProtobufToConnection(
   // captures a unique_ptr then it becomes non-copyable, which prevents it from
   // being converted to a function.
   // In C++20 use std::make_shared<char[]>(len).
-  auto buf = std::shared_ptr<char[]>(new char[len]);
-  char* ptr = buf.get();
+  // Note: this is a std::shared_ptr<char[]> semantically.
+  // A shared_ptr with array type is supported in C++17 and higher.
+  auto buf =
+      std::shared_ptr<char>(new char[len], std::default_delete<char[]>());
+  auto ptr = buf.get();
   TP_DCHECK(pb->SerializeToArray(ptr, len))
       << "couldn't serialize Protobuf message";
   connection->write(
