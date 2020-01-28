@@ -79,5 +79,15 @@ workflows:
           docker_image: ubuntu:18.04
           apt_get: "clang-6.0"
           cmake_compiler: -DCMAKE_C_COMPILER=clang-6.0 -DCMAKE_CXX_COMPILER=clang++-6.0
+      - build:
+          name: gcc7-asan
+          docker_image: ubuntu:18.04
+          apt_get: "gcc-7 g++-7"
+          cmake_compiler: -DCMAKE_C_COMPILER=gcc-7 -DCMAKE_CXX_COMPILER=g++-7 -DSANITIZE=address
+      - build:
+          name: gcc7-tsan
+          docker_image: ubuntu:18.04
+          apt_get: "gcc-7 g++-7"
+          cmake_compiler: -DCMAKE_C_COMPILER=gcc-7 -DCMAKE_CXX_COMPILER=g++-7 -DSANITIZE=thread
       - format:
           name: clang-format
