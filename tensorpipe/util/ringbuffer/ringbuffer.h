@@ -119,9 +119,9 @@ class RingBufferHeader {
 
  protected:
   // Written by producer.
-  std::atomic_uint64_t atomicHead_{0};
+  std::atomic<uint64_t> atomicHead_{0};
   // Written by consumer.
-  std::atomic_uint64_t atomicTail_{0};
+  std::atomic<uint64_t> atomicTail_{0};
 
   // http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2007/n2427.html#atomics.lockfree
   // static_assert(
