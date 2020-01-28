@@ -65,11 +65,12 @@ Loop::Loop(ConstructorToken /* unused */) {
   }
 
   // Start epoll(2) thread.
-  loop_.reset(new std::thread(&Loop::loop, this));
+  thread_ = std::thread(&Loop::loop, this);
 }
 
 Loop::~Loop() {
   TP_DCHECK(done_);
+  TP_DCHECK(!thread_.joinable());
 }
 
 void Loop::registerDescriptor(
@@ -112,7 +113,7 @@ void Loop::unregisterDescriptor(int fd) {
 }
 
 void Loop::defer(std::function<void()> fn) {
-  std::unique_lock<std::mutex> lock(m_);
+  std::unique_lock<std::mutex> lock(mutex_);
   functions_.push_back(std::move(fn));
   wakeup();
 }
@@ -170,7 +171,7 @@ void Loop::loop() {
     // such that we can assert in the block below that if there are no
     // more handlers, we are done.
     {
-      std::unique_lock<std::mutex> lock(m_);
+      std::unique_lock<std::mutex> lock(mutex_);
       while (!functions_.empty()) {
         decltype(functions_) stackFunctions;
         std::swap(stackFunctions, functions_);
@@ -201,7 +202,7 @@ void Loop::loop() {
 void Loop::join() {
   done_ = true;
   wakeup();
-  loop_->join();
+  thread_.join();
 }
 
 } // namespace shm

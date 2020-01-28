@@ -150,9 +150,8 @@ class Loop final : public std::enable_shared_from_this<Loop> {
   Fd eventFd_;
   uint64_t loopTicks_{0};
   std::atomic<bool> done_{false};
-  std::unique_ptr<std::thread> loop_;
-
-  std::mutex m_;
+  std::mutex mutex_;
+  std::thread thread_;
 
   // Store weak_ptr for every registered fd.
   std::vector<std::weak_ptr<EventHandler>> handlers_;
