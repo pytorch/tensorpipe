@@ -1,4 +1,4 @@
-#include <tensorpipe/message_descriptor.pb.h>
+#include <tensorpipe/proto/message_descriptor.pb.h>
 
 #include <gtest/gtest.h>
 
