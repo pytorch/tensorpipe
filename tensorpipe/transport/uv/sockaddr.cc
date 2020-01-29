@@ -85,6 +85,10 @@ Sockaddr Sockaddr::createInetSockAddr(const std::string& str) {
 
   // Invalid address.
   TP_THROW_EINVAL() << str;
+
+  // Return bogus to silence "return from non-void function" warning.
+  // Note: we don't reach this point per the throw above.
+  return Sockaddr(ss, 0);
 }
 
 std::string Sockaddr::str() const {
