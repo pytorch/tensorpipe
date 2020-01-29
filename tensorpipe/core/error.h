@@ -10,6 +10,8 @@ namespace tensorpipe {
 // Base class for actual errors.
 class BaseError {
  public:
+  virtual ~BaseError() = default;
+
   // Returns an explanatory string.
   // Like `std::exception` but returns a `std::string`.
   virtual std::string what() const = 0;

@@ -59,6 +59,8 @@ class BaseHandle : public BaseResource<T, U> {
     handle_.data = this;
   }
 
+  virtual ~BaseHandle() = default;
+
   U* ptr() {
     return &handle_;
   }
@@ -148,6 +150,8 @@ class StreamHandle : public BaseHandle<T, U> {
   using TReadCallback = std::function<void(ssize_t nread, const uv_buf_t* buf)>;
 
   using BaseHandle<T, U>::BaseHandle;
+
+  ~StreamHandle() override = default;
 
   void listen(TConnectionCallback fn) {
     {
