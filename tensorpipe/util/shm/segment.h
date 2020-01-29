@@ -206,14 +206,14 @@ class Segment {
   // The page used to mmap the segment.
   PageType page_type_;
 
-  // Base pointer of mmmap'ed shared memory segment.
-  void* base_ptr_;
+  // The file descriptor of the shared memory file.
+  int fd_ = -1;
 
   // Byte size of shared memory segment.
   size_t byte_size_;
 
-  // The file descriptor of the shared memory file.
-  int fd_ = -1;
+  // Base pointer of mmmap'ed shared memory segment.
+  void* base_ptr_;
 
   void mmap(bool perm_write, optional<PageType> page_type);
 };
