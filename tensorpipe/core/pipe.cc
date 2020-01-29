@@ -6,7 +6,7 @@
 #include <tensorpipe/common/callback.h>
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/core/error_macros.h>
-#include <tensorpipe/message_descriptor.pb.h>
+#include <tensorpipe/proto/message_descriptor.pb.h>
 
 namespace tensorpipe {
 
