@@ -93,3 +93,33 @@ TEST(Connection, InitializationError) {
 
   loop->join();
 }
+
+TEST(Connection, DestroyConnectionFromCallback) {
+  auto loop = uv::Loop::create();
+  auto addr = uv::Sockaddr::createInetSockAddr("::1");
+
+  initializePeers(
+      loop,
+      addr,
+      [&](std::shared_ptr<Connection> /* unused */) {
+        // Closes connection
+      },
+      [&](std::shared_ptr<Connection> conn) {
+        // This should be the only connection instance.
+        EXPECT_EQ(conn.use_count(), 1);
+        // Move connection instance to lambda scope, so we can destroy
+        // the only instance we have from the callback itself. This
+        // tests that the transport keeps the connection alive as long
+        // as it's executing a callback.
+        conn->read([conn](
+                       const Error& /* unused */,
+                       const void* /* unused */,
+                       size_t /* unused */) mutable {
+          // Destroy connection from within callback.
+          EXPECT_GT(conn.use_count(), 1);
+          conn.reset();
+        });
+      });
+
+  loop->join();
+}

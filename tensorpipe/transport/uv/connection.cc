@@ -1,5 +1,6 @@
 #include <tensorpipe/transport/uv/connection.h>
 
+#include <tensorpipe/common/callback.h>
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/transport/error_macros.h>
 #include <tensorpipe/transport/uv/error.h>
@@ -14,36 +15,44 @@ std::shared_ptr<Connection> Connection::create(
     const Sockaddr& addr) {
   auto handle = loop->createHandle<TCPHandle>();
   handle->connect(addr);
-  return std::make_shared<Connection>(
-      ConstructorToken(), std::move(loop), std::move(handle));
+  return create(std::move(loop), std::move(handle));
 }
 
 std::shared_ptr<Connection> Connection::create(
     std::shared_ptr<Loop> loop,
     std::shared_ptr<TCPHandle> handle) {
-  return std::make_shared<Connection>(
+  auto conn = std::make_shared<Connection>(
       ConstructorToken(), std::move(loop), std::move(handle));
+  conn->init();
+  return conn;
 }
 
 Connection::Connection(
     ConstructorToken /* unused */,
     std::shared_ptr<Loop> loop,
     std::shared_ptr<TCPHandle> handle)
-    : loop_(std::move(loop)),
-      handle_(std::move(handle)),
-      allocCallback_(
-          std::bind(&Connection::allocCallback, this, std::placeholders::_1)),
-      readCallback_(std::bind(
-          &Connection::readCallback,
-          this,
-          std::placeholders::_1,
-          std::placeholders::_2)) {}
+    : loop_(std::move(loop)), handle_(std::move(handle)) {}
 
 Connection::~Connection() {
   if (handle_) {
     handle_->readStop();
     handle_->close();
   }
+}
+
+void Connection::init() {
+  allocCallback_ = runIfAlive(
+      *this,
+      std::function<void(Connection&, uv_buf_t*)>(
+          [](Connection& connection, uv_buf_t* buf) {
+            connection.allocCallback(buf);
+          }));
+  readCallback_ = runIfAlive(
+      *this,
+      std::function<void(Connection&, ssize_t, const uv_buf_t*)>(
+          [](Connection& connection, ssize_t nread, const uv_buf_t* buf) {
+            connection.readCallback(nread, buf);
+          }));
 }
 
 void Connection::read(read_callback_fn fn) {

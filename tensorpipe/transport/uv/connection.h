@@ -55,6 +55,9 @@ class Connection : public transport::Connection,
   std::shared_ptr<TCPHandle> handle_;
   Error error_{Error::kSuccess};
 
+  // Called to initialize member fields that need `shared_from_this`.
+  void init();
+
   // The read operation captures all state associated with reading a
   // fixed length chunk of data from the underlying connection. All
   // reads are required to include a word-sized header containing the
