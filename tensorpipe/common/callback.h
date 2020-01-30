@@ -29,14 +29,15 @@ std::function<void(Args...)> runIfAlive(
 
 namespace {
 
+// NOTE: This is an incomplete implementation of C++17's `std::apply`.
 template <typename F, typename T, size_t... I>
-auto apply(F&& f, T&& t, std::index_sequence<I...>) {
+auto cb_apply(F&& f, T&& t, std::index_sequence<I...>) {
   return f(std::get<I>(std::move(t))...);
 }
 
 template <typename F, typename T>
-auto apply(F&& f, T&& t) {
-  return apply(
+auto cb_apply(F&& f, T&& t) {
+  return cb_apply(
       std::move(f),
       std::move(t),
       std::make_index_sequence<std::tuple_size<T>::value>{});
@@ -63,7 +64,7 @@ class CallbackQueue {
       queue_.pop_front();
       lock.unlock();
       // In C++17 use std::apply.
-      apply(std::move(fn), std::move(args));
+      cb_apply(std::move(fn), std::move(args));
       lock.lock();
     }
   }
@@ -84,7 +85,7 @@ class RearmableCallback {
     if (!queue_.empty()) {
       std::tuple<Args...> args{std::move(queue_.front())};
       queue_.pop_front();
-      apply(std::move(f), std::move(args));
+      cb_apply(std::move(f), std::move(args));
     } else {
       callback_ = std::move(f);
     }
@@ -95,7 +96,7 @@ class RearmableCallback {
     if (callback_.has_value()) {
       F f{std::move(callback_.value())};
       callback_.reset();
-      apply(std::move(f), std::tuple<Args...>(std::move(args)...));
+      cb_apply(std::move(f), std::tuple<Args...>(std::move(args)...));
     } else {
       queue_.push_back(std::tuple<Args...>(std::move(args)...));
     }
@@ -109,7 +110,7 @@ class RearmableCallback {
     if (callback_.has_value()) {
       F f{std::move(callback_.value())};
       callback_.reset();
-      apply(std::move(f), std::tuple<Args...>(std::move(args)...));
+      cb_apply(std::move(f), std::tuple<Args...>(std::move(args)...));
     }
   }
 
