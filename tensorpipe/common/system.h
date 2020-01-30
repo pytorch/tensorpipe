@@ -217,4 +217,7 @@ constexpr uint64_t maxPow2LessEqualThan(uint64_t n) noexcept {
   return nextPow2(n) >> 1;
 }
 
+// Return contents of /proc/sys/kernel/random/boot_id.
+optional<std::string> getBootID();
+
 } // namespace tensorpipe

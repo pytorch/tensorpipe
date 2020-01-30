@@ -7,7 +7,20 @@ namespace tensorpipe {
 namespace transport {
 namespace uv {
 
-Context::Context() : loop_(Loop::create()) {}
+namespace {
+
+// Prepend descriptor with transport name so it's easy to
+// disambiguate descriptors when debugging.
+const std::string kDomainDescriptorPrefix{"uv:"};
+
+std::string generateDomainDescriptor() {
+  return kDomainDescriptorPrefix + "*";
+}
+
+} // namespace
+
+Context::Context()
+    : loop_(Loop::create()), domainDescriptor_(generateDomainDescriptor()) {}
 
 Context::~Context() {}
 
@@ -21,6 +34,10 @@ std::shared_ptr<transport::Connection> Context::connect(address_t addr) {
 
 std::shared_ptr<transport::Listener> Context::listen(address_t addr) {
   return Listener::create(loop_, Sockaddr::createInetSockAddr(addr));
+}
+
+const std::string& Context::domainDescriptor() const {
+  return domainDescriptor_;
 }
 
 } // namespace uv

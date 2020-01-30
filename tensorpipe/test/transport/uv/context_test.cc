@@ -36,3 +36,14 @@ TEST(Context, Basics) {
 
   context->join();
 }
+
+TEST(Context, DomainDescriptor) {
+  auto context = std::make_shared<uv::Context>();
+
+  {
+    const auto& domainDescriptor = context->domainDescriptor();
+    EXPECT_FALSE(domainDescriptor.empty());
+  }
+
+  context->join();
+}
