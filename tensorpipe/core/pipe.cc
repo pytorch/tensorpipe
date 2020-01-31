@@ -87,7 +87,6 @@ void Pipe::readDescriptor(read_descriptor_callback_fn fn) {
       std::function<void(Pipe&, const Error&, Message&&)>(
           [fn{std::move(fn)}](
               Pipe& pipe, const Error& error, Message&& message) mutable {
-            pipe.waitingDescriptors_.push_back(message.copyWithoutData());
             pipe.triggerReadDescriptorCallback_(
                 std::move(fn), error, std::move(message));
           })));
@@ -305,6 +304,7 @@ void Pipe::onRead(const proto::Packet& pbPacketIn) {
       tensor.metadata = std::move(pbTensorDesc.user_data());
       message.tensors.push_back(std::move(tensor));
     }
+    waitingDescriptors_.push_back(message.copyWithoutData());
     readDescriptorCallback_.trigger(Error::kSuccess, std::move(message));
   } else if (pbPacketIn.has_message()) {
     const proto::Message& pbMessage = pbPacketIn.message();
