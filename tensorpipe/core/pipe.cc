@@ -42,10 +42,13 @@ void writeProtobufToConnection(
 std::shared_ptr<Pipe> Pipe::create(
     std::shared_ptr<Context> context,
     const std::string& addr) {
+  std::string scheme;
+  std::string host; // FIXME Pick a better name
+  std::tie(scheme, host) = splitSchemeOfAddress(addr);
   auto pipe = std::make_shared<Pipe>(
       ConstructorToken(),
       std::move(context),
-      context->getContextForScheme_(getSchemeOfAddress(addr))->connect(addr));
+      context->getContextForScheme_(scheme)->connect(host));
   pipe->start_();
   return pipe;
 }

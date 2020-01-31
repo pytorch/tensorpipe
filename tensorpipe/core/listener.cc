@@ -11,9 +11,11 @@ std::shared_ptr<Listener> Listener::create(
   std::unordered_map<std::string, std::shared_ptr<transport::Listener>>
       transportListeners;
   for (const auto& addr : addrs) {
-    auto scheme = getSchemeOfAddress(addr);
+    std::string scheme;
+    std::string host; // FIXME Pick a better name
+    std::tie(scheme, host) = splitSchemeOfAddress(addr);
     transportListeners.emplace(
-        scheme, context->getContextForScheme_(scheme)->listen(addr));
+        scheme, context->getContextForScheme_(scheme)->listen(host));
   }
   auto listener = std::make_shared<Listener>(
       ConstructorToken(), std::move(context), std::move(transportListeners));

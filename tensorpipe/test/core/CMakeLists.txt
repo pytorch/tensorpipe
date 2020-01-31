@@ -1,3 +1,4 @@
 add_tensorpipe_test(core_context_test context_test.cc)
 target_link_libraries(core_context_test tensorpipe)
 target_link_libraries(core_context_test tensorpipe_shm)
+target_link_libraries(core_context_test tensorpipe_uv)

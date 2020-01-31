@@ -8,7 +8,8 @@ function(add_tensorpipe_test)
     tensorpipe_testing
     -Wl,--no-whole-archive
     tensorpipe
-    tensorpipe_shm)
+    tensorpipe_shm
+    tensorpipe_uv)
 endfunction()
 
 add_subdirectory(common)
