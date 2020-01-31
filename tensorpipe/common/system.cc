@@ -259,4 +259,15 @@ CpuId getCpu() {
   return static_cast<CpuId>(ret);
 }
 
+optional<std::string> getBootID() {
+  std::ifstream f{"/proc/sys/kernel/random/boot_id"};
+  if (!f.is_open()) {
+    return nullopt;
+  }
+  std::string v;
+  getline(f, v);
+  f.close();
+  return v;
+}
+
 } // namespace tensorpipe
