@@ -109,6 +109,11 @@ void Loop::unregisterDescriptor(int fd) {
       handlerCount_--;
     }
     handlers_[fd].reset();
+    // Maybe we're done and the event loop is waiting for the last handlers to
+    // be unregistered before terminating, so just in case we wake it up.
+    if (handlerCount_ == 1) {
+      wakeup();
+    }
   }
 }
 
