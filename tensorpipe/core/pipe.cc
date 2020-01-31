@@ -39,6 +39,10 @@ void writeProtobufToConnection(
 
 } // namespace
 
+//
+// Initialization
+//
+
 std::shared_ptr<Pipe> Pipe::create(
     std::shared_ptr<Context> context,
     const std::string& addr) {
@@ -60,6 +64,14 @@ Pipe::Pipe(
     : context_(std::move(context)), connection_(std::move(connection)) {
   isRunOfScheduledCallbacksTriggered_.clear();
 }
+
+void Pipe::start_() {
+  armRead_();
+}
+
+//
+// Entry points for user code
+//
 
 void Pipe::readDescriptor(read_descriptor_callback_fn fn) {
   std::unique_lock<std::mutex> lock(mutex_);
@@ -147,19 +159,9 @@ void Pipe::write(Message&& message, write_callback_fn fn) {
   pendingWrites_.emplace_back(std::move(message), std::move(fn));
 }
 
-void Pipe::start_() {
-  armRead_();
-}
-
-void Pipe::armRead_() {
-  connection_->read(runIfAlive(
-      *this,
-      std::function<void(Pipe&, const transport::Error&, const void*, size_t)>(
-          [](Pipe& pipe,
-             const transport::Error& error,
-             const void* ptr,
-             size_t len) { pipe.onRead_(error, ptr, len); })));
-}
+//
+// Entry points for callbacks from transports
+//
 
 void Pipe::onRead_(const transport::Error& error, const void* ptr, size_t len) {
   std::unique_lock<std::mutex> lock(mutex_);
@@ -244,31 +246,23 @@ void Pipe::onRead_(const transport::Error& error, const void* ptr, size_t len) {
   armRead_();
 }
 
-void Pipe::flushEverythingOnError_() {
-  readDescriptorCallback_.triggerIfArmed(error_, Message());
-  waitingDescriptors_.clear();
-  while (!pendingReads_.empty()) {
-    Message message{std::move(std::get<0>(pendingReads_.front()))};
-    write_callback_fn fn{std::move(std::get<1>(pendingReads_.front()))};
-    pendingReads_.pop_front();
-    scheduledReadCallbacks_.schedule(std::move(fn), error_, std::move(message));
-  }
-  while (!pendingWrites_.empty()) {
-    Message message{std::move(std::get<0>(pendingWrites_.front()))};
-    write_callback_fn fn{std::move(std::get<1>(pendingWrites_.front()))};
-    pendingWrites_.pop_front();
-    scheduledWriteCallbacks_.schedule(
-        std::move(fn), error_, std::move(message));
-  }
-  while (!completingWrites_.empty()) {
-    Message message{std::move(std::get<0>(completingWrites_.front()))};
-    write_callback_fn fn{std::move(std::get<1>(completingWrites_.front()))};
-    completingWrites_.pop_front();
-    scheduledWriteCallbacks_.schedule(
-        std::move(fn), error_, std::move(message));
-  }
-  triggerRunOfScheduledCallbacks_();
+//
+// Helpers to prepare callbacks from transports
+//
+
+void Pipe::armRead_() {
+  connection_->read(runIfAlive(
+      *this,
+      std::function<void(Pipe&, const transport::Error&, const void*, size_t)>(
+          [](Pipe& pipe,
+             const transport::Error& error,
+             const void* ptr,
+             size_t len) { pipe.onRead_(error, ptr, len); })));
 }
+
+//
+// Helpers to schedule our callbacks into user code
+//
 
 void Pipe::triggerReadDescriptorCallback_(
     read_descriptor_callback_fn&& fn,
@@ -309,6 +303,36 @@ void Pipe::runScheduledCallbacks_() {
   scheduledReadDescriptorCallbacks_.run();
   scheduledReadCallbacks_.run();
   scheduledWriteCallbacks_.run();
+}
+
+//
+// Error handling
+//
+
+void Pipe::flushEverythingOnError_() {
+  readDescriptorCallback_.triggerIfArmed(error_, Message());
+  waitingDescriptors_.clear();
+  while (!pendingReads_.empty()) {
+    Message message{std::move(std::get<0>(pendingReads_.front()))};
+    read_callback_fn fn{std::move(std::get<1>(pendingReads_.front()))};
+    pendingReads_.pop_front();
+    scheduledReadCallbacks_.schedule(std::move(fn), error_, std::move(message));
+  }
+  while (!pendingWrites_.empty()) {
+    Message message{std::move(std::get<0>(pendingWrites_.front()))};
+    write_callback_fn fn{std::move(std::get<1>(pendingWrites_.front()))};
+    pendingWrites_.pop_front();
+    scheduledWriteCallbacks_.schedule(
+        std::move(fn), error_, std::move(message));
+  }
+  while (!completingWrites_.empty()) {
+    Message message{std::move(std::get<0>(completingWrites_.front()))};
+    write_callback_fn fn{std::move(std::get<1>(completingWrites_.front()))};
+    completingWrites_.pop_front();
+    scheduledWriteCallbacks_.schedule(
+        std::move(fn), error_, std::move(message));
+  }
+  triggerRunOfScheduledCallbacks_();
 }
 
 } // namespace tensorpipe

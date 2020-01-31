@@ -34,6 +34,10 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
   struct ConstructorToken {};
 
  public:
+  //
+  // Initialization
+  //
+
   static std::shared_ptr<Pipe> create(
       std::shared_ptr<Context>,
       const std::string&);
@@ -42,6 +46,10 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
       ConstructorToken,
       std::shared_ptr<Context>,
       std::shared_ptr<transport::Connection>);
+
+  //
+  // Entry points for user code
+  //
 
   using read_descriptor_callback_fn =
       std::function<void(const Error&, Message&&)>;
@@ -79,13 +87,27 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
   Error error_;
   std::mutex mutex_;
 
+  //
+  // Initialization
+  //
+
   void start_();
+
+  //
+  // Entry points fro callbacks from transports
+  // and helpers to prepare them
+  //
+
   void armRead_();
   void onRead_(const transport::Error&, const void*, size_t);
-  void flushEverythingOnError_();
 
-  // The callbacks that are ready to be fired. These are scheduled from anywhere
-  // and then retrieved and triggered from the context's caller thread.
+  //
+  // Helpers to schedule our callbacks into user code
+  //
+
+  // The callbacks that are ready to be fired. These are scheduled from
+  // anywhere and then retrieved and triggered from the context's caller
+  // thread.
   CallbackQueue<read_descriptor_callback_fn, const Error&, Message>
       scheduledReadDescriptorCallbacks_;
   CallbackQueue<read_callback_fn, const Error&, Message>
@@ -103,6 +125,12 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
   std::atomic_flag isRunOfScheduledCallbacksTriggered_;
   void triggerRunOfScheduledCallbacks_();
   void runScheduledCallbacks_();
+
+  //
+  // Error handling
+  //
+
+  void flushEverythingOnError_();
 
   friend class Context;
   friend class Listener;
