@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <memory>
 #include <string>
 #include <thread>
@@ -24,9 +25,13 @@ class Context final {
 
   Context(ConstructorToken, const std::vector<std::string>&);
 
+  ~Context();
+
   void join();
 
  private:
+  std::atomic<bool> done_{false};
+
   std::unordered_map<std::string, std::shared_ptr<transport::Context>>
       contexts_;
 
