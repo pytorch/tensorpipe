@@ -69,6 +69,12 @@ Loop::Loop(ConstructorToken /* unused */) {
 }
 
 Loop::~Loop() {
+  if (!done_) {
+    TP_LOG_WARNING()
+        << "The loop is being destroyed but join() wasn't called on it. "
+        << "Perhaps a scope exited prematurely, possibly due to an exception?";
+    join();
+  }
   TP_DCHECK(done_);
   TP_DCHECK(!thread_.joinable());
 }

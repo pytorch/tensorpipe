@@ -41,11 +41,23 @@ std::shared_ptr<transport::Context> Context::getContextForScheme_(
 }
 
 void Context::join() {
+  done_ = true;
   for (auto& context : contexts_) {
     context.second->join();
   }
   callbackQueue_.push(nullopt);
   callbackCaller_.join();
+}
+
+Context::~Context() {
+  if (!done_) {
+    TP_LOG_WARNING()
+        << "The context is being destroyed but join() wasn't called on it. "
+        << "Perhaps a scope exited prematurely, possibly due to an exception?";
+    join();
+  }
+  TP_DCHECK(done_);
+  TP_DCHECK(!callbackCaller_.joinable());
 }
 
 void Context::runCallbackCaller_() {
