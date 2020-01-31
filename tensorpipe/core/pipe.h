@@ -8,6 +8,7 @@
 #include <tensorpipe/core/context.h>
 #include <tensorpipe/core/error.h>
 #include <tensorpipe/core/message.h>
+#include <tensorpipe/proto/message_descriptor.pb.h>
 #include <tensorpipe/transport/connection.h>
 
 namespace tensorpipe {
@@ -98,8 +99,30 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
   // and helpers to prepare them
   //
 
-  void armRead_();
-  void onRead_(const transport::Error&, const void*, size_t);
+  using transport_read_callback_fn = transport::Connection::read_callback_fn;
+  using transport_write_callback_fn = transport::Connection::write_callback_fn;
+
+  using bound_read_callback_fn =
+      std::function<void(Pipe&, const void*, size_t)>;
+  using bound_proto_read_callback_fn =
+      std::function<void(Pipe&, const proto::Packet&)>;
+  using bound_write_callback_fn = std::function<void(Pipe&)>;
+
+  transport_read_callback_fn wrapReadCallback_(
+      bound_read_callback_fn = nullptr);
+  transport_read_callback_fn wrapProtoReadCallback_(
+      bound_proto_read_callback_fn = nullptr);
+  void readCallbackEntryPoint_(
+      bound_read_callback_fn,
+      const transport::Error&,
+      const void*,
+      size_t);
+
+  transport_write_callback_fn wrapWriteCallback_(
+      bound_write_callback_fn = nullptr);
+  void writeCallbackEntryPoint_(
+      bound_write_callback_fn,
+      const transport::Error&);
 
   //
   // Helpers to schedule our callbacks into user code
@@ -131,6 +154,12 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
   //
 
   void flushEverythingOnError_();
+
+  //
+  // Everything else
+  //
+
+  void onRead(const proto::Packet&);
 
   friend class Context;
   friend class Listener;
