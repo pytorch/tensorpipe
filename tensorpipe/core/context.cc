@@ -3,6 +3,7 @@
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/transport/connection.h>
 #include <tensorpipe/transport/shm/context.h>
+#include <tensorpipe/transport/uv/context.h>
 
 namespace tensorpipe {
 
@@ -21,6 +22,8 @@ Context::Context(
   for (const auto& transport : transports) {
     if (transport == "shm") {
       contexts_.emplace(transport, std::make_shared<transport::shm::Context>());
+    } else if (transport == "uv") {
+      contexts_.emplace(transport, std::make_shared<transport::uv::Context>());
     } else {
       TP_THROW_EINVAL() << "unsupported transport";
     }

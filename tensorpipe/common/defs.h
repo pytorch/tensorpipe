@@ -126,6 +126,8 @@ class LogEntry final {
   std::ostringstream oss_;
 };
 
+#define TP_LOG_DEBUG() \
+  LogEntry().getStream() << "[tensorpipe debug: " << TP_LOG_PREFFIX << "] "
 #define TP_LOG_INFO() \
   LogEntry().getStream() << "[tensorpipe info: " << TP_LOG_PREFFIX << "] "
 #define TP_LOG_WARNING() \
@@ -133,6 +135,9 @@ class LogEntry final {
 #define TP_LOG_ERROR() \
   LogEntry().getStream() << "[tensorpipe error: " << TP_LOG_PREFFIX << "] "
 
+#define TP_LOG_DEBUG_IF(cond) \
+  if (unlikely(cond))         \
+  TP_LOG_DEBUG()
 #define TP_LOG_INFO_IF(cond) \
   if (unlikely(cond))        \
   TP_LOG_INFO()
@@ -163,6 +168,10 @@ class LogEntry final {
 // Expand macro only in debug mode.
 #ifdef NDEBUG
 
+#define _TP_DLOG() \
+  while (false)    \
+  TP_LOG_DEBUG()
+
 #define _TP_DCHECK(a) \
   while (false)       \
   __TP_DCHECK(a)
@@ -173,11 +182,16 @@ class LogEntry final {
 
 #else
 
+#define _TP_DLOG() TP_LOG_DEBUG()
+
 #define _TP_DCHECK(a) __TP_DCHECK(a)
 
 #define _TP_DCHECK_CMP(a, b, op) __TP_DCHECK_CMP(a, b, op)
 
 #endif
+
+// Public API for debug logging.
+#define TP_DLOG() _TP_DLOG()
 
 // Public API for debug checks.
 #define TP_DCHECK(a) _TP_DCHECK(a)

@@ -8,6 +8,7 @@
 #include <tensorpipe/core/context.h>
 #include <tensorpipe/core/error.h>
 #include <tensorpipe/core/message.h>
+#include <tensorpipe/proto/message_descriptor.pb.h>
 #include <tensorpipe/transport/connection.h>
 
 namespace tensorpipe {
@@ -34,6 +35,10 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
   struct ConstructorToken {};
 
  public:
+  //
+  // Initialization
+  //
+
   static std::shared_ptr<Pipe> create(
       std::shared_ptr<Context>,
       const std::string&);
@@ -42,6 +47,10 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
       ConstructorToken,
       std::shared_ptr<Context>,
       std::shared_ptr<transport::Connection>);
+
+  //
+  // Entry points for user code
+  //
 
   using read_descriptor_callback_fn =
       std::function<void(const Error&, Message&&)>;
@@ -79,13 +88,49 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
   Error error_;
   std::mutex mutex_;
 
-  void start_();
-  void armRead_();
-  void onRead_(const transport::Error&, const void*, size_t);
-  void flushEverythingOnError_();
+  //
+  // Initialization
+  //
 
-  // The callbacks that are ready to be fired. These are scheduled from anywhere
-  // and then retrieved and triggered from the context's caller thread.
+  void start_();
+
+  //
+  // Entry points fro callbacks from transports
+  // and helpers to prepare them
+  //
+
+  using transport_read_callback_fn = transport::Connection::read_callback_fn;
+  using transport_write_callback_fn = transport::Connection::write_callback_fn;
+
+  using bound_read_callback_fn =
+      std::function<void(Pipe&, const void*, size_t)>;
+  using bound_proto_read_callback_fn =
+      std::function<void(Pipe&, const proto::Packet&)>;
+  using bound_write_callback_fn = std::function<void(Pipe&)>;
+
+  transport_read_callback_fn wrapReadCallback_(
+      bound_read_callback_fn = nullptr);
+  transport_read_callback_fn wrapProtoReadCallback_(
+      bound_proto_read_callback_fn = nullptr);
+  void readCallbackEntryPoint_(
+      bound_read_callback_fn,
+      const transport::Error&,
+      const void*,
+      size_t);
+
+  transport_write_callback_fn wrapWriteCallback_(
+      bound_write_callback_fn = nullptr);
+  void writeCallbackEntryPoint_(
+      bound_write_callback_fn,
+      const transport::Error&);
+
+  //
+  // Helpers to schedule our callbacks into user code
+  //
+
+  // The callbacks that are ready to be fired. These are scheduled from
+  // anywhere and then retrieved and triggered from the context's caller
+  // thread.
   CallbackQueue<read_descriptor_callback_fn, const Error&, Message>
       scheduledReadDescriptorCallbacks_;
   CallbackQueue<read_callback_fn, const Error&, Message>
@@ -103,6 +148,18 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
   std::atomic_flag isRunOfScheduledCallbacksTriggered_;
   void triggerRunOfScheduledCallbacks_();
   void runScheduledCallbacks_();
+
+  //
+  // Error handling
+  //
+
+  void flushEverythingOnError_();
+
+  //
+  // Everything else
+  //
+
+  void onRead(const proto::Packet&);
 
   friend class Context;
   friend class Listener;

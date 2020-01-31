@@ -4,6 +4,6 @@
 
 namespace tensorpipe {
 
-std::string getSchemeOfAddress(const std::string&);
+std::tuple<std::string, std::string> splitSchemeOfAddress(const std::string&);
 
 }
