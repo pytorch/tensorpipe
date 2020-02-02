@@ -56,7 +56,7 @@ void Connection::init() {
 }
 
 void Connection::read(read_callback_fn fn) {
-  std::unique_lock<std::mutex> lock(operationsMutex_);
+  std::unique_lock<std::mutex> lock(readOperationsMutex_);
   readOperations_.emplace_back(std::move(fn));
   // Start reading if this is the first read operation.
   if (readOperations_.size() == 1) {
@@ -65,7 +65,7 @@ void Connection::read(read_callback_fn fn) {
 }
 
 void Connection::read(void* ptr, size_t length, read_callback_fn fn) {
-  std::unique_lock<std::mutex> lock(operationsMutex_);
+  std::unique_lock<std::mutex> lock(readOperationsMutex_);
   readOperations_.emplace_back(ptr, length, std::move(fn));
   // Start reading if this is the first read operation.
   if (readOperations_.size() == 1) {
@@ -74,7 +74,7 @@ void Connection::read(void* ptr, size_t length, read_callback_fn fn) {
 }
 
 void Connection::write(const void* ptr, size_t length, write_callback_fn fn) {
-  std::unique_lock<std::mutex> lock(operationsMutex_);
+  std::unique_lock<std::mutex> lock(writeOperationsMutex_);
   writeOperations_.emplace_back(ptr, length, std::move(fn));
   auto& writeOperation = writeOperations_.back();
 
@@ -138,12 +138,12 @@ void Connection::ReadOperation::read(ssize_t nread, const uv_buf_t* buf) {
 }
 
 void Connection::allocCallback(uv_buf_t* buf) {
-  std::unique_lock<std::mutex> lock(operationsMutex_);
+  std::unique_lock<std::mutex> lock(readOperationsMutex_);
   readOperations_.front().alloc(buf);
 }
 
 void Connection::readCallback(ssize_t nread, const uv_buf_t* buf) {
-  std::unique_lock<std::mutex> lock(operationsMutex_);
+  std::unique_lock<std::mutex> lock(readOperationsMutex_);
   if (nread < 0) {
     error_ = TP_CREATE_ERROR(UVError, nread);
     while (!readOperations_.empty()) {
@@ -183,7 +183,7 @@ void Connection::readCallback(ssize_t nread, const uv_buf_t* buf) {
 }
 
 void Connection::writeCallback(int status) {
-  std::unique_lock<std::mutex> lock(operationsMutex_);
+  std::unique_lock<std::mutex> lock(writeOperationsMutex_);
   TP_DCHECK(!writeOperations_.empty());
 
   // Move write operation to the stack.

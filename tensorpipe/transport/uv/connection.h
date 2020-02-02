@@ -159,8 +159,9 @@ class Connection : public transport::Connection,
   void writeCallback(int status);
 
   // Note: the containers below must never invalidate references.
-  std::mutex operationsMutex_;
+  std::mutex readOperationsMutex_;
   std::deque<ReadOperation> readOperations_;
+  std::mutex writeOperationsMutex_;
   std::deque<WriteOperation> writeOperations_;
 
   friend class Listener;
