@@ -54,6 +54,7 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
   Pipe(
       ConstructorToken,
       std::shared_ptr<Context>,
+      std::string,
       std::shared_ptr<transport::Connection>);
 
   //

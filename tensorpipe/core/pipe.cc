@@ -60,6 +60,7 @@ std::shared_ptr<Pipe> Pipe::create(
   auto pipe = std::make_shared<Pipe>(
       ConstructorToken(),
       std::move(context),
+      scheme,
       context->getContextForScheme_(scheme)->connect(host));
   proto::Packet pbPacketOut;
   // This makes the packet contain a SpontaneousConnection message.
@@ -73,6 +74,7 @@ std::shared_ptr<Pipe> Pipe::create(
 Pipe::Pipe(
     ConstructorToken /* unused */,
     std::shared_ptr<Context> context,
+    std::string /* unused */,
     std::shared_ptr<transport::Connection> connection)
     : context_(std::move(context)), connection_(std::move(connection)) {
   isRunOfScheduledCallbacksTriggered_.clear();

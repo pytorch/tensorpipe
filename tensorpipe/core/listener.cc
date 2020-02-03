@@ -60,14 +60,17 @@ void Listener::accept(accept_callback_fn fn) {
           })));
 }
 
-void Listener::onAccept_(std::shared_ptr<transport::Connection> connection) {
+void Listener::onAccept_(
+    std::string transport,
+    std::shared_ptr<transport::Connection> connection) {
   // Keep it alive until we figure out what to do with it.
   connectionsWaitingForHello_.insert(connection);
   connection->read(runIfAlive(
       *this,
       std::function<void(
           Listener&, const transport::Error&, const void*, size_t)>(
-          [weakConnection{std::weak_ptr<transport::Connection>(connection)}](
+          [transport{std::move(transport)},
+           weakConnection{std::weak_ptr<transport::Connection>(connection)}](
               Listener& listener,
               const transport::Error& /* unused */,
               const void* ptr,
@@ -77,7 +80,8 @@ void Listener::onAccept_(std::shared_ptr<transport::Connection> connection) {
                 weakConnection.lock();
             TP_DCHECK(connection);
             listener.connectionsWaitingForHello_.erase(connection);
-            listener.onConnectionHelloRead_(std::move(connection), ptr, len);
+            listener.onConnectionHelloRead_(
+                std::move(transport), std::move(connection), ptr, len);
           })));
 }
 
@@ -98,12 +102,13 @@ void Listener::armListener_(std::string scheme) {
               const transport::Error& /* unused */,
               std::shared_ptr<transport::Connection> connection) {
             // TODO Implement proper error handling in Listener.
-            listener.onAccept_(std::move(connection));
+            listener.onAccept_(scheme, std::move(connection));
             listener.armListener_(scheme);
           })));
 }
 
 void Listener::onConnectionHelloRead_(
+    std::string transport,
     std::shared_ptr<transport::Connection> connection,
     const void* ptr,
     size_t len) {
@@ -114,7 +119,10 @@ void Listener::onConnectionHelloRead_(
   }
   if (pbPacketIn.has_spontaneous_connection()) {
     std::shared_ptr<Pipe> pipe = std::make_shared<Pipe>(
-        Pipe::ConstructorToken(), context_, std::move(connection));
+        Pipe::ConstructorToken(),
+        context_,
+        std::move(transport),
+        std::move(connection));
     pipe->start_();
     acceptCallback_.trigger(Error::kSuccess, std::move(pipe));
   } else if (pbPacketIn.has_requested_connection()) {
@@ -123,7 +131,7 @@ void Listener::onConnectionHelloRead_(
     uint64_t registrationId = pbRequestedConnection.registration_id();
     auto fn = std::move(connectionRequestRegistrations_.at(registrationId));
     connectionRequestRegistrations_.erase(registrationId);
-    fn(std::move(connection));
+    fn(std::move(transport), std::move(connection));
   } else {
     TP_LOG_ERROR() << "packet contained unknown content: "
                    << pbPacketIn.type_case();
@@ -131,7 +139,8 @@ void Listener::onConnectionHelloRead_(
 }
 
 uint64_t Listener::registerConnectionRequest_(
-    std::function<void(std::shared_ptr<transport::Connection>)> fn) {
+    std::function<void(std::string, std::shared_ptr<transport::Connection>)>
+        fn) {
   uint64_t registrationId = nextConnectionRequestRegistrationId_++;
   connectionRequestRegistrations_.emplace(registrationId, std::move(fn));
   return registrationId;

@@ -64,8 +64,9 @@ class Listener final : public std::enable_shared_from_this<Listener> {
 
   void start_();
   void armListener_(std::string);
-  void onAccept_(std::shared_ptr<transport::Connection>);
+  void onAccept_(std::string, std::shared_ptr<transport::Connection>);
   void onConnectionHelloRead_(
+      std::string,
       std::shared_ptr<transport::Connection>,
       const void*,
       size_t);
@@ -81,7 +82,7 @@ class Listener final : public std::enable_shared_from_this<Listener> {
   uint64_t nextConnectionRequestRegistrationId_{0};
 
   using connection_request_callback_fn =
-      std::function<void(std::shared_ptr<transport::Connection>)>;
+      std::function<void(std::string, std::shared_ptr<transport::Connection>)>;
 
   uint64_t registerConnectionRequest_(connection_request_callback_fn);
 
