@@ -17,6 +17,9 @@
 
 #include <uv.h>
 
+#include <tensorpipe/common/callback.h>
+#include <tensorpipe/common/defs.h>
+
 namespace tensorpipe {
 namespace transport {
 namespace uv {
@@ -37,28 +40,26 @@ class Loop final : public std::enable_shared_from_this<Loop> {
 
   void join();
 
+  // Prefer using defer over run, when you don't need to wait for the result.
   template <typename F>
   void run(F&& fn) {
-    // If we're running on the event loop thread, run function
-    // immediately. Otherwise, schedule it to be run by the event loop
-    // thread and wake it up.
-    if (std::this_thread::get_id() == thread_.get_id()) {
-      fn();
-    } else {
-      // Must use a copyable wrapper around std::promise because
-      // we use it from a std::function which must be copyable.
-      auto promise = std::make_shared<std::promise<void>>();
-      auto future = promise->get_future();
-      defer([promise, fn{std::move(fn)}]() {
-        try {
-          fn();
-          promise->set_value();
-        } catch (...) {
-          promise->set_exception(std::current_exception());
-        }
-      });
-      future.get();
-    }
+    TP_DCHECK_NE(std::this_thread::get_id(), thread_.get_id())
+        << "calling Loop::run from the event loop itself (e.g., from a "
+        << "callback) causes a deadlock because the given callable can only be "
+        << "run when the loop is allowed to proceed";
+    // Must use a copyable wrapper around std::promise because
+    // we use it from a std::function which must be copyable.
+    auto promise = std::make_shared<std::promise<void>>();
+    auto future = promise->get_future();
+    defer([promise, fn{std::forward<F>(fn)}]() {
+      try {
+        fn();
+        promise->set_value();
+      } catch (...) {
+        promise->set_exception(std::current_exception());
+      }
+    });
+    future.get();
   }
 
   void defer(std::function<void()> fn);

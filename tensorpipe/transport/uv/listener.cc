@@ -37,6 +37,9 @@ Listener::Listener(
 }
 
 Listener::~Listener() {
+  for (const auto& connection : connectionsWaitingForAccept_) {
+    connection->close();
+  }
   if (listener_) {
     listener_->close();
   }
@@ -70,7 +73,37 @@ void Listener::connectionCallback(int status) {
   }
 
   auto connection = loop_->createHandle<TCPHandle>();
-  listener_->accept(connection);
+  connectionsWaitingForAccept_.insert(connection);
+  // Since a reference to the new TCPHandle is stored in a member field of the
+  // listener, the TCPHandle will still be alive inside the following callback
+  // (because runIfAlice ensures that the listener is alive). However, if we
+  // captured a shared_ptr, then the TCPHandle would be kept alive by the
+  // callback even if the listener got destroyed. To avoid that we capture a
+  // weak_ptr, which we're however sure we'll be able to lock.
+  listener_->accept(
+      connection,
+      runIfAlive(
+          *this,
+          std::function<void(Listener&, int)>(
+              [weakConnection{std::weak_ptr<TCPHandle>(connection)}](
+                  Listener& listener, int status) {
+                std::shared_ptr<TCPHandle> sameConnection =
+                    weakConnection.lock();
+                TP_DCHECK(sameConnection);
+                listener.acceptCallback(std::move(sameConnection), status);
+              })));
+}
+
+void Listener::acceptCallback(
+    std::shared_ptr<TCPHandle> connection,
+    int status) {
+  connectionsWaitingForAccept_.erase(connection);
+  if (status != 0) {
+    connection->close();
+    callback_.trigger(
+        TP_CREATE_ERROR(UVError, status), std::shared_ptr<Connection>());
+    return;
+  }
   callback_.trigger(
       Error::kSuccess, Connection::create(loop_, std::move(connection)));
 }

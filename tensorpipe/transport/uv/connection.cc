@@ -87,23 +87,25 @@ void Connection::write(const void* ptr, size_t length, write_callback_fn fn) {
   auto& writeOperation = writeOperations_.back();
 
   // Populate uv_buf_t array that we'll write for this operation.
-  const uv_buf_t bufs[2] = {
-      {.base = const_cast<char*>(
-           reinterpret_cast<const char*>(&writeOperation.length)),
-       .len = sizeof(writeOperation.length)},
-      {.base = const_cast<char*>(writeOperation.ptr),
-       .len = writeOperation.length},
-  };
+  auto bufs = std::shared_ptr<uv_buf_t>(
+      new uv_buf_t[2], std::default_delete<uv_buf_t[]>());
+  uv_buf_t* bufs_ptr = bufs.get();
+  unsigned int bufs_len = 2;
+  bufs_ptr[0].base =
+      const_cast<char*>(reinterpret_cast<const char*>(&writeOperation.length));
+  bufs_ptr[0].len = sizeof(writeOperation.length);
+  bufs_ptr[1].base = const_cast<char*>(writeOperation.ptr);
+  bufs_ptr[1].len = writeOperation.length;
 
   // Capture a shared_ptr to this connection such that it cannot be
   // destructed until all write callbacks have fired.
   handle_->write(
-      bufs,
-      sizeof(bufs) / sizeof(bufs[0]),
+      bufs_ptr,
+      bufs_len,
       runIfAlive(
           *this,
           std::function<void(Connection&, int)>(
-              [](Connection& connection, int status) {
+              [bufs{std::move(bufs)}](Connection& connection, int status) {
                 connection.writeCallback(status);
               })));
 }

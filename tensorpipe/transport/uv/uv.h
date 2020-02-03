@@ -12,6 +12,7 @@
 
 #include <uv.h>
 
+#include <tensorpipe/common/callback.h>
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/optional.h>
 #include <tensorpipe/transport/uv/loop.h>
@@ -74,9 +75,10 @@ class BaseHandle : public BaseResource<T, U> {
   }
 
   virtual void close() {
-    this->loop_->run([&] {
-      uv_close(reinterpret_cast<uv_handle_t*>(&handle_), uv__close_cb);
-    });
+    this->loop_->defer(runIfAlive(*this, std::function<void(T&)>([](T& handle) {
+      uv_close(
+          reinterpret_cast<uv_handle_t*>(&handle.handle_), handle.uv__close_cb);
+    })));
   }
 
  protected:
@@ -157,6 +159,7 @@ class StreamHandle : public BaseHandle<T, U> {
 
  public:
   using TConnectionCallback = std::function<void(int status)>;
+  using TAcceptCallback = std::function<void(int status)>;
   using TAllocCallback = std::function<void(uv_buf_t* buf)>;
   using TReadCallback = std::function<void(ssize_t nread, const uv_buf_t* buf)>;
 
@@ -170,23 +173,27 @@ class StreamHandle : public BaseHandle<T, U> {
     TP_THROW_ASSERT_IF(connectionCallback_.has_value());
     connectionCallback_ = std::move(connectionCallback);
 
-    this->loop_->run([&] {
+    this->loop_->defer(runIfAlive(*this, std::function<void(T&)>([](T& handle) {
       auto rv = uv_listen(
-          reinterpret_cast<uv_stream_t*>(this->ptr()),
+          reinterpret_cast<uv_stream_t*>(handle.ptr()),
           kBacklog,
-          uv__connection_cb);
+          handle.uv__connection_cb);
       TP_THROW_UV_IF(rv < 0, rv);
-    });
+    })));
   }
 
   template <typename V>
-  void accept(std::shared_ptr<V> other) {
-    this->loop_->run([&] {
-      auto rv = uv_accept(
-          reinterpret_cast<uv_stream_t*>(this->ptr()),
-          reinterpret_cast<uv_stream_t*>(other->ptr()));
-      TP_THROW_UV_IF(rv < 0, rv);
-    });
+  void accept(std::shared_ptr<V> other, TAcceptCallback acceptCallback) {
+    this->loop_->defer(runIfAlive(
+        *this,
+        std::function<void(T&)>(
+            [otherPtr{other->ptr()},
+             acceptCallback{std::move(acceptCallback)}](T& handle) mutable {
+              auto status = uv_accept(
+                  reinterpret_cast<uv_stream_t*>(handle.ptr()),
+                  reinterpret_cast<uv_stream_t*>(otherPtr));
+              acceptCallback(status);
+            })));
   }
 
   void armAllocCallback(TAllocCallback fn) {
@@ -202,20 +209,20 @@ class StreamHandle : public BaseHandle<T, U> {
   void readStart() {
     TP_THROW_ASSERT_IF(!allocCallback_.has_value());
     TP_THROW_ASSERT_IF(!readCallback_.has_value());
-    this->loop_->run([&] {
+    this->loop_->defer(runIfAlive(*this, std::function<void(T&)>([](T& handle) {
       auto rv = uv_read_start(
-          reinterpret_cast<uv_stream_t*>(this->ptr()),
-          uv__alloc_cb,
-          uv__read_cb);
+          reinterpret_cast<uv_stream_t*>(handle.ptr()),
+          handle.uv__alloc_cb,
+          handle.uv__read_cb);
       TP_THROW_UV_IF(rv < 0, rv);
-    });
+    })));
   }
 
   void readStop() {
-    this->loop_->run([&] {
-      auto rv = uv_read_stop(reinterpret_cast<uv_stream_t*>(this->ptr()));
+    this->loop_->defer(runIfAlive(*this, std::function<void(T&)>([](T& handle) {
+      auto rv = uv_read_stop(reinterpret_cast<uv_stream_t*>(handle.ptr()));
       TP_THROW_UV_IF(rv < 0, rv);
-    });
+    })));
   }
 
   void write(
@@ -224,15 +231,18 @@ class StreamHandle : public BaseHandle<T, U> {
       WriteRequest::TWriteCallback fn) {
     auto request =
         this->loop_->template createRequest<WriteRequest>(std::move(fn));
-    this->loop_->run([&] {
-      auto rv = uv_write(
-          request->ptr(),
-          reinterpret_cast<uv_stream_t*>(this->ptr()),
-          bufs,
-          nbufs,
-          request->callback());
-      TP_THROW_UV_IF(rv < 0, rv);
-    });
+    this->loop_->defer(runIfAlive(
+        *this,
+        std::function<void(T&)>(
+            [bufs, nbufs, request{std::move(request)}](T& handle) {
+              auto rv = uv_write(
+                  request->ptr(),
+                  reinterpret_cast<uv_stream_t*>(handle.ptr()),
+                  bufs,
+                  nbufs,
+                  request->callback());
+              TP_THROW_UV_IF(rv < 0, rv);
+            })));
   }
 
  protected:

@@ -39,7 +39,9 @@ Loop::~Loop() noexcept {
 }
 
 void Loop::join() {
-  run([&] { uv_unref(reinterpret_cast<uv_handle_t*>(async_.get())); });
+  defer(runIfAlive(*this, std::function<void(Loop&)>([](Loop& loop) {
+    uv_unref(reinterpret_cast<uv_handle_t*>(loop.async_.get()));
+  })));
 
   // Wait for event loop thread to terminate.
   thread_.join();
