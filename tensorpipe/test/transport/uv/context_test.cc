@@ -15,7 +15,7 @@ using namespace tensorpipe::transport;
 
 TEST(Context, Basics) {
   auto context = std::make_shared<uv::Context>();
-  auto addr = "::1";
+  auto addr = "127.0.0.1";
 
   {
     std::mutex mutex;

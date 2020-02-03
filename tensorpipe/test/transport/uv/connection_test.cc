@@ -53,7 +53,7 @@ void initializePeers(
 
 TEST(Connection, Initialization) {
   auto loop = uv::Loop::create();
-  auto addr = uv::Sockaddr::createInetSockAddr("::1");
+  auto addr = uv::Sockaddr::createInetSockAddr("127.0.0.1");
   constexpr size_t numBytes = 13;
 
   initializePeers(
@@ -84,7 +84,7 @@ TEST(Connection, Initialization) {
 
 TEST(Connection, InitializationError) {
   auto loop = uv::Loop::create();
-  auto addr = uv::Sockaddr::createInetSockAddr("::1");
+  auto addr = uv::Sockaddr::createInetSockAddr("127.0.0.1");
 
   initializePeers(
       loop,
@@ -106,7 +106,7 @@ TEST(Connection, InitializationError) {
 
 TEST(Connection, DestroyConnectionFromCallback) {
   auto loop = uv::Loop::create();
-  auto addr = uv::Sockaddr::createInetSockAddr("::1");
+  auto addr = uv::Sockaddr::createInetSockAddr("127.0.0.1");
 
   initializePeers(
       loop,
