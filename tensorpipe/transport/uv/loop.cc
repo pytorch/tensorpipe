@@ -31,7 +31,7 @@ Loop::~Loop() noexcept {
 }
 
 void Loop::join() {
-  run([&] { uv_close(reinterpret_cast<uv_handle_t*>(async_.get()), nullptr); });
+  run([&] { uv_unref(reinterpret_cast<uv_handle_t*>(async_.get())); });
 
   // Wait for event loop thread to terminate.
   thread_.join();
@@ -49,8 +49,14 @@ void Loop::wakeup() {
 }
 
 void Loop::loop() {
-  auto rv = uv_run(loop_.get(), UV_RUN_DEFAULT);
-  TP_THROW_ASSERT_IF(rv != 0)
+  int rv;
+  rv = uv_run(loop_.get(), UV_RUN_DEFAULT);
+  TP_THROW_ASSERT_IF(rv > 0)
+      << ": uv_run returned with active handles or requests";
+  uv_ref(reinterpret_cast<uv_handle_t*>(async_.get()));
+  uv_close(reinterpret_cast<uv_handle_t*>(async_.get()), nullptr);
+  rv = uv_run(loop_.get(), UV_RUN_NOWAIT);
+  TP_THROW_ASSERT_IF(rv > 0)
       << ": uv_run returned with active handles or requests";
 }
 
