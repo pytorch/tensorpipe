@@ -74,10 +74,15 @@ void Listener::armListener_(std::string scheme) {
   auto transportListener = iter->second;
   transportListener->accept(runIfAlive(
       *this,
-      std::function<void(Listener&, std::shared_ptr<transport::Connection>)>(
+      std::function<void(
+          Listener&,
+          const transport::Error& /* unused */,
+          std::shared_ptr<transport::Connection>)>(
           [scheme](
               Listener& listener,
+              const transport::Error& error,
               std::shared_ptr<transport::Connection> connection) {
+            // TODO Implement proper error handling in Listener.
             listener.onAccept_(std::move(connection));
             listener.armListener_(scheme);
           })));

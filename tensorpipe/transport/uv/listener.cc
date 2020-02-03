@@ -9,7 +9,9 @@
 #include <tensorpipe/transport/uv/listener.h>
 
 #include <tensorpipe/common/callback.h>
+#include <tensorpipe/transport/error_macros.h>
 #include <tensorpipe/transport/uv/connection.h>
+#include <tensorpipe/transport/uv/error.h>
 #include <tensorpipe/transport/uv/uv.h>
 
 namespace tensorpipe {
@@ -62,8 +64,8 @@ address_t Listener::addr() const {
 
 void Listener::connectionCallback(int status) {
   if (status != 0) {
-    TP_LOG_WARNING() << "connection callback called with status " << status
-                     << ": " << uv_strerror(status);
+    fn_.value()(
+        TP_CREATE_ERROR(UVError, status), std::shared_ptr<Connection>());
     return;
   }
 
@@ -76,7 +78,8 @@ void Listener::connectionCallback(int status) {
     return;
   }
 
-  fn_.value()(Connection::create(loop_, std::move(connection)));
+  fn_.value()(
+      Error::kSuccess, Connection::create(loop_, std::move(connection)));
 }
 
 } // namespace uv

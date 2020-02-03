@@ -25,11 +25,13 @@ TEST(Listener, Basics) {
 
     // Listener runs callback for every new connection.
     auto listener = shm::Listener::create(loop, addr);
-    listener->accept([&](std::shared_ptr<Connection> connection) {
-      std::lock_guard<std::mutex> lock(mutex);
-      connections.push_back(std::move(connection));
-      cv.notify_one();
-    });
+    listener->accept(
+        [&](const Error& error, std::shared_ptr<Connection> connection) {
+          ASSERT_FALSE(error) << error.what();
+          std::lock_guard<std::mutex> lock(mutex);
+          connections.push_back(std::move(connection));
+          cv.notify_one();
+        });
 
     // Connect to listener.
     auto socket = shm::Socket::createForFamily(AF_UNIX);

@@ -57,15 +57,16 @@ void Listener::handleEvents(int events) {
     return;
   }
 
-  auto socket = listener_->accept();
-  if (!socket) {
-    return;
-  }
-
   auto fn = std::move(fn_).value();
   loop_->unregisterDescriptor(listener_->fd());
   fn_.reset();
-  fn(Connection::create(loop_, socket));
+  auto socket = listener_->accept();
+  if (socket) {
+    fn(Error::kSuccess, Connection::create(loop_, socket));
+  } else {
+    fn(TP_CREATE_ERROR(SystemError, "accept", errno),
+       std::shared_ptr<Connection>());
+  }
 }
 
 } // namespace shm
