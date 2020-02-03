@@ -33,9 +33,8 @@ void TCPHandle::noDelay(bool enable) {
 
 void TCPHandle::bind(const Sockaddr& addr) {
   loop_->defer(runIfAlive(
-      *this,
-      std::function<void(TCPHandle&)>([addr{addr.addr()}](TCPHandle& handle) {
-        auto rv = uv_tcp_bind(&handle.handle_, addr, 0);
+      *this, std::function<void(TCPHandle&)>([addr](TCPHandle& handle) {
+        auto rv = uv_tcp_bind(&handle.handle_, addr.addr(), 0);
         TP_THROW_UV_IF(rv < 0, rv);
       })));
 }
@@ -72,12 +71,12 @@ void TCPHandle::connect(
   auto request = loop_->createRequest<ConnectRequest>(std::move(fn));
   loop_->defer(runIfAlive(
       *this,
-      std::function<void(TCPHandle&)>(
-          [addr{addr.addr()}, request{std::move(request)}](TCPHandle& handle) {
-            auto rv = uv_tcp_connect(
-                request->ptr(), &handle.handle_, addr, request->callback());
-            TP_THROW_UV_IF(rv < 0, rv);
-          })));
+      std::function<void(TCPHandle&)>([addr, request{std::move(request)}](
+                                          TCPHandle& handle) {
+        auto rv = uv_tcp_connect(
+            request->ptr(), &handle.handle_, addr.addr(), request->callback());
+        TP_THROW_UV_IF(rv < 0, rv);
+      })));
 }
 
 } // namespace uv
