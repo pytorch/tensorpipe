@@ -12,8 +12,7 @@
 
 namespace tensorpipe {
 
-std::tuple<std::string, std::string> splitSchemeOfAddress(
-    const std::string& addr) {
+std::tuple<std::string, std::string> splitSchemeOfURL(const std::string& addr) {
   std::string::size_type endOfScheme = addr.find("://");
   if (endOfScheme == std::string::npos) {
     TP_THROW_EINVAL() << "addr has no scheme: " << addr;

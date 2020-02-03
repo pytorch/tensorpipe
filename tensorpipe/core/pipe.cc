@@ -53,15 +53,14 @@ void writeProtobufToConnection(
 
 std::shared_ptr<Pipe> Pipe::create(
     std::shared_ptr<Context> context,
-    const std::string& addr) {
-  std::string scheme;
-  std::string host; // FIXME Pick a better name
-  std::tie(scheme, host) = splitSchemeOfAddress(addr);
+    const std::string& url) {
+  std::string transport;
+  std::string address;
+  std::tie(transport, address) = splitSchemeOfURL(url);
+  std::shared_ptr<transport::Connection> connection =
+      context->getContextForTransport_(transport)->connect(address);
   auto pipe = std::make_shared<Pipe>(
-      ConstructorToken(),
-      std::move(context),
-      scheme,
-      context->getContextForScheme_(scheme)->connect(host));
+      ConstructorToken(), std::move(context), transport, std::move(connection));
   proto::Packet pbPacketOut;
   // This makes the packet contain a SpontaneousConnection message.
   pbPacketOut.mutable_spontaneous_connection();

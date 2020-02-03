@@ -16,15 +16,16 @@ namespace tensorpipe {
 
 std::shared_ptr<Listener> Listener::create(
     std::shared_ptr<Context> context,
-    const std::vector<std::string>& addrs) {
+    const std::vector<std::string>& urls) {
   std::unordered_map<std::string, std::shared_ptr<transport::Listener>>
       transportListeners;
-  for (const auto& addr : addrs) {
-    std::string scheme;
-    std::string host; // FIXME Pick a better name
-    std::tie(scheme, host) = splitSchemeOfAddress(addr);
+  for (const auto& url : urls) {
+    std::string transport;
+    std::string address;
+    std::tie(transport, address) = splitSchemeOfURL(url);
     transportListeners.emplace(
-        scheme, context->getContextForScheme_(scheme)->listen(host));
+        transport,
+        context->getContextForTransport_(transport)->listen(address));
   }
   auto listener = std::make_shared<Listener>(
       ConstructorToken(), std::move(context), std::move(transportListeners));
@@ -85,10 +86,10 @@ void Listener::onAccept_(
           })));
 }
 
-void Listener::armListener_(std::string scheme) {
-  auto iter = listeners_.find(scheme);
+void Listener::armListener_(std::string transport) {
+  auto iter = listeners_.find(transport);
   if (iter == listeners_.end()) {
-    TP_THROW_EINVAL() << "got unsupported scheme: " << scheme;
+    TP_THROW_EINVAL() << "unsupported transport " << transport;
   }
   auto transportListener = iter->second;
   transportListener->accept(runIfAlive(
@@ -97,13 +98,13 @@ void Listener::armListener_(std::string scheme) {
           Listener&,
           const transport::Error&,
           std::shared_ptr<transport::Connection>)>(
-          [scheme](
+          [transport](
               Listener& listener,
               const transport::Error& /* unused */,
               std::shared_ptr<transport::Connection> connection) {
             // TODO Implement proper error handling in Listener.
-            listener.onAccept_(scheme, std::move(connection));
-            listener.armListener_(scheme);
+            listener.onAccept_(transport, std::move(connection));
+            listener.armListener_(transport);
           })));
 }
 

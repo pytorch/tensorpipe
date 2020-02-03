@@ -42,11 +42,11 @@ void Context::start_() {
   callbackCaller_ = std::thread([this]() { runCallbackCaller_(); });
 }
 
-std::shared_ptr<transport::Context> Context::getContextForScheme_(
-    std::string scheme) {
-  auto iter = contexts_.find(scheme);
+std::shared_ptr<transport::Context> Context::getContextForTransport_(
+    std::string transport) {
+  auto iter = contexts_.find(transport);
   if (iter == contexts_.end()) {
-    TP_THROW_EINVAL() << "addr has unsupported scheme: " << scheme;
+    TP_THROW_EINVAL() << "unsupported transport " << transport;
   }
   return iter->second;
 }

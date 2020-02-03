@@ -43,7 +43,7 @@ class Context final {
   std::unordered_map<std::string, std::shared_ptr<transport::Context>>
       contexts_;
 
-  std::shared_ptr<transport::Context> getContextForScheme_(std::string);
+  std::shared_ptr<transport::Context> getContextForTransport_(std::string);
 
   std::thread callbackCaller_;
   Queue<optional<std::function<void()>>> callbackQueue_;
