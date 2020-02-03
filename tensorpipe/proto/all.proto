@@ -10,6 +10,12 @@ syntax = "proto3";
 
 package tensorpipe.proto;
 
+message SpontaneousConnection {}
+
+message RequestedConnection {
+  uint64 registration_id = 1;
+}
+
 enum DeviceType {
   DEVICE_TYPE_UNSPECIFIED = 0;
   DEVICE_TYPE_CPU = 1;
@@ -30,6 +36,8 @@ message MessageDescriptor {
   repeated TensorDescriptor tensor_descriptors = 2;
 }
 
+message Request {}
+
 message Message {
   message Tensor {
     bytes data = 1;
@@ -39,12 +47,12 @@ message Message {
   repeated Tensor tensors = 2;
 }
 
-message Request {}
-
 message Packet {
   oneof type {
-    MessageDescriptor message_descriptor = 1;
-    Message message = 2;
-    Request request = 3;
+    SpontaneousConnection spontaneous_connection = 1;
+    RequestedConnection requested_connection = 2;
+    MessageDescriptor message_descriptor = 3;
+    Request request = 4;
+    Message message = 5;
   }
 }

@@ -14,8 +14,7 @@
 #include <tensorpipe/common/callback.h>
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/core/error_macros.h>
-#include <tensorpipe/proto/hello.pb.h>
-#include <tensorpipe/proto/message_descriptor.pb.h>
+#include <tensorpipe/proto/all.pb.h>
 
 namespace tensorpipe {
 
@@ -62,10 +61,11 @@ std::shared_ptr<Pipe> Pipe::create(
       ConstructorToken(),
       std::move(context),
       context->getContextForScheme_(scheme)->connect(host));
-  proto::Hello pbHello;
-  pbHello.mutable_spontaneous_connection();
+  proto::Packet pbPacketOut;
+  // This makes the packet contain a SpontaneousConnection message.
+  pbPacketOut.mutable_spontaneous_connection();
   writeProtobufToConnection(
-      pipe->connection_, &pbHello, pipe->wrapWriteCallback_());
+      pipe->connection_, &pbPacketOut, pipe->wrapWriteCallback_());
   pipe->start_();
   return pipe;
 }

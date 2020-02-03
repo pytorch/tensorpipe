@@ -16,7 +16,7 @@
 #include <tensorpipe/core/context.h>
 #include <tensorpipe/core/error.h>
 #include <tensorpipe/core/message.h>
-#include <tensorpipe/proto/message_descriptor.pb.h>
+#include <tensorpipe/proto/all.pb.h>
 #include <tensorpipe/transport/connection.h>
 
 namespace tensorpipe {

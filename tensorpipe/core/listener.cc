@@ -10,7 +10,7 @@
 
 #include <tensorpipe/common/address.h>
 #include <tensorpipe/common/defs.h>
-#include <tensorpipe/proto/hello.pb.h>
+#include <tensorpipe/proto/all.pb.h>
 
 namespace tensorpipe {
 
@@ -107,26 +107,26 @@ void Listener::onConnectionHelloRead_(
     std::shared_ptr<transport::Connection> connection,
     const void* ptr,
     size_t len) {
-  proto::Hello pbHello;
+  proto::Packet pbPacketIn;
   {
-    auto success = pbHello.ParseFromArray(ptr, len);
-    TP_DCHECK(success) << "couldn't parse hello";
+    bool success = pbPacketIn.ParseFromArray(ptr, len);
+    TP_DCHECK(success) << "couldn't parse packet";
   }
-  if (pbHello.has_spontaneous_connection()) {
+  if (pbPacketIn.has_spontaneous_connection()) {
     std::shared_ptr<Pipe> pipe = std::make_shared<Pipe>(
         Pipe::ConstructorToken(), context_, std::move(connection));
     pipe->start_();
     acceptCallback_.trigger(Error::kSuccess, std::move(pipe));
-  } else if (pbHello.has_requested_connection()) {
+  } else if (pbPacketIn.has_requested_connection()) {
     const proto::RequestedConnection& pbRequestedConnection =
-        pbHello.requested_connection();
+        pbPacketIn.requested_connection();
     uint64_t registrationId = pbRequestedConnection.registration_id();
     auto fn = std::move(connectionRequestRegistrations_.at(registrationId));
     connectionRequestRegistrations_.erase(registrationId);
     fn(std::move(connection));
   } else {
-    TP_LOG_ERROR() << "hello contained unknown content: "
-                   << pbHello.type_case();
+    TP_LOG_ERROR() << "packet contained unknown content: "
+                   << pbPacketIn.type_case();
   }
 }
 
