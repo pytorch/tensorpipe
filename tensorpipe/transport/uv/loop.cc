@@ -27,7 +27,7 @@ Loop::~Loop() noexcept {
   TP_DCHECK(!thread_.joinable());
   // Release resources associated with loop.
   auto rv = uv_loop_close(loop_.get());
-  TP_DCHECK(rv == 0);
+  TP_THROW_UV_IF(rv < 0, rv);
 }
 
 void Loop::join() {

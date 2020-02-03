@@ -15,7 +15,7 @@ void TCPHandle::init() {
 void TCPHandle::noDelay(bool enable) {
   loop_->run([&] {
     auto rv = uv_tcp_nodelay(&handle_, enable ? 1 : 0);
-    TP_THROW_SYSTEM_IF(rv == -1, errno);
+    TP_THROW_UV_IF(rv < 0, rv);
   });
 }
 
