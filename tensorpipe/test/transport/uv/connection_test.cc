@@ -133,3 +133,34 @@ TEST(Connection, DestroyConnectionFromCallback) {
 
   loop->join();
 }
+
+TEST(Connection, LargeWrite) {
+  auto loop = uv::Loop::create();
+  auto addr = uv::Sockaddr::createInetSockAddr("127.0.0.1");
+
+  constexpr int kMsgSize = 16 * 1024 * 1024;
+  std::string msg(kMsgSize, 0x42);
+
+  initializePeers(
+      loop,
+      addr,
+      [&](std::shared_ptr<Connection> conn) {
+        conn->write(msg.c_str(), msg.length(), [conn](const Error& error) {
+          ASSERT_FALSE(error) << error.what();
+        });
+      },
+      [&](std::shared_ptr<Connection> conn) {
+        conn->read([&, conn](const Error& error, const void* data, size_t len) {
+          ASSERT_FALSE(error) << error.what();
+          ASSERT_EQ(len, msg.length());
+          const char* cdata = (const char*)data;
+          for (int i = 0; i < len; ++i) {
+            const char c = cdata[i];
+            ASSERT_EQ(c, msg[i])
+                << "Wrong value at position " << i << " of " << msg.length();
+          }
+        });
+      });
+
+  loop->join();
+}
