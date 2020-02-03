@@ -21,3 +21,7 @@ $ ninja
 ```
 
 You can find test executables in `build/tensorpipe/test`.
+
+## License
+
+TensorPipe is BSD licensed, as found in the [LICENSE.txt](LICENSE.txt) file.
