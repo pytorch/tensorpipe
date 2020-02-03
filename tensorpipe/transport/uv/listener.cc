@@ -55,7 +55,7 @@ Sockaddr Listener::sockaddr() {
 }
 
 void Listener::accept(accept_callback_fn fn) {
-  fn_.emplace(std::move(fn));
+  callback_.arm(std::move(fn));
 }
 
 address_t Listener::addr() const {
@@ -64,21 +64,14 @@ address_t Listener::addr() const {
 
 void Listener::connectionCallback(int status) {
   if (status != 0) {
-    fn_.value()(
+    callback_.trigger(
         TP_CREATE_ERROR(UVError, status), std::shared_ptr<Connection>());
     return;
   }
 
   auto connection = loop_->createHandle<TCPHandle>();
   listener_->accept(connection);
-  if (!fn_) {
-    TP_LOG_WARNING() << "closing accepted connection because listener "
-                     << "doesn't have an accept callback";
-    connection->close();
-    return;
-  }
-
-  fn_.value()(
+  callback_.trigger(
       Error::kSuccess, Connection::create(loop_, std::move(connection)));
 }
 

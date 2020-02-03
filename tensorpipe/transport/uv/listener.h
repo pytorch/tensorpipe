@@ -10,7 +10,7 @@
 
 #include <memory>
 
-#include <tensorpipe/common/optional.h>
+#include <tensorpipe/common/callback.h>
 #include <tensorpipe/transport/listener.h>
 
 #include <tensorpipe/transport/uv/loop.h>
@@ -54,7 +54,18 @@ class Listener : public transport::Listener,
  protected:
   std::shared_ptr<Loop> loop_;
   std::shared_ptr<TCPHandle> listener_;
-  optional<accept_callback_fn> fn_;
+  // Once an accept callback fires, it becomes disarmed and must be rearmed. Any
+  // firings that occur while the callback is disarmed are stashed and triggered
+  // as soon as it's rearmed. With libuv we don't have the ability to disable
+  // the lower-level callback when the user callback is disarmed. So we'll keep
+  // getting notified of new connections even if we don't know what to do with
+  // them and don't want them. Thus we must store them somewhere. This is what
+  // RearmableCallback is for.
+  RearmableCallback<
+      accept_callback_fn,
+      const Error&,
+      std::shared_ptr<Connection>>
+      callback_;
 
   // This function is called by the event loop if the listening socket can
   // accept a new connection. Status is 0 in case of success, < 0

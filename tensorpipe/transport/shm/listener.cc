@@ -52,10 +52,9 @@ address_t Listener::addr() const {
 
 void Listener::handleEvents(int events) {
   TP_ARG_CHECK_EQ(events, EPOLLIN);
-
-  if (!fn_.has_value()) {
-    return;
-  }
+  TP_DCHECK(fn_.has_value())
+      << "when the callback is disarmed the listener's descriptor is supposed "
+      << "to be unregistered";
 
   auto fn = std::move(fn_).value();
   loop_->unregisterDescriptor(listener_->fd());
