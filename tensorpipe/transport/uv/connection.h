@@ -120,14 +120,8 @@ class Connection : public transport::Connection,
   // Called when libuv is about to read data from connection.
   void allocCallback(uv_buf_t* buf);
 
-  // Bound std::function for `allocCallback`.
-  std::function<void(uv_buf_t* buf)> allocCallback_;
-
   // Called when libuv has read data from connection.
   void readCallback(ssize_t nread, const uv_buf_t* buf);
-
-  // Bound std::function for `readCallback`.
-  std::function<void(ssize_t nread, const uv_buf_t* buf)> readCallback_;
 
   // The write operation captures all state associated with writing a
   // fixed length chunk of data from the underlying connection. The

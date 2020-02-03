@@ -123,7 +123,8 @@ template <typename T, typename U>
 class StreamHandle : public BaseHandle<T, U> {
   static void uv__connection_cb(uv_stream_t* server, int status) {
     T& ref = *reinterpret_cast<T*>(server->data);
-    ref.connectionCallback(status);
+    TP_DCHECK(ref.connectionCallback_.has_value());
+    ref.connectionCallback_.value()(status);
   }
 
   static void uv__alloc_cb(
@@ -131,7 +132,8 @@ class StreamHandle : public BaseHandle<T, U> {
       size_t /* unused */,
       uv_buf_t* buf) {
     T& ref = *reinterpret_cast<T*>(handle->data);
-    ref.allocCallback(buf);
+    TP_DCHECK(ref.allocCallback_.has_value());
+    ref.allocCallback_.value()(buf);
   }
 
   static void uv__read_cb(
@@ -139,7 +141,8 @@ class StreamHandle : public BaseHandle<T, U> {
       ssize_t nread,
       const uv_buf_t* buf) {
     T& ref = *reinterpret_cast<T*>(server->data);
-    ref.readCallback(nread, buf);
+    TP_DCHECK(ref.readCallback_.has_value());
+    ref.readCallback_.value()(nread, buf);
   }
 
   static constexpr int kBacklog = 128;
@@ -153,12 +156,11 @@ class StreamHandle : public BaseHandle<T, U> {
 
   ~StreamHandle() override = default;
 
-  void listen(TConnectionCallback fn) {
-    {
-      std::unique_lock<std::mutex> lock(mutex_);
-      TP_THROW_ASSERT_IF(fn_.has_value());
-      fn_ = std::move(fn);
-    }
+  // TODO Split this into a armConnectionCallback, a listenStart and a
+  // listenStop method, to propagate the backpressure to the clients.
+  void listen(TConnectionCallback connectionCallback) {
+    TP_THROW_ASSERT_IF(connectionCallback_.has_value());
+    connectionCallback_ = std::move(connectionCallback);
 
     this->loop_->run([&] {
       auto rv = uv_listen(
@@ -179,19 +181,25 @@ class StreamHandle : public BaseHandle<T, U> {
     });
   }
 
-  void readStart(TAllocCallback allocCallback, TReadCallback readCallback) {
+  void armAllocCallback(TAllocCallback fn) {
+    TP_THROW_ASSERT_IF(allocCallback_.has_value());
+    allocCallback_ = std::move(fn);
+  }
+
+  void armReadCallback(TReadCallback fn) {
+    TP_THROW_ASSERT_IF(readCallback_.has_value());
+    readCallback_ = std::move(fn);
+  }
+
+  void readStart() {
+    TP_THROW_ASSERT_IF(!allocCallback_.has_value());
+    TP_THROW_ASSERT_IF(!readCallback_.has_value());
     this->loop_->run([&] {
       auto rv = uv_read_start(
           reinterpret_cast<uv_stream_t*>(this->ptr()),
           uv__alloc_cb,
           uv__read_cb);
       TP_THROW_UV_IF(rv < 0, rv);
-
-      // Assign callbacks from event loop thread. By doing so, we
-      // don't have to worry about mutual exclusion when the thread
-      // calling `readStart` races with the event loop thread.
-      allocCallback_ = std::move(allocCallback);
-      readCallback_ = std::move(readCallback);
     });
   }
 
@@ -220,28 +228,9 @@ class StreamHandle : public BaseHandle<T, U> {
   }
 
  protected:
-  std::mutex mutex_;
-  optional<TConnectionCallback> fn_;
+  optional<TConnectionCallback> connectionCallback_;
   optional<TAllocCallback> allocCallback_;
   optional<TReadCallback> readCallback_;
-
-  void connectionCallback(int status) {
-    if (fn_) {
-      fn_.value()(status);
-    }
-  }
-
-  void allocCallback(uv_buf_t* buf) {
-    if (allocCallback_) {
-      allocCallback_.value()(buf);
-    }
-  }
-
-  void readCallback(ssize_t nread, const uv_buf_t* buf) {
-    if (readCallback_) {
-      readCallback_.value()(nread, buf);
-    }
-  }
 };
 
 class ConnectRequest : public BaseRequest<ConnectRequest, uv_connect_t> {

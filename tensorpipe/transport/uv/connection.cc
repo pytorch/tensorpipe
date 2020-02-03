@@ -41,18 +41,18 @@ Connection::~Connection() {
 }
 
 void Connection::init() {
-  allocCallback_ = runIfAlive(
+  handle_->armAllocCallback(runIfAlive(
       *this,
       std::function<void(Connection&, uv_buf_t*)>(
           [](Connection& connection, uv_buf_t* buf) {
             connection.allocCallback(buf);
-          }));
-  readCallback_ = runIfAlive(
+          })));
+  handle_->armReadCallback(runIfAlive(
       *this,
       std::function<void(Connection&, ssize_t, const uv_buf_t*)>(
           [](Connection& connection, ssize_t nread, const uv_buf_t* buf) {
             connection.readCallback(nread, buf);
-          }));
+          })));
 }
 
 void Connection::read(read_callback_fn fn) {
@@ -60,7 +60,7 @@ void Connection::read(read_callback_fn fn) {
   readOperations_.emplace_back(std::move(fn));
   // Start reading if this is the first read operation.
   if (readOperations_.size() == 1) {
-    handle_->readStart(allocCallback_, readCallback_);
+    handle_->readStart();
   }
 }
 
@@ -69,7 +69,7 @@ void Connection::read(void* ptr, size_t length, read_callback_fn fn) {
   readOperations_.emplace_back(ptr, length, std::move(fn));
   // Start reading if this is the first read operation.
   if (readOperations_.size() == 1) {
-    handle_->readStart(allocCallback_, readCallback_);
+    handle_->readStart();
   }
 }
 
@@ -92,7 +92,12 @@ void Connection::write(const void* ptr, size_t length, write_callback_fn fn) {
   handle_->write(
       bufs,
       sizeof(bufs) / sizeof(bufs[0]),
-      [self{shared_from_this()}](int status) { self->writeCallback(status); });
+      runIfAlive(
+          *this,
+          std::function<void(Connection&, int)>(
+              [](Connection& connection, int status) {
+                connection.writeCallback(status);
+              })));
 }
 
 void Connection::ReadOperation::alloc(uv_buf_t* buf) {

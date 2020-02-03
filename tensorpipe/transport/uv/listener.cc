@@ -35,8 +35,8 @@ Listener::~Listener() {
 void Listener::start() {
   listener_->listen(runIfAlive(
       *this,
-      std::function<void(Listener&, int)>([](Listener& self, int status) {
-        self.connectionCallback(status);
+      std::function<void(Listener&, int)>([](Listener& listener, int status) {
+        listener.connectionCallback(status);
       })));
 }
 
