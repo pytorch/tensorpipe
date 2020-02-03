@@ -2,6 +2,7 @@ find_package(Protobuf 3 REQUIRED)
 protobuf_generate_cpp(
   PROTOBUF_SOURCES
   PROTOBUF_HEADERS
+  ${CMAKE_CURRENT_SOURCE_DIR}/hello.proto
   ${CMAKE_CURRENT_SOURCE_DIR}/message_descriptor.proto
   )
 add_library(tensorpipe_proto ${PROTOBUF_SOURCES})

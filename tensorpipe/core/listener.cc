@@ -10,6 +10,7 @@
 
 #include <tensorpipe/common/address.h>
 #include <tensorpipe/common/defs.h>
+#include <tensorpipe/proto/hello.pb.h>
 
 namespace tensorpipe {
 
@@ -60,10 +61,24 @@ void Listener::accept(accept_callback_fn fn) {
 }
 
 void Listener::onAccept_(std::shared_ptr<transport::Connection> connection) {
-  auto pipe = std::make_shared<Pipe>(
-      Pipe::ConstructorToken(), context_, std::move(connection));
-  pipe->start_();
-  acceptCallback_.trigger(Error::kSuccess, std::move(pipe));
+  // Keep it alive until we figure out what to do with it.
+  connectionsWaitingForHello_.insert(connection);
+  connection->read(runIfAlive(
+      *this,
+      std::function<void(
+          Listener&, const transport::Error&, const void*, size_t)>(
+          [weakConnection{std::weak_ptr<transport::Connection>(connection)}](
+              Listener& listener,
+              const transport::Error& /* unused */,
+              const void* ptr,
+              size_t len) mutable {
+            // TODO Implement proper error handling in Listener.
+            std::shared_ptr<transport::Connection> connection =
+                weakConnection.lock();
+            TP_DCHECK(connection);
+            listener.connectionsWaitingForHello_.erase(connection);
+            listener.onConnectionHelloRead_(std::move(connection), ptr, len);
+          })));
 }
 
 void Listener::armListener_(std::string scheme) {
@@ -76,16 +91,54 @@ void Listener::armListener_(std::string scheme) {
       *this,
       std::function<void(
           Listener&,
-          const transport::Error& /* unused */,
+          const transport::Error&,
           std::shared_ptr<transport::Connection>)>(
           [scheme](
               Listener& listener,
-              const transport::Error& error,
+              const transport::Error& /* unused */,
               std::shared_ptr<transport::Connection> connection) {
             // TODO Implement proper error handling in Listener.
             listener.onAccept_(std::move(connection));
             listener.armListener_(scheme);
           })));
+}
+
+void Listener::onConnectionHelloRead_(
+    std::shared_ptr<transport::Connection> connection,
+    const void* ptr,
+    size_t len) {
+  proto::Hello pbHello;
+  {
+    auto success = pbHello.ParseFromArray(ptr, len);
+    TP_DCHECK(success) << "couldn't parse hello";
+  }
+  if (pbHello.has_spontaneous_connection()) {
+    std::shared_ptr<Pipe> pipe = std::make_shared<Pipe>(
+        Pipe::ConstructorToken(), context_, std::move(connection));
+    pipe->start_();
+    acceptCallback_.trigger(Error::kSuccess, std::move(pipe));
+  } else if (pbHello.has_requested_connection()) {
+    const proto::RequestedConnection& pbRequestedConnection =
+        pbHello.requested_connection();
+    uint64_t registrationId = pbRequestedConnection.registration_id();
+    auto fn = std::move(connectionRequestRegistrations_.at(registrationId));
+    connectionRequestRegistrations_.erase(registrationId);
+    fn(std::move(connection));
+  } else {
+    TP_LOG_ERROR() << "hello contained unknown content: "
+                   << pbHello.type_case();
+  }
+}
+
+uint64_t Listener::registerConnectionRequest_(
+    std::function<void(std::shared_ptr<transport::Connection>)> fn) {
+  uint64_t registrationId = nextConnectionRequestRegistrationId_++;
+  connectionRequestRegistrations_.emplace(registrationId, std::move(fn));
+  return registrationId;
+}
+
+void Listener::unregisterConnectionRequest_(uint64_t registrationId) {
+  connectionRequestRegistrations_.erase(registrationId);
 }
 
 } // namespace tensorpipe

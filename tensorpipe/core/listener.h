@@ -10,6 +10,7 @@
 
 #include <deque>
 #include <memory>
+#include <unordered_set>
 
 #include <tensorpipe/common/callback.h>
 #include <tensorpipe/common/optional.h>
@@ -64,6 +65,34 @@ class Listener final : public std::enable_shared_from_this<Listener> {
   void start_();
   void armListener_(std::string);
   void onAccept_(std::shared_ptr<transport::Connection>);
+  void onConnectionHelloRead_(
+      std::shared_ptr<transport::Connection>,
+      const void*,
+      size_t);
+
+  //
+  // Utilities for internal components to say they expect an incoming connection
+  //
+
+  // Needed to keep them alive.
+  std::unordered_set<std::shared_ptr<transport::Connection>>
+      connectionsWaitingForHello_;
+
+  uint64_t nextConnectionRequestRegistrationId_{0};
+
+  using connection_request_callback_fn =
+      std::function<void(std::shared_ptr<transport::Connection>)>;
+
+  uint64_t registerConnectionRequest_(connection_request_callback_fn);
+
+  void unregisterConnectionRequest_(uint64_t);
+
+  // FIXME Consider using a (ordered) map, because keys are IDs which are
+  // generated in sequence and thus we can do a quick (but partial) check of
+  // whether a callback is in the map by comparing its ID with the smallest and
+  // largest key, which in an ordered map are the first and last item.
+  std::unordered_map<uint64_t, connection_request_callback_fn>
+      connectionRequestRegistrations_;
 
   friend class Context;
 };
