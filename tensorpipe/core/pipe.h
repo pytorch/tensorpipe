@@ -108,24 +108,20 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
   // and helpers to prepare them
   //
 
-  using transport_read_callback_fn = transport::Connection::read_callback_fn;
+  using transport_read_packet_callback_fn =
+      transport::Connection::read_proto_callback_fn<proto::Packet>;
   using transport_write_callback_fn = transport::Connection::write_callback_fn;
 
-  using bound_read_callback_fn =
-      std::function<void(Pipe&, const void*, size_t)>;
-  using bound_proto_read_callback_fn =
+  using bound_read_packet_callback_fn =
       std::function<void(Pipe&, const proto::Packet&)>;
   using bound_write_callback_fn = std::function<void(Pipe&)>;
 
-  transport_read_callback_fn wrapReadCallback_(
-      bound_read_callback_fn = nullptr);
-  transport_read_callback_fn wrapProtoReadCallback_(
-      bound_proto_read_callback_fn = nullptr);
+  transport_read_packet_callback_fn wrapReadPacketCallback_(
+      bound_read_packet_callback_fn = nullptr);
   void readCallbackEntryPoint_(
-      bound_read_callback_fn,
+      bound_read_packet_callback_fn,
       const transport::Error&,
-      const void*,
-      size_t);
+      const proto::Packet& packet);
 
   transport_write_callback_fn wrapWriteCallback_(
       bound_write_callback_fn = nullptr);
