@@ -41,7 +41,14 @@ jobs:
       - run:
           name: Test
           command: |
+            build/tensorpipe/test/common/defs_test
+            build/tensorpipe/test/common/system_test
+            build/tensorpipe/test/util/shm/segment_test
+            build/tensorpipe/test/util/ringbuffer/ringbuffer_test
+            build/tensorpipe/test/util/ringbuffer/shm_ringbuffer_test
+            build/tensorpipe/test/proto/all_test
             build/tensorpipe/test/transport/shm/transport_shm_test
+            build/tensorpipe/test/transport/uv/transport_uv_test
             build/tensorpipe/test/core/core_context_test
   format:
     docker:
