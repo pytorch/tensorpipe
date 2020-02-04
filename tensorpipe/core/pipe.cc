@@ -34,8 +34,8 @@ void writeProtobufToConnection(
   auto buf = std::shared_ptr<uint8_t>(
       new uint8_t[len], std::default_delete<uint8_t[]>());
   auto ptr = buf.get();
-  TP_DCHECK_EQ(pb->SerializeWithCachedSizesToArray(ptr), ptr + len)
-      << "couldn't serialize Protobuf message";
+  auto end = pb->SerializeWithCachedSizesToArray(ptr);
+  TP_DCHECK_EQ(end, ptr + len) << "Failed to serialize protobuf message.";
   connection->write(
       ptr,
       len,
