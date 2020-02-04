@@ -89,10 +89,11 @@ template <typename F, typename... Args>
 class RearmableCallback {
  public:
   void arm(F&& f) {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::unique_lock<std::mutex> lock(mutex_);
     if (!queue_.empty()) {
       std::tuple<Args...> args{std::move(queue_.front())};
       queue_.pop_front();
+      lock.unlock();
       cb_apply(std::move(f), std::move(args));
     } else {
       callback_ = std::move(f);
@@ -100,10 +101,11 @@ class RearmableCallback {
   };
 
   void trigger(Args&&... args) {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::unique_lock<std::mutex> lock(mutex_);
     if (callback_.has_value()) {
       F f{std::move(callback_.value())};
       callback_.reset();
+      lock.unlock();
       cb_apply(std::move(f), std::tuple<Args...>(std::move(args)...));
     } else {
       queue_.push_back(std::tuple<Args...>(std::move(args)...));
