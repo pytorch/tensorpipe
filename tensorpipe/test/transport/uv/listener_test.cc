@@ -17,7 +17,7 @@ using namespace tensorpipe::transport;
 
 TEST(Listener, Basics) {
   auto loop = uv::Loop::create();
-  auto addr = uv::Sockaddr::createInetSockAddr("::1");
+  auto addr = uv::Sockaddr::createInetSockAddr("127.0.0.1");
 
   {
     std::mutex mutex;
