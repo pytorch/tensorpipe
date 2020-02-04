@@ -13,6 +13,7 @@ set(TENSORPIPE_SOURCES
   ${CMAKE_CURRENT_SOURCE_DIR}/core/listener.cc
   ${CMAKE_CURRENT_SOURCE_DIR}/core/message.cc
   ${CMAKE_CURRENT_SOURCE_DIR}/core/pipe.cc
+  ${CMAKE_CURRENT_SOURCE_DIR}/transport/connection.cc
   ${CMAKE_CURRENT_SOURCE_DIR}/transport/error.cc
   ${CMAKE_CURRENT_SOURCE_DIR}/util/shm/segment.cc
   )

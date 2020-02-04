@@ -18,35 +18,6 @@
 
 namespace tensorpipe {
 
-namespace {
-
-void writeProtobufToConnection(
-    std::shared_ptr<transport::Connection> connection,
-    google::protobuf::Message* pb,
-    std::function<void(const transport::Error&)> fn) {
-  const auto len = pb->ByteSize(); // FIXME use ByteSizeLong
-  // Using a unique_ptr instead of this shared_ptr because if the lambda
-  // captures a unique_ptr then it becomes non-copyable, which prevents it from
-  // being converted to a function.
-  // In C++20 use std::make_shared<uint8_t[]>(len).
-  // Note: this is a std::shared_ptr<uint8_t[]> semantically.
-  // A shared_ptr with array type is supported in C++17 and higher.
-  auto buf = std::shared_ptr<uint8_t>(
-      new uint8_t[len], std::default_delete<uint8_t[]>());
-  auto ptr = buf.get();
-  auto end = pb->SerializeWithCachedSizesToArray(ptr);
-  TP_DCHECK_EQ(end, ptr + len) << "Failed to serialize protobuf message.";
-  connection->write(
-      ptr,
-      len,
-      [buf{std::move(buf)}, fn{std::move(fn)}](const transport::Error& error) {
-        fn(error);
-        // The buffer will be destructed when this function returns.
-      });
-}
-
-} // namespace
-
 //
 // Initialization
 //
@@ -64,8 +35,7 @@ std::shared_ptr<Pipe> Pipe::create(
   proto::Packet pbPacketOut;
   // This makes the packet contain a SpontaneousConnection message.
   pbPacketOut.mutable_spontaneous_connection();
-  writeProtobufToConnection(
-      pipe->connection_, &pbPacketOut, pipe->wrapWriteCallback_());
+  pipe->connection_->write(pbPacketOut, pipe->wrapWriteCallback_());
   pipe->start_();
   return pipe;
 }
@@ -81,7 +51,7 @@ Pipe::Pipe(
 
 void Pipe::start_() {
   connection_->read(
-      wrapProtoReadCallback_([](Pipe& pipe, const proto::Packet& pbPacketIn) {
+      wrapReadPacketCallback_([](Pipe& pipe, const proto::Packet& pbPacketIn) {
         pipe.onRead(pbPacketIn);
       }));
 }
@@ -120,7 +90,7 @@ void Pipe::read(Message&& message, read_callback_fn fn) {
   // TODO Compare message with expectedMessage
   proto::Packet pbPacket;
   proto::Request* pbRequest = pbPacket.mutable_request();
-  writeProtobufToConnection(connection_, &pbPacket, wrapWriteCallback_());
+  connection_->write(pbPacket, wrapWriteCallback_());
   pendingReads_.emplace_back(std::move(message), std::move(fn));
 }
 
@@ -141,7 +111,7 @@ void Pipe::write(Message&& message, write_callback_fn fn) {
     pbTensorDesc->set_size_in_bytes(tensor.length);
     pbTensorDesc->set_user_data(tensor.metadata);
   }
-  writeProtobufToConnection(connection_, &pbPacket, wrapWriteCallback_());
+  connection_->write(pbPacket, wrapWriteCallback_());
   pendingWrites_.emplace_back(std::move(message), std::move(fn));
 }
 
@@ -150,10 +120,9 @@ void Pipe::write(Message&& message, write_callback_fn fn) {
 //
 
 void Pipe::readCallbackEntryPoint_(
-    bound_read_callback_fn fn,
+    bound_read_packet_callback_fn fn,
     const transport::Error& error,
-    const void* ptr,
-    size_t len) {
+    const proto::Packet& packet) {
   std::unique_lock<std::mutex> lock(mutex_);
   if (error_) {
     return;
@@ -164,7 +133,7 @@ void Pipe::readCallbackEntryPoint_(
     return;
   }
   if (fn) {
-    fn(*this, ptr, len);
+    fn(*this, packet);
   }
 }
 
@@ -200,31 +169,17 @@ Pipe::transport_write_callback_fn Pipe::wrapWriteCallback_(
           }));
 }
 
-Pipe::transport_read_callback_fn Pipe::wrapReadCallback_(
-    bound_read_callback_fn fn) {
+Pipe::transport_read_packet_callback_fn Pipe::wrapReadPacketCallback_(
+    bound_read_packet_callback_fn fn) {
   return runIfAlive(
       *this,
-      std::function<void(Pipe&, const transport::Error&, const void*, size_t)>(
+      std::function<void(Pipe&, const transport::Error&, const proto::Packet&)>(
           [fn{std::move(fn)}](
               Pipe& pipe,
               const transport::Error& error,
-              const void* ptr,
-              size_t len) mutable {
-            pipe.readCallbackEntryPoint_(std::move(fn), error, ptr, len);
+              const proto::Packet& packet) mutable {
+            pipe.readCallbackEntryPoint_(std::move(fn), error, packet);
           }));
-}
-
-Pipe::transport_read_callback_fn Pipe::wrapProtoReadCallback_(
-    bound_proto_read_callback_fn fn) {
-  return wrapReadCallback_(
-      [fn{std::move(fn)}](Pipe& pipe, const void* ptr, size_t len) {
-        proto::Packet pbPacketIn;
-        {
-          bool success = pbPacketIn.ParseFromArray(ptr, len);
-          TP_DCHECK(success) << "Couldn't parse packet";
-        }
-        fn(pipe, pbPacketIn);
-      });
 }
 
 //
@@ -347,8 +302,8 @@ void Pipe::onRead(const proto::Packet& pbPacketIn) {
       proto::Message::Tensor* pbTensor = pbMessage->add_tensors();
       pbTensor->set_data(tensor.data.get(), tensor.length);
     }
-    writeProtobufToConnection(
-        connection_, &pbPacketOut, wrapWriteCallback_([](Pipe& pipe) {
+    connection_->write(
+        pbPacketOut, wrapWriteCallback_([](Pipe& pipe) {
           TP_DCHECK(!pipe.completingWrites_.empty())
               << "got message when no completing writes";
           Message message =
@@ -364,7 +319,7 @@ void Pipe::onRead(const proto::Packet& pbPacketIn) {
     TP_LOG_ERROR() << "packet has no payload";
   }
   connection_->read(
-      wrapProtoReadCallback_([](Pipe& pipe, const proto::Packet& pbPacketIn) {
+      wrapReadPacketCallback_([](Pipe& pipe, const proto::Packet& pbPacketIn) {
         pipe.onRead(pbPacketIn);
       }));
 }
