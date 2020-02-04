@@ -7,6 +7,7 @@
 set(TENSORPIPE_SOURCES
   ${CMAKE_CURRENT_SOURCE_DIR}/common/address.cc
   ${CMAKE_CURRENT_SOURCE_DIR}/common/system.cc
+  ${CMAKE_CURRENT_SOURCE_DIR}/core/channel.cc
   ${CMAKE_CURRENT_SOURCE_DIR}/core/context.cc
   ${CMAKE_CURRENT_SOURCE_DIR}/core/error.cc
   ${CMAKE_CURRENT_SOURCE_DIR}/core/listener.cc
@@ -23,6 +24,7 @@ set(TENSORPIPE_HEADERS
   ${CMAKE_CURRENT_SOURCE_DIR}/common/optional.h
   ${CMAKE_CURRENT_SOURCE_DIR}/common/queue.h
   ${CMAKE_CURRENT_SOURCE_DIR}/common/system.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/core/channel.h
   ${CMAKE_CURRENT_SOURCE_DIR}/core/context.h
   ${CMAKE_CURRENT_SOURCE_DIR}/core/error.h
   ${CMAKE_CURRENT_SOURCE_DIR}/core/listener.h
