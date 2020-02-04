@@ -55,10 +55,32 @@ class Listener final : public std::enable_shared_from_this<Listener> {
 
   void accept(accept_callback_fn);
 
+  // Returns map with the materialized address of listeners by transport.
+  //
+  // If you don't bind a transport listener to a specific port or address, it
+  // may generate its address automatically. Then, in order to connect to the
+  // listener, the user must use a separate mechanism to communicate the
+  // materialized address to whoever wants to connect.
+  //
+  const std::map<std::string, std::string>& addresses() const;
+
+  // Returns materialized address for specific transport.
+  //
+  // See `addresses()` for more information.
+  //
+  const std::string& address(const std::string& transport) const;
+
+  // Returns URL with materialized address for specific transport.
+  //
+  // See `addresses()` for more information.
+  //
+  std::string url(const std::string& transport) const;
+
  private:
   std::shared_ptr<Context> context_;
   std::unordered_map<std::string, std::shared_ptr<transport::Listener>>
       listeners_;
+  std::map<std::string, transport::address_t> addresses_;
   RearmableCallback<accept_callback_fn, const Error&, std::shared_ptr<Pipe>>
       acceptCallback_;
 
