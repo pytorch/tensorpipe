@@ -38,7 +38,11 @@ Listener::Listener(
     std::shared_ptr<Context> context,
     std::unordered_map<std::string, std::shared_ptr<transport::Listener>>
         listeners)
-    : context_(std::move(context)), listeners_(std::move(listeners)) {}
+    : context_(std::move(context)), listeners_(std::move(listeners)) {
+  for (const auto& it : listeners_) {
+    addresses_[it.first] = it.second->addr();
+  }
+}
 
 void Listener::start_() {
   for (const auto& listener : listeners_) {
@@ -59,6 +63,21 @@ void Listener::accept(accept_callback_fn fn) {
                   fn(error, std::move(pipe));
                 });
           })));
+}
+
+const std::map<std::string, std::string>& Listener::addresses() const {
+  return addresses_;
+}
+
+const std::string& Listener::address(const std::string& transport) const {
+  const auto it = addresses_.find(transport);
+  TP_THROW_ASSERT_IF(it == addresses_.end())
+      << ": transport '" << transport << "' not in use by this listener.";
+  return it->second;
+}
+
+std::string Listener::url(const std::string& transport) const {
+  return transport + "://" + address(transport);
 }
 
 void Listener::onAccept_(

@@ -115,7 +115,7 @@ TEST(Context, Simple) {
     });
   });
 
-  auto clientPipe = Pipe::create(context, "shm://foobar");
+  auto clientPipe = Pipe::create(context, listener->url("shm"));
   clientPipe->write(
       std::move(sentMessage), [&](const Error& error, Message&& message) {
         if (error) {
