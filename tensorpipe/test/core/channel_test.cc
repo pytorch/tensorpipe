@@ -190,7 +190,9 @@ void testConnectionPair(
 
     // Listening side.
     auto listener = context->listen(addr);
-    listener->accept([&](std::shared_ptr<transport::Connection> connection) {
+    listener->accept([&](const transport::Error& error,
+                         std::shared_ptr<transport::Connection> connection) {
+      ASSERT_FALSE(error) << error.what();
       q1.push(std::move(connection));
     });
 
