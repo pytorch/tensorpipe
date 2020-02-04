@@ -219,10 +219,12 @@ class StreamHandle : public BaseHandle<T, U> {
   }
 
   void readStop() {
-    this->loop_->defer(runIfAlive(*this, std::function<void(T&)>([](T& handle) {
-      auto rv = uv_read_stop(reinterpret_cast<uv_stream_t*>(handle.ptr()));
+    // We call uv_read_stop immediately because if we deferred it then more
+    // alloc or read callbacks might fire when the user didn't expect them.
+    this->loop_->runFromLoop([&]() {
+      auto rv = uv_read_stop(reinterpret_cast<uv_stream_t*>(this->ptr()));
       TP_THROW_UV_IF(rv < 0, rv);
-    })));
+    });
   }
 
   void write(

@@ -43,7 +43,9 @@ Connection::Connection(
 
 Connection::~Connection() {
   if (handle_) {
-    handle_->readStop();
+    // No need to call readStop here because if we are in the destructor it
+    // means that the runIfAlive wrapper will prevent the alloc and read
+    // callbacks from firing.
     handle_->close();
   }
 }
@@ -121,7 +123,7 @@ void Connection::ReadOperation::alloc(uv_buf_t* buf) {
     buf->base = ptr_ + bytesRead_;
     buf->len = readLength_ - bytesRead_;
   } else {
-    TP_THROW_ASSERT() << "invalid mode";
+    TP_THROW_ASSERT() << "invalid mode " << mode_;
   }
 }
 
@@ -148,12 +150,13 @@ void Connection::ReadOperation::read(ssize_t nread, const uv_buf_t* buf) {
       mode_ = COMPLETE;
     }
   } else {
-    TP_THROW_ASSERT() << "invalid mode";
+    TP_THROW_ASSERT() << "invalid mode " << mode_;
   }
 }
 
 void Connection::allocCallback(uv_buf_t* buf) {
   std::unique_lock<std::mutex> lock(readOperationsMutex_);
+  TP_THROW_ASSERT_IF(readOperations_.empty());
   readOperations_.front().alloc(buf);
 }
 
@@ -179,6 +182,7 @@ void Connection::readCallback(ssize_t nread, const uv_buf_t* buf) {
     return;
   }
 
+  TP_THROW_ASSERT_IF(readOperations_.empty());
   auto& readOperation = readOperations_.front();
   readOperation.read(nread, buf);
   if (readOperation.complete()) {

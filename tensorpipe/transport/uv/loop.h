@@ -43,10 +43,10 @@ class Loop final : public std::enable_shared_from_this<Loop> {
   // Prefer using defer over run, when you don't need to wait for the result.
   template <typename F>
   void run(F&& fn) {
-    TP_DCHECK_NE(std::this_thread::get_id(), thread_.get_id())
-        << "calling Loop::run from the event loop itself (e.g., from a "
-        << "callback) causes a deadlock because the given callable can only be "
-        << "run when the loop is allowed to proceed";
+    TP_THROW_ASSERT_IF(std::this_thread::get_id() == thread_.get_id())
+        << "Loop::run was called from the event loop thread itself (e.g., from "
+        << "a callback), which would have caused a deadlock because the given "
+        << "callable can only be run when the loop is allowed to proceed";
     // Must use a copyable wrapper around std::promise because
     // we use it from a std::function which must be copyable.
     auto promise = std::make_shared<std::promise<void>>();
@@ -60,6 +60,18 @@ class Loop final : public std::enable_shared_from_this<Loop> {
       }
     });
     future.get();
+  }
+
+  // Use this for callbacks that need to run immediately (cannot be deferred)
+  // but be aware that you can only use this from within a callback that is
+  // already being executed on the loop.
+  template <typename F>
+  void runFromLoop(F&& fn) {
+    TP_THROW_ASSERT_IF(std::this_thread::get_id() != thread_.get_id())
+        << "Loop::runFromLoop was called from a thread other than the event "
+        << "loop, which means the callback cannot be run immediately because "
+        << "libuv isn't thread-safe (consider Loop::defer)";
+    fn();
   }
 
   void defer(std::function<void()> fn);
