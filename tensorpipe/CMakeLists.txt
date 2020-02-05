@@ -54,3 +54,5 @@ add_subdirectory(transport/shm)
 add_subdirectory(transport/uv)
 
 add_subdirectory(test)
+
+add_subdirectory(benchmark)
