@@ -6,16 +6,17 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <tensorpipe/channel/basic.h>
+#include <tensorpipe/channel/basic/basic.h>
 
 #include <algorithm>
 
 #include <tensorpipe/channel/helpers.h>
 #include <tensorpipe/common/callback.h>
 #include <tensorpipe/common/defs.h>
-#include <tensorpipe/core/error_macros.h>
 
 namespace tensorpipe {
+namespace channel {
+namespace basic {
 
 BasicChannelFactory::BasicChannelFactory()
     : ChannelFactory("basic"), domainDescriptor_("any") {}
@@ -295,7 +296,7 @@ bool BasicChannel::processTransportError(const transport::Error& error) {
   // pending user specified callbacks get called with that same error.
   // Once the channel is in an error state it doesn't recover.
   if (error) {
-    error_ = TP_CREATE_ERROR(TransportError, error);
+    error_ = error;
 
     // Move pending operations to stack.
     auto sendOperations = std::move(sendOperations_);
@@ -322,4 +323,6 @@ bool BasicChannel::processTransportError(const transport::Error& error) {
   return false;
 }
 
+} // namespace basic
+} // namespace channel
 } // namespace tensorpipe

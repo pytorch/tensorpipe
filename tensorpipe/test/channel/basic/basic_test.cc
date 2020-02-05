@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <tensorpipe/channel/basic.h>
+#include <tensorpipe/channel/basic/basic.h>
 #include <tensorpipe/common/queue.h>
 #include <tensorpipe/transport/uv/context.h>
 
@@ -49,12 +49,12 @@ void testConnectionPair(
 } // namespace
 
 TEST(BasicChannel, Operation) {
-  std::shared_ptr<ChannelFactory> factory1 =
-      std::make_shared<BasicChannelFactory>();
-  std::shared_ptr<ChannelFactory> factory2 =
-      std::make_shared<BasicChannelFactory>();
+  std::shared_ptr<channel::ChannelFactory> factory1 =
+      std::make_shared<channel::basic::BasicChannelFactory>();
+  std::shared_ptr<channel::ChannelFactory> factory2 =
+      std::make_shared<channel::basic::BasicChannelFactory>();
   constexpr auto dataSize = 256;
-  Queue<Channel::TDescriptor> descriptorQueue;
+  Queue<channel::Channel::TDescriptor> descriptorQueue;
 
   testConnectionPair(
       [&](std::shared_ptr<transport::Connection> conn) {
@@ -67,7 +67,7 @@ TEST(BasicChannel, Operation) {
         }
 
         // Perform send and wait for completion.
-        Channel::TDescriptor descriptor;
+        channel::Channel::TDescriptor descriptor;
         std::future<void> future;
         std::tie(descriptor, future) = channel->send(data.data(), data.size());
         descriptorQueue.push(std::move(descriptor));

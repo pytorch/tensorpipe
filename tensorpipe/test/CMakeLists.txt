@@ -19,6 +19,7 @@ function(add_tensorpipe_test)
 endfunction()
 
 add_subdirectory(channel)
+add_subdirectory(channel/basic)
 add_subdirectory(common)
 add_subdirectory(core)
 add_subdirectory(proto)

@@ -12,10 +12,11 @@
 
 #include <google/protobuf/message_lite.h>
 
+#include <tensorpipe/channel/channel.h>
 #include <tensorpipe/common/defs.h>
-#include <tensorpipe/core/channel.h>
 
 namespace tensorpipe {
+namespace channel {
 namespace {
 
 template <
@@ -45,4 +46,5 @@ T loadDescriptor(const Channel::TDescriptor& in) {
 }
 
 } // namespace
+} // namespace channel
 } // namespace tensorpipe

@@ -10,11 +10,13 @@
 
 #include <list>
 
-#include <tensorpipe/core/channel.h>
-#include <tensorpipe/core/error.h>
+#include <tensorpipe/channel/channel.h>
 #include <tensorpipe/proto/all.pb.h>
+#include <tensorpipe/transport/error.h>
 
 namespace tensorpipe {
+namespace channel {
+namespace basic {
 
 class BasicChannelFactory : public ChannelFactory {
  public:
@@ -73,7 +75,7 @@ class BasicChannel : public Channel,
  private:
   std::mutex mutex_;
   std::shared_ptr<transport::Connection> connection_;
-  Error error_{Error::kSuccess};
+  transport::Error error_{transport::Error::kSuccess};
 
   // Increasing identifier for send operations.
   uint64_t id_{0};
@@ -159,4 +161,6 @@ class BasicChannel : public Channel,
   bool processTransportError(const transport::Error& error);
 };
 
+} // namespace basic
+} // namespace channel
 } // namespace tensorpipe
