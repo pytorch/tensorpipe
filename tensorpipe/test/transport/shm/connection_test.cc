@@ -56,28 +56,22 @@ TEST(Connection, Initialization) {
   auto loop = shm::Loop::create();
   auto addr = shm::Sockaddr::createAbstractUnixAddr("foobar");
   constexpr size_t numBytes = 13;
+  std::array<char, numBytes> garbage;
 
   initializePeers(
       loop,
       addr,
       [&](std::shared_ptr<Connection> conn) {
-        Queue<size_t> reads;
-        conn->read([&](const Error& error, const void* ptr, size_t len) {
+        conn->read([&, conn](const Error& error, const void* ptr, size_t len) {
           ASSERT_FALSE(error) << error.what();
-          reads.push(len);
+          ASSERT_EQ(numBytes, garbage.size());
         });
-        // Wait for the read callback to be called.
-        ASSERT_EQ(numBytes, reads.pop());
       },
       [&](std::shared_ptr<Connection> conn) {
-        Queue<bool> writes;
-        std::array<char, numBytes> garbage;
-        conn->write(garbage.data(), garbage.size(), [&](const Error& error) {
-          ASSERT_FALSE(error) << error.what();
-          writes.push(true);
-        });
-        // Wait for the write callback to be called.
-        writes.pop();
+        conn->write(
+            garbage.data(), garbage.size(), [&, conn](const Error& error) {
+              ASSERT_FALSE(error) << error.what();
+            });
       });
 
   loop->join();
@@ -94,12 +88,32 @@ TEST(Connection, InitializationError) {
         // Closes connection
       },
       [&](std::shared_ptr<Connection> conn) {
-        Queue<Error> errors;
-        conn->read([&](const Error& error, const void* ptr, size_t len) {
-          errors.push(error);
+        conn->read([conn](const Error& error, const void* ptr, size_t len) {
+          ASSERT_TRUE(error);
         });
-        auto error = errors.pop();
-        ASSERT_TRUE(error);
+      });
+
+  loop->join();
+}
+
+TEST(Connection, LargeWrite) {
+  auto loop = shm::Loop::create();
+  auto addr = shm::Sockaddr::createAbstractUnixAddr("foobar");
+
+  // This is larger than the default ring buffer size.
+  const int kMsgSize = 2 * shm::Connection::kDefaultSize;
+  std::string msg(kMsgSize, 0x42);
+
+  initializePeers(
+      loop,
+      addr,
+      [&](std::shared_ptr<Connection> conn) {
+        // Closes connection
+      },
+      [&](std::shared_ptr<Connection> conn) {
+        conn->write(msg.c_str(), msg.length(), [conn](const Error& error) {
+          ASSERT_TRUE(error);
+        });
       });
 
   loop->join();
