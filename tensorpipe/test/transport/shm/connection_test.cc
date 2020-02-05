@@ -108,7 +108,9 @@ TEST(Connection, LargeWrite) {
       loop,
       addr,
       [&](std::shared_ptr<Connection> conn) {
-        // Closes connection
+        conn->read([conn](const Error& error, const void* ptr, size_t len) {
+          ASSERT_TRUE(error);
+        });
       },
       [&](std::shared_ptr<Connection> conn) {
         conn->write(msg.c_str(), msg.length(), [conn](const Error& error) {
