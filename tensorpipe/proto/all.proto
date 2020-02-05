@@ -17,18 +17,17 @@ message RequestedConnection {
 }
 
 message TransportAdvertisement {
-  string address = 1;
-  string domain_descriptor = 2;
+  string domain_descriptor = 1;
 }
 
 message Brochure {
-  int64 registration_id = 1;
-
-  map<string, TransportAdvertisement> transport_advertisement = 2;
+  map<string, TransportAdvertisement> transport_advertisement = 1;
 }
 
 message BrochureAnswer {
-  string chosen_transport = 1;
+  string transport = 1;
+  string address = 2;
+  uint64 registration_id = 3;
 }
 
 enum DeviceType {

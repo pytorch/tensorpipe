@@ -88,10 +88,10 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
  private:
   enum State {
     INITIALIZING,
-    CLIENT_ABOUT_TO_SEND_HELLO,
-    SERVER_ABOUT_TO_SEND_BROCHURE,
-    CLIENT_WAITING_FOR_BROCHURE,
-    SERVER_WAITING_FOR_BROCHURE_ANSWER,
+    CLIENT_ABOUT_TO_SEND_HELLO_AND_BROCHURE,
+    SERVER_WAITING_FOR_BROCHURE,
+    CLIENT_WAITING_FOR_BROCHURE_ANSWER,
+    SERVER_WAITING_FOR_CONNECTION,
     ESTABLISHED
   };
 
@@ -103,21 +103,13 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
   std::string transport_;
   std::shared_ptr<transport::Connection> connection_;
 
-  // If the client switches to a different connection it stores the old one
-  // here so that it is kept open because it's the server that has to close it.
+  // If the server switches to a different connection it stores the old one
+  // here so that it is kept open because it's the client that has to close it.
   std::shared_ptr<transport::Connection> initialConnection_;
 
-  // The server will set this up when it might expect the client to switch to a
+  // The server will set this up when it tell the client to switch to a
   // different connection.
   optional<uint64_t> registrationId_;
-
-  // If the client wants to switch to a different connection we need both to
-  // receive its answer to that effect and to accept the connection from it.
-  // These two can happen in any order, so we store them when we receive them
-  // and proceed only when both are there.
-  optional<std::string> chosenTransport_;
-  optional<std::tuple<std::string, std::shared_ptr<transport::Connection>>>
-      receivedTransportAndConnection_;
 
   RearmableCallback<read_descriptor_callback_fn, const Error&, Message>
       readDescriptorCallback_;
@@ -220,9 +212,11 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
 
   void doWritesAccumulatedWhileWaitingForPipeToBeEstablished_();
   void writeWhenEstablished_(Message&&, write_callback_fn);
-  void onReadWhileClientWaitingForBrochure_(const proto::Packet&);
-  void onReadWhileServerWaitingForBrochureAnswer_(const proto::Packet&);
-  void switchToOtherTransport_();
+  void onReadWhileServerWaitingForBrochure_(const proto::Packet&);
+  void onReadWhileClientWaitingForBrochureAnswer_(const proto::Packet&);
+  void onAcceptWhileServerWaitingForConnection_(
+      std::string,
+      std::shared_ptr<transport::Connection>);
   void onReadWhenEstablished_(const proto::Packet&);
 
   friend class Context;
