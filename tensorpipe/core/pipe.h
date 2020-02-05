@@ -21,6 +21,8 @@
 
 namespace tensorpipe {
 
+class Listener;
+
 // The pipe.
 //
 // Pipes represent a set of connections between a pair of processes.
@@ -57,6 +59,15 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
       std::string,
       std::shared_ptr<transport::Connection>);
 
+  Pipe(
+      ConstructorToken,
+      std::shared_ptr<Context>,
+      std::shared_ptr<Listener>,
+      std::string,
+      std::shared_ptr<transport::Connection>);
+
+  ~Pipe();
+
   //
   // Entry points for user code
   //
@@ -75,8 +86,38 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
   void write(Message&&, write_callback_fn);
 
  private:
+  enum State {
+    INITIALIZING,
+    CLIENT_ABOUT_TO_SEND_HELLO,
+    SERVER_ABOUT_TO_SEND_BROCHURE,
+    CLIENT_WAITING_FOR_BROCHURE,
+    SERVER_WAITING_FOR_BROCHURE_ANSWER,
+    ESTABLISHED
+  };
+
+  State state_{INITIALIZING};
+
   std::shared_ptr<Context> context_;
+  std::shared_ptr<Listener> listener_;
+
+  std::string transport_;
   std::shared_ptr<transport::Connection> connection_;
+
+  // If the client switches to a different connection it stores the old one
+  // here so that it is kept open because it's the server that has to close it.
+  std::shared_ptr<transport::Connection> initialConnection_;
+
+  // The server will set this up when it might expect the client to switch to a
+  // different connection.
+  optional<uint64_t> registrationId_;
+
+  // If the client wants to switch to a different connection we need both to
+  // receive its answer to that effect and to accept the connection from it.
+  // These two can happen in any order, so we store them when we receive them
+  // and proceed only when both are there.
+  optional<std::string> chosenTransport_;
+  optional<std::tuple<std::string, std::shared_ptr<transport::Connection>>>
+      receivedTransportAndConnection_;
 
   RearmableCallback<read_descriptor_callback_fn, const Error&, Message>
       readDescriptorCallback_;
@@ -86,6 +127,9 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
 
   // The reads that were started and that are completing.
   std::deque<std::tuple<Message, read_callback_fn>> pendingReads_;
+
+  std::deque<std::tuple<Message, write_callback_fn>>
+      writesWaitingUntilPipeIsEstablished_;
 
   // The writes for which we've sent the descriptor but haven't been asked for
   // the data yet.
@@ -104,17 +148,21 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
   void start_();
 
   //
-  // Entry points fro callbacks from transports
+  // Entry points fro callbacks from transports and listener
   // and helpers to prepare them
   //
 
   using transport_read_packet_callback_fn =
       transport::Connection::read_proto_callback_fn<proto::Packet>;
   using transport_write_callback_fn = transport::Connection::write_callback_fn;
+  using accept_callback_fn =
+      std::function<void(std::string, std::shared_ptr<transport::Connection>)>;
 
   using bound_read_packet_callback_fn =
       std::function<void(Pipe&, const proto::Packet&)>;
   using bound_write_callback_fn = std::function<void(Pipe&)>;
+  using bound_accept_callback_fn = std::function<
+      void(Pipe&, std::string, std::shared_ptr<transport::Connection>)>;
 
   transport_read_packet_callback_fn wrapReadPacketCallback_(
       bound_read_packet_callback_fn = nullptr);
@@ -128,6 +176,12 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
   void writeCallbackEntryPoint_(
       bound_write_callback_fn,
       const transport::Error&);
+
+  accept_callback_fn wrapAcceptCallback_(bound_accept_callback_fn = nullptr);
+  void acceptCallbackEntryPoint_(
+      bound_accept_callback_fn,
+      std::string,
+      std::shared_ptr<transport::Connection>);
 
   //
   // Helpers to schedule our callbacks into user code
@@ -150,7 +204,7 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
   void triggerReadCallback_(read_callback_fn&&, const Error&, Message&&);
   void triggerWriteCallback_(write_callback_fn&&, const Error&, Message&&);
 
-  std::atomic_flag isRunOfScheduledCallbacksTriggered_;
+  std::atomic_flag isRunOfScheduledCallbacksTriggered_ = ATOMIC_FLAG_INIT;
   void triggerRunOfScheduledCallbacks_();
   void runScheduledCallbacks_();
 
@@ -164,7 +218,12 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
   // Everything else
   //
 
-  void onRead(const proto::Packet&);
+  void doWritesAccumulatedWhileWaitingForPipeToBeEstablished_();
+  void writeWhenEstablished_(Message&&, write_callback_fn);
+  void onReadWhileClientWaitingForBrochure_(const proto::Packet&);
+  void onReadWhileServerWaitingForBrochureAnswer_(const proto::Packet&);
+  void switchToOtherTransport_();
+  void onReadWhenEstablished_(const proto::Packet&);
 
   friend class Context;
   friend class Listener;

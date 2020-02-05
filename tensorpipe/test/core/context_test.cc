@@ -61,10 +61,12 @@ TEST(Context, Simple) {
 
   std::vector<std::string> transports;
   transports.push_back("shm");
+  transports.push_back("uv");
   auto context = Context::create(std::move(transports));
 
   std::vector<std::string> addresses;
   addresses.push_back("shm://foobar");
+  addresses.push_back("uv://127.0.0.1");
   auto listener = Listener::create(context, std::move(addresses));
 
   listener->accept([&](const Error& error, std::shared_ptr<Pipe> pipe) {
@@ -115,7 +117,7 @@ TEST(Context, Simple) {
     });
   });
 
-  auto clientPipe = Pipe::create(context, listener->url("shm"));
+  auto clientPipe = Pipe::create(context, listener->url("uv"));
   clientPipe->write(
       std::move(sentMessage), [&](const Error& error, Message&& message) {
         if (error) {

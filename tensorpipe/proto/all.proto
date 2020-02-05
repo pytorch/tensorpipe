@@ -16,6 +16,21 @@ message RequestedConnection {
   uint64 registration_id = 1;
 }
 
+message TransportAdvertisement {
+  string address = 1;
+  string domain_descriptor = 2;
+}
+
+message Brochure {
+  int64 registration_id = 1;
+
+  map<string, TransportAdvertisement> transport_advertisement = 2;
+}
+
+message BrochureAnswer {
+  string chosen_transport = 1;
+}
+
 enum DeviceType {
   DEVICE_TYPE_UNSPECIFIED = 0;
   DEVICE_TYPE_CPU = 1;
@@ -51,8 +66,10 @@ message Packet {
   oneof type {
     SpontaneousConnection spontaneous_connection = 1;
     RequestedConnection requested_connection = 2;
-    MessageDescriptor message_descriptor = 3;
-    Request request = 4;
-    Message message = 5;
+    Brochure brochure = 3;
+    BrochureAnswer brochure_answer = 4;
+    MessageDescriptor message_descriptor = 5;
+    Request request = 6;
+    Message message = 7;
   }
 }

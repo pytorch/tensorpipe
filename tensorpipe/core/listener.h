@@ -118,6 +118,7 @@ class Listener final : public std::enable_shared_from_this<Listener> {
       connectionRequestRegistrations_;
 
   friend class Context;
+  friend class Pipe;
 };
 
 } // namespace tensorpipe

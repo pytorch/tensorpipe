@@ -141,6 +141,7 @@ void Listener::onConnectionHelloRead_(
     std::shared_ptr<Pipe> pipe = std::make_shared<Pipe>(
         Pipe::ConstructorToken(),
         context_,
+        shared_from_this(),
         std::move(transport),
         std::move(connection));
     pipe->start_();

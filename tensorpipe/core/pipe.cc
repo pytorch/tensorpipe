@@ -14,6 +14,7 @@
 #include <tensorpipe/common/callback.h>
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/core/error_macros.h>
+#include <tensorpipe/core/listener.h>
 #include <tensorpipe/proto/all.pb.h>
 
 namespace tensorpipe {
@@ -32,10 +33,6 @@ std::shared_ptr<Pipe> Pipe::create(
       context->getContextForTransport_(transport)->connect(address);
   auto pipe = std::make_shared<Pipe>(
       ConstructorToken(), std::move(context), transport, std::move(connection));
-  proto::Packet pbPacketOut;
-  // This makes the packet contain a SpontaneousConnection message.
-  pbPacketOut.mutable_spontaneous_connection();
-  pipe->connection_->write(pbPacketOut, pipe->wrapWriteCallback_());
   pipe->start_();
   return pipe;
 }
@@ -43,17 +40,86 @@ std::shared_ptr<Pipe> Pipe::create(
 Pipe::Pipe(
     ConstructorToken /* unused */,
     std::shared_ptr<Context> context,
-    std::string /* unused */,
+    std::string transport,
     std::shared_ptr<transport::Connection> connection)
-    : context_(std::move(context)), connection_(std::move(connection)) {
-  isRunOfScheduledCallbacksTriggered_.clear();
-}
+    : state_(CLIENT_ABOUT_TO_SEND_HELLO),
+      context_(std::move(context)),
+      transport_(std::move(transport)),
+      connection_(std::move(connection)) {}
+
+Pipe::Pipe(
+    ConstructorToken /* unused */,
+    std::shared_ptr<Context> context,
+    std::shared_ptr<Listener> listener,
+    std::string transport,
+    std::shared_ptr<transport::Connection> connection)
+    : state_(SERVER_ABOUT_TO_SEND_BROCHURE),
+      context_(std::move(context)),
+      listener_(std::move(listener)),
+      transport_(std::move(transport)),
+      connection_(std::move(connection)) {}
 
 void Pipe::start_() {
-  connection_->read(
-      wrapReadPacketCallback_([](Pipe& pipe, const proto::Packet& pbPacketIn) {
-        pipe.onRead(pbPacketIn);
-      }));
+  std::unique_lock<std::mutex> lock(mutex_);
+  if (state_ == CLIENT_ABOUT_TO_SEND_HELLO) {
+    proto::Packet pbPacketOut;
+    // This makes the packet contain a SpontaneousConnection message.
+    pbPacketOut.mutable_spontaneous_connection();
+    connection_->write(pbPacketOut, wrapWriteCallback_());
+    state_ = CLIENT_WAITING_FOR_BROCHURE;
+    connection_->read(wrapReadPacketCallback_(
+        [](Pipe& pipe, const proto::Packet& pbPacketIn) {
+          pipe.onReadWhileClientWaitingForBrochure_(pbPacketIn);
+        }));
+  }
+  if (state_ == SERVER_ABOUT_TO_SEND_BROCHURE) {
+    registrationId_.emplace(
+        listener_->registerConnectionRequest_(wrapAcceptCallback_(
+            [](Pipe& pipe,
+               std::string transport,
+               std::shared_ptr<transport::Connection> connection) {
+              // Check to protect against a race condition if an accept callback
+              // was already firing when we unregistered the connection request.
+              if (pipe.registrationId_.has_value()) {
+                pipe.listener_->unregisterConnectionRequest_(
+                    pipe.registrationId_.value());
+                pipe.registrationId_.reset();
+                pipe.receivedTransportAndConnection_.emplace(
+                    std::move(transport), std::move(connection));
+                pipe.switchToOtherTransport_();
+              }
+            })));
+    proto::Packet pbPacketOut;
+    proto::Brochure* pbBrochure = pbPacketOut.mutable_brochure();
+    pbBrochure->set_registration_id(registrationId_.value());
+    auto allTransportAdvertisements =
+        pbBrochure->mutable_transport_advertisement();
+    for (auto& listenerIter : listener_->listeners_) {
+      const std::string& transport = listenerIter.first;
+      const transport::Listener& listener = *(listenerIter.second);
+      const auto contextIter = context_->contexts_.find(transport);
+      TP_DCHECK(contextIter != context_->contexts_.cend());
+      const transport::Context& context = *(contextIter->second);
+      proto::TransportAdvertisement* transportAdvertisement =
+          &(*allTransportAdvertisements)[transport];
+      transportAdvertisement->set_address(listener.addr());
+      transportAdvertisement->set_domain_descriptor(context.domainDescriptor());
+    }
+    connection_->write(pbPacketOut, wrapWriteCallback_());
+    state_ = SERVER_WAITING_FOR_BROCHURE_ANSWER;
+    connection_->read(wrapReadPacketCallback_(
+        [](Pipe& pipe, const proto::Packet& pbPacketIn) {
+          pipe.onReadWhileServerWaitingForBrochureAnswer_(pbPacketIn);
+        }));
+  }
+}
+
+Pipe::~Pipe() {
+  // TODO Make a RAII wrapper so that this isn't necessary.
+  if (registrationId_.has_value()) {
+    listener_->unregisterConnectionRequest_(registrationId_.value());
+    registrationId_.reset();
+  }
 }
 
 //
@@ -88,9 +154,10 @@ void Pipe::read(Message&& message, read_callback_fn fn) {
   Message expectedMessage{std::move(waitingDescriptors_.front())};
   waitingDescriptors_.pop_front();
   // TODO Compare message with expectedMessage
-  proto::Packet pbPacket;
-  proto::Request* pbRequest = pbPacket.mutable_request();
-  connection_->write(pbPacket, wrapWriteCallback_());
+  proto::Packet pbPacketOut;
+  // This makes the packet contain a Request message.
+  pbPacketOut.mutable_request();
+  connection_->write(pbPacketOut, wrapWriteCallback_());
   pendingReads_.emplace_back(std::move(message), std::move(fn));
 }
 
@@ -100,23 +167,16 @@ void Pipe::write(Message&& message, write_callback_fn fn) {
     triggerWriteCallback_(std::move(fn), error_, std::move(message));
     return;
   }
-  proto::Packet pbPacket;
-  proto::MessageDescriptor* pbMessageDesc =
-      pbPacket.mutable_message_descriptor();
-  pbMessageDesc->set_size_in_bytes(message.length);
-  for (const auto& tensor : message.tensors) {
-    proto::MessageDescriptor::TensorDescriptor* pbTensorDesc =
-        pbMessageDesc->add_tensor_descriptors();
-    pbTensorDesc->set_device_type(proto::DeviceType::DEVICE_TYPE_CPU);
-    pbTensorDesc->set_size_in_bytes(tensor.length);
-    pbTensorDesc->set_user_data(tensor.metadata);
+  if (state_ == ESTABLISHED) {
+    writeWhenEstablished_(std::move(message), std::move(fn));
+  } else {
+    writesWaitingUntilPipeIsEstablished_.emplace_back(
+        std::move(message), std::move(fn));
   }
-  connection_->write(pbPacket, wrapWriteCallback_());
-  pendingWrites_.emplace_back(std::move(message), std::move(fn));
 }
 
 //
-// Entry points for callbacks from transports
+// Entry points for callbacks from transports and listener
 //
 
 void Pipe::readCallbackEntryPoint_(
@@ -154,6 +214,19 @@ void Pipe::writeCallbackEntryPoint_(
   }
 }
 
+void Pipe::acceptCallbackEntryPoint_(
+    bound_accept_callback_fn fn,
+    std::string transport,
+    std::shared_ptr<transport::Connection> connection) {
+  std::unique_lock<std::mutex> lock(mutex_);
+  if (error_) {
+    return;
+  }
+  if (fn) {
+    fn(*this, std::move(transport), std::move(connection));
+  }
+}
+
 //
 // Helpers to prepare callbacks from transports
 //
@@ -179,6 +252,21 @@ Pipe::transport_read_packet_callback_fn Pipe::wrapReadPacketCallback_(
               const transport::Error& error,
               const proto::Packet& packet) mutable {
             pipe.readCallbackEntryPoint_(std::move(fn), error, packet);
+          }));
+}
+
+Pipe::accept_callback_fn Pipe::wrapAcceptCallback_(
+    bound_accept_callback_fn fn) {
+  return runIfAlive(
+      *this,
+      std::function<void(
+          Pipe&, std::string, std::shared_ptr<transport::Connection>)>(
+          [fn{std::move(fn)}](
+              Pipe& pipe,
+              std::string transport,
+              std::shared_ptr<transport::Connection> connection) mutable {
+            pipe.acceptCallbackEntryPoint_(
+                std::move(fn), std::move(transport), std::move(connection));
           }));
 }
 
@@ -261,7 +349,130 @@ void Pipe::flushEverythingOnError_() {
 // Everything else
 //
 
-void Pipe::onRead(const proto::Packet& pbPacketIn) {
+void Pipe::doWritesAccumulatedWhileWaitingForPipeToBeEstablished_() {
+  TP_DCHECK_EQ(state_, ESTABLISHED);
+  Message message;
+  write_callback_fn fn;
+  while (!writesWaitingUntilPipeIsEstablished_.empty()) {
+    std::tie(message, fn) =
+        std::move(writesWaitingUntilPipeIsEstablished_.front());
+    writesWaitingUntilPipeIsEstablished_.pop_front();
+    writeWhenEstablished_(std::move(message), std::move(fn));
+  }
+}
+
+void Pipe::writeWhenEstablished_(Message&& message, write_callback_fn fn) {
+  TP_DCHECK_EQ(state_, ESTABLISHED);
+  proto::Packet pbPacketOut;
+  proto::MessageDescriptor* pbMessageDesc =
+      pbPacketOut.mutable_message_descriptor();
+  pbMessageDesc->set_size_in_bytes(message.length);
+  for (const auto& tensor : message.tensors) {
+    proto::MessageDescriptor::TensorDescriptor* pbTensorDesc =
+        pbMessageDesc->add_tensor_descriptors();
+    pbTensorDesc->set_device_type(proto::DeviceType::DEVICE_TYPE_CPU);
+    pbTensorDesc->set_size_in_bytes(tensor.length);
+    pbTensorDesc->set_user_data(tensor.metadata);
+  }
+  pendingWrites_.emplace_back(std::move(message), std::move(fn));
+  connection_->write(pbPacketOut, wrapWriteCallback_());
+}
+
+void Pipe::onReadWhileClientWaitingForBrochure_(
+    const proto::Packet& pbPacketIn) {
+  TP_DCHECK_EQ(state_, CLIENT_WAITING_FOR_BROCHURE);
+  TP_DCHECK_EQ(pbPacketIn.type_case(), proto::Packet::kBrochure);
+  const proto::Brochure& pbBrochure = pbPacketIn.brochure();
+  uint64_t registrationId = pbBrochure.registration_id();
+
+  // FIXME This is hardcoded logic, for now...
+  std::string chosenTransport = "shm";
+  const auto chosenTransportAdvertisementIter =
+      pbBrochure.transport_advertisement().find(chosenTransport);
+  TP_DCHECK(
+      chosenTransportAdvertisementIter !=
+      pbBrochure.transport_advertisement().cend());
+  const proto::TransportAdvertisement& chosenTransportAdvertisement =
+      chosenTransportAdvertisementIter->second;
+  std::string chosenAddress = chosenTransportAdvertisement.address();
+  std::string chosenDomainDescriptor =
+      chosenTransportAdvertisement.domain_descriptor();
+  auto chosenContextIter = context_->contexts_.find(chosenTransport);
+  TP_DCHECK(chosenContextIter != context_->contexts_.end());
+  auto chosenContext = chosenContextIter->second;
+  TP_DCHECK_EQ(chosenContext->domainDescriptor(), chosenDomainDescriptor);
+  auto chosenConnection = chosenContext->connect(chosenAddress);
+
+  proto::Packet pbPacketOut;
+  proto::BrochureAnswer* pbBrochureAnswer =
+      pbPacketOut.mutable_brochure_answer();
+  pbBrochureAnswer->set_chosen_transport(chosenTransport);
+  connection_->write(pbPacketOut, wrapWriteCallback_());
+
+  initialConnection_ = std::move(connection_);
+  connection_ = std::move(chosenConnection);
+
+  pbPacketOut.Clear();
+  proto::RequestedConnection* pbRequestedConnection =
+      pbPacketOut.mutable_requested_connection();
+  pbRequestedConnection->set_registration_id(registrationId);
+  connection_->write(pbPacketOut, wrapWriteCallback_());
+
+  state_ = ESTABLISHED;
+  doWritesAccumulatedWhileWaitingForPipeToBeEstablished_();
+  connection_->read(
+      wrapReadPacketCallback_([](Pipe& pipe, const proto::Packet& pbPacketIn) {
+        pipe.onReadWhenEstablished_(pbPacketIn);
+      }));
+}
+
+void Pipe::onReadWhileServerWaitingForBrochureAnswer_(
+    const proto::Packet& pbPacketIn) {
+  TP_DCHECK_EQ(state_, SERVER_WAITING_FOR_BROCHURE_ANSWER);
+  TP_DCHECK_EQ(pbPacketIn.type_case(), proto::Packet::kBrochureAnswer);
+  const proto::BrochureAnswer& pbBrochureAnswer = pbPacketIn.brochure_answer();
+  const std::string& chosenTransport = pbBrochureAnswer.chosen_transport();
+  if (chosenTransport == transport_) {
+    listener_->unregisterConnectionRequest_(registrationId_.value());
+    registrationId_.reset();
+    receivedTransportAndConnection_.reset();
+    state_ = ESTABLISHED;
+    doWritesAccumulatedWhileWaitingForPipeToBeEstablished_();
+    connection_->read(wrapReadPacketCallback_(
+        [](Pipe& pipe, const proto::Packet& pbPacketIn) {
+          pipe.onReadWhenEstablished_(pbPacketIn);
+        }));
+  } else {
+    chosenTransport_ = chosenTransport;
+    switchToOtherTransport_();
+  }
+}
+
+void Pipe::switchToOtherTransport_() {
+  TP_DCHECK_EQ(state_, SERVER_WAITING_FOR_BROCHURE_ANSWER);
+  if (chosenTransport_.has_value() &&
+      receivedTransportAndConnection_.has_value()) {
+    std::string chosenTransport = std::move(chosenTransport_).value();
+    chosenTransport_.reset();
+    std::string receivedTransport;
+    std::shared_ptr<transport::Connection> receivedConnection;
+    std::tie(receivedTransport, receivedConnection) =
+        std::move(receivedTransportAndConnection_).value();
+    receivedTransportAndConnection_.reset();
+    TP_DCHECK_EQ(chosenTransport, receivedTransport);
+    transport_ = std::move(receivedTransport);
+    connection_ = std::move(receivedConnection);
+    state_ = ESTABLISHED;
+    doWritesAccumulatedWhileWaitingForPipeToBeEstablished_();
+    connection_->read(wrapReadPacketCallback_(
+        [](Pipe& pipe, const proto::Packet& pbPacketIn) {
+          pipe.onReadWhenEstablished_(pbPacketIn);
+        }));
+  }
+}
+
+void Pipe::onReadWhenEstablished_(const proto::Packet& pbPacketIn) {
+  TP_DCHECK_EQ(state_, ESTABLISHED);
   if (pbPacketIn.has_message_descriptor()) {
     const proto::MessageDescriptor& pbMessageDesc =
         pbPacketIn.message_descriptor();
@@ -316,11 +527,11 @@ void Pipe::onRead(const proto::Packet& pbPacketIn) {
         }));
     completingWrites_.emplace_back(std::move(message), std::move(fn));
   } else {
-    TP_LOG_ERROR() << "packet has no payload";
+    TP_THROW_ASSERT() << "unexpected type " << pbPacketIn.type_case();
   }
   connection_->read(
       wrapReadPacketCallback_([](Pipe& pipe, const proto::Packet& pbPacketIn) {
-        pipe.onRead(pbPacketIn);
+        pipe.onReadWhenEstablished_(pbPacketIn);
       }));
 }
 
