@@ -337,7 +337,11 @@ void Connection::ReadOperation::handleRead(TConsumer& inbox) {
     const auto tup = inbox.readInTxWithSize<uint32_t>();
     const auto ret = std::get<0>(tup);
     const auto ptr = std::get<1>(tup);
-    TP_THROW_SYSTEM_IF(ret < 0, -ret);
+    if (ret < 0) {
+      fn_(TP_CREATE_ERROR(EOFError), nullptr, 0);
+      return;
+    }
+
     fn_(Error::kSuccess, ptr, ret);
   }
 

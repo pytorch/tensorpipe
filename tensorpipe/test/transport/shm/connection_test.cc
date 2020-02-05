@@ -110,6 +110,7 @@ TEST(Connection, LargeWrite) {
       [&](std::shared_ptr<Connection> conn) {
         conn->read([conn](const Error& error, const void* ptr, size_t len) {
           ASSERT_TRUE(error);
+          ASSERT_EQ(error.what(), "eof");
         });
       },
       [&](std::shared_ptr<Connection> conn) {
