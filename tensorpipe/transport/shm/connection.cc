@@ -358,6 +358,14 @@ Connection::WriteOperation::WriteOperation(
     : ptr_(ptr), len_(len), fn_(std::move(fn)) {}
 
 void Connection::WriteOperation::handleWrite(TProducer& outbox) {
+  // Attempting to write a message larger than the ring buffer. We might want to
+  // chunk it in the future.
+  const int buf_size = outbox.getHeader().kDataPoolByteSize;
+  if (len_ > buf_size) {
+    fn_(TP_CREATE_ERROR(ShortWriteError, len_, buf_size));
+    return;
+  }
+
   ssize_t ret;
 
   // Start write transaction.

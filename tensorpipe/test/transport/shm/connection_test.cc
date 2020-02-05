@@ -113,6 +113,7 @@ TEST(Connection, LargeWrite) {
       [&](std::shared_ptr<Connection> conn) {
         conn->write(msg.c_str(), msg.length(), [conn](const Error& error) {
           ASSERT_TRUE(error);
+          ASSERT_EQ(error.what().substr(0, 11), "short write");
         });
       });
 
