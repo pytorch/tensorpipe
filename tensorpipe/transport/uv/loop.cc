@@ -45,6 +45,9 @@ void Loop::join() {
 
   // Wait for event loop thread to terminate.
   thread_.join();
+
+  // There should not be any pending deferred work at this time.
+  TP_DCHECK(fns_.empty());
 }
 
 void Loop::defer(std::function<void()> fn) {
@@ -60,10 +63,22 @@ void Loop::wakeup() {
 
 void Loop::loop() {
   int rv;
+
   rv = uv_run(loop_.get(), UV_RUN_DEFAULT);
   TP_THROW_ASSERT_IF(rv > 0)
       << ": uv_run returned with active handles or requests";
+
+  // We got broken out of the run loop by Loop::join's unref on the
+  // async handle. It is possible we still have callbacks to run,
+  // which in turn may trigger more work. Therefore, we keep running
+  // until the only active handle is the async handle.
   uv_ref(reinterpret_cast<uv_handle_t*>(async_.get()));
+  rv = uv_run(loop_.get(), UV_RUN_NOWAIT);
+  TP_THROW_ASSERT_IF(rv == 0)
+      << ": uv_run returned with no active handles or requests";
+
+  // By this time we expect to have drained all pending work and can
+  // safely close the async handle and terminate the thread.
   uv_close(reinterpret_cast<uv_handle_t*>(async_.get()), nullptr);
   rv = uv_run(loop_.get(), UV_RUN_NOWAIT);
   TP_THROW_ASSERT_IF(rv > 0)
