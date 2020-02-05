@@ -41,6 +41,7 @@ jobs:
       - run:
           name: Test
           command: |
+            build/tensorpipe/test/channel/channel_basic_test
             build/tensorpipe/test/common/defs_test
             build/tensorpipe/test/common/system_test
             build/tensorpipe/test/util/shm/segment_test

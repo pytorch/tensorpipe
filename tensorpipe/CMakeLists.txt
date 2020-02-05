@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 set(TENSORPIPE_SOURCES
+  ${CMAKE_CURRENT_SOURCE_DIR}/channel/basic.cc
   ${CMAKE_CURRENT_SOURCE_DIR}/common/address.cc
   ${CMAKE_CURRENT_SOURCE_DIR}/common/system.cc
   ${CMAKE_CURRENT_SOURCE_DIR}/core/channel.cc
@@ -19,6 +20,7 @@ set(TENSORPIPE_SOURCES
   )
 
 set(TENSORPIPE_HEADERS
+  ${CMAKE_CURRENT_SOURCE_DIR}/channel/basic.h
   ${CMAKE_CURRENT_SOURCE_DIR}/common/address.h
   ${CMAKE_CURRENT_SOURCE_DIR}/common/callback.h
   ${CMAKE_CURRENT_SOURCE_DIR}/common/defs.h
