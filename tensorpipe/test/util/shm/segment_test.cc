@@ -88,7 +88,9 @@ TEST(SegmentManager, SingleProducer_SingleConsumer_Array) {
       }
 
       {
-        auto err = sendFdsToSocket(sock_fds[0], segment->getFd());
+        struct {
+        } nothing;
+        auto err = sendFdsToSocket(sock_fds[0], nothing, segment->getFd());
         if (err) {
           TP_THROW_ASSERT() << err.what();
         }
@@ -107,7 +109,9 @@ TEST(SegmentManager, SingleProducer_SingleConsumer_Array) {
   // parent, the consumer
   int segment_fd;
   {
-    auto err = recvFdsFromSocket(sock_fds[1], segment_fd);
+    struct {
+    } nothing;
+    auto err = recvFdsFromSocket(sock_fds[1], nothing, segment_fd);
     if (err) {
       TP_THROW_ASSERT() << err.what();
     }

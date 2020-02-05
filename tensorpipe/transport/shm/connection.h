@@ -14,6 +14,7 @@
 
 #include <tensorpipe/transport/connection.h>
 #include <tensorpipe/transport/shm/loop.h>
+#include <tensorpipe/transport/shm/notify.h>
 #include <tensorpipe/transport/shm/socket.h>
 #include <tensorpipe/util/ringbuffer/consumer.h>
 #include <tensorpipe/util/ringbuffer/producer.h>
@@ -115,6 +116,14 @@ class Connection final : public transport::Connection,
   int outboxHeaderFd_;
   int outboxDataFd_;
   optional<TProducer> outbox_;
+
+  // Notification buffer to wakeup peer on writes.
+  Fd notificationEventFd_; // ????
+  int notificationHeaderFd_;
+  int notificationDataFd_;
+  optional<TNotificationProducer> notification_;
+
+  uint32_t notificationToken_;
 
   // Monitors the eventfd of the inbox.
   std::shared_ptr<FunctionEventHandler> inboxMonitor_;

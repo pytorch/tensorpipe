@@ -59,8 +59,8 @@ void loadFdsFromArray(int* array, std::index_sequence<Idxs...>, Fds&... fds) {
 
 } // namespace
 
-template <typename... Fds>
-Error sendFdsToSocket(int socketFd, const Fds&... fds) {
+template <typename T, typename... Fds>
+Error sendFdsToSocket(int socketFd, const T& t, const Fds&... fds) {
   using TPayload = int;
 
   // Build message.
@@ -72,8 +72,8 @@ Error sendFdsToSocket(int socketFd, const Fds&... fds) {
   // Build dummy iov with a single NUL byte.
   char nul = 0;
   struct iovec iov;
-  iov.iov_base = &nul;
-  iov.iov_len = sizeof(nul);
+  iov.iov_base = const_cast<T*>(&t);
+  iov.iov_len = sizeof(T);
   msg.msg_iov = &iov;
   msg.msg_iovlen = sizeof(iov) / sizeof(iovec);
 
@@ -108,8 +108,8 @@ Error sendFdsToSocket(int socketFd, const Fds&... fds) {
   return Error::kSuccess;
 }
 
-template <typename... Fds>
-Error recvFdsFromSocket(int socketFd, Fds&... fds) {
+template <typename T, typename... Fds>
+Error recvFdsFromSocket(int socketFd, T& t, Fds&... fds) {
   using TPayload = int;
 
   // Build message.
@@ -121,8 +121,8 @@ Error recvFdsFromSocket(int socketFd, Fds&... fds) {
   // Build dummy iov with a single NUL byte.
   struct iovec iov;
   char nul = 0;
-  iov.iov_base = &nul;
-  iov.iov_len = sizeof(nul);
+  iov.iov_base = &t;
+  iov.iov_len = sizeof(T);
   msg.msg_iov = &iov;
   msg.msg_iovlen = sizeof(iov) / sizeof(iovec);
 
@@ -210,13 +210,29 @@ class Socket final : public Fd, public std::enable_shared_from_this<Socket> {
   // Send file descriptor.
   template <typename... Fds>
   Error sendFds(const Fds&... fds) {
-    return sendFdsToSocket(fd_, fds...);
+    struct {
+    } nothing;
+    return sendFdsToSocket(fd_, nothing, fds...);
+  }
+
+  // Send file descriptor.
+  template <typename T, typename... Fds>
+  Error sendFds(const T& t, const Fds&... fds) {
+    return sendFdsToSocket(fd_, t, fds...);
   }
 
   // Receive file descriptor.
   template <typename... Fds>
   Error recvFds(Fds&... fds) {
-    return recvFdsFromSocket(fd_, fds...);
+    struct {
+    } nothing;
+    return recvFdsFromSocket(fd_, nothing, fds...);
+  }
+
+  // Receive file descriptor.
+  template <typename T, typename... Fds>
+  Error recvFds(T& t, Fds&... fds) {
+    return recvFdsFromSocket(fd_, t, fds...);
   }
 
  private:

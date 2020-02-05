@@ -13,6 +13,7 @@
 
 #include <vector>
 
+#include <tensorpipe/common/callback.h>
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/transport/error_macros.h>
 
@@ -117,26 +118,40 @@ void Connection::handleEvents(int events) {
 
 void Connection::handleEventIn(std::unique_lock<std::mutex> lock) {
   if (state_ == RECV_FDS) {
-    auto err = socket_->recvFds(outboxEventFd_, outboxHeaderFd_, outboxDataFd_);
+    uint32_t token;
+
+    auto err = socket_->recvFds(
+        token,
+        outboxEventFd_,
+        outboxHeaderFd_,
+        outboxDataFd_,
+        notificationHeaderFd_,
+        notificationDataFd_);
     if (err) {
       failHoldingMutex(std::move(err));
       return;
     }
 
+    notificationToken_ = token;
+
     // Load ringbuffer for outbox.
     outbox_.emplace(util::ringbuffer::shm::load<TRingBuffer>(
         outboxHeaderFd_, outboxDataFd_));
 
+    // Load ringbuffer for notification buffer.
+    notification_.emplace(util::ringbuffer::shm::load<TNotificationRingBuffer>(
+        notificationHeaderFd_, notificationDataFd_));
+
     // Monitor eventfd of inbox for reads.
     // If it is readable, it means our peer placed a message in our
     // inbox ringbuffer and is waking us up to process it.
-    inboxMonitor_ = loop_->monitor<Connection>(
-        shared_from_this(),
-        inboxEventFd_.fd(),
-        EPOLLIN,
-        [](Connection& conn, FunctionEventHandler& /* unused */) {
-          conn.handleInboxReadable();
-        });
+    // inboxMonitor_ = loop_->monitor<Connection>(
+    //     shared_from_this(),
+    //     inboxEventFd_.fd(),
+    //     EPOLLIN,
+    //     [](Connection& conn, FunctionEventHandler& /* unused */) {
+    //       conn.handleInboxReadable();
+    //     });
 
     // The connection is usable now.
     state_ = ESTABLISHED;
@@ -149,10 +164,14 @@ void Connection::handleEventIn(std::unique_lock<std::mutex> lock) {
     // connection has been established. If we do, assume it's a
     // zero-byte read indicating EOF. But, before we fail pending
     // operations, see if there is anything in the inbox.
-    readInboxEventFd();
-    setErrorHoldingMutex(TP_CREATE_ERROR(EOFError));
-    closeHoldingMutex();
-    processReadOperations(std::move(lock));
+    // readInboxEventFd();
+
+    // // wait for notifications to fire??
+    // sched_yield();
+
+    // setErrorHoldingMutex(TP_CREATE_ERROR(EOFError));
+    // closeHoldingMutex();
+    // processReadOperations(std::move(lock));
     return;
   }
 
@@ -161,7 +180,26 @@ void Connection::handleEventIn(std::unique_lock<std::mutex> lock) {
 
 void Connection::handleEventOut(std::unique_lock<std::mutex> lock) {
   if (state_ == SEND_FDS) {
-    auto err = socket_->sendFds(inboxEventFd_, inboxHeaderFd_, inboxDataFd_);
+    int notificationHeaderFd;
+    int notificationDataFd;
+    std::tie(notificationHeaderFd, notificationDataFd) =
+        loop_->getNotificationFds();
+
+    uint32_t token = loop_->monitorNotificationQueue(runIfAlive(
+        *this, std::function<void(Connection&)>([](Connection& conn) {
+          // TP_LOG_INFO() << "notified through notification buffer";
+          conn.handleInboxReadable();
+        })));
+
+    TP_LOG_INFO() << "sent notification token " << token;
+
+    auto err = socket_->sendFds(
+        token,
+        inboxEventFd_,
+        inboxHeaderFd_,
+        inboxDataFd_,
+        notificationHeaderFd,
+        notificationDataFd);
     if (err) {
       failHoldingMutex(std::move(err));
       return;
@@ -192,11 +230,15 @@ void Connection::handleEventHup(std::unique_lock<std::mutex> lock) {
 
 void Connection::handleInboxReadable() {
   std::unique_lock<std::mutex> lock(mutex_);
-  readInboxEventFd();
+  // readInboxEventFd();
+  // called once per notification.
+  readOperationsPending_++;
+
   processReadOperations(std::move(lock));
 }
 
 void Connection::readInboxEventFd() {
+  TP_THROW_ASSERT() << "shouldn't be called";
   uint64_t value = 0;
   auto err = inboxEventFd_.read(&value);
   if (err) {
@@ -276,7 +318,17 @@ void Connection::processWriteOperations(std::unique_lock<std::mutex> lock) {
 
   for (auto& writeOperation : operationsToWrite) {
     writeOperation.handleWrite(*outbox_);
-    outboxEventFd_.writeOrThrow<uint64_t>(1);
+
+    // outboxEventFd_.writeOrThrow<uint64_t>(1);
+
+    for (;;) {
+      auto rv = notification_->write(notificationToken_);
+      if (rv == -EAGAIN) {
+        continue;
+      }
+      TP_DCHECK_EQ(rv, sizeof(notificationToken_));
+      break;
+    }
   }
 
   for (auto& writeOperation : operationsToError) {

@@ -10,6 +10,9 @@
 
 #include <tensorpipe/transport/context.h>
 #include <tensorpipe/transport/shm/loop.h>
+#include <tensorpipe/util/ringbuffer/consumer.h>
+#include <tensorpipe/util/ringbuffer/producer.h>
+#include <tensorpipe/util/ringbuffer/shm.h>
 
 namespace tensorpipe {
 namespace transport {

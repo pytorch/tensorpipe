@@ -11,6 +11,7 @@
 #include <sys/eventfd.h>
 
 #include <tensorpipe/common/defs.h>
+#include <tensorpipe/util/ringbuffer/shm.h>
 
 namespace tensorpipe {
 namespace transport {
@@ -74,6 +75,14 @@ Loop::Loop(ConstructorToken /* unused */) {
 
   // Start epoll(2) thread.
   thread_ = std::thread(&Loop::loop, this);
+
+  // Create ringbuffer for inbox.
+  std::shared_ptr<TNotificationRingBuffer> notificationRingBuffer;
+  std::tie(notificationHeaderFd_, notificationDataFd_, notificationRingBuffer) =
+      util::ringbuffer::shm::create<TNotificationRingBuffer>(2 * 4096);
+  notification_.emplace(std::move(notificationRingBuffer));
+
+  notificationMonitor_ = std::thread(&Loop::notificationMonitor, this);
 }
 
 Loop::~Loop() {
@@ -222,6 +231,40 @@ void Loop::join() {
   done_ = true;
   wakeup();
   thread_.join();
+  notificationMonitor_.join();
+}
+
+void Loop::notificationMonitor() {
+  while (!done_) {
+    uint32_t token;
+    auto ret = notification_->copy(token);
+    if (-ret == ENODATA) {
+      sched_yield();
+      // busy loop...
+      continue;
+    }
+
+    // hack: find highest fd in the handlers vector assuming it's the inbox
+    // monitor
+    {
+      auto it = notificationHandlers_.find(token);
+      if (it == notificationHandlers_.end()) {
+        TP_LOG_INFO() << "no handler for token " << token;
+      } else {
+        it->second();
+      }
+    }
+  }
+}
+
+std::pair<int, int> Loop::getNotificationFds() {
+  return {notificationHeaderFd_, notificationDataFd_};
+}
+
+uint32_t Loop::monitorNotificationQueue(std::function<void()> fn) {
+  auto token = notificationToken_++;
+  notificationHandlers_[token] = std::move(fn);
+  return token;
 }
 
 } // namespace shm

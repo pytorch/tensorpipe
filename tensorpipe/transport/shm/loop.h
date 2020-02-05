@@ -16,11 +16,13 @@
 #include <memory>
 #include <mutex>
 #include <thread>
+#include <unordered_map>
 #include <vector>
 
 #include <sys/epoll.h>
 
 #include <tensorpipe/transport/shm/fd.h>
+#include <tensorpipe/transport/shm/notify.h>
 
 namespace tensorpipe {
 namespace transport {
@@ -168,6 +170,24 @@ class Loop final : public std::enable_shared_from_this<Loop> {
 
   // List of functions to run on the next event loop tick.
   std::list<TFunction> functions_;
+
+ private:
+  // Notification ringbuffer
+  int notificationHeaderFd_;
+  int notificationDataFd_;
+  optional<TNotificationConsumer> notification_;
+
+ public:
+  std::thread notificationMonitor_;
+
+  void notificationMonitor();
+
+  std::pair<int, int> getNotificationFds();
+
+  uint32_t monitorNotificationQueue(std::function<void()> fn);
+
+  uint32_t notificationToken_{1};
+  std::unordered_map<uint32_t, std::function<void()>> notificationHandlers_;
 };
 
 } // namespace shm
