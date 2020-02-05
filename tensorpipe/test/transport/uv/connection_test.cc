@@ -55,28 +55,22 @@ TEST(Connection, Initialization) {
   auto loop = uv::Loop::create();
   auto addr = uv::Sockaddr::createInetSockAddr("127.0.0.1");
   constexpr size_t numBytes = 13;
+  std::array<char, numBytes> garbage;
 
   initializePeers(
       loop,
       addr,
       [&](std::shared_ptr<Connection> conn) {
-        Queue<size_t> reads;
-        conn->read([&](const Error& error, const void* ptr, size_t len) {
+        conn->read([&, conn](const Error& error, const void* ptr, size_t len) {
           ASSERT_FALSE(error) << error.what();
-          reads.push(len);
+          ASSERT_EQ(garbage.size(), len);
         });
-        // Wait for the read callback to be called.
-        ASSERT_EQ(numBytes, reads.pop());
       },
       [&](std::shared_ptr<Connection> conn) {
-        Queue<bool> writes;
-        std::array<char, numBytes> garbage;
-        conn->write(garbage.data(), garbage.size(), [&](const Error& error) {
-          ASSERT_FALSE(error) << error.what();
-          writes.push(true);
-        });
-        // Wait for the write callback to be called.
-        writes.pop();
+        conn->write(
+            garbage.data(), garbage.size(), [&, conn](const Error& error) {
+              ASSERT_FALSE(error) << error.what();
+            });
       });
 
   loop->join();
@@ -93,12 +87,9 @@ TEST(Connection, InitializationError) {
         // Closes connection
       },
       [&](std::shared_ptr<Connection> conn) {
-        Queue<Error> errors;
-        conn->read([&](const Error& error, const void* ptr, size_t len) {
-          errors.push(error);
+        conn->read([&, conn](const Error& error, const void* ptr, size_t len) {
+          ASSERT_TRUE(error);
         });
-        auto error = errors.pop();
-        ASSERT_TRUE(error);
       });
 
   loop->join();
@@ -128,6 +119,37 @@ TEST(Connection, DestroyConnectionFromCallback) {
           // Destroy connection from within callback.
           EXPECT_GT(conn.use_count(), 1);
           conn.reset();
+        });
+      });
+
+  loop->join();
+}
+
+TEST(Connection, LargeWrite) {
+  auto loop = uv::Loop::create();
+  auto addr = uv::Sockaddr::createInetSockAddr("127.0.0.1");
+
+  constexpr int kMsgSize = 16 * 1024 * 1024;
+  std::string msg(kMsgSize, 0x42);
+
+  initializePeers(
+      loop,
+      addr,
+      [&](std::shared_ptr<Connection> conn) {
+        conn->write(msg.c_str(), msg.length(), [conn](const Error& error) {
+          ASSERT_FALSE(error) << error.what();
+        });
+      },
+      [&](std::shared_ptr<Connection> conn) {
+        conn->read([&, conn](const Error& error, const void* data, size_t len) {
+          ASSERT_FALSE(error) << error.what();
+          ASSERT_EQ(len, msg.length());
+          const char* cdata = (const char*)data;
+          for (int i = 0; i < len; ++i) {
+            const char c = cdata[i];
+            ASSERT_EQ(c, msg[i])
+                << "Wrong value at position " << i << " of " << msg.length();
+          }
         });
       });
 
