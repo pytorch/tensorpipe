@@ -91,7 +91,7 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
     CLIENT_ABOUT_TO_SEND_HELLO_AND_BROCHURE,
     SERVER_WAITING_FOR_BROCHURE,
     CLIENT_WAITING_FOR_BROCHURE_ANSWER,
-    SERVER_WAITING_FOR_CONNECTION,
+    SERVER_WAITING_FOR_CONNECTIONS,
     ESTABLISHED
   };
 
@@ -103,13 +103,12 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
   std::string transport_;
   std::shared_ptr<transport::Connection> connection_;
 
-  // If the server switches to a different connection it stores the old one
-  // here so that it is kept open because it's the client that has to close it.
-  std::shared_ptr<transport::Connection> initialConnection_;
+  std::unordered_map<std::string, std::shared_ptr<channel::Channel>> channels_;
 
   // The server will set this up when it tell the client to switch to a
-  // different connection.
+  // different connection or to open some channels.
   optional<uint64_t> registrationId_;
+  std::unordered_map<std::string, uint64_t> channelRegistrationIds_;
 
   RearmableCallback<read_descriptor_callback_fn, const Error&, Message>
       readDescriptorCallback_;
@@ -215,6 +214,10 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
   void onReadWhileServerWaitingForBrochure_(const proto::Packet&);
   void onReadWhileClientWaitingForBrochureAnswer_(const proto::Packet&);
   void onAcceptWhileServerWaitingForConnection_(
+      std::string,
+      std::shared_ptr<transport::Connection>);
+  void onAcceptWhileServerWaitingForChannel_(
+      std::string,
       std::string,
       std::shared_ptr<transport::Connection>);
   void onReadWhenEstablished_(const proto::Packet&);

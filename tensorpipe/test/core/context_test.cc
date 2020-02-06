@@ -62,7 +62,10 @@ TEST(Context, Simple) {
   std::vector<std::string> transports;
   transports.push_back("shm");
   transports.push_back("uv");
-  auto context = Context::create(std::move(transports));
+  std::vector<std::string> channelFactories;
+  channelFactories.push_back("basic");
+  auto context =
+      Context::create(std::move(transports), std::move(channelFactories));
 
   std::vector<std::string> addresses;
   addresses.push_back("shm://foobar");

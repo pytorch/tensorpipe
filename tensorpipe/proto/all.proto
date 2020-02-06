@@ -20,14 +20,25 @@ message TransportAdvertisement {
   string domain_descriptor = 1;
 }
 
+message ChannelAdvertisement {
+  string domain_descriptor = 1;
+}
+
 message Brochure {
   map<string, TransportAdvertisement> transport_advertisement = 1;
+  map<string, ChannelAdvertisement> channel_advertisement = 2;
+}
+
+message ChannelSelection {
+  uint64 registration_id = 1;
 }
 
 message BrochureAnswer {
   string transport = 1;
   string address = 2;
   uint64 registration_id = 3;
+
+  map<string, ChannelSelection> channel_selection = 4;
 }
 
 enum DeviceType {

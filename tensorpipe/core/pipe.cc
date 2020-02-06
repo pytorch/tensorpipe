@@ -68,14 +68,26 @@ void Pipe::start_() {
     connection_->write(pbPacketOut, wrapWriteCallback_());
     pbPacketOut.Clear();
     proto::Brochure* pbBrochure = pbPacketOut.mutable_brochure();
-    auto allTransportAdvertisements =
+    auto pbAllTransportAdvertisements =
         pbBrochure->mutable_transport_advertisement();
     for (const auto& contextIter : context_->contexts_) {
       const std::string& transport = contextIter.first;
       const transport::Context& context = *(contextIter.second);
-      proto::TransportAdvertisement* transportAdvertisement =
-          &(*allTransportAdvertisements)[transport];
-      transportAdvertisement->set_domain_descriptor(context.domainDescriptor());
+      proto::TransportAdvertisement* pbTransportAdvertisement =
+          &(*pbAllTransportAdvertisements)[transport];
+      pbTransportAdvertisement->set_domain_descriptor(
+          context.domainDescriptor());
+    }
+    auto pbAllChannelAdvertisements =
+        pbBrochure->mutable_channel_advertisement();
+    for (const auto& channelFactoryIter : context_->channelFactories_) {
+      const std::string& name = channelFactoryIter.first;
+      const channel::ChannelFactory& channelFactory =
+          *(channelFactoryIter.second);
+      proto::ChannelAdvertisement* pbChannelAdvertisement =
+          &(*pbAllChannelAdvertisements)[name];
+      pbChannelAdvertisement->set_domain_descriptor(
+          channelFactory.domainDescriptor());
     }
     connection_->write(pbPacketOut, wrapWriteCallback_());
     state_ = CLIENT_WAITING_FOR_BROCHURE_ANSWER;
@@ -98,6 +110,10 @@ Pipe::~Pipe() {
     listener_->unregisterConnectionRequest_(registrationId_.value());
     registrationId_.reset();
   }
+  for (const auto& iter : channelRegistrationIds_) {
+    listener_->unregisterConnectionRequest_(iter.second);
+  }
+  channelRegistrationIds_.clear();
 }
 
 //
@@ -362,6 +378,11 @@ void Pipe::onReadWhileServerWaitingForBrochure_(
   TP_DCHECK_EQ(pbPacketIn.type_case(), proto::Packet::kBrochure);
   const proto::Brochure& pbBrochure = pbPacketIn.brochure();
 
+  proto::Packet pbPacketOut;
+  proto::BrochureAnswer* pbBrochureAnswer =
+      pbPacketOut.mutable_brochure_answer();
+  bool needToWaitForConnections = false;
+
   // FIXME This is hardcoded logic, for now...
   std::string chosenTransport = "shm";
   const auto chosenTransportAdvertisementIter =
@@ -370,21 +391,13 @@ void Pipe::onReadWhileServerWaitingForBrochure_(
       chosenTransportAdvertisementIter !=
       pbBrochure.transport_advertisement().cend());
 
-  if (chosenTransport == transport_) {
-    proto::Packet pbPacketOut;
-    proto::BrochureAnswer* pbBrochureAnswer =
-        pbPacketOut.mutable_brochure_answer();
-    pbBrochureAnswer->set_transport(transport_);
-    connection_->write(pbPacketOut, wrapWriteCallback_());
-    state_ = ESTABLISHED;
-    doWritesAccumulatedWhileWaitingForPipeToBeEstablished_();
-    connection_->read(wrapReadPacketCallback_(
-        [](Pipe& pipe, const proto::Packet& pbPacketIn) {
-          pipe.onReadWhenEstablished_(pbPacketIn);
-        }));
-  } else {
-    initialConnection_ = std::move(connection_);
-    connection_.reset();
+  const auto listenerIter = listener_->listeners_.find(chosenTransport);
+  TP_DCHECK(listenerIter != listener_->listeners_.cend());
+  const transport::Listener& listener = *(listenerIter->second);
+
+  pbBrochureAnswer->set_transport(chosenTransport);
+  pbBrochureAnswer->set_address(listener.addr());
+  if (chosenTransport != transport_) {
     transport_ = chosenTransport;
 
     const proto::TransportAdvertisement& chosenTransportAdvertisement =
@@ -396,10 +409,6 @@ void Pipe::onReadWhileServerWaitingForBrochure_(
     auto chosenContext = chosenContextIter->second;
     TP_DCHECK_EQ(chosenContext->domainDescriptor(), chosenDomainDescriptor);
 
-    const auto listenerIter = listener_->listeners_.find(chosenTransport);
-    TP_DCHECK(listenerIter != listener_->listeners_.cend());
-    const transport::Listener& listener = *(listenerIter->second);
-
     registrationId_.emplace(
         listener_->registerConnectionRequest_(wrapAcceptCallback_(
             [](Pipe& pipe,
@@ -408,15 +417,48 @@ void Pipe::onReadWhileServerWaitingForBrochure_(
               pipe.onAcceptWhileServerWaitingForConnection_(
                   std::move(transport), std::move(connection));
             })));
+    needToWaitForConnections = true;
 
-    proto::Packet pbPacketOut;
-    proto::BrochureAnswer* pbBrochureAnswer =
-        pbPacketOut.mutable_brochure_answer();
-    pbBrochureAnswer->set_transport(chosenTransport);
-    pbBrochureAnswer->set_address(listener.addr());
     pbBrochureAnswer->set_registration_id(registrationId_.value());
-    initialConnection_->write(pbPacketOut, wrapWriteCallback_());
-    state_ = SERVER_WAITING_FOR_CONNECTION;
+  }
+
+  auto pbAllChannelSelections = pbBrochureAnswer->mutable_channel_selection();
+  for (const auto& pbChannelAdvertisementIter :
+       pbBrochure.channel_advertisement()) {
+    const std::string name = pbChannelAdvertisementIter.first;
+    const proto::ChannelAdvertisement& pbChannelAdvertisement =
+        pbChannelAdvertisementIter.second;
+    std::string domainDescriptor = pbChannelAdvertisement.domain_descriptor();
+    auto channelFactoryIter = context_->channelFactories_.find(name);
+    TP_DCHECK(channelFactoryIter != context_->channelFactories_.end());
+    auto channelFactory = channelFactoryIter->second;
+    TP_DCHECK_EQ(channelFactory->domainDescriptor(), domainDescriptor);
+    channelRegistrationIds_[name] =
+        listener_->registerConnectionRequest_(wrapAcceptCallback_(
+            [name](
+                Pipe& pipe,
+                std::string transport,
+                std::shared_ptr<transport::Connection> connection) {
+              pipe.onAcceptWhileServerWaitingForChannel_(
+                  name, std::move(transport), std::move(connection));
+            }));
+    needToWaitForConnections = true;
+    proto::ChannelSelection* pbChannelSelection =
+        &(*pbAllChannelSelections)[name];
+    pbChannelSelection->set_registration_id(channelRegistrationIds_[name]);
+  }
+
+  if (!needToWaitForConnections) {
+    connection_->write(pbPacketOut, wrapWriteCallback_());
+    state_ = ESTABLISHED;
+    doWritesAccumulatedWhileWaitingForPipeToBeEstablished_();
+    connection_->read(wrapReadPacketCallback_(
+        [](Pipe& pipe, const proto::Packet& pbPacketIn) {
+          pipe.onReadWhenEstablished_(pbPacketIn);
+        }));
+  } else {
+    connection_->write(pbPacketOut, wrapWriteCallback_());
+    state_ = SERVER_WAITING_FOR_CONNECTIONS;
   }
 }
 
@@ -427,14 +469,14 @@ void Pipe::onReadWhileClientWaitingForBrochureAnswer_(
 
   const proto::BrochureAnswer& pbBrochureAnswer = pbPacketIn.brochure_answer();
   const std::string& chosenTransport = pbBrochureAnswer.transport();
+  std::string chosenAddress = pbBrochureAnswer.address();
+  auto chosenContextIter = context_->contexts_.find(chosenTransport);
+  TP_DCHECK(chosenContextIter != context_->contexts_.end());
+  auto chosenContext = chosenContextIter->second;
 
   if (chosenTransport != transport_) {
-    std::string chosenAddress = pbBrochureAnswer.address();
     uint64_t registrationId = pbBrochureAnswer.registration_id();
 
-    auto chosenContextIter = context_->contexts_.find(chosenTransport);
-    TP_DCHECK(chosenContextIter != context_->contexts_.end());
-    auto chosenContext = chosenContextIter->second;
     auto chosenConnection = chosenContext->connect(chosenAddress);
 
     connection_.reset();
@@ -445,6 +487,30 @@ void Pipe::onReadWhileClientWaitingForBrochureAnswer_(
         pbPacketOut.mutable_requested_connection();
     pbRequestedConnection->set_registration_id(registrationId);
     connection_->write(pbPacketOut, wrapWriteCallback_());
+  }
+
+  for (const auto& pbChannelSelectionIter :
+       pbBrochureAnswer.channel_selection()) {
+    std::string name = pbChannelSelectionIter.first;
+    const proto::ChannelSelection& pbChannelSelection =
+        pbChannelSelectionIter.second;
+    uint64_t registrationId = pbChannelSelection.registration_id();
+
+    auto channelFactoryIter = context_->channelFactories_.find(name);
+    TP_DCHECK(channelFactoryIter != context_->channelFactories_.end());
+    auto channelFactory = channelFactoryIter->second;
+
+    std::shared_ptr<transport::Connection> connection =
+        chosenContext->connect(chosenAddress);
+
+    proto::Packet pbPacketOut;
+    proto::RequestedConnection* pbRequestedConnection =
+        pbPacketOut.mutable_requested_connection();
+    pbRequestedConnection->set_registration_id(registrationId);
+    connection->write(pbPacketOut, wrapWriteCallback_());
+
+    channels_.emplace(
+        name, channelFactory->createChannel(std::move(connection)));
   }
 
   state_ = ESTABLISHED;
@@ -458,20 +524,54 @@ void Pipe::onReadWhileClientWaitingForBrochureAnswer_(
 void Pipe::onAcceptWhileServerWaitingForConnection_(
     std::string receivedTransport,
     std::shared_ptr<transport::Connection> receivedConnection) {
-  TP_DCHECK_EQ(state_, SERVER_WAITING_FOR_CONNECTION);
+  TP_DCHECK_EQ(state_, SERVER_WAITING_FOR_CONNECTIONS);
   TP_DCHECK(registrationId_.has_value());
   listener_->unregisterConnectionRequest_(registrationId_.value());
   registrationId_.reset();
   TP_DCHECK_EQ(transport_, receivedTransport);
-  TP_DCHECK(connection_ == nullptr);
+  connection_.reset();
   connection_ = std::move(receivedConnection);
 
-  state_ = ESTABLISHED;
-  doWritesAccumulatedWhileWaitingForPipeToBeEstablished_();
-  connection_->read(
-      wrapReadPacketCallback_([](Pipe& pipe, const proto::Packet& pbPacketIn) {
-        pipe.onReadWhenEstablished_(pbPacketIn);
-      }));
+  if (!registrationId_.has_value() && channelRegistrationIds_.empty()) {
+    state_ = ESTABLISHED;
+    doWritesAccumulatedWhileWaitingForPipeToBeEstablished_();
+    connection_->read(wrapReadPacketCallback_(
+        [](Pipe& pipe, const proto::Packet& pbPacketIn) {
+          pipe.onReadWhenEstablished_(pbPacketIn);
+        }));
+  }
+}
+
+void Pipe::onAcceptWhileServerWaitingForChannel_(
+    std::string name,
+    std::string receivedTransport,
+    std::shared_ptr<transport::Connection> receivedConnection) {
+  TP_DCHECK_EQ(state_, SERVER_WAITING_FOR_CONNECTIONS);
+  auto channelRegistrationIdIter = channelRegistrationIds_.find(name);
+  TP_DCHECK(channelRegistrationIdIter != channelRegistrationIds_.end());
+  listener_->unregisterConnectionRequest_(channelRegistrationIdIter->second);
+  channelRegistrationIds_.erase(channelRegistrationIdIter);
+
+  TP_DCHECK_EQ(transport_, receivedTransport);
+  auto channelIter = channels_.find(name);
+  TP_DCHECK(channelIter == channels_.end());
+
+  auto channelFactoryIter = context_->channelFactories_.find(name);
+  TP_DCHECK(channelFactoryIter != context_->channelFactories_.end());
+  std::shared_ptr<channel::ChannelFactory> channelFactory =
+      channelFactoryIter->second;
+
+  channels_.emplace(
+      name, channelFactory->createChannel(std::move(receivedConnection)));
+
+  if (!registrationId_.has_value() && channelRegistrationIds_.empty()) {
+    state_ = ESTABLISHED;
+    doWritesAccumulatedWhileWaitingForPipeToBeEstablished_();
+    connection_->read(wrapReadPacketCallback_(
+        [](Pipe& pipe, const proto::Packet& pbPacketIn) {
+          pipe.onReadWhenEstablished_(pbPacketIn);
+        }));
+  }
 }
 
 void Pipe::onReadWhenEstablished_(const proto::Packet& pbPacketIn) {

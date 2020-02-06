@@ -15,6 +15,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include <tensorpipe/channel/channel.h>
 #include <tensorpipe/common/optional.h>
 #include <tensorpipe/common/queue.h>
 #include <tensorpipe/transport/context.h>
@@ -29,9 +30,14 @@ class Context final {
   struct ConstructorToken {};
 
  public:
-  static std::shared_ptr<Context> create(const std::vector<std::string>&);
+  static std::shared_ptr<Context> create(
+      const std::vector<std::string>&,
+      const std::vector<std::string>&);
 
-  Context(ConstructorToken, const std::vector<std::string>&);
+  Context(
+      ConstructorToken,
+      const std::vector<std::string>&,
+      const std::vector<std::string>&);
 
   ~Context();
 
@@ -42,8 +48,11 @@ class Context final {
 
   std::unordered_map<std::string, std::shared_ptr<transport::Context>>
       contexts_;
+  std::unordered_map<std::string, std::shared_ptr<channel::ChannelFactory>>
+      channelFactories_;
 
   std::shared_ptr<transport::Context> getContextForTransport_(std::string);
+  std::shared_ptr<channel::ChannelFactory> getChannelFactory_(std::string);
 
   std::thread callbackCaller_;
   Queue<optional<std::function<void()>>> callbackQueue_;

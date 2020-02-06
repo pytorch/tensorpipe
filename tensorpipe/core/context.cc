@@ -8,6 +8,7 @@
 
 #include <tensorpipe/core/context.h>
 
+#include <tensorpipe/channel/basic/basic.h>
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/transport/connection.h>
 #include <tensorpipe/transport/shm/context.h>
@@ -16,16 +17,18 @@
 namespace tensorpipe {
 
 std::shared_ptr<Context> Context::create(
-    const std::vector<std::string>& transports) {
-  auto context =
-      std::make_shared<Context>(ConstructorToken(), std::move(transports));
+    const std::vector<std::string>& transports,
+    const std::vector<std::string>& channelFactories) {
+  auto context = std::make_shared<Context>(
+      ConstructorToken(), transports, channelFactories);
   context->start_();
   return context;
 }
 
 Context::Context(
     ConstructorToken /* unused */,
-    const std::vector<std::string>& transports)
+    const std::vector<std::string>& transports,
+    const std::vector<std::string>& channelFactories)
     : callbackQueue_(1000) {
   for (const auto& transport : transports) {
     if (transport == "shm") {
@@ -33,7 +36,15 @@ Context::Context(
     } else if (transport == "uv") {
       contexts_.emplace(transport, std::make_shared<transport::uv::Context>());
     } else {
-      TP_THROW_EINVAL() << "unsupported transport";
+      TP_THROW_EINVAL() << "unsupported transport " << transport;
+    }
+  }
+  for (const auto& name : channelFactories) {
+    if (name == "basic") {
+      channelFactories_.emplace(
+          name, std::make_shared<channel::basic::BasicChannelFactory>());
+    } else {
+      TP_THROW_EINVAL() << "unsupported channel " << name;
     }
   }
 }
@@ -47,6 +58,15 @@ std::shared_ptr<transport::Context> Context::getContextForTransport_(
   auto iter = contexts_.find(transport);
   if (iter == contexts_.end()) {
     TP_THROW_EINVAL() << "unsupported transport " << transport;
+  }
+  return iter->second;
+}
+
+std::shared_ptr<channel::ChannelFactory> Context::getChannelFactory_(
+    std::string name) {
+  auto iter = channelFactories_.find(name);
+  if (iter == channelFactories_.end()) {
+    TP_THROW_EINVAL() << "unsupported channel factory " << name;
   }
   return iter->second;
 }
