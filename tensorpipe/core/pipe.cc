@@ -8,6 +8,8 @@
 
 #include <tensorpipe/core/pipe.h>
 
+#include <algorithm>
+
 #include <tensorpipe/common/address.h>
 #include <tensorpipe/common/callback.h>
 #include <tensorpipe/common/defs.h>
