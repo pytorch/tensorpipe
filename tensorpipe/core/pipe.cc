@@ -537,7 +537,7 @@ void Pipe::onReadWhileServerWaitingForBrochure_(
   bool needToWaitForConnections = false;
 
   // FIXME This is hardcoded logic, for now...
-  std::string chosenTransport = "uv";
+  std::string chosenTransport = "shm";
   const auto chosenTransportAdvertisementIter =
       pbBrochure.transport_advertisement().find(chosenTransport);
   TP_DCHECK(

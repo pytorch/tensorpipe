@@ -160,6 +160,34 @@ class Consumer : public RingBufferWrapper<THeaderExtraData> {
     return copyInTx(sizeof(T), buffer);
   }
 
+  template <class TSize>
+  [[nodiscard]] ssize_t copyInTxWithSize(
+      const size_t size,
+      uint8_t* buffer) noexcept {
+    static_assert(std::is_integral<TSize>::value, "!");
+    if (unlikely(!inTx())) {
+      return -EINVAL;
+    }
+
+    ssize_t ret_size;
+    const TSize* length_ptr;
+    std::tie(ret_size, length_ptr) = this->readInTx<TSize>();
+    if (0 > ret_size) {
+      return ret_size;
+    }
+    TP_DCHECK_EQ(ret_size, sizeof(TSize));
+    if (*length_ptr != size) {
+      return -EINVAL;
+    }
+
+    ssize_t ret = this->copyInTx(size, buffer);
+    if (0 > ret) {
+      return ret;
+    }
+    TP_DCHECK_EQ(ret, size);
+    return size;
+  }
+
   [[nodiscard]] ssize_t commitTx() noexcept {
     if (unlikely(!inTx())) {
       return -EINVAL;
@@ -187,7 +215,14 @@ class Consumer : public RingBufferWrapper<THeaderExtraData> {
     uint64_t tail = this->header_.readTail();
 
     TP_DCHECK_LE(head - tail, this->header_.kDataPoolByteSize);
-    TP_DCHECK_LE(head + this->tx_size_ - tail, this->header_.kDataPoolByteSize);
+    // This check was present in the original code but started failing as we
+    // modified a test. We believe the test is wrong: it would make sense in the
+    // producer (where it would check that adding the transaction to the current
+    // contents doesn't exceed the capacity), but not in the consumer (where we
+    // would have to subtract the transaction size, but then this becomes a
+    // looser version of the check just before it).
+    // TP_DCHECK_LE(
+    //     head + this->tx_size_ - tail, this->header_.kDataPoolByteSize);
 
     TP_DCHECK_LE(tail + this->tx_size_, head);
 

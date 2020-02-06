@@ -77,7 +77,15 @@ void Connection::read(read_callback_fn fn) {
 // Implementation of transport::Connection.
 void Connection::read(void* ptr, size_t length, read_callback_fn fn) {
   std::unique_lock<std::mutex> guard(mutex_);
-  TP_THROW_EINVAL();
+  readOperations_.emplace_back(ptr, length, std::move(fn));
+
+  // If there are pending read operations, make sure the event loop
+  // processes them, now that we have an additional callback. If
+  // `readPendingOperations_ == 0`, we'll have to wait for a new read
+  // to be signaled, and don't need to force processing.
+  if (readOperationsPending_ > 0 || error_) {
+    triggerProcessReadOperations();
+  }
 }
 
 // Implementation of transport::Connection
@@ -318,6 +326,12 @@ void Connection::closeHoldingMutex() {
   }
 }
 
+Connection::ReadOperation::ReadOperation(
+    void* ptr,
+    size_t len,
+    read_callback_fn fn)
+    : ptr_(ptr), len_(len), fn_(std::move(fn)) {}
+
 Connection::ReadOperation::ReadOperation(read_callback_fn fn)
     : fn_(std::move(fn)) {}
 
@@ -333,7 +347,13 @@ void Connection::ReadOperation::handleRead(TConsumer& inbox) {
     break;
   }
 
-  {
+  if (ptr_ != nullptr) {
+    const auto ret = inbox.copyInTxWithSize<uint32_t>(
+        len_, reinterpret_cast<uint8_t*>(ptr_));
+    TP_THROW_SYSTEM_IF(ret < 0, -ret);
+    TP_DCHECK_EQ(ret, len_);
+    fn_(Error::kSuccess, ptr_, len_);
+  } else {
     const auto tup = inbox.readInTxWithSize<uint32_t>();
     const auto ret = std::get<0>(tup);
     const auto ptr = std::get<1>(tup);

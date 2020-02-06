@@ -129,6 +129,8 @@ class Connection final : public transport::Connection,
   //
   class ReadOperation {
    public:
+    explicit ReadOperation(void* ptr, size_t len, read_callback_fn fn);
+
     explicit ReadOperation(read_callback_fn fn);
 
     // Processes a pending read.
@@ -137,7 +139,7 @@ class Connection final : public transport::Connection,
     void handleError(const Error& error);
 
    private:
-    std::unique_ptr<char*> ptr_{};
+    void* ptr_{nullptr};
     size_t len_{0};
     read_callback_fn fn_;
   };

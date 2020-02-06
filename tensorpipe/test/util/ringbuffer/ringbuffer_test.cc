@@ -608,7 +608,7 @@ TEST(RingBuffer, ReadTxWrapping) {
 
 TEST(RingBuffer, InTx) {
   // Enough to fit the bytes required to fit all writes.
-  size_t size = (1 + 4) + 2 + 2 + 2;
+  size_t size = (1 + 4) + 2 + 2 + (1 + 2) + (1 + 2);
 
   auto rb = makeRingBuffer(size);
   // Make a producer.
@@ -636,9 +636,16 @@ TEST(RingBuffer, InTx) {
     EXPECT_EQ(ret, sizeof(uint16_t));
   }
   {
-    // 2 bytes.
-    ssize_t ret = p.writeInTx<uint16_t>(9u);
-    EXPECT_EQ(ret, sizeof(uint16_t));
+    // 1 + 2 bytes.
+    uint16_t data = 10u;
+    ssize_t ret = p.writeInTxWithSize<uint8_t>(sizeof(data), &data);
+    EXPECT_EQ(ret, sizeof(uint8_t) + sizeof(uint16_t));
+  }
+  {
+    // 1 + 2 bytes.
+    uint16_t data = 11u;
+    ssize_t ret = p.writeInTxWithSize<uint8_t>(sizeof(data), &data);
+    EXPECT_EQ(ret, sizeof(uint8_t) + sizeof(uint16_t));
   }
   {
     ssize_t ret = p.commitTx();
@@ -743,17 +750,25 @@ TEST(RingBuffer, InTx) {
   }
   {
     ssize_t size;
-    const uint16_t* d_ptr;
-    std::tie(ret, d_ptr) = c.readInTx<uint16_t>();
+    uint16_t d = 0;
+    ret = c.copyInTx(sizeof(d), reinterpret_cast<uint8_t*>(&d));
     EXPECT_EQ(ret, 2);
-    EXPECT_EQ(*d_ptr, 9u);
+    EXPECT_EQ(d, 9u);
   }
   {
     ssize_t size;
-    const uint16_t* d_ptr;
-    std::tie(ret, d_ptr) = c.readInTx<uint16_t>();
+    const void* d_ptr;
+    std::tie(ret, d_ptr) = c.readInTxWithSize<uint8_t>();
     EXPECT_EQ(ret, 2);
-    EXPECT_EQ(*d_ptr, 9u);
+    EXPECT_EQ(*reinterpret_cast<const uint16_t*>(d_ptr), 10u);
+  }
+  {
+    ssize_t size;
+    uint16_t d = 0;
+    ret =
+        c.copyInTxWithSize<uint8_t>(sizeof(d), reinterpret_cast<uint8_t*>(&d));
+    EXPECT_EQ(ret, 2);
+    EXPECT_EQ(d, 11u);
   }
   {
     ssize_t size;
