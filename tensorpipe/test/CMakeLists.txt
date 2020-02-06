@@ -15,7 +15,8 @@ function(add_tensorpipe_test)
     -Wl,--no-whole-archive
     tensorpipe
     tensorpipe_shm
-    tensorpipe_uv)
+    tensorpipe_uv
+    tensorpipe_basic)
 endfunction()
 
 add_subdirectory(channel)

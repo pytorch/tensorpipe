@@ -21,8 +21,6 @@
 
 namespace tensorpipe {
 
-namespace {
-
 struct MessageBeingAllocated {
   ssize_t length{-1};
 
@@ -49,8 +47,6 @@ struct MessageBeingWritten {
   bool dataStillBeingWritten{true};
   int64_t numTensorDataStillBeingSent{0};
 };
-
-} // namespace
 
 class Listener;
 
