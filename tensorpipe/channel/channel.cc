@@ -6,17 +6,12 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <tensorpipe/core/channel.h>
+#include <tensorpipe/channel/channel.h>
 
 namespace tensorpipe {
+namespace channel {
 
-ChannelFactory::ChannelFactory(std::string name) : name_(std::move(name)) {}
-
-ChannelFactory::~ChannelFactory() {}
-
-const std::string& ChannelFactory::name() const {
-  return name_;
-}
+Channel::~Channel() {}
 
 std::pair<Channel::TDescriptor, std::future<void>> Channel::send(
     const void* ptr,
@@ -40,4 +35,13 @@ std::future<void> Channel::recv(
   return future;
 }
 
+ChannelFactory::ChannelFactory(std::string name) : name_(std::move(name)) {}
+
+ChannelFactory::~ChannelFactory() {}
+
+const std::string& ChannelFactory::name() const {
+  return name_;
+}
+
+} // namespace channel
 } // namespace tensorpipe

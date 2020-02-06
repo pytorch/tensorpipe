@@ -13,10 +13,10 @@
 #include <thread>
 #include <unordered_map>
 
+#include <tensorpipe/channel/channel.h>
 #include <tensorpipe/common/callback.h>
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/queue.h>
-#include <tensorpipe/core/channel.h>
 #include <tensorpipe/transport/error.h>
 #include <tensorpipe/transport/uv/context.h>
 
@@ -62,7 +62,7 @@ std::vector<uint8_t> typeToBuffer(const T& t) {
 class TestChannelFactory;
 
 // Implementation of tensorpipe::Channel for test purposes.
-class TestChannel : public Channel,
+class TestChannel : public channel::Channel,
                     public std::enable_shared_from_this<TestChannel> {
   // Store pointer and length in descriptor.
   // This test runs in a single process so we can use memcpy directly.
@@ -102,7 +102,7 @@ class TestChannel : public Channel,
     connection_->write(
         vec->data(),
         vec->size(),
-        [callback{std::move(callback)}](const transport::Error& error) {
+        [callback{std::move(callback)}, vec](const transport::Error& error) {
           TP_LOG_WARNING_IF(error) << error.what();
           callback();
         });
@@ -154,7 +154,7 @@ class TestChannel : public Channel,
   std::deque<TSendCallback> sendCallbacks_;
 };
 
-class TestChannelFactory : public ChannelFactory {
+class TestChannelFactory : public channel::ChannelFactory {
  public:
   TestChannelFactory() : ChannelFactory("TestChannelFactory") {
     std::ostringstream oss;
@@ -168,7 +168,7 @@ class TestChannelFactory : public ChannelFactory {
     return domainDescriptor_;
   }
 
-  std::shared_ptr<Channel> createChannel(
+  std::shared_ptr<channel::Channel> createChannel(
       std::shared_ptr<transport::Connection> conn) override {
     auto channel = std::make_shared<TestChannel>(std::move(conn));
     channel->init_();
@@ -183,7 +183,7 @@ void testConnectionPair(
     std::function<void(std::shared_ptr<transport::Connection>)> f1,
     std::function<void(std::shared_ptr<transport::Connection>)> f2) {
   auto context = std::make_shared<transport::uv::Context>();
-  auto addr = "::1";
+  auto addr = "127.0.0.1";
 
   {
     Queue<std::shared_ptr<transport::Connection>> q1, q2;
@@ -212,15 +212,15 @@ void testConnectionPair(
 } // namespace
 
 TEST(ChannelFactory, Name) {
-  std::shared_ptr<ChannelFactory> factory =
+  std::shared_ptr<channel::ChannelFactory> factory =
       std::make_shared<TestChannelFactory>();
   EXPECT_EQ(factory->name(), "TestChannelFactory");
 }
 
 TEST(ChannelFactory, DomainDescriptor) {
-  std::shared_ptr<ChannelFactory> factory1 =
+  std::shared_ptr<channel::ChannelFactory> factory1 =
       std::make_shared<TestChannelFactory>();
-  std::shared_ptr<ChannelFactory> factory2 =
+  std::shared_ptr<channel::ChannelFactory> factory2 =
       std::make_shared<TestChannelFactory>();
   EXPECT_FALSE(factory1->domainDescriptor().empty());
   EXPECT_FALSE(factory2->domainDescriptor().empty());
@@ -228,12 +228,12 @@ TEST(ChannelFactory, DomainDescriptor) {
 }
 
 TEST(ChannelFactory, CreateChannel) {
-  std::shared_ptr<ChannelFactory> factory1 =
+  std::shared_ptr<channel::ChannelFactory> factory1 =
       std::make_shared<TestChannelFactory>();
-  std::shared_ptr<ChannelFactory> factory2 =
+  std::shared_ptr<channel::ChannelFactory> factory2 =
       std::make_shared<TestChannelFactory>();
   constexpr auto dataSize = 256;
-  Queue<Channel::TDescriptor> descriptorQueue;
+  Queue<channel::Channel::TDescriptor> descriptorQueue;
 
   testConnectionPair(
       [&](std::shared_ptr<transport::Connection> conn) {
@@ -246,7 +246,7 @@ TEST(ChannelFactory, CreateChannel) {
         }
 
         // Perform send and wait for completion.
-        Channel::TDescriptor descriptor;
+        channel::Channel::TDescriptor descriptor;
         std::future<void> future;
         std::tie(descriptor, future) = channel->send(data.data(), data.size());
         descriptorQueue.push(std::move(descriptor));

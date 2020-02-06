@@ -5,10 +5,9 @@
 # LICENSE file in the root directory of this source tree.
 
 set(TENSORPIPE_SOURCES
-  ${CMAKE_CURRENT_SOURCE_DIR}/channel/basic.cc
+  ${CMAKE_CURRENT_SOURCE_DIR}/channel/channel.cc
   ${CMAKE_CURRENT_SOURCE_DIR}/common/address.cc
   ${CMAKE_CURRENT_SOURCE_DIR}/common/system.cc
-  ${CMAKE_CURRENT_SOURCE_DIR}/core/channel.cc
   ${CMAKE_CURRENT_SOURCE_DIR}/core/context.cc
   ${CMAKE_CURRENT_SOURCE_DIR}/core/error.cc
   ${CMAKE_CURRENT_SOURCE_DIR}/core/listener.cc
@@ -20,14 +19,14 @@ set(TENSORPIPE_SOURCES
   )
 
 set(TENSORPIPE_HEADERS
-  ${CMAKE_CURRENT_SOURCE_DIR}/channel/basic.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/channel/channel.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/channel/helpers.h
   ${CMAKE_CURRENT_SOURCE_DIR}/common/address.h
   ${CMAKE_CURRENT_SOURCE_DIR}/common/callback.h
   ${CMAKE_CURRENT_SOURCE_DIR}/common/defs.h
   ${CMAKE_CURRENT_SOURCE_DIR}/common/optional.h
   ${CMAKE_CURRENT_SOURCE_DIR}/common/queue.h
   ${CMAKE_CURRENT_SOURCE_DIR}/common/system.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/core/channel.h
   ${CMAKE_CURRENT_SOURCE_DIR}/core/context.h
   ${CMAKE_CURRENT_SOURCE_DIR}/core/error.h
   ${CMAKE_CURRENT_SOURCE_DIR}/core/listener.h
@@ -50,6 +49,7 @@ target_include_directories(tensorpipe PUBLIC ${CMAKE_SOURCE_DIR})
 target_link_libraries(tensorpipe PUBLIC tensorpipe_proto)
 target_link_libraries(tensorpipe PUBLIC uv)
 
+add_subdirectory(channel/basic)
 add_subdirectory(transport/shm)
 add_subdirectory(transport/uv)
 

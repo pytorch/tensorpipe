@@ -43,6 +43,7 @@
 //      channel is usable from the moment it is constructed.
 //
 namespace tensorpipe {
+namespace channel {
 
 // Abstract base class for channel classes.
 class Channel {
@@ -50,6 +51,8 @@ class Channel {
   using TDescriptor = std::vector<uint8_t>;
   using TSendCallback = std::function<void()>;
   using TRecvCallback = std::function<void()>;
+
+  virtual ~Channel();
 
   // Send memory region to peer.
   virtual TDescriptor send(
@@ -113,4 +116,5 @@ class ChannelFactory {
   std::string name_;
 };
 
+} // namespace channel
 } // namespace tensorpipe
