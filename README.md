@@ -34,7 +34,7 @@ There are four classes you need to know about:
   other processes to connect to.
 - `tensorpipe::Pipe`, the one communication primitive that this entire project
   is about. You can obtain one either by connecting to the listener of another
-  project or from such a listener when another process connects to it. Once you
+  process or from such a listener when another process connects to it. Once you
   have a pipe, you can send messages on it, and that's the whole point.
 - `tensorpipe::Message`, which is the the language that pipes read and write in.
   Pipes are streams of structured messages (not just raw byte buffers), and a
