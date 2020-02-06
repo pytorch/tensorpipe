@@ -51,25 +51,14 @@ message MessageDescriptor {
     DeviceType device_type = 1;
     int64 size_in_bytes = 2;
 
-    string side_channel_name = 3;
-    bytes side_channel_data = 4;
+    string channel_name = 3;
+    bytes channel_descriptor = 4;
 
     bytes user_data = 5;
   }
 
   int64 size_in_bytes = 1;
   repeated TensorDescriptor tensor_descriptors = 2;
-}
-
-message Request {}
-
-message Message {
-  message Tensor {
-    bytes data = 1;
-  }
-
-  bytes data = 1;
-  repeated Tensor tensors = 2;
 }
 
 message Packet {
@@ -79,8 +68,6 @@ message Packet {
     Brochure brochure = 3;
     BrochureAnswer brochure_answer = 4;
     MessageDescriptor message_descriptor = 5;
-    Request request = 6;
-    Message message = 7;
   }
 }
 

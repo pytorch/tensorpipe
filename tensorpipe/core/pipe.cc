@@ -8,8 +8,6 @@
 
 #include <tensorpipe/core/pipe.h>
 
-#include <cstring>
-
 #include <tensorpipe/common/address.h>
 #include <tensorpipe/common/callback.h>
 #include <tensorpipe/common/defs.h>
@@ -122,10 +120,12 @@ Pipe::~Pipe() {
 
 void Pipe::readDescriptor(read_descriptor_callback_fn fn) {
   std::unique_lock<std::mutex> lock(mutex_);
+
   if (error_) {
     triggerReadDescriptorCallback_(std::move(fn), error_, Message());
     return;
   }
+
   readDescriptorCallback_.arm(runIfAlive(
       *this,
       std::function<void(Pipe&, const Error&, Message&&)>(
@@ -138,29 +138,74 @@ void Pipe::readDescriptor(read_descriptor_callback_fn fn) {
 
 void Pipe::read(Message&& message, read_callback_fn fn) {
   std::unique_lock<std::mutex> lock(mutex_);
+
   if (error_) {
     triggerReadCallback_(std::move(fn), error_, std::move(message));
     return;
   }
-  // FIXME This should throw an exception or pass an error to the callback
-  TP_DCHECK(!waitingDescriptors_.empty())
-      << "called read with no waiting descriptor";
-  Message expectedMessage{std::move(waitingDescriptors_.front())};
-  waitingDescriptors_.pop_front();
-  // TODO Compare message with expectedMessage
-  proto::Packet pbPacketOut;
-  // This makes the packet contain a Request message.
-  pbPacketOut.mutable_request();
-  connection_->write(pbPacketOut, wrapWriteCallback_());
-  pendingReads_.emplace_back(std::move(message), std::move(fn));
+
+  // This is such a bad logical error on the user's side that it doesn't deserve
+  // to pass through the channel for "expected errors" (i.e., the callback).
+  TP_THROW_ASSERT_IF(messagesBeingAllocated_.empty());
+
+  MessageBeingAllocated messageBeingAllocated{
+      std::move(messagesBeingAllocated_.front())};
+  messagesBeingAllocated_.pop_front();
+
+  MessageBeingRead messageBeingRead;
+
+  messageBeingRead.sequenceNumber = nextMessageBeingRead_++;
+  TP_DCHECK_GE(messageBeingAllocated.length, 0);
+  TP_THROW_ASSERT_IF(message.length != messageBeingAllocated.length);
+  connection_->read(
+      message.data.get(),
+      message.length,
+      wrapReadCallback_(
+          [sequenceNumber{messageBeingRead.sequenceNumber}](
+              Pipe& pipe, const void* /* unused */, size_t /* unused */) {
+            pipe.onReadOfMessageData_(sequenceNumber);
+          }));
+
+  size_t numTensors = message.tensors.size();
+  TP_THROW_ASSERT_IF(numTensors != messageBeingAllocated.tensors.size());
+  for (size_t tensorIdx = 0; tensorIdx < numTensors; tensorIdx++) {
+    Message::Tensor& tensor = message.tensors[tensorIdx];
+    MessageBeingAllocated::Tensor& tensorBeingAllocated =
+        messageBeingAllocated.tensors[tensorIdx];
+    TP_DCHECK_GE(tensorBeingAllocated.length, 0);
+    TP_THROW_ASSERT_IF(tensor.length != tensorBeingAllocated.length);
+    std::shared_ptr<channel::Channel> channel =
+        channels_.at(tensorBeingAllocated.channelName);
+    channel->recv(
+        std::move(tensorBeingAllocated.channelDescriptor),
+        tensor.data.get(),
+        tensor.length,
+        wrapChannelRecvCallback_(
+            [sequenceNumber{messageBeingRead.sequenceNumber}](Pipe& pipe) {
+              pipe.onRecvOfTensorData_(sequenceNumber);
+            }));
+    messageBeingRead.numTensorDataStillBeingReceived++;
+  }
+
+  messageBeingRead.message = std::move(message);
+  messageBeingRead.callback = std::move(fn);
+
+  messagesBeingRead_.push_back(std::move(messageBeingRead));
+
+  connection_->read(
+      wrapReadPacketCallback_([](Pipe& pipe, const proto::Packet& pbPacketIn) {
+        pipe.onReadOfMessageDescriptor_(pbPacketIn);
+      }));
 }
 
 void Pipe::write(Message&& message, write_callback_fn fn) {
   std::unique_lock<std::mutex> lock(mutex_);
+
   if (error_) {
     triggerWriteCallback_(std::move(fn), error_, std::move(message));
     return;
   }
+
   if (state_ == ESTABLISHED) {
     writeWhenEstablished_(std::move(message), std::move(fn));
   } else {
@@ -174,6 +219,25 @@ void Pipe::write(Message&& message, write_callback_fn fn) {
 //
 
 void Pipe::readCallbackEntryPoint_(
+    bound_read_callback_fn fn,
+    const transport::Error& error,
+    const void* ptr,
+    size_t len) {
+  std::unique_lock<std::mutex> lock(mutex_);
+  if (error_) {
+    return;
+  }
+  if (error) {
+    error_ = TP_CREATE_ERROR(TransportError, error);
+    flushEverythingOnError_();
+    return;
+  }
+  if (fn) {
+    fn(*this, ptr, len);
+  }
+}
+
+void Pipe::readPacketCallbackEntryPoint_(
     bound_read_packet_callback_fn fn,
     const transport::Error& error,
     const proto::Packet& packet) {
@@ -221,18 +285,41 @@ void Pipe::acceptCallbackEntryPoint_(
   }
 }
 
+void Pipe::channelRecvCallbackEntryPoint_(bound_channel_recv_callback_fn fn) {
+  std::unique_lock<std::mutex> lock(mutex_);
+  if (error_) {
+    return;
+  }
+  if (fn) {
+    fn(*this);
+  }
+}
+
+void Pipe::channelSendCallbackEntryPoint_(bound_channel_send_callback_fn fn) {
+  std::unique_lock<std::mutex> lock(mutex_);
+  if (error_) {
+    return;
+  }
+  if (fn) {
+    fn(*this);
+  }
+}
+
 //
 // Helpers to prepare callbacks from transports
 //
 
-Pipe::transport_write_callback_fn Pipe::wrapWriteCallback_(
-    bound_write_callback_fn fn) {
+Pipe::transport_read_callback_fn Pipe::wrapReadCallback_(
+    bound_read_callback_fn fn) {
   return runIfAlive(
       *this,
-      std::function<void(Pipe&, const transport::Error&)>(
+      std::function<void(Pipe&, const transport::Error&, const void*, size_t)>(
           [fn{std::move(fn)}](
-              Pipe& pipe, const transport::Error& error) mutable {
-            pipe.writeCallbackEntryPoint_(std::move(fn), error);
+              Pipe& pipe,
+              const transport::Error& error,
+              const void* ptr,
+              size_t len) mutable {
+            pipe.readCallbackEntryPoint_(std::move(fn), error, ptr, len);
           }));
 }
 
@@ -245,7 +332,18 @@ Pipe::transport_read_packet_callback_fn Pipe::wrapReadPacketCallback_(
               Pipe& pipe,
               const transport::Error& error,
               const proto::Packet& packet) mutable {
-            pipe.readCallbackEntryPoint_(std::move(fn), error, packet);
+            pipe.readPacketCallbackEntryPoint_(std::move(fn), error, packet);
+          }));
+}
+
+Pipe::transport_write_callback_fn Pipe::wrapWriteCallback_(
+    bound_write_callback_fn fn) {
+  return runIfAlive(
+      *this,
+      std::function<void(Pipe&, const transport::Error&)>(
+          [fn{std::move(fn)}](
+              Pipe& pipe, const transport::Error& error) mutable {
+            pipe.writeCallbackEntryPoint_(std::move(fn), error);
           }));
 }
 
@@ -262,6 +360,24 @@ Pipe::accept_callback_fn Pipe::wrapAcceptCallback_(
             pipe.acceptCallbackEntryPoint_(
                 std::move(fn), std::move(transport), std::move(connection));
           }));
+}
+
+Pipe::channel_recv_callback_fn Pipe::wrapChannelRecvCallback_(
+    bound_channel_recv_callback_fn fn) {
+  return runIfAlive(
+      *this,
+      std::function<void(Pipe&)>([fn{std::move(fn)}](Pipe& pipe) mutable {
+        pipe.channelRecvCallbackEntryPoint_(std::move(fn));
+      }));
+}
+
+Pipe::channel_send_callback_fn Pipe::wrapChannelSendCallback_(
+    bound_channel_send_callback_fn fn) {
+  return runIfAlive(
+      *this,
+      std::function<void(Pipe&)>([fn{std::move(fn)}](Pipe& pipe) mutable {
+        pipe.channelSendCallbackEntryPoint_(std::move(fn));
+      }));
 }
 
 //
@@ -315,24 +431,26 @@ void Pipe::runScheduledCallbacks_() {
 
 void Pipe::flushEverythingOnError_() {
   readDescriptorCallback_.triggerIfArmed(error_, Message());
-  waitingDescriptors_.clear();
-  while (!pendingReads_.empty()) {
-    Message message{std::move(std::get<0>(pendingReads_.front()))};
-    read_callback_fn fn{std::move(std::get<1>(pendingReads_.front()))};
-    pendingReads_.pop_front();
+  messagesBeingAllocated_.clear();
+  while (!messagesBeingRead_.empty()) {
+    Message message{std::move(messagesBeingRead_.front().message)};
+    read_callback_fn fn{std::move(messagesBeingRead_.front().callback)};
+    messagesBeingRead_.pop_front();
     scheduledReadCallbacks_.schedule(std::move(fn), error_, std::move(message));
   }
-  while (!pendingWrites_.empty()) {
-    Message message{std::move(std::get<0>(pendingWrites_.front()))};
-    write_callback_fn fn{std::move(std::get<1>(pendingWrites_.front()))};
-    pendingWrites_.pop_front();
+  while (!writesWaitingUntilPipeIsEstablished_.empty()) {
+    Message message{
+        std::move(std::get<0>(writesWaitingUntilPipeIsEstablished_.front()))};
+    write_callback_fn fn{
+        std::move(std::get<1>(writesWaitingUntilPipeIsEstablished_.front()))};
+    writesWaitingUntilPipeIsEstablished_.pop_front();
     scheduledWriteCallbacks_.schedule(
         std::move(fn), error_, std::move(message));
   }
-  while (!completingWrites_.empty()) {
-    Message message{std::move(std::get<0>(completingWrites_.front()))};
-    write_callback_fn fn{std::move(std::get<1>(completingWrites_.front()))};
-    completingWrites_.pop_front();
+  while (!messagesBeingWritten_.empty()) {
+    Message message{std::move(messagesBeingWritten_.front().message)};
+    write_callback_fn fn{std::move(messagesBeingWritten_.front().callback)};
+    messagesBeingWritten_.pop_front();
     scheduledWriteCallbacks_.schedule(
         std::move(fn), error_, std::move(message));
   }
@@ -357,19 +475,54 @@ void Pipe::doWritesAccumulatedWhileWaitingForPipeToBeEstablished_() {
 
 void Pipe::writeWhenEstablished_(Message&& message, write_callback_fn fn) {
   TP_DCHECK_EQ(state_, ESTABLISHED);
+
+  MessageBeingWritten messageBeingWritten;
   proto::Packet pbPacketOut;
-  proto::MessageDescriptor* pbMessageDesc =
+  proto::MessageDescriptor* pbMessageDescriptor =
       pbPacketOut.mutable_message_descriptor();
-  pbMessageDesc->set_size_in_bytes(message.length);
+
+  messageBeingWritten.sequenceNumber = nextMessageBeingWritten_++;
+  pbMessageDescriptor->set_size_in_bytes(message.length);
+
   for (const auto& tensor : message.tensors) {
-    proto::MessageDescriptor::TensorDescriptor* pbTensorDesc =
-        pbMessageDesc->add_tensor_descriptors();
-    pbTensorDesc->set_device_type(proto::DeviceType::DEVICE_TYPE_CPU);
-    pbTensorDesc->set_size_in_bytes(tensor.length);
-    pbTensorDesc->set_user_data(tensor.metadata);
+    proto::MessageDescriptor::TensorDescriptor* pbTensorDescriptor =
+        pbMessageDescriptor->add_tensor_descriptors();
+    pbTensorDescriptor->set_device_type(proto::DeviceType::DEVICE_TYPE_CPU);
+    pbTensorDescriptor->set_size_in_bytes(tensor.length);
+    pbTensorDescriptor->set_user_data(tensor.metadata);
+
+    std::string channelName = "basic";
+    auto channelIter = channels_.find(channelName);
+    TP_DCHECK(channelIter != channels_.end());
+    std::shared_ptr<channel::Channel> channel = channelIter->second;
+
+    std::vector<uint8_t> descriptor = channel->send(
+        tensor.data.get(),
+        tensor.length,
+        wrapChannelSendCallback_(
+            [sequenceNumber{messageBeingWritten.sequenceNumber}](Pipe& pipe) {
+              pipe.onSendOfTensorData_(sequenceNumber);
+            }));
+    messageBeingWritten.numTensorDataStillBeingSent++;
+    pbTensorDescriptor->set_channel_name(channelName);
+    // FIXME This makes a copy
+    pbTensorDescriptor->set_channel_descriptor(
+        descriptor.data(), descriptor.size());
   }
-  pendingWrites_.emplace_back(std::move(message), std::move(fn));
+
   connection_->write(pbPacketOut, wrapWriteCallback_());
+  connection_->write(
+      message.data.get(),
+      message.length,
+      wrapWriteCallback_(
+          [sequenceNumber{messageBeingWritten.sequenceNumber}](Pipe& pipe) {
+            pipe.onWriteOfMessageData_(sequenceNumber);
+          }));
+
+  messageBeingWritten.message = std::move(message);
+  messageBeingWritten.callback = std::move(fn);
+
+  messagesBeingWritten_.push_back(std::move(messageBeingWritten));
 }
 
 void Pipe::onReadWhileServerWaitingForBrochure_(
@@ -384,7 +537,7 @@ void Pipe::onReadWhileServerWaitingForBrochure_(
   bool needToWaitForConnections = false;
 
   // FIXME This is hardcoded logic, for now...
-  std::string chosenTransport = "shm";
+  std::string chosenTransport = "uv";
   const auto chosenTransportAdvertisementIter =
       pbBrochure.transport_advertisement().find(chosenTransport);
   TP_DCHECK(
@@ -454,7 +607,7 @@ void Pipe::onReadWhileServerWaitingForBrochure_(
     doWritesAccumulatedWhileWaitingForPipeToBeEstablished_();
     connection_->read(wrapReadPacketCallback_(
         [](Pipe& pipe, const proto::Packet& pbPacketIn) {
-          pipe.onReadWhenEstablished_(pbPacketIn);
+          pipe.onReadOfMessageDescriptor_(pbPacketIn);
         }));
   } else {
     connection_->write(pbPacketOut, wrapWriteCallback_());
@@ -517,7 +670,7 @@ void Pipe::onReadWhileClientWaitingForBrochureAnswer_(
   doWritesAccumulatedWhileWaitingForPipeToBeEstablished_();
   connection_->read(
       wrapReadPacketCallback_([](Pipe& pipe, const proto::Packet& pbPacketIn) {
-        pipe.onReadWhenEstablished_(pbPacketIn);
+        pipe.onReadOfMessageDescriptor_(pbPacketIn);
       }));
 }
 
@@ -537,7 +690,7 @@ void Pipe::onAcceptWhileServerWaitingForConnection_(
     doWritesAccumulatedWhileWaitingForPipeToBeEstablished_();
     connection_->read(wrapReadPacketCallback_(
         [](Pipe& pipe, const proto::Packet& pbPacketIn) {
-          pipe.onReadWhenEstablished_(pbPacketIn);
+          pipe.onReadOfMessageDescriptor_(pbPacketIn);
         }));
   }
 }
@@ -569,73 +722,120 @@ void Pipe::onAcceptWhileServerWaitingForChannel_(
     doWritesAccumulatedWhileWaitingForPipeToBeEstablished_();
     connection_->read(wrapReadPacketCallback_(
         [](Pipe& pipe, const proto::Packet& pbPacketIn) {
-          pipe.onReadWhenEstablished_(pbPacketIn);
+          pipe.onReadOfMessageDescriptor_(pbPacketIn);
         }));
   }
 }
 
-void Pipe::onReadWhenEstablished_(const proto::Packet& pbPacketIn) {
+void Pipe::onReadOfMessageDescriptor_(const proto::Packet& pbPacketIn) {
   TP_DCHECK_EQ(state_, ESTABLISHED);
-  if (pbPacketIn.has_message_descriptor()) {
-    const proto::MessageDescriptor& pbMessageDesc =
-        pbPacketIn.message_descriptor();
-    Message message;
-    message.length = pbMessageDesc.size_in_bytes();
-    for (const auto& pbTensorDesc : pbMessageDesc.tensor_descriptors()) {
-      Message::Tensor tensor;
-      tensor.length = pbTensorDesc.size_in_bytes();
-      tensor.metadata = std::move(pbTensorDesc.user_data());
-      message.tensors.push_back(std::move(tensor));
-    }
-    waitingDescriptors_.push_back(message.copyWithoutData());
-    readDescriptorCallback_.trigger(Error::kSuccess, std::move(message));
-  } else if (pbPacketIn.has_message()) {
-    const proto::Message& pbMessage = pbPacketIn.message();
-    TP_DCHECK(!pendingReads_.empty()) << "got message when no pending reads";
-    Message message{std::move(std::get<0>(pendingReads_.front()))};
-    read_callback_fn fn{std::move(std::get<1>(pendingReads_.front()))};
-    pendingReads_.pop_front();
-    std::memcpy(message.data.get(), pbMessage.data().data(), message.length);
-    TP_DCHECK_EQ(pbMessage.tensors_size(), message.tensors.size())
-        << "mismatch in number of tensors";
-    for (int i = 0; i < message.tensors.size(); i += 1) {
-      const proto::Message::Tensor& pbTensor = pbMessage.tensors(i);
-      Message::Tensor& tensor = message.tensors[i];
-      std::memcpy(tensor.data.get(), pbTensor.data().data(), tensor.length);
-    }
-    triggerReadCallback_(std::move(fn), Error::kSuccess, std::move(message));
-  } else if (pbPacketIn.has_request()) {
-    TP_DCHECK(!pendingWrites_.empty()) << "got request when no pending writes";
-    Message message{std::move(std::get<0>(pendingWrites_.front()))};
-    write_callback_fn fn{std::move(std::get<1>(pendingWrites_.front()))};
-    pendingWrites_.pop_front();
-    proto::Packet pbPacketOut;
-    proto::Message* pbMessage = pbPacketOut.mutable_message();
-    pbMessage->set_data(message.data.get(), message.length);
-    for (const auto& tensor : message.tensors) {
-      proto::Message::Tensor* pbTensor = pbMessage->add_tensors();
-      pbTensor->set_data(tensor.data.get(), tensor.length);
-    }
-    connection_->write(
-        pbPacketOut, wrapWriteCallback_([](Pipe& pipe) {
-          TP_DCHECK(!pipe.completingWrites_.empty())
-              << "got message when no completing writes";
-          Message message =
-              std::move(std::get<0>(pipe.completingWrites_.front()));
-          write_callback_fn fn =
-              std::move(std::get<1>(pipe.completingWrites_.front()));
-          pipe.completingWrites_.pop_front();
-          pipe.triggerWriteCallback_(
-              std::move(fn), Error::kSuccess, std::move(message));
-        }));
-    completingWrites_.emplace_back(std::move(message), std::move(fn));
-  } else {
-    TP_THROW_ASSERT() << "unexpected type " << pbPacketIn.type_case();
+  TP_DCHECK_EQ(pbPacketIn.type_case(), proto::Packet::kMessageDescriptor);
+
+  const proto::MessageDescriptor& pbMessageDescriptor =
+      pbPacketIn.message_descriptor();
+  Message message;
+  MessageBeingAllocated messageBeingAllocated;
+  message.length = pbMessageDescriptor.size_in_bytes();
+  messageBeingAllocated.length = message.length;
+  for (const auto& pbTensorDescriptor :
+       pbMessageDescriptor.tensor_descriptors()) {
+    Message::Tensor tensor;
+    MessageBeingAllocated::Tensor tensorBeingAllocated;
+    tensor.length = pbTensorDescriptor.size_in_bytes();
+    tensorBeingAllocated.length = tensor.length;
+    tensor.metadata = pbTensorDescriptor.user_data();
+    tensorBeingAllocated.channelName = pbTensorDescriptor.channel_name();
+    tensorBeingAllocated.channelDescriptor = std::vector<uint8_t>(
+        pbTensorDescriptor.channel_descriptor().data(),
+        pbTensorDescriptor.channel_descriptor().data() +
+            pbTensorDescriptor.channel_descriptor().size());
+    message.tensors.push_back(std::move(tensor));
+    messageBeingAllocated.tensors.push_back(std::move(tensorBeingAllocated));
   }
+  messagesBeingAllocated_.push_back(std::move(messageBeingAllocated));
+  readDescriptorCallback_.trigger(Error::kSuccess, std::move(message));
+}
+
+void Pipe::onReadOfMessageData_(int64_t sequenceNumber) {
+  auto iter = std::find_if(
+      messagesBeingRead_.begin(), messagesBeingRead_.end(), [&](const auto& m) {
+        return m.sequenceNumber == sequenceNumber;
+      });
+  TP_DCHECK(iter != messagesBeingRead_.end());
+  MessageBeingRead& messageBeingRead = *iter;
+  messageBeingRead.dataStillBeingRead = false;
+  checkForMessagesDoneReading_();
+  // FIXME Only rearm this if we the message descriptor callback is armed.
   connection_->read(
       wrapReadPacketCallback_([](Pipe& pipe, const proto::Packet& pbPacketIn) {
-        pipe.onReadWhenEstablished_(pbPacketIn);
+        pipe.onReadOfMessageDescriptor_(pbPacketIn);
       }));
+}
+
+void Pipe::onRecvOfTensorData_(int64_t sequenceNumber) {
+  auto iter = std::find_if(
+      messagesBeingRead_.begin(), messagesBeingRead_.end(), [&](const auto& m) {
+        return m.sequenceNumber == sequenceNumber;
+      });
+  TP_DCHECK(iter != messagesBeingRead_.end());
+  MessageBeingRead& messageBeingRead = *iter;
+  messageBeingRead.numTensorDataStillBeingReceived--;
+  checkForMessagesDoneReading_();
+}
+
+void Pipe::onWriteOfMessageData_(int64_t sequenceNumber) {
+  auto iter = std::find_if(
+      messagesBeingWritten_.begin(),
+      messagesBeingWritten_.end(),
+      [&](const auto& m) { return m.sequenceNumber == sequenceNumber; });
+  TP_DCHECK(iter != messagesBeingWritten_.end());
+  MessageBeingWritten& messageBeingWritten = *iter;
+  messageBeingWritten.dataStillBeingWritten = false;
+  checkForMessagesDoneWriting_();
+}
+
+void Pipe::onSendOfTensorData_(int64_t sequenceNumber) {
+  auto iter = std::find_if(
+      messagesBeingWritten_.begin(),
+      messagesBeingWritten_.end(),
+      [&](const auto& m) { return m.sequenceNumber == sequenceNumber; });
+  TP_DCHECK(iter != messagesBeingWritten_.end());
+  MessageBeingWritten& messageBeingWritten = *iter;
+  messageBeingWritten.numTensorDataStillBeingSent--;
+  checkForMessagesDoneWriting_();
+}
+
+void Pipe::checkForMessagesDoneReading_() {
+  while (!messagesBeingRead_.empty()) {
+    MessageBeingRead& messageBeingRead = messagesBeingRead_.front();
+    if (messageBeingRead.dataStillBeingRead ||
+        messageBeingRead.numTensorDataStillBeingReceived > 0) {
+      break;
+    }
+    MessageBeingRead messageRead = std::move(messagesBeingRead_.front());
+    messagesBeingRead_.pop_front();
+    triggerReadCallback_(
+        std::move(messageRead.callback),
+        Error::kSuccess,
+        std::move(messageRead.message));
+  }
+}
+
+void Pipe::checkForMessagesDoneWriting_() {
+  while (!messagesBeingWritten_.empty()) {
+    MessageBeingWritten& messageBeingWritten = messagesBeingWritten_.front();
+    if (messageBeingWritten.dataStillBeingWritten ||
+        messageBeingWritten.numTensorDataStillBeingSent > 0) {
+      break;
+    }
+    MessageBeingWritten messageWritten =
+        std::move(messagesBeingWritten_.front());
+    messagesBeingWritten_.pop_front();
+    triggerWriteCallback_(
+        std::move(messageWritten.callback),
+        Error::kSuccess,
+        std::move(messageWritten.message));
+  }
 }
 
 } // namespace tensorpipe

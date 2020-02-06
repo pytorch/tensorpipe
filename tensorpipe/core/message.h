@@ -42,11 +42,6 @@ class Message final {
   // Opaque pointer to be used by downstream callers. May be used to
   // ensure the memory pointed to by this message is kept alive.
   void* privateData{nullptr};
-
- private:
-  Message copyWithoutData();
-
-  friend class Pipe;
 };
 
 } // namespace tensorpipe

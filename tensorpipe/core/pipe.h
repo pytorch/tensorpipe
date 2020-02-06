@@ -21,6 +21,37 @@
 
 namespace tensorpipe {
 
+namespace {
+
+struct MessageBeingAllocated {
+  ssize_t length{-1};
+
+  struct Tensor {
+    ssize_t length{-1};
+    std::string channelName;
+    std::vector<uint8_t> channelDescriptor;
+  };
+  std::vector<Tensor> tensors;
+};
+
+struct MessageBeingRead {
+  int64_t sequenceNumber{-1};
+  Message message;
+  std::function<void(const Error&, Message&&)> callback;
+  bool dataStillBeingRead{true};
+  int64_t numTensorDataStillBeingReceived{0};
+};
+
+struct MessageBeingWritten {
+  int64_t sequenceNumber{-1};
+  Message message;
+  std::function<void(const Error&, Message&&)> callback;
+  bool dataStillBeingWritten{true};
+  int64_t numTensorDataStillBeingSent{0};
+};
+
+} // namespace
+
 class Listener;
 
 // The pipe.
@@ -102,7 +133,6 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
 
   std::string transport_;
   std::shared_ptr<transport::Connection> connection_;
-
   std::unordered_map<std::string, std::shared_ptr<channel::Channel>> channels_;
 
   // The server will set this up when it tell the client to switch to a
@@ -113,21 +143,14 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
   RearmableCallback<read_descriptor_callback_fn, const Error&, Message>
       readDescriptorCallback_;
 
-  // The descriptors we've notified the user about but weren't accepted yet.
-  std::deque<Message> waitingDescriptors_;
-
-  // The reads that were started and that are completing.
-  std::deque<std::tuple<Message, read_callback_fn>> pendingReads_;
+  std::deque<MessageBeingAllocated> messagesBeingAllocated_;
+  int64_t nextMessageBeingRead_{0};
+  std::deque<MessageBeingRead> messagesBeingRead_;
+  int64_t nextMessageBeingWritten_{0};
+  std::deque<MessageBeingWritten> messagesBeingWritten_;
 
   std::deque<std::tuple<Message, write_callback_fn>>
       writesWaitingUntilPipeIsEstablished_;
-
-  // The writes for which we've sent the descriptor but haven't been asked for
-  // the data yet.
-  std::deque<std::tuple<Message, write_callback_fn>> pendingWrites_;
-
-  // The writes for which we've sent the data and are waiting for completion.
-  std::deque<std::tuple<Message, write_callback_fn>> completingWrites_;
 
   Error error_;
   std::mutex mutex_;
@@ -143,36 +166,57 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
   // and helpers to prepare them
   //
 
+  using transport_read_callback_fn = transport::Connection::read_callback_fn;
+  using bound_read_callback_fn =
+      std::function<void(Pipe&, const void*, size_t)>;
+  transport_read_callback_fn wrapReadCallback_(
+      bound_read_callback_fn = nullptr);
+  void readCallbackEntryPoint_(
+      bound_read_callback_fn,
+      const transport::Error&,
+      const void*,
+      size_t);
+
   using transport_read_packet_callback_fn =
       transport::Connection::read_proto_callback_fn<proto::Packet>;
-  using transport_write_callback_fn = transport::Connection::write_callback_fn;
-  using accept_callback_fn =
-      std::function<void(std::string, std::shared_ptr<transport::Connection>)>;
-
   using bound_read_packet_callback_fn =
       std::function<void(Pipe&, const proto::Packet&)>;
-  using bound_write_callback_fn = std::function<void(Pipe&)>;
-  using bound_accept_callback_fn = std::function<
-      void(Pipe&, std::string, std::shared_ptr<transport::Connection>)>;
-
   transport_read_packet_callback_fn wrapReadPacketCallback_(
       bound_read_packet_callback_fn = nullptr);
-  void readCallbackEntryPoint_(
+  void readPacketCallbackEntryPoint_(
       bound_read_packet_callback_fn,
       const transport::Error&,
-      const proto::Packet& packet);
+      const proto::Packet&);
 
+  using transport_write_callback_fn = transport::Connection::write_callback_fn;
+  using bound_write_callback_fn = std::function<void(Pipe&)>;
   transport_write_callback_fn wrapWriteCallback_(
       bound_write_callback_fn = nullptr);
   void writeCallbackEntryPoint_(
       bound_write_callback_fn,
       const transport::Error&);
 
+  using accept_callback_fn =
+      std::function<void(std::string, std::shared_ptr<transport::Connection>)>;
+  using bound_accept_callback_fn = std::function<
+      void(Pipe&, std::string, std::shared_ptr<transport::Connection>)>;
   accept_callback_fn wrapAcceptCallback_(bound_accept_callback_fn = nullptr);
   void acceptCallbackEntryPoint_(
       bound_accept_callback_fn,
       std::string,
       std::shared_ptr<transport::Connection>);
+
+  using channel_recv_callback_fn = channel::Channel::TRecvCallback;
+  using bound_channel_recv_callback_fn = std::function<void(Pipe&)>;
+  channel_recv_callback_fn wrapChannelRecvCallback_(
+      bound_channel_recv_callback_fn = nullptr);
+  void channelRecvCallbackEntryPoint_(bound_channel_recv_callback_fn);
+
+  using channel_send_callback_fn = channel::Channel::TSendCallback;
+  using bound_channel_send_callback_fn = std::function<void(Pipe&)>;
+  channel_send_callback_fn wrapChannelSendCallback_(
+      bound_channel_send_callback_fn = nullptr);
+  void channelSendCallbackEntryPoint_(bound_channel_send_callback_fn);
 
   //
   // Helpers to schedule our callbacks into user code
@@ -220,7 +264,14 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
       std::string,
       std::string,
       std::shared_ptr<transport::Connection>);
-  void onReadWhenEstablished_(const proto::Packet&);
+  void onReadOfMessageDescriptor_(const proto::Packet&);
+  void onReadOfMessageData_(int64_t);
+  void onRecvOfTensorData_(int64_t);
+  void onWriteOfMessageData_(int64_t);
+  void onSendOfTensorData_(int64_t);
+
+  void checkForMessagesDoneReading_();
+  void checkForMessagesDoneWriting_();
 
   friend class Context;
   friend class Listener;
