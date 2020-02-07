@@ -23,11 +23,13 @@ namespace {
 
 using namespace tensorpipe::transport;
 
-class ConnectionTester {
+class ConnectionTestHelper {
  public:
-  void test(
-      std::function<void(std::shared_ptr<Connection>)> listeningFn,
-      std::function<void(std::shared_ptr<Connection>)> connectingFn) {
+  std::shared_ptr<Listener> listener_;
+
+  virtual ~ConnectionTestHelper() = default;
+
+  std::shared_ptr<Connection> accept() {
     tensorpipe::Queue<std::shared_ptr<Connection>> queue;
     listener_->accept(
         [&](const Error& error, std::shared_ptr<Connection> conn) {
@@ -35,42 +37,29 @@ class ConnectionTester {
           queue.push(std::move(conn));
         });
 
-    // Start thread for listening side.
-    std::thread listeningThread([&]() { listeningFn(queue.pop()); });
-
-    // Start thread for connecting side.
-    std::thread connectingThread([&]() { connectingFn(createConnection()); });
-
-    // Wait for completion.
-    listeningThread.join();
-    connectingThread.join();
+    return queue.pop();
   }
 
-  virtual ~ConnectionTester() = default;
-
- protected:
-  std::shared_ptr<Listener> listener_;
-
-  virtual std::shared_ptr<Connection> createConnection() = 0;
+  virtual std::shared_ptr<Connection> connect() = 0;
 };
 
-class SHMConnectionTester : public ConnectionTester {
+class SHMConnectionTestHelper : public ConnectionTestHelper {
  public:
-  SHMConnectionTester()
+  SHMConnectionTestHelper()
       : loop_(shm::Loop::create()),
         addr_(shm::Sockaddr::createAbstractUnixAddr("foobar")) {
     listener_ = shm::Listener::create(loop_, addr_);
   }
 
-  ~SHMConnectionTester() override {
+  ~SHMConnectionTestHelper() override {
     loop_->join();
   }
 
- protected:
+ private:
   std::shared_ptr<shm::Loop> loop_;
   const shm::Sockaddr addr_;
 
-  std::shared_ptr<Connection> createConnection() override {
+  std::shared_ptr<Connection> connect() override {
     auto socket = shm::Socket::createForFamily(AF_UNIX);
     socket->connect(addr_);
 
@@ -78,22 +67,21 @@ class SHMConnectionTester : public ConnectionTester {
   }
 };
 
-class UVConnectionTester : public ConnectionTester {
+class UVConnectionTestHelper : public ConnectionTestHelper {
  public:
-  UVConnectionTester()
-      : loop_(uv::Loop::create()) {
+  UVConnectionTestHelper() : loop_(uv::Loop::create()) {
     auto addr = uv::Sockaddr::createInetSockAddr("127.0.0.1");
     listener_ = uv::Listener::create(loop_, addr);
   }
 
-  ~UVConnectionTester() override {
+  ~UVConnectionTestHelper() override {
     loop_->join();
   }
 
- protected:
+ private:
   std::shared_ptr<uv::Loop> loop_;
 
-  std::shared_ptr<Connection> createConnection() override {
+  std::shared_ptr<Connection> connect() override {
     // Capture real listener address.
     auto addr = std::dynamic_pointer_cast<uv::Listener>(listener_)->sockaddr();
     return uv::Connection::create(loop_, addr);
@@ -103,24 +91,47 @@ class UVConnectionTester : public ConnectionTester {
 } // namespace
 
 template <typename T>
-class ConnectionTest : public ::testing::Test {
+ConnectionTestHelper* getHelper();
+
+template <>
+ConnectionTestHelper* getHelper<tensorpipe::transport::shm::Connection>() {
+  return new SHMConnectionTestHelper;
+}
+
+template <>
+ConnectionTestHelper* getHelper<tensorpipe::transport::uv::Connection>() {
+  return new UVConnectionTestHelper;
+}
+
+template <class T>
+class ConnectionTest : public testing::Test {
  public:
-  ConnectionTest() : tester_(new T) {}
+  ConnectionTest() : helper_(getHelper<T>()) {}
 
   void test_connection(
       std::function<void(std::shared_ptr<tensorpipe::transport::Connection>)>
           listeningFn,
       std::function<void(std::shared_ptr<tensorpipe::transport::Connection>)>
           connectingFn) {
-    tester_->test(listeningFn, connectingFn);
+    // Start thread for listening side.
+    std::thread listeningThread([&]() { listeningFn(helper_->accept()); });
+
+    // Start thread for connecting side.
+    std::thread connectingThread([&]() { connectingFn(helper_->connect()); });
+
+    // Wait for completion.
+    listeningThread.join();
+    connectingThread.join();
   }
 
  private:
-  std::unique_ptr<ConnectionTester> tester_;
+  std::unique_ptr<ConnectionTestHelper> helper_;
 };
 
-using ConnectionTypes =
-    ::testing::Types<SHMConnectionTester, UVConnectionTester>;
+
+using ConnectionTypes = ::testing::Types<
+    tensorpipe::transport::shm::Connection,
+    tensorpipe::transport::uv::Connection>;
 TYPED_TEST_SUITE(ConnectionTest, ConnectionTypes);
 
 #endif
