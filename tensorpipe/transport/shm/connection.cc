@@ -357,6 +357,10 @@ void Connection::ReadOperation::handleRead(TConsumer& inbox) {
     const auto tup = inbox.readInTxWithSize<uint32_t>();
     const auto ret = std::get<0>(tup);
     const auto ptr = std::get<1>(tup);
+    if (ret == -ENODATA) {
+      fn_(TP_CREATE_ERROR(EOFError), nullptr, 0);
+      return;
+    }
     TP_THROW_SYSTEM_IF(ret < 0, -ret);
     fn_(Error::kSuccess, ptr, ret);
   }
@@ -378,6 +382,14 @@ Connection::WriteOperation::WriteOperation(
     : ptr_(ptr), len_(len), fn_(std::move(fn)) {}
 
 void Connection::WriteOperation::handleWrite(TProducer& outbox) {
+  // Attempting to write a message larger than the ring buffer. We might want to
+  // chunk it in the future.
+  const int buf_size = outbox.getHeader().kDataPoolByteSize;
+  if (len_ > buf_size) {
+    fn_(TP_CREATE_ERROR(ShortWriteError, len_, buf_size));
+    return;
+  }
+
   ssize_t ret;
 
   // Start write transaction.
