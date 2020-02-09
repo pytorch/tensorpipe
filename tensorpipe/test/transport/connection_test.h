@@ -26,21 +26,8 @@ using namespace tensorpipe::transport;
 class ConnectionTestHelper {
  public:
   virtual ~ConnectionTestHelper() = default;
-
   virtual std::shared_ptr<Listener> getListener() = 0;
-
-  virtual std::shared_ptr<Connection> connect(
-      std::shared_ptr<Listener> listener) = 0;
-
-  std::shared_ptr<Connection> accept(std::shared_ptr<Listener> listener) {
-    tensorpipe::Queue<std::shared_ptr<Connection>> queue;
-    listener->accept([&](const Error& error, std::shared_ptr<Connection> conn) {
-      ASSERT_FALSE(error) << error.what();
-      queue.push(std::move(conn));
-    });
-
-    return queue.pop();
-  }
+  virtual std::shared_ptr<Connection> connect(const std::string addr) = 0;
 };
 
 class SHMConnectionTestHelper : public ConnectionTestHelper {
@@ -56,11 +43,10 @@ class SHMConnectionTestHelper : public ConnectionTestHelper {
     return shm::Listener::create(loop_, addr);
   }
 
-  std::shared_ptr<Connection> connect(
-      std::shared_ptr<Listener> listener) override {
+  std::shared_ptr<Connection> connect(const std::string addr) override {
     auto socket = shm::Socket::createForFamily(AF_UNIX);
-    auto addr = shm::Sockaddr::createAbstractUnixAddr(listener->addr());
-    socket->connect(addr);
+    auto saddr = shm::Sockaddr::createAbstractUnixAddr(addr);
+    socket->connect(saddr);
     return shm::Connection::create(loop_, std::move(socket));
   }
 
@@ -86,11 +72,9 @@ class UVConnectionTestHelper : public ConnectionTestHelper {
     return uv::Listener::create(loop_, addr);
   }
 
-  std::shared_ptr<Connection> connect(
-      std::shared_ptr<Listener> listener) override {
-    // Capture real listener address.
-    auto listenerAddr = uv::Sockaddr::createInetSockAddr(listener->addr());
-    return uv::Connection::create(loop_, listenerAddr);
+  std::shared_ptr<Connection> connect(const std::string addr) override {
+    auto saddr = uv::Sockaddr::createInetSockAddr(addr);
+    return uv::Connection::create(loop_, saddr);
   }
 
   static std::string transportName() {
@@ -115,14 +99,21 @@ class ConnectionTest : public ::testing::Test {
     std::unique_ptr<ConnectionTestHelper> helper(new T);
 
     auto listener = helper->getListener();
+    tensorpipe::Queue<std::shared_ptr<Connection>> queue;
+    listener->accept([&](const Error& error, std::shared_ptr<Connection> conn) {
+      ASSERT_FALSE(error) << error.what();
+      queue.push(std::move(conn));
+    });
 
     // Start thread for listening side.
-    std::thread listeningThread(
-        [&]() { listeningFn(helper->accept(listener)); });
+    std::thread listeningThread([&]() { listeningFn(queue.pop()); });
+
+    // Capture real listener address.
+    const std::string listenerAddr = listener->addr();
 
     // Start thread for connecting side.
     std::thread connectingThread(
-        [&]() { connectingFn(helper->connect(listener)); });
+        [&]() { connectingFn(helper->connect(listenerAddr)); });
 
     // Wait for completion.
     listeningThread.join();
