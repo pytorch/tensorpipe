@@ -20,10 +20,12 @@ TYPED_TEST(ConnectionTest, Initialization) {
 
   this->test_connection(
       [&](std::shared_ptr<Connection> conn) {
-        conn->read([&, conn](const Error& error, const void* ptr, size_t len) {
-          ASSERT_FALSE(error) << error.what();
-          ASSERT_EQ(len, garbage.size());
-        });
+        conn->read(
+            [&, conn](
+                const Error& error, const void* /* unused */, size_t len) {
+              ASSERT_FALSE(error) << error.what();
+              ASSERT_EQ(len, garbage.size());
+            });
       },
       [&](std::shared_ptr<Connection> conn) {
         conn->write(
@@ -39,9 +41,10 @@ TYPED_TEST(ConnectionTest, InitializationError) {
         // Closes connection
       },
       [&](std::shared_ptr<Connection> conn) {
-        conn->read([&, conn](const Error& error, const void* ptr, size_t len) {
-          ASSERT_TRUE(error);
-        });
+        conn->read([&, conn](
+                       const Error& error,
+                       const void* /* unused */,
+                       size_t /* unused */) { ASSERT_TRUE(error); });
       });
 }
 

@@ -21,7 +21,10 @@ TEST_F(SHMConnectionTest, LargeWrite) {
 
   this->test_connection(
       [&](std::shared_ptr<Connection> conn) {
-        conn->read([conn](const Error& error, const void* ptr, size_t len) {
+        conn->read([conn](
+                       const Error& error,
+                       const void* /* unused */,
+                       size_t /* unused */) {
           ASSERT_TRUE(error);
           ASSERT_EQ(error.what(), "eof");
         });
