@@ -8,3 +8,6 @@ add_tensorpipe_test(transport_test
   connection_test.cc
   )
 target_link_libraries(transport_test tensorpipe_shm tensorpipe_uv)
+
+add_subdirectory(shm)
+add_subdirectory(uv)
