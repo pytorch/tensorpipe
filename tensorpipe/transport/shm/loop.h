@@ -156,7 +156,6 @@ class Loop final : public std::enable_shared_from_this<Loop> {
 
   Fd epollFd_;
   Fd eventFd_;
-  uint64_t loopTicks_{0};
   std::atomic<bool> done_{false};
   std::mutex mutex_;
   std::thread thread_;
