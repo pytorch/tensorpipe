@@ -72,6 +72,11 @@ Loop::Loop(ConstructorToken /* unused */) {
     eventFd_ = Fd(rv);
   }
 
+  // Create reactor.
+  reactor_ = std::make_shared<Reactor>();
+  epollReactorToken_ =
+      reactor_->add([this] { handleEpollEventsFromReactor(); });
+
   // Start epoll(2) thread.
   thread_ = std::thread(&Loop::loop, this);
 }
@@ -143,8 +148,6 @@ void Loop::wakeup() {
 }
 
 void Loop::loop() {
-  std::array<struct epoll_event, capacity_> events;
-
   // Monitor eventfd for readability. Always read from the eventfd so
   // that it is no longer readable on the next call to epoll_wait(2).
   // Note: this is allocated on the stack so that we destroy it upon
@@ -155,8 +158,14 @@ void Loop::loop() {
       });
   wakeupHandler->start();
 
+  std::unique_lock<std::mutex> lock(epollMutex_);
   for (;;) {
-    auto nfds = epoll_wait(epollFd_.fd(), events.data(), events.size(), -1);
+    // Use fixed epoll_event capacity for every call.
+    epollEvents_.resize(kCapacity_);
+
+    // Block waiting for something to happen...
+    auto nfds =
+        epoll_wait(epollFd_.fd(), epollEvents_.data(), epollEvents_.size(), -1);
     if (nfds == -1) {
       if (errno == EINTR) {
         continue;
@@ -164,49 +173,13 @@ void Loop::loop() {
       TP_THROW_SYSTEM(errno);
     }
 
-    // Process events returned by epoll_wait(2).
-    {
-      std::unique_lock<std::mutex> lock(handlersMutex_);
-      for (auto i = 0; i < nfds; i++) {
-        const auto& event = events[i];
-        const auto fd = event.data.fd;
-        auto h = handlers_[fd].lock();
-        if (h) {
-          lock.unlock();
-          // Trigger callback. Note that the object is kept alive
-          // through the shared_ptr that we acquired by locking the
-          // weak_ptr in the handlers vector.
-          h->handleEvents(events[i].events);
-          // Reset the handler shared_ptr before reacquiring the lock.
-          // This may trigger destruction of the object.
-          h.reset();
-          lock.lock();
-        }
-      }
-    }
+    // Resize based on actual number of events.
+    epollEvents_.resize(nfds);
 
-    // Process deferred functions. Note that we keep continue running
-    // until there are no more functions remaining. This is necessary
-    // such that we can assert in the block below that if there are no
-    // more handlers, we are done.
-    {
-      std::unique_lock<std::mutex> lock(mutex_);
-      while (!functions_.empty()) {
-        decltype(functions_) stackFunctions;
-        std::swap(stackFunctions, functions_);
-        lock.unlock();
-
-        // Run deferred functions.
-        for (auto& fn : stackFunctions) {
-          fn();
-
-          // Reset function to destroy resources associated with it
-          // before re-acquiring the lock.
-          fn = nullptr;
-        }
-
-        lock.lock();
-      }
+    // Trigger reactor and wait for it to process these events.
+    reactor_->trigger(epollReactorToken_);
+    while (!epollEvents_.empty()) {
+      epollCond_.wait(lock);
     }
 
     // Return if another thread is waiting in `join` and there is
@@ -222,6 +195,58 @@ void Loop::join() {
   done_ = true;
   wakeup();
   thread_.join();
+}
+
+void Loop::handleEpollEventsFromReactor() {
+  std::unique_lock<std::mutex> lock(epollMutex_);
+
+  // Process events returned by epoll_wait(2).
+  {
+    std::unique_lock<std::mutex> lock(handlersMutex_);
+    for (const auto& event : epollEvents_) {
+      const auto fd = event.data.fd;
+      auto h = handlers_[fd].lock();
+      if (h) {
+        lock.unlock();
+        // Trigger callback. Note that the object is kept alive
+        // through the shared_ptr that we acquired by locking the
+        // weak_ptr in the handlers vector.
+        h->handleEvents(event.events);
+        // Reset the handler shared_ptr before reacquiring the lock.
+        // This may trigger destruction of the object.
+        h.reset();
+        lock.lock();
+      }
+    }
+  }
+
+  // Process deferred functions. Note that we keep continue running
+  // until there are no more functions remaining. This is necessary
+  // such that we can assert in the block below that if there are no
+  // more handlers, we are done.
+  {
+    std::unique_lock<std::mutex> lock(mutex_);
+    while (!functions_.empty()) {
+      decltype(functions_) stackFunctions;
+      std::swap(stackFunctions, functions_);
+      lock.unlock();
+
+      // Run deferred functions.
+      for (auto& fn : stackFunctions) {
+        fn();
+
+        // Reset function to destroy resources associated with it
+        // before re-acquiring the lock.
+        fn = nullptr;
+      }
+
+      lock.lock();
+    }
+  }
+
+  // Let epoll thread know we've completed processing.
+  epollEvents_.clear();
+  epollCond_.notify_one();
 }
 
 } // namespace shm

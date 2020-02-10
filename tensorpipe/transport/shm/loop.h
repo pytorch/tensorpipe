@@ -21,6 +21,7 @@
 #include <sys/epoll.h>
 
 #include <tensorpipe/transport/shm/fd.h>
+#include <tensorpipe/transport/shm/reactor.h>
 
 namespace tensorpipe {
 namespace transport {
@@ -146,7 +147,31 @@ class Loop final : public std::enable_shared_from_this<Loop> {
   void join();
 
  private:
-  static constexpr auto capacity_ = 64;
+  static constexpr auto kCapacity_ = 64;
+
+  // The reactor is used to process events for this loop.
+  std::shared_ptr<Reactor> reactor_;
+
+  // Interaction with epoll(7).
+  //
+  // A dedicated thread runs epoll_wait(2) in a loop and triggers the
+  // reactor every time it returns. The function registered with the
+  // reactor is responsible for processing the epoll events and
+  // notifying the epoll thread that it is done. This back-and-forth
+  // between these threads is done to ensure that both events from
+  // epoll and events posted to the reactor are handled by a single
+  // thread. Doing so makes it easier to reason about how certain
+  // events are sequenced. For example, if another processes first
+  // makes a write to a connection and then closes the accompanying
+  // Unix domain socket, we know for a fact that the reactor will
+  // first react to the write, and then react to the epoll event
+  // caused by closing the socket. If we didn't force serialization
+  // onto the reactor, we would not have this guarantee.
+  //
+  Reactor::TToken epollReactorToken_;
+  std::mutex epollMutex_;
+  std::condition_variable epollCond_;
+  std::vector<struct epoll_event> epollEvents_;
 
   // Wake up the event loop.
   void wakeup();
@@ -167,6 +192,10 @@ class Loop final : public std::enable_shared_from_this<Loop> {
 
   // List of functions to run on the next event loop tick.
   std::list<TFunction> functions_;
+
+  // Called by the reactor in response to epoll_wait(2) producing a
+  // vector with epoll_event structs in `epollEvents_`.
+  void handleEpollEventsFromReactor();
 };
 
 } // namespace shm
