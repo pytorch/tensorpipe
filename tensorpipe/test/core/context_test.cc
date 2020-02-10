@@ -6,10 +6,13 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <tensorpipe/channel/basic/basic.h>
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/core/context.h>
 #include <tensorpipe/core/listener.h>
 #include <tensorpipe/core/pipe.h>
+#include <tensorpipe/transport/shm/context.h>
+#include <tensorpipe/transport/uv/context.h>
 
 #include <condition_variable>
 #include <cstring>
@@ -59,13 +62,14 @@ TEST(Context, Simple) {
   std::mutex mutex;
   std::condition_variable cv;
 
-  std::vector<std::string> transports;
-  transports.push_back("shm");
-  transports.push_back("uv");
-  std::vector<std::string> channelFactories;
-  channelFactories.push_back("basic");
-  auto context =
-      Context::create(std::move(transports), std::move(channelFactories));
+  auto context = Context::create();
+
+  context->registerTransport(
+      0, "uv", std::make_shared<transport::uv::Context>());
+  context->registerTransport(
+      -1, "shm", std::make_shared<transport::shm::Context>());
+  context->registerChannelFactory(
+      0, "basic", std::make_shared<channel::basic::BasicChannelFactory>());
 
   std::vector<std::string> addresses;
   addresses.push_back("shm://foobar");

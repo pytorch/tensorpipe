@@ -8,49 +8,51 @@
 
 #include <tensorpipe/core/context.h>
 
-#include <tensorpipe/channel/basic/basic.h>
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/transport/connection.h>
-#include <tensorpipe/transport/shm/context.h>
-#include <tensorpipe/transport/uv/context.h>
 
 namespace tensorpipe {
 
-std::shared_ptr<Context> Context::create(
-    const std::vector<std::string>& transports,
-    const std::vector<std::string>& channelFactories) {
-  auto context = std::make_shared<Context>(
-      ConstructorToken(), transports, channelFactories);
+std::shared_ptr<Context> Context::create() {
+  auto context = std::make_shared<Context>(ConstructorToken());
   context->start_();
   return context;
 }
 
-Context::Context(
-    ConstructorToken /* unused */,
-    const std::vector<std::string>& transports,
-    const std::vector<std::string>& channelFactories)
-    : callbackQueue_(1000) {
-  for (const auto& transport : transports) {
-    if (transport == "shm") {
-      contexts_.emplace(transport, std::make_shared<transport::shm::Context>());
-    } else if (transport == "uv") {
-      contexts_.emplace(transport, std::make_shared<transport::uv::Context>());
-    } else {
-      TP_THROW_EINVAL() << "unsupported transport " << transport;
-    }
-  }
-  for (const auto& name : channelFactories) {
-    if (name == "basic") {
-      channelFactories_.emplace(
-          name, std::make_shared<channel::basic::BasicChannelFactory>());
-    } else {
-      TP_THROW_EINVAL() << "unsupported channel " << name;
-    }
-  }
-}
+Context::Context(ConstructorToken /* unused */) : callbackQueue_(1000) {}
 
 void Context::start_() {
   callbackCaller_ = std::thread([this]() { runCallbackCaller_(); });
+}
+
+void Context::registerTransport(
+    int64_t priority,
+    std::string transport,
+    std::shared_ptr<transport::Context> context) {
+  TP_THROW_ASSERT_IF(transport.empty());
+  TP_THROW_ASSERT_IF(contexts_.find(transport) != contexts_.end())
+      << "transport " << transport << " already registered";
+  TP_THROW_ASSERT_IF(
+      contextsByPriority_.find(priority) != contextsByPriority_.end())
+      << "transport with priority " << priority << " already registered";
+  contexts_.emplace(transport, context);
+  contextsByPriority_.emplace(priority, std::make_tuple(transport, context));
+}
+
+void Context::registerChannelFactory(
+    int64_t priority,
+    std::string name,
+    std::shared_ptr<channel::ChannelFactory> channelFactory) {
+  TP_THROW_ASSERT_IF(name.empty());
+  TP_THROW_ASSERT_IF(channelFactories_.find(name) != channelFactories_.end())
+      << "channel factory " << name << " already registered";
+  TP_THROW_ASSERT_IF(
+      channelFactoriesByPriority_.find(priority) !=
+      channelFactoriesByPriority_.end())
+      << "channel factory with priority " << priority << " already registered";
+  channelFactories_.emplace(name, channelFactory);
+  channelFactoriesByPriority_.emplace(
+      priority, std::make_tuple(name, channelFactory));
 }
 
 std::shared_ptr<transport::Context> Context::getContextForTransport_(

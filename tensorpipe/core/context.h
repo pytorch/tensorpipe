@@ -30,16 +30,21 @@ class Context final {
   struct ConstructorToken {};
 
  public:
-  static std::shared_ptr<Context> create(
-      const std::vector<std::string>&,
-      const std::vector<std::string>&);
+  static std::shared_ptr<Context> create();
 
-  Context(
-      ConstructorToken,
-      const std::vector<std::string>&,
-      const std::vector<std::string>&);
+  explicit Context(ConstructorToken);
 
   ~Context();
+
+  void registerTransport(
+      int64_t,
+      std::string,
+      std::shared_ptr<transport::Context>);
+
+  void registerChannelFactory(
+      int64_t,
+      std::string,
+      std::shared_ptr<channel::ChannelFactory>);
 
   void join();
 
@@ -50,6 +55,14 @@ class Context final {
       contexts_;
   std::unordered_map<std::string, std::shared_ptr<channel::ChannelFactory>>
       channelFactories_;
+
+  std::
+      map<int64_t, std::tuple<std::string, std::shared_ptr<transport::Context>>>
+          contextsByPriority_;
+  std::map<
+      int64_t,
+      std::tuple<std::string, std::shared_ptr<channel::ChannelFactory>>>
+      channelFactoriesByPriority_;
 
   std::shared_ptr<transport::Context> getContextForTransport_(std::string);
   std::shared_ptr<channel::ChannelFactory> getChannelFactory_(std::string);
