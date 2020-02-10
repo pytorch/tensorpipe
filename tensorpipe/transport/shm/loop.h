@@ -83,11 +83,15 @@ class Loop final : public std::enable_shared_from_this<Loop> {
  public:
   static std::shared_ptr<Loop> create();
 
-  using TFunction = std::function<void()>;
+  using TDeferredFunction = std::function<void()>;
 
   explicit Loop(ConstructorToken);
 
   ~Loop();
+
+  // Run function on reactor thread.
+  // If the function throws, the thread crashes.
+  void defer(TDeferredFunction fn);
 
   // Register file descriptor with event loop.
   //
@@ -110,10 +114,6 @@ class Loop final : public std::enable_shared_from_this<Loop> {
   // function still be called.
   //
   void unregisterDescriptor(int fd);
-
-  // Run function on event loop thread.
-  // If the function throws, the event loop crashes.
-  void defer(std::function<void()> fn);
 
   // Instantiates an event monitor for the specified fd.
   template <typename T>
@@ -173,6 +173,20 @@ class Loop final : public std::enable_shared_from_this<Loop> {
   std::condition_variable epollCond_;
   std::vector<struct epoll_event> epollEvents_;
 
+  // Deferred functions.
+  //
+  // None of the callbacks are triggered inline. Doing so usually
+  // comes with the risk of trying to acquire the same lock twice, or
+  // some form of inversion. Instead, we run all callbacks from the
+  // reactor thread, either in response to some I/O event, or because
+  // we were asked to do so. The latter we call "deferred functions"
+  // because execution is deferred to a later point in time (and more
+  // importantly, with a clean stack).
+  //
+  Reactor::TToken deferredFunctionReactorToken_;
+  std::mutex deferredFunctionMutex_;
+  std::list<TDeferredFunction> deferredFunctionList_;
+
   // Wake up the event loop.
   void wakeup();
 
@@ -190,12 +204,12 @@ class Loop final : public std::enable_shared_from_this<Loop> {
   std::mutex handlersMutex_;
   std::atomic<uint64_t> handlerCount_{0};
 
-  // List of functions to run on the next event loop tick.
-  std::list<TFunction> functions_;
-
   // Called by the reactor in response to epoll_wait(2) producing a
   // vector with epoll_event structs in `epollEvents_`.
   void handleEpollEventsFromReactor();
+
+  // Called by the reactor in response to a deferred function.
+  void handleDeferredFunctionFromReactor();
 };
 
 } // namespace shm

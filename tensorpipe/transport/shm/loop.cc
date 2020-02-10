@@ -76,6 +76,8 @@ Loop::Loop(ConstructorToken /* unused */) {
   reactor_ = std::make_shared<Reactor>();
   epollReactorToken_ =
       reactor_->add([this] { handleEpollEventsFromReactor(); });
+  deferredFunctionReactorToken_ =
+      reactor_->add([this] { handleDeferredFunctionFromReactor(); });
 
   // Start epoll(2) thread.
   thread_ = std::thread(&Loop::loop, this);
@@ -90,6 +92,12 @@ Loop::~Loop() {
   }
   TP_DCHECK(done_);
   TP_DCHECK(!thread_.joinable());
+}
+
+void Loop::defer(TDeferredFunction fn) {
+  std::unique_lock<std::mutex> lock(deferredFunctionMutex_);
+  deferredFunctionList_.push_back(std::move(fn));
+  reactor_->trigger(deferredFunctionReactorToken_);
 }
 
 void Loop::registerDescriptor(
@@ -134,12 +142,6 @@ void Loop::unregisterDescriptor(int fd) {
       wakeup();
     }
   }
-}
-
-void Loop::defer(std::function<void()> fn) {
-  std::unique_lock<std::mutex> lock(mutex_);
-  functions_.push_back(std::move(fn));
-  wakeup();
 }
 
 void Loop::wakeup() {
@@ -220,33 +222,22 @@ void Loop::handleEpollEventsFromReactor() {
     }
   }
 
-  // Process deferred functions. Note that we keep continue running
-  // until there are no more functions remaining. This is necessary
-  // such that we can assert in the block below that if there are no
-  // more handlers, we are done.
-  {
-    std::unique_lock<std::mutex> lock(mutex_);
-    while (!functions_.empty()) {
-      decltype(functions_) stackFunctions;
-      std::swap(stackFunctions, functions_);
-      lock.unlock();
-
-      // Run deferred functions.
-      for (auto& fn : stackFunctions) {
-        fn();
-
-        // Reset function to destroy resources associated with it
-        // before re-acquiring the lock.
-        fn = nullptr;
-      }
-
-      lock.lock();
-    }
-  }
-
   // Let epoll thread know we've completed processing.
   epollEvents_.clear();
   epollCond_.notify_one();
+}
+
+void Loop::handleDeferredFunctionFromReactor() {
+  std::unique_lock<std::mutex> lock(deferredFunctionMutex_);
+  auto it = deferredFunctionList_.begin();
+  TP_DCHECK(it != deferredFunctionList_.end());
+  auto fn = std::move(*it);
+  deferredFunctionList_.erase(it);
+
+  // Unlock before executing, because the function could try to
+  // defer another function and that needs the lock.
+  lock.unlock();
+  fn();
 }
 
 } // namespace shm
