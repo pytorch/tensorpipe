@@ -10,6 +10,7 @@
 
 #include <deque>
 #include <mutex>
+#include <unordered_map>
 
 #include <tensorpipe/common/callback.h>
 #include <tensorpipe/common/optional.h>
