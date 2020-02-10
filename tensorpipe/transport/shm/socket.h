@@ -59,8 +59,8 @@ void loadFdsFromArray(int* array, std::index_sequence<Idxs...>, Fds&... fds) {
 
 } // namespace
 
-template <typename... Fds>
-Error sendFdsToSocket(int socketFd, const Fds&... fds) {
+template <typename T, typename... Fds>
+Error sendToSocket(int socketFd, const T& t, const Fds&... fds) {
   using TPayload = int;
 
   // Build message.
@@ -69,11 +69,10 @@ Error sendFdsToSocket(int socketFd, const Fds&... fds) {
   msg.msg_namelen = 0;
   msg.msg_flags = 0;
 
-  // Build dummy iov with a single NUL byte.
-  char nul = 0;
+  // Build iov to write T.
   struct iovec iov;
-  iov.iov_base = &nul;
-  iov.iov_len = sizeof(nul);
+  iov.iov_base = const_cast<T*>(&t);
+  iov.iov_len = sizeof(t);
   msg.msg_iov = &iov;
   msg.msg_iovlen = sizeof(iov) / sizeof(iovec);
 
@@ -109,7 +108,13 @@ Error sendFdsToSocket(int socketFd, const Fds&... fds) {
 }
 
 template <typename... Fds>
-Error recvFdsFromSocket(int socketFd, Fds&... fds) {
+Error sendFdsToSocket(int socketFd, const Fds&... fds) {
+  char dummy = 0;
+  return sendToSocket(socketFd, dummy, fds...);
+}
+
+template <typename T, typename... Fds>
+Error recvFromSocket(int socketFd, T& t, Fds&... fds) {
   using TPayload = int;
 
   // Build message.
@@ -118,11 +123,10 @@ Error recvFdsFromSocket(int socketFd, Fds&... fds) {
   msg.msg_namelen = 0;
   msg.msg_flags = 0;
 
-  // Build dummy iov with a single NUL byte.
+  // Build iov to read T.
   struct iovec iov;
-  char nul = 0;
-  iov.iov_base = &nul;
-  iov.iov_len = sizeof(nul);
+  iov.iov_base = &t;
+  iov.iov_len = sizeof(t);
   msg.msg_iov = &iov;
   msg.msg_iovlen = sizeof(iov) / sizeof(iovec);
 
@@ -157,6 +161,12 @@ Error recvFdsFromSocket(int socketFd, Fds&... fds) {
   loadFdsFromArray(payload, std::index_sequence_for<Fds...>{}, fds...);
 
   return Error::kSuccess;
+}
+
+template <typename... Fds>
+Error recvFdsFromSocket(int socketFd, Fds&... fds) {
+  char dummy = 0;
+  return recvFromSocket(socketFd, dummy, fds...);
 }
 
 class Sockaddr final {
@@ -217,6 +227,26 @@ class Socket final : public Fd, public std::enable_shared_from_this<Socket> {
   template <typename... Fds>
   Error recvFds(Fds&... fds) {
     return recvFdsFromSocket(fd_, fds...);
+  }
+
+  // Send object and file descriptor.
+  template <
+      typename T,
+      typename... Fds,
+      typename std::enable_if<std::is_trivially_copyable<T>::value, bool>::
+          type = false>
+  Error sendPayloadAndFds(const T& t, const Fds&... fds) {
+    return sendToSocket(fd_, t, fds...);
+  }
+
+  // Receive object and file descriptor.
+  template <
+      typename T,
+      typename... Fds,
+      typename std::enable_if<std::is_trivially_copyable<T>::value, bool>::
+          type = false>
+  Error recvPayloadAndFds(T& t, Fds&... fds) {
+    return recvFromSocket(fd_, t, fds...);
   }
 
  private:
