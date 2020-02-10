@@ -37,7 +37,7 @@ TYPED_TEST(ConnectionTest, Initialization) {
 
 TYPED_TEST(ConnectionTest, InitializationError) {
   this->test_connection(
-      [&](std::shared_ptr<Connection> conn) {
+      [&](std::shared_ptr<Connection> /* unused */) {
         // Closes connection
       },
       [&](std::shared_ptr<Connection> conn) {

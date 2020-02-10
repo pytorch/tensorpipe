@@ -27,7 +27,7 @@ class ConnectionTestHelper {
  public:
   virtual ~ConnectionTestHelper() = default;
   virtual std::shared_ptr<Listener> getListener() = 0;
-  virtual std::shared_ptr<Connection> connect(const std::string addr) = 0;
+  virtual std::shared_ptr<Connection> connect(const std::string& addr) = 0;
 };
 
 class SHMConnectionTestHelper : public ConnectionTestHelper {
@@ -43,7 +43,7 @@ class SHMConnectionTestHelper : public ConnectionTestHelper {
     return shm::Listener::create(loop_, addr);
   }
 
-  std::shared_ptr<Connection> connect(const std::string addr) override {
+  std::shared_ptr<Connection> connect(const std::string& addr) override {
     auto socket = shm::Socket::createForFamily(AF_UNIX);
     auto saddr = shm::Sockaddr::createAbstractUnixAddr(addr);
     socket->connect(saddr);
@@ -72,7 +72,7 @@ class UVConnectionTestHelper : public ConnectionTestHelper {
     return uv::Listener::create(loop_, addr);
   }
 
-  std::shared_ptr<Connection> connect(const std::string addr) override {
+  std::shared_ptr<Connection> connect(const std::string& addr) override {
     auto saddr = uv::Sockaddr::createInetSockAddr(addr);
     return uv::Connection::create(loop_, saddr);
   }
