@@ -14,6 +14,7 @@
 
 #include <tensorpipe/transport/connection.h>
 #include <tensorpipe/transport/shm/loop.h>
+#include <tensorpipe/transport/shm/reactor.h>
 #include <tensorpipe/transport/shm/socket.h>
 #include <tensorpipe/util/ringbuffer/consumer.h>
 #include <tensorpipe/util/ringbuffer/producer.h>
@@ -93,8 +94,11 @@ class Connection final : public transport::Connection,
   void handleEventHup(std::unique_lock<std::mutex> lock);
 
   // Handle inbox being readable.
-  // Note that this is triggered from the monitor of the eventfd,
-  // so the instance lock must be acquired here.
+  //
+  // This is triggered from the reactor loop when this connection's
+  // peer has written an entry into our inbox. It is called once per
+  // message. Because it's called from another thread, we must always
+  // take care to acquire the connection's lock here.
   void handleInboxReadable();
 
  private:
@@ -102,22 +106,18 @@ class Connection final : public transport::Connection,
   State state_{INITIALIZING};
   Error error_;
   std::shared_ptr<Loop> loop_;
+  std::shared_ptr<Reactor> reactor_;
   std::shared_ptr<Socket> socket_;
 
   // Inbox.
-  Fd inboxEventFd_;
   int inboxHeaderFd_;
   int inboxDataFd_;
   optional<TConsumer> inbox_;
+  optional<Reactor::TToken> inboxReactorToken_;
 
   // Outbox.
-  Fd outboxEventFd_;
-  int outboxHeaderFd_;
-  int outboxDataFd_;
   optional<TProducer> outbox_;
-
-  // Monitors the eventfd of the inbox.
-  std::shared_ptr<FunctionEventHandler> inboxMonitor_;
+  optional<Reactor::Trigger> outboxTrigger_;
 
   // Reads happen only if the user supplied a callback (and optionally
   // a destination buffer). The callback is run from the event loop
@@ -172,11 +172,6 @@ class Connection final : public transport::Connection,
   // Pending write operations.
   std::deque<WriteOperation> writeOperations_;
   size_t writeOperationsPending_{0};
-
-  // Read value from the inbox eventfd and increment
-  // readOperationsPending_ if applicable. If the eventfd is not
-  // readable, this is a no-op.
-  void readInboxEventFd();
 
   // Defer execution of processReadOperations to loop thread.
   void triggerProcessReadOperations();

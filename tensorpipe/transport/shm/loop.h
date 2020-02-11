@@ -93,6 +93,9 @@ class Loop final : public std::enable_shared_from_this<Loop> {
   // If the function throws, the thread crashes.
   void defer(TDeferredFunction fn);
 
+  // Provide access to the underlying reactor.
+  const std::shared_ptr<Reactor>& reactor();
+
   // Register file descriptor with event loop.
   //
   // Trigger the handler if any of the epoll events in the `events`
