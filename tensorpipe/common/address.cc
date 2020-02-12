@@ -12,13 +12,13 @@
 
 namespace tensorpipe {
 
-std::tuple<std::string, std::string> splitSchemeOfURL(const std::string& addr) {
-  std::string::size_type endOfScheme = addr.find("://");
+std::tuple<std::string, std::string> splitSchemeOfURL(const std::string& url) {
+  std::string::size_type endOfScheme = url.find("://");
   if (endOfScheme == std::string::npos) {
-    TP_THROW_EINVAL() << "addr has no scheme: " << addr;
+    TP_THROW_EINVAL() << "url has no scheme: " << url;
   }
   return std::make_tuple(
-      addr.substr(0, endOfScheme), addr.substr(endOfScheme + 3));
+      url.substr(0, endOfScheme), url.substr(endOfScheme + 3));
 }
 
 } // namespace tensorpipe
