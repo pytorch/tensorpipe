@@ -22,33 +22,6 @@
 
 namespace tensorpipe {
 
-struct MessageBeingAllocated {
-  ssize_t length{-1};
-
-  struct Tensor {
-    ssize_t length{-1};
-    std::string channelName;
-    std::vector<uint8_t> channelDescriptor;
-  };
-  std::vector<Tensor> tensors;
-};
-
-struct MessageBeingRead {
-  int64_t sequenceNumber{-1};
-  Message message;
-  std::function<void(const Error&, Message&&)> callback;
-  bool dataStillBeingRead{true};
-  int64_t numTensorDataStillBeingReceived{0};
-};
-
-struct MessageBeingWritten {
-  int64_t sequenceNumber{-1};
-  Message message;
-  std::function<void(const Error&, Message&&)> callback;
-  bool dataStillBeingWritten{true};
-  int64_t numTensorDataStillBeingSent{0};
-};
-
 class Listener;
 
 // The pipe.
@@ -139,6 +112,32 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
 
   RearmableCallback<read_descriptor_callback_fn, const Error&, Message>
       readDescriptorCallback_;
+
+  struct MessageBeingAllocated {
+    ssize_t length{-1};
+    struct Tensor {
+      ssize_t length{-1};
+      std::string channelName;
+      std::vector<uint8_t> channelDescriptor;
+    };
+    std::vector<Tensor> tensors;
+  };
+
+  struct MessageBeingRead {
+    int64_t sequenceNumber{-1};
+    Message message;
+    std::function<void(const Error&, Message&&)> callback;
+    bool dataStillBeingRead{true};
+    int64_t numTensorDataStillBeingReceived{0};
+  };
+
+  struct MessageBeingWritten {
+    int64_t sequenceNumber{-1};
+    Message message;
+    std::function<void(const Error&, Message&&)> callback;
+    bool dataStillBeingWritten{true};
+    int64_t numTensorDataStillBeingSent{0};
+  };
 
   std::deque<MessageBeingAllocated> messagesBeingAllocated_;
   int64_t nextMessageBeingRead_{0};
