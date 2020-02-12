@@ -25,6 +25,7 @@
 #include <algorithm>
 #include <ctime>
 
+using tensorpipe::Error;
 using namespace tensorpipe::benchmark;
 using namespace tensorpipe::transport;
 
