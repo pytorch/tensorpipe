@@ -100,6 +100,10 @@ void Loop::defer(TDeferredFunction fn) {
   reactor_->trigger(deferredFunctionReactorToken_);
 }
 
+const std::shared_ptr<Reactor>& Loop::reactor() {
+  return reactor_;
+}
+
 void Loop::registerDescriptor(
     int fd,
     int events,

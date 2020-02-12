@@ -9,7 +9,6 @@
 #include <tensorpipe/transport/shm/connection.h>
 
 #include <string.h>
-#include <sys/eventfd.h>
 
 #include <vector>
 
@@ -34,21 +33,12 @@ Connection::Connection(
     ConstructorToken /* unused */,
     std::shared_ptr<Loop> loop,
     std::shared_ptr<Socket> socket)
-    : loop_(std::move(loop)), socket_(std::move(socket)) {
+    : loop_(std::move(loop)),
+      reactor_(loop_->reactor()),
+      socket_(std::move(socket)) {
   // Ensure underlying control socket is non-blocking such that it
   // works well with event driven I/O.
   socket_->block(false);
-
-  // Create eventfd(2) for inbox.
-  auto fd = eventfd(0, EFD_NONBLOCK);
-  TP_THROW_SYSTEM_IF(fd == -1, errno);
-  inboxEventFd_ = Fd(fd);
-
-  // Create ringbuffer for inbox.
-  std::shared_ptr<TRingBuffer> inboxRingBuffer;
-  std::tie(inboxHeaderFd_, inboxDataFd_, inboxRingBuffer) =
-      util::ringbuffer::shm::create<TRingBuffer>(kDefaultSize);
-  inbox_.emplace(std::move(inboxRingBuffer));
 }
 
 Connection::~Connection() {
@@ -56,7 +46,16 @@ Connection::~Connection() {
 }
 
 void Connection::start() {
-  // We're going to send the eventfd first, so wait for writability.
+  // Create ringbuffer for inbox.
+  std::shared_ptr<TRingBuffer> inboxRingBuffer;
+  std::tie(inboxHeaderFd_, inboxDataFd_, inboxRingBuffer) =
+      util::ringbuffer::shm::create<TRingBuffer>(kDefaultSize);
+  inbox_.emplace(std::move(inboxRingBuffer));
+
+  // Register to be called when our peer writes to our inbox.
+  inboxReactorToken_ = reactor_->add([this] { handleInboxReadable(); });
+
+  // We're sending file descriptors first, so wait for writability.
   state_ = SEND_FDS;
   loop_->registerDescriptor(socket_->fd(), EPOLLOUT, shared_from_this());
 }
@@ -126,7 +125,19 @@ void Connection::handleEvents(int events) {
 
 void Connection::handleEventIn(std::unique_lock<std::mutex> lock) {
   if (state_ == RECV_FDS) {
-    auto err = socket_->recvFds(outboxEventFd_, outboxHeaderFd_, outboxDataFd_);
+    Fd reactorHeaderFd;
+    Fd reactorDataFd;
+    Fd outboxHeaderFd;
+    Fd outboxDataFd;
+    Reactor::TToken reactorToken;
+
+    // Receive the reactor token, reactor fds, and inbox fds.
+    auto err = socket_->recvPayloadAndFds(
+        reactorToken,
+        reactorHeaderFd,
+        reactorDataFd,
+        outboxHeaderFd,
+        outboxDataFd);
     if (err) {
       failHoldingMutex(std::move(err));
       return;
@@ -134,18 +145,11 @@ void Connection::handleEventIn(std::unique_lock<std::mutex> lock) {
 
     // Load ringbuffer for outbox.
     outbox_.emplace(util::ringbuffer::shm::load<TRingBuffer>(
-        outboxHeaderFd_, outboxDataFd_));
+        outboxHeaderFd.release(), outboxDataFd.release()));
 
-    // Monitor eventfd of inbox for reads.
-    // If it is readable, it means our peer placed a message in our
-    // inbox ringbuffer and is waking us up to process it.
-    inboxMonitor_ = loop_->monitor<Connection>(
-        shared_from_this(),
-        inboxEventFd_.fd(),
-        EPOLLIN,
-        [](Connection& conn, FunctionEventHandler& /* unused */) {
-          conn.handleInboxReadable();
-        });
+    // Initialize remote reactor trigger for outbox writes.
+    outboxTrigger_.emplace(
+        std::move(reactorHeaderFd), std::move(reactorDataFd), reactorToken);
 
     // The connection is usable now.
     state_ = ESTABLISHED;
@@ -156,9 +160,7 @@ void Connection::handleEventIn(std::unique_lock<std::mutex> lock) {
   if (state_ == ESTABLISHED) {
     // We don't expect to read anything on this socket once the
     // connection has been established. If we do, assume it's a
-    // zero-byte read indicating EOF. But, before we fail pending
-    // operations, see if there is anything in the inbox.
-    readInboxEventFd();
+    // zero-byte read indicating EOF.
     setErrorHoldingMutex(TP_CREATE_ERROR(EOFError));
     closeHoldingMutex();
     processReadOperations(std::move(lock));
@@ -170,7 +172,17 @@ void Connection::handleEventIn(std::unique_lock<std::mutex> lock) {
 
 void Connection::handleEventOut(std::unique_lock<std::mutex> lock) {
   if (state_ == SEND_FDS) {
-    auto err = socket_->sendFds(inboxEventFd_, inboxHeaderFd_, inboxDataFd_);
+    int reactorHeaderFd;
+    int reactorDataFd;
+    std::tie(reactorHeaderFd, reactorDataFd) = reactor_->fds();
+
+    // Send our reactor token, reactor fds, and inbox fds.
+    auto err = socket_->sendPayloadAndFds(
+        inboxReactorToken_.value(),
+        reactorHeaderFd,
+        reactorDataFd,
+        inboxHeaderFd_,
+        inboxDataFd_);
     if (err) {
       failHoldingMutex(std::move(err));
       return;
@@ -186,14 +198,12 @@ void Connection::handleEventOut(std::unique_lock<std::mutex> lock) {
 }
 
 void Connection::handleEventErr(std::unique_lock<std::mutex> lock) {
-  readInboxEventFd();
   setErrorHoldingMutex(TP_CREATE_ERROR(EOFError));
   closeHoldingMutex();
   processReadOperations(std::move(lock));
 }
 
 void Connection::handleEventHup(std::unique_lock<std::mutex> lock) {
-  readInboxEventFd();
   setErrorHoldingMutex(TP_CREATE_ERROR(EOFError));
   closeHoldingMutex();
   processReadOperations(std::move(lock));
@@ -201,18 +211,8 @@ void Connection::handleEventHup(std::unique_lock<std::mutex> lock) {
 
 void Connection::handleInboxReadable() {
   std::unique_lock<std::mutex> lock(mutex_);
-  readInboxEventFd();
+  readOperationsPending_++;
   processReadOperations(std::move(lock));
-}
-
-void Connection::readInboxEventFd() {
-  uint64_t value = 0;
-  auto err = inboxEventFd_.read(&value);
-  if (err) {
-    return;
-  }
-
-  readOperationsPending_ += value;
 }
 
 void Connection::triggerProcessReadOperations() {
@@ -285,7 +285,7 @@ void Connection::processWriteOperations(std::unique_lock<std::mutex> lock) {
 
   for (auto& writeOperation : operationsToWrite) {
     writeOperation.handleWrite(*outbox_);
-    outboxEventFd_.writeOrThrow<uint64_t>(1);
+    outboxTrigger_->run();
   }
 
   for (auto& writeOperation : operationsToError) {
@@ -317,13 +317,13 @@ void Connection::close() {
 }
 
 void Connection::closeHoldingMutex() {
+  if (inboxReactorToken_.has_value()) {
+    reactor_->remove(inboxReactorToken_.value());
+    inboxReactorToken_.reset();
+  }
   if (socket_) {
     loop_->unregisterDescriptor(socket_->fd());
     socket_.reset();
-  }
-  if (inboxMonitor_) {
-    inboxMonitor_->cancel();
-    inboxMonitor_.reset();
   }
 }
 
