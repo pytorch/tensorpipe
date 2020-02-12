@@ -9,7 +9,7 @@
 #include <tensorpipe/transport/uv/listener.h>
 
 #include <tensorpipe/common/callback.h>
-#include <tensorpipe/transport/error_macros.h>
+#include <tensorpipe/common/error_macros.h>
 #include <tensorpipe/transport/uv/connection.h>
 #include <tensorpipe/transport/uv/error.h>
 #include <tensorpipe/transport/uv/uv.h>

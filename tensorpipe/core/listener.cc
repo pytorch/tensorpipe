@@ -87,12 +87,11 @@ void Listener::onAccept_(
   connectionsWaitingForHello_.insert(connection);
   connection->read(runIfAlive(
       *this,
-      std::function<void(
-          Listener&, const transport::Error&, const void*, size_t)>(
+      std::function<void(Listener&, const Error&, const void*, size_t)>(
           [transport{std::move(transport)},
            weakConnection{std::weak_ptr<transport::Connection>(connection)}](
               Listener& listener,
-              const transport::Error& /* unused */,
+              const Error& /* unused */,
               const void* ptr,
               size_t len) mutable {
             // TODO Implement proper error handling in Listener.
@@ -114,12 +113,10 @@ void Listener::armListener_(std::string transport) {
   transportListener->accept(runIfAlive(
       *this,
       std::function<void(
-          Listener&,
-          const transport::Error&,
-          std::shared_ptr<transport::Connection>)>(
+          Listener&, const Error&, std::shared_ptr<transport::Connection>)>(
           [transport](
               Listener& listener,
-              const transport::Error& /* unused */,
+              const Error& /* unused */,
               std::shared_ptr<transport::Connection> connection) {
             // TODO Implement proper error handling in Listener.
             listener.onAccept_(transport, std::move(connection));

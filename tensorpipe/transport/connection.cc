@@ -36,8 +36,7 @@ void Connection::write(
   write(
       ptr,
       len,
-      [buf{std::move(buf)},
-       fn{std::move(fn)}](const transport::Error& error) mutable {
+      [buf{std::move(buf)}, fn{std::move(fn)}](const Error& error) mutable {
         // The write has completed; destroy write buffer.
         buf.reset();
         fn(error);

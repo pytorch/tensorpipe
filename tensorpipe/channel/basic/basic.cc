@@ -210,11 +210,10 @@ BasicChannel::TReadCallback BasicChannel::wrapReadCallback_(
     TBoundReadCallback fn) {
   return runIfAlive(
       *this,
-      std::function<void(
-          BasicChannel&, const transport::Error&, const void*, size_t)>(
+      std::function<void(BasicChannel&, const Error&, const void*, size_t)>(
           [fn{std::move(fn)}](
               BasicChannel& channel,
-              const transport::Error& error,
+              const Error& error,
               const void* ptr,
               size_t length) {
             channel.readCallbackEntryPoint_(error, ptr, length, std::move(fn));
@@ -226,12 +225,10 @@ BasicChannel::TReadProtoCallback BasicChannel::wrapReadProtoCallback_(
   return runIfAlive(
       *this,
       std::function<void(
-          BasicChannel&,
-          const transport::Error&,
-          const proto::BasicChannelPacket&)>(
+          BasicChannel&, const Error&, const proto::BasicChannelPacket&)>(
           [fn{std::move(fn)}](
               BasicChannel& channel,
-              const transport::Error& error,
+              const Error& error,
               const proto::BasicChannelPacket& packet) {
             channel.readProtoCallbackEntryPoint_(error, packet, std::move(fn));
           }));
@@ -241,19 +238,18 @@ BasicChannel::TWriteCallback BasicChannel::wrapWriteCallback_(
     TBoundWriteCallback fn) {
   return runIfAlive(
       *this,
-      std::function<void(BasicChannel&, const transport::Error&)>(
-          [fn{std::move(fn)}](
-              BasicChannel& channel, const transport::Error& error) {
+      std::function<void(BasicChannel&, const Error&)>(
+          [fn{std::move(fn)}](BasicChannel& channel, const Error& error) {
             channel.writeCallbackEntryPoint_(error, std::move(fn));
           }));
 }
 
 void BasicChannel::readCallbackEntryPoint_(
-    const transport::Error& error,
+    const Error& error,
     const void* ptr,
     size_t length,
     TBoundReadCallback fn) {
-  if (processTransportError(error)) {
+  if (processError(error)) {
     return;
   }
   if (fn) {
@@ -262,10 +258,10 @@ void BasicChannel::readCallbackEntryPoint_(
 }
 
 void BasicChannel::readProtoCallbackEntryPoint_(
-    const transport::Error& error,
+    const Error& error,
     const proto::BasicChannelPacket& packet,
     TBoundReadProtoCallback fn) {
-  if (processTransportError(error)) {
+  if (processError(error)) {
     return;
   }
   if (fn) {
@@ -274,9 +270,9 @@ void BasicChannel::readProtoCallbackEntryPoint_(
 }
 
 void BasicChannel::writeCallbackEntryPoint_(
-    const transport::Error& error,
+    const Error& error,
     TBoundWriteCallback fn) {
-  if (processTransportError(error)) {
+  if (processError(error)) {
     return;
   }
   if (fn) {
@@ -284,7 +280,7 @@ void BasicChannel::writeCallbackEntryPoint_(
   }
 }
 
-bool BasicChannel::processTransportError(const transport::Error& error) {
+bool BasicChannel::processError(const Error& error) {
   std::unique_lock<std::mutex> lock(mutex_);
 
   // Ignore if an error was already set.

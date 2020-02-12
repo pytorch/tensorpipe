@@ -15,9 +15,10 @@
 #include <memory>
 
 #include <tensorpipe/common/defs.h>
+#include <tensorpipe/common/error.h>
+#include <tensorpipe/common/error_macros.h>
 #include <tensorpipe/common/optional.h>
 #include <tensorpipe/transport/error.h>
-#include <tensorpipe/transport/error_macros.h>
 #include <tensorpipe/transport/shm/fd.h>
 
 namespace tensorpipe {

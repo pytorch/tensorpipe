@@ -9,7 +9,7 @@
 #include <tensorpipe/transport/uv/uv.h>
 
 #include <tensorpipe/common/defs.h>
-#include <tensorpipe/transport/error_macros.h>
+#include <tensorpipe/common/error_macros.h>
 #include <tensorpipe/transport/uv/macros.h>
 
 namespace tensorpipe {

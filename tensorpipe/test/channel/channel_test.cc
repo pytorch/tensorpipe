@@ -16,8 +16,8 @@
 #include <tensorpipe/channel/channel.h>
 #include <tensorpipe/common/callback.h>
 #include <tensorpipe/common/defs.h>
+#include <tensorpipe/common/error.h>
 #include <tensorpipe/common/queue.h>
-#include <tensorpipe/transport/error.h>
 #include <tensorpipe/transport/uv/context.h>
 
 #include <gtest/gtest.h>
@@ -102,7 +102,7 @@ class TestChannel : public channel::Channel,
     connection_->write(
         vec->data(),
         vec->size(),
-        [callback{std::move(callback)}, vec](const transport::Error& error) {
+        [callback{std::move(callback)}, vec](const Error& error) {
           TP_LOG_WARNING_IF(error) << error.what();
           callback();
         });
@@ -116,10 +116,9 @@ class TestChannel : public channel::Channel,
   void nextRead_() {
     connection_->read(runIfAlive(
         *this,
-        std::function<void(
-            TestChannel&, const transport::Error&, const void*, size_t)>(
+        std::function<void(TestChannel&, const Error&, const void*, size_t)>(
             [](TestChannel& channel,
-               const transport::Error& error,
+               const Error& error,
                const void* ptr,
                size_t len) {
               TP_LOG_WARNING_IF(error) << error.what();
@@ -190,7 +189,7 @@ void testConnectionPair(
 
     // Listening side.
     auto listener = context->listen(addr);
-    listener->accept([&](const transport::Error& error,
+    listener->accept([&](const Error& error,
                          std::shared_ptr<transport::Connection> connection) {
       ASSERT_FALSE(error) << error.what();
       q1.push(std::move(connection));

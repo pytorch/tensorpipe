@@ -13,9 +13,9 @@
 #include <unordered_set>
 
 #include <tensorpipe/common/callback.h>
+#include <tensorpipe/common/error.h>
 #include <tensorpipe/common/optional.h>
 #include <tensorpipe/core/context.h>
-#include <tensorpipe/core/error.h>
 #include <tensorpipe/core/pipe.h>
 #include <tensorpipe/transport/connection.h>
 #include <tensorpipe/transport/listener.h>

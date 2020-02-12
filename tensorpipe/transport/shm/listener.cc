@@ -9,6 +9,7 @@
 #include <tensorpipe/transport/shm/listener.h>
 
 #include <tensorpipe/common/defs.h>
+#include <tensorpipe/transport/error.h>
 
 namespace tensorpipe {
 namespace transport {

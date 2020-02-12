@@ -13,7 +13,7 @@
 #include <tensorpipe/common/address.h>
 #include <tensorpipe/common/callback.h>
 #include <tensorpipe/common/defs.h>
-#include <tensorpipe/core/error_macros.h>
+#include <tensorpipe/common/error_macros.h>
 #include <tensorpipe/core/listener.h>
 #include <tensorpipe/proto/all.pb.h>
 
@@ -222,7 +222,7 @@ void Pipe::write(Message&& message, write_callback_fn fn) {
 
 void Pipe::readCallbackEntryPoint_(
     bound_read_callback_fn fn,
-    const transport::Error& error,
+    const Error& error,
     const void* ptr,
     size_t len) {
   std::unique_lock<std::mutex> lock(mutex_);
@@ -230,7 +230,7 @@ void Pipe::readCallbackEntryPoint_(
     return;
   }
   if (error) {
-    error_ = TP_CREATE_ERROR(TransportError, error);
+    error_ = error;
     flushEverythingOnError_();
     return;
   }
@@ -241,14 +241,14 @@ void Pipe::readCallbackEntryPoint_(
 
 void Pipe::readPacketCallbackEntryPoint_(
     bound_read_packet_callback_fn fn,
-    const transport::Error& error,
+    const Error& error,
     const proto::Packet& packet) {
   std::unique_lock<std::mutex> lock(mutex_);
   if (error_) {
     return;
   }
   if (error) {
-    error_ = TP_CREATE_ERROR(TransportError, error);
+    error_ = error;
     flushEverythingOnError_();
     return;
   }
@@ -259,13 +259,13 @@ void Pipe::readPacketCallbackEntryPoint_(
 
 void Pipe::writeCallbackEntryPoint_(
     bound_write_callback_fn fn,
-    const transport::Error& error) {
+    const Error& error) {
   std::unique_lock<std::mutex> lock(mutex_);
   if (error_) {
     return;
   }
   if (error) {
-    error_ = TP_CREATE_ERROR(TransportError, error);
+    error_ = error;
     flushEverythingOnError_();
     return;
   }
@@ -315,10 +315,10 @@ Pipe::transport_read_callback_fn Pipe::wrapReadCallback_(
     bound_read_callback_fn fn) {
   return runIfAlive(
       *this,
-      std::function<void(Pipe&, const transport::Error&, const void*, size_t)>(
+      std::function<void(Pipe&, const Error&, const void*, size_t)>(
           [fn{std::move(fn)}](
               Pipe& pipe,
-              const transport::Error& error,
+              const Error& error,
               const void* ptr,
               size_t len) mutable {
             pipe.readCallbackEntryPoint_(std::move(fn), error, ptr, len);
@@ -329,10 +329,10 @@ Pipe::transport_read_packet_callback_fn Pipe::wrapReadPacketCallback_(
     bound_read_packet_callback_fn fn) {
   return runIfAlive(
       *this,
-      std::function<void(Pipe&, const transport::Error&, const proto::Packet&)>(
+      std::function<void(Pipe&, const Error&, const proto::Packet&)>(
           [fn{std::move(fn)}](
               Pipe& pipe,
-              const transport::Error& error,
+              const Error& error,
               const proto::Packet& packet) mutable {
             pipe.readPacketCallbackEntryPoint_(std::move(fn), error, packet);
           }));
@@ -342,9 +342,8 @@ Pipe::transport_write_callback_fn Pipe::wrapWriteCallback_(
     bound_write_callback_fn fn) {
   return runIfAlive(
       *this,
-      std::function<void(Pipe&, const transport::Error&)>(
-          [fn{std::move(fn)}](
-              Pipe& pipe, const transport::Error& error) mutable {
+      std::function<void(Pipe&, const Error&)>(
+          [fn{std::move(fn)}](Pipe& pipe, const Error& error) mutable {
             pipe.writeCallbackEntryPoint_(std::move(fn), error);
           }));
 }

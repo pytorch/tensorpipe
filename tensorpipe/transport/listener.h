@@ -11,8 +11,8 @@
 #include <functional>
 #include <memory>
 
+#include <tensorpipe/common/error.h>
 #include <tensorpipe/transport/defs.h>
-#include <tensorpipe/transport/error.h>
 
 namespace tensorpipe {
 namespace transport {

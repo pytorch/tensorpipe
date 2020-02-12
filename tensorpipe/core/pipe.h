@@ -13,9 +13,9 @@
 #include <unordered_map>
 
 #include <tensorpipe/common/callback.h>
+#include <tensorpipe/common/error.h>
 #include <tensorpipe/common/optional.h>
 #include <tensorpipe/core/context.h>
-#include <tensorpipe/core/error.h>
 #include <tensorpipe/core/message.h>
 #include <tensorpipe/proto/all.pb.h>
 #include <tensorpipe/transport/connection.h>
@@ -169,7 +169,7 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
       bound_read_callback_fn = nullptr);
   void readCallbackEntryPoint_(
       bound_read_callback_fn,
-      const transport::Error&,
+      const Error&,
       const void*,
       size_t);
 
@@ -181,16 +181,14 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
       bound_read_packet_callback_fn = nullptr);
   void readPacketCallbackEntryPoint_(
       bound_read_packet_callback_fn,
-      const transport::Error&,
+      const Error&,
       const proto::Packet&);
 
   using transport_write_callback_fn = transport::Connection::write_callback_fn;
   using bound_write_callback_fn = std::function<void(Pipe&)>;
   transport_write_callback_fn wrapWriteCallback_(
       bound_write_callback_fn = nullptr);
-  void writeCallbackEntryPoint_(
-      bound_write_callback_fn,
-      const transport::Error&);
+  void writeCallbackEntryPoint_(bound_write_callback_fn, const Error&);
 
   using accept_callback_fn =
       std::function<void(std::string, std::shared_ptr<transport::Connection>)>;

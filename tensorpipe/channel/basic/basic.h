@@ -11,8 +11,8 @@
 #include <list>
 
 #include <tensorpipe/channel/channel.h>
+#include <tensorpipe/common/error.h>
 #include <tensorpipe/proto/all.pb.h>
-#include <tensorpipe/transport/error.h>
 
 namespace tensorpipe {
 namespace channel {
@@ -75,7 +75,7 @@ class BasicChannel : public Channel,
  private:
   std::mutex mutex_;
   std::shared_ptr<transport::Connection> connection_;
-  transport::Error error_{transport::Error::kSuccess};
+  Error error_{Error::kSuccess};
 
   // Increasing identifier for send operations.
   uint64_t id_{0};
@@ -140,25 +140,23 @@ class BasicChannel : public Channel,
 
   // Called when callback returned by `wrapReadCallback_` gets called.
   void readCallbackEntryPoint_(
-      const transport::Error& error,
+      const Error& error,
       const void* ptr,
       size_t length,
       TBoundReadCallback fn);
 
   // Called when callback returned by `wrapReadCallback_` gets called.
   void readProtoCallbackEntryPoint_(
-      const transport::Error& error,
+      const Error& error,
       const proto::BasicChannelPacket& packet,
       TBoundReadProtoCallback fn);
 
   // Called when callback returned by `wrapWriteCallback_` gets called.
-  void writeCallbackEntryPoint_(
-      const transport::Error& error,
-      TBoundWriteCallback fn);
+  void writeCallbackEntryPoint_(const Error& error, TBoundWriteCallback fn);
 
   // Helper function to process transport error.
   // Shared between read and write callback entry points.
-  bool processTransportError(const transport::Error& error);
+  bool processError(const Error& error);
 };
 
 } // namespace basic

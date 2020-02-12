@@ -6,16 +6,19 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <tensorpipe/core/error.h>
+#include <tensorpipe/common/error.h>
 
 #include <sstream>
 
+#include <tensorpipe/common/defs.h>
+
 namespace tensorpipe {
 
-std::string LogicError::what() const {
-  std::ostringstream ss;
-  ss << "logic error: " << reason_;
-  return ss.str();
+const Error Error::kSuccess = Error();
+
+std::string Error::what() const {
+  TP_DCHECK(error_);
+  return error_->what();
 }
 
 } // namespace tensorpipe

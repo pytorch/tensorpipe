@@ -8,6 +8,6 @@
 
 #pragma once
 
-#include <tensorpipe/core/error.h>
+#include <tensorpipe/common/error.h>
 
 #define TP_CREATE_ERROR(typ, ...) (Error(std::make_shared<typ>(__VA_ARGS__)))

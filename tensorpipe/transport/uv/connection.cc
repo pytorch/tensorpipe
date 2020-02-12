@@ -10,7 +10,7 @@
 
 #include <tensorpipe/common/callback.h>
 #include <tensorpipe/common/defs.h>
-#include <tensorpipe/transport/error_macros.h>
+#include <tensorpipe/common/error_macros.h>
 #include <tensorpipe/transport/uv/error.h>
 #include <tensorpipe/transport/uv/uv.h>
 

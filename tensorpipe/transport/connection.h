@@ -12,7 +12,7 @@
 
 #include <google/protobuf/message_lite.h>
 
-#include <tensorpipe/transport/error.h>
+#include <tensorpipe/common/error.h>
 
 namespace tensorpipe {
 namespace transport {

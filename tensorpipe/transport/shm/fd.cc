@@ -11,7 +11,8 @@
 #include <unistd.h>
 
 #include <tensorpipe/common/defs.h>
-#include <tensorpipe/transport/error_macros.h>
+#include <tensorpipe/common/error_macros.h>
+#include <tensorpipe/transport/error.h>
 
 namespace tensorpipe {
 namespace transport {

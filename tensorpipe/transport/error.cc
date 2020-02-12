@@ -11,17 +11,7 @@
 #include <cstring>
 #include <sstream>
 
-#include <tensorpipe/common/defs.h>
-
 namespace tensorpipe {
-namespace transport {
-
-const Error Error::kSuccess = Error();
-
-std::string Error::what() const {
-  TP_DCHECK(error_);
-  return error_->what();
-}
 
 std::string SystemError::what() const {
   std::ostringstream ss;
@@ -49,5 +39,4 @@ std::string EOFError::what() const {
   return ss.str();
 }
 
-} // namespace transport
 } // namespace tensorpipe
