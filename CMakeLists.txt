@@ -37,9 +37,12 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
 endif()
 
 # Make dependencies available (but don't build by default)
+add_subdirectory(third_party/backward-cpp EXCLUDE_FROM_ALL)
 add_subdirectory(third_party/googletest EXCLUDE_FROM_ALL)
 add_subdirectory(third_party/libuv EXCLUDE_FROM_ALL)
-add_subdirectory(third_party/backward-cpp EXCLUDE_FROM_ALL)
+if(BUILD_PYTHON_MODULE)
+  add_subdirectory(third_party/pybind11 EXCLUDE_FROM_ALL)
+endif()
 
 # Add include paths for libuv targets.
 # These are defined as relative paths in third_party/libuv/CMakeLists.txt,
