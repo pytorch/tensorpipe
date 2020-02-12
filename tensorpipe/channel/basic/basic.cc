@@ -48,7 +48,7 @@ BasicChannel::TDescriptor BasicChannel::send(
     const void* ptr,
     size_t length,
     TSendCallback callback) {
-  proto::BasicChannelOperation op;
+  proto::Operation op;
 
   {
     std::unique_lock<std::mutex> lock(mutex_);
@@ -68,7 +68,7 @@ void BasicChannel::recv(
     void* ptr,
     size_t length,
     TRecvCallback callback) {
-  const auto op = loadDescriptor<proto::BasicChannelOperation>(descriptor);
+  const auto op = loadDescriptor<proto::Operation>(descriptor);
   const auto id = op.operation_id();
 
   // The descriptor encodes the size in bytes for this operation. Make
@@ -87,7 +87,7 @@ void BasicChannel::recv(
   }
 
   // Ask peer to start sending data now that we have a target pointer.
-  proto::BasicChannelPacket packet;
+  proto::Packet packet;
   *packet.mutable_request() = op;
   connection_->write(packet, wrapWriteCallback_());
   return;
@@ -99,12 +99,12 @@ void BasicChannel::init_() {
 
 void BasicChannel::readPacket_() {
   connection_->read(wrapReadProtoCallback_(
-      [](BasicChannel& channel, const proto::BasicChannelPacket& packet) {
+      [](BasicChannel& channel, const proto::Packet& packet) {
         channel.onPacket_(packet);
       }));
 }
 
-void BasicChannel::onPacket_(const proto::BasicChannelPacket& packet) {
+void BasicChannel::onPacket_(const proto::Packet& packet) {
   if (packet.has_request()) {
     onRequest_(packet.request());
   } else if (packet.has_reply()) {
@@ -117,7 +117,7 @@ void BasicChannel::onPacket_(const proto::BasicChannelPacket& packet) {
   readPacket_();
 }
 
-void BasicChannel::onRequest_(const proto::BasicChannelOperation& request) {
+void BasicChannel::onRequest_(const proto::Operation& request) {
   std::unique_lock<std::mutex> lock(mutex_);
 
   // Find the send operation matching the request's operation ID.
@@ -133,7 +133,7 @@ void BasicChannel::onRequest_(const proto::BasicChannelOperation& request) {
   auto& op = *it;
 
   // Write packet announcing the payload.
-  proto::BasicChannelPacket packet;
+  proto::Packet packet;
   *packet.mutable_reply() = request;
   connection_->write(packet, wrapWriteCallback_());
 
@@ -144,7 +144,7 @@ void BasicChannel::onRequest_(const proto::BasicChannelOperation& request) {
       }));
 }
 
-void BasicChannel::onReply_(const proto::BasicChannelOperation& reply) {
+void BasicChannel::onReply_(const proto::Operation& reply) {
   std::unique_lock<std::mutex> lock(mutex_);
 
   // Find the recv operation matching the reply's operation ID.
@@ -224,12 +224,11 @@ BasicChannel::TReadProtoCallback BasicChannel::wrapReadProtoCallback_(
     TBoundReadProtoCallback fn) {
   return runIfAlive(
       *this,
-      std::function<void(
-          BasicChannel&, const Error&, const proto::BasicChannelPacket&)>(
+      std::function<void(BasicChannel&, const Error&, const proto::Packet&)>(
           [fn{std::move(fn)}](
               BasicChannel& channel,
               const Error& error,
-              const proto::BasicChannelPacket& packet) {
+              const proto::Packet& packet) {
             channel.readProtoCallbackEntryPoint_(error, packet, std::move(fn));
           }));
 }
@@ -259,7 +258,7 @@ void BasicChannel::readCallbackEntryPoint_(
 
 void BasicChannel::readProtoCallbackEntryPoint_(
     const Error& error,
-    const proto::BasicChannelPacket& packet,
+    const proto::Packet& packet,
     TBoundReadProtoCallback fn) {
   if (processError(error)) {
     return;

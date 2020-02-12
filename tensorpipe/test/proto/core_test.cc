@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <tensorpipe/proto/all.pb.h>
+#include <tensorpipe/proto/core.pb.h>
 
 #include <gtest/gtest.h>
 

@@ -17,7 +17,7 @@
 #include <tensorpipe/common/optional.h>
 #include <tensorpipe/core/context.h>
 #include <tensorpipe/core/message.h>
-#include <tensorpipe/proto/all.pb.h>
+#include <tensorpipe/proto/core.pb.h>
 #include <tensorpipe/transport/connection.h>
 
 namespace tensorpipe {

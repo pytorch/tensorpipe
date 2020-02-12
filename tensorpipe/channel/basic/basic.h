@@ -12,7 +12,7 @@
 
 #include <tensorpipe/channel/channel.h>
 #include <tensorpipe/common/error.h>
-#include <tensorpipe/proto/all.pb.h>
+#include <tensorpipe/proto/channel/basic.pb.h>
 
 namespace tensorpipe {
 namespace channel {
@@ -61,13 +61,13 @@ class BasicChannel : public Channel,
   void readPacket_();
 
   // Called when a protobuf packet was received.
-  void onPacket_(const proto::BasicChannelPacket& packet);
+  void onPacket_(const proto::Packet& packet);
 
   // Called when protobuf packet is a request.
-  void onRequest_(const proto::BasicChannelOperation& request);
+  void onRequest_(const proto::Operation& request);
 
   // Called when protobuf packet is a reply.
-  void onReply_(const proto::BasicChannelOperation& reply);
+  void onReply_(const proto::Operation& reply);
 
   // Allow factory class to call `init_()`.
   friend class BasicChannelFactory;
@@ -109,14 +109,14 @@ class BasicChannel : public Channel,
   // Callback types used by the transport.
   using TReadCallback = transport::Connection::read_callback_fn;
   using TReadProtoCallback =
-      transport::Connection::read_proto_callback_fn<proto::BasicChannelPacket>;
+      transport::Connection::read_proto_callback_fn<proto::Packet>;
   using TWriteCallback = transport::Connection::write_callback_fn;
 
   // Callback types used in this class (in case of success).
   using TBoundReadCallback =
       std::function<void(BasicChannel&, const void*, size_t)>;
   using TBoundReadProtoCallback =
-      std::function<void(BasicChannel&, const proto::BasicChannelPacket&)>;
+      std::function<void(BasicChannel&, const proto::Packet&)>;
   using TBoundWriteCallback = std::function<void(BasicChannel&)>;
 
   // Generate callback to use with the underlying connection. The
@@ -148,7 +148,7 @@ class BasicChannel : public Channel,
   // Called when callback returned by `wrapReadCallback_` gets called.
   void readProtoCallbackEntryPoint_(
       const Error& error,
-      const proto::BasicChannelPacket& packet,
+      const proto::Packet& packet,
       TBoundReadProtoCallback fn);
 
   // Called when callback returned by `wrapWriteCallback_` gets called.

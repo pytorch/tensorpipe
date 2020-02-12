@@ -70,15 +70,3 @@ message Packet {
     MessageDescriptor message_descriptor = 5;
   }
 }
-
-message BasicChannelOperation {
-  uint64 operation_id = 1;
-  uint64 size_in_bytes = 2;
-}
-
-message BasicChannelPacket {
-  oneof type {
-    BasicChannelOperation request = 1;
-    BasicChannelOperation reply = 2;
-  }
-}

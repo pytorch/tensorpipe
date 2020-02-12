@@ -10,7 +10,7 @@
 
 #include <tensorpipe/common/address.h>
 #include <tensorpipe/common/defs.h>
-#include <tensorpipe/proto/all.pb.h>
+#include <tensorpipe/proto/core.pb.h>
 
 namespace tensorpipe {
 

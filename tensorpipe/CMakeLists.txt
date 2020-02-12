@@ -49,6 +49,7 @@ add_subdirectory(proto)
 add_library(tensorpipe ${TENSORPIPE_SOURCES})
 target_include_directories(tensorpipe PUBLIC ${CMAKE_SOURCE_DIR})
 target_link_libraries(tensorpipe PUBLIC tensorpipe_proto)
+
 target_link_libraries(tensorpipe PUBLIC uv)
 
 add_subdirectory(channel/basic)

@@ -15,7 +15,7 @@
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/error_macros.h>
 #include <tensorpipe/core/listener.h>
-#include <tensorpipe/proto/all.pb.h>
+#include <tensorpipe/proto/core.pb.h>
 
 namespace tensorpipe {
 
