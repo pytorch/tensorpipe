@@ -6,8 +6,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <tensorpipe/benchmark/measurements.h>
 #include <tensorpipe/benchmark/options.h>
-
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/queue.h>
 #include <tensorpipe/transport/shm/connection.h>
@@ -19,46 +19,25 @@
 #include <tensorpipe/transport/uv/listener.h>
 #include <tensorpipe/transport/uv/loop.h>
 
-#include <sys/time.h>
-#include <sys/types.h>
-#include <sys/wait.h>
-#include <algorithm>
-#include <ctime>
-
 using tensorpipe::Error;
 using namespace tensorpipe::benchmark;
 using namespace tensorpipe::transport;
 
 std::unique_ptr<uint8_t[]> data;
 size_t dataLen;
-std::vector<uint64_t> latencyMeasures;
 
 std::promise<void> doneProm;
 std::future<void> doneFut = doneProm.get_future();
 
-static uint64_t nowInUsec() {
-  struct timeval tv;
-  gettimeofday(&tv, nullptr);
-  return (tv.tv_usec) + (tv.tv_sec * 1000000);
-}
+Measurements measurements;
 
-static uint64_t percentile(const std::vector<uint64_t>& measures, int p) {
-  TP_DCHECK_LE(p, 100);
-  return measures[(size_t)(p / 100.0 * measures.size())];
-}
-
-static void printMeasures(std::vector<uint64_t>& measures) {
-  std::sort(measures.begin(), measures.end());
-  uint64_t latency = 0;
-  for (uint64_t usec : latencyMeasures) {
-    latency += usec;
-  }
+static void printMeasurements() {
+  measurements.sort();
   fprintf(
       stderr,
-      "%-15s %-15s %-15s %-12s %-7s %-7s %-7s %-7s\n",
-      "# ping-pong",
+      "%-15s %-15s %-12s %-7s %-7s %-7s %-7s\n",
       "chunk-size",
-      "latency (usec)",
+      "# ping-pong",
       "avg (usec)",
       "p50",
       "p75",
@@ -66,27 +45,23 @@ static void printMeasures(std::vector<uint64_t>& measures) {
       "p95");
   fprintf(
       stderr,
-      "%-15lu %-15lu %-15lu %-12.3f %-7lu %-7lu %-7lu %-7lu\n",
-      latencyMeasures.size(),
+      "%-15lu %-15lu %-12.3f %-7.3f %-7.3f %-7.3f %-7.3f\n",
       dataLen,
-      latency,
-      (float)latency / latencyMeasures.size(),
-      percentile(measures, 50),
-      percentile(measures, 75),
-      percentile(measures, 90),
-      percentile(measures, 95));
+      measurements.size(),
+      measurements.sum().count() / (float)measurements.size() / 1000.0,
+      measurements.percentile(0.50).count() / 1000.0,
+      measurements.percentile(0.75).count() / 1000.0,
+      measurements.percentile(0.90).count() / 1000.0,
+      measurements.percentile(0.95).count() / 1000.0);
 }
 
 static std::unique_ptr<uint8_t[]> createData(const int chunkBytes) {
-  uint64_t start = nowInUsec();
   auto data = std::unique_ptr<uint8_t[]>(
       new uint8_t[chunkBytes], std::default_delete<uint8_t[]>());
   // Generate fixed data for validation between peers
   for (int i = 0; i < chunkBytes; i++) {
     data[i] = (i >> 8) ^ (i & 0xff);
   }
-  uint64_t end = nowInUsec();
-  std::cout << "Generate data: " << end - start << " usec\n";
   return data;
 }
 
@@ -150,26 +125,24 @@ static void runServer(const Options& options) {
 static void clientPingPongNonBlock(
     std::shared_ptr<Connection>& conn,
     int& ioNum) {
-  uint64_t start = nowInUsec();
-  conn->write(data.get(), dataLen, [&, start](const Error& error) {
+  measurements.markStart();
+  conn->write(data.get(), dataLen, [&](const Error& error) {
     TP_THROW_ASSERT_IF(error) << error.what();
-    conn->read([&, start](const Error& error, const void* ptr, size_t len) {
+    conn->read([&](const Error& error, const void* ptr, size_t len) {
       TP_THROW_ASSERT_IF(error) << error.what();
-      uint64_t end = nowInUsec();
+      measurements.markStop();
 
       // Check correctness
       TP_DCHECK(len == dataLen);
       int cmp = memcmp(ptr, data.get(), len);
       TP_DCHECK(cmp == 0);
 
-      // Client does measurement upon recv
-      latencyMeasures.push_back(end - start);
       // Check if ping-pong has finished
       if (--ioNum > 0) {
         clientPingPongNonBlock(conn, ioNum);
       } else {
         // Ping-pong finished - dump benchmark results and set promise
-        printMeasures(latencyMeasures);
+        printMeasurements();
         doneProm.set_value();
       }
     });
@@ -210,7 +183,7 @@ int main(int argc, char** argv) {
   // Initialize global
   data = createData(x.chunk_bytes);
   dataLen = x.chunk_bytes;
-  latencyMeasures.reserve(x.io_num);
+  measurements.reserve(x.io_num);
 
   if (x.mode == "listen") {
     runServer(x);
