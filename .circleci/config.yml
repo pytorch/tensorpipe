@@ -9,7 +9,10 @@ jobs:
       apt_get:
         type: string
         default: ""
-      cmake_compiler:
+      c_compiler:
+        type: string
+        default: ""
+      cxx_compiler:
         type: string
         default: ""
       cmake_args:
@@ -35,7 +38,8 @@ jobs:
             mkdir build
             cd build
             cmake ../ \
-              << parameters.cmake_compiler >> \
+              -DCMAKE_C_COMPILER=<< parameters.c_compiler >> \
+              -DCMAKE_CXX_COMPILER=<< parameters.cxx_compiler >> \
               << parameters.cmake_args >>
             make
       - run:
@@ -52,6 +56,39 @@ jobs:
             build/tensorpipe/test/channel/channel_test
             build/tensorpipe/test/channel/basic/channel_basic_test
             build/tensorpipe/test/core/core_context_test
+  python:
+    parameters:
+      docker_image:
+        type: string
+        default: ""
+      apt_get:
+        type: string
+        default: ""
+    docker:
+      - image: << parameters.docker_image >>
+    steps:
+      - checkout
+      - run:
+          name: Install apt packages
+          command: |
+            apt-get update
+            apt-get install -y git-core build-essential cmake libprotobuf-dev protobuf-compiler python3-dev python3-venv << parameters.apt_get >>
+      - run:
+          name: Initialize submodules
+          command: |
+            git submodule init
+            git submodule update --remote
+      - run:
+          name: Build
+          command: |
+            python3 -m venv venv
+            source venv/bin/activate
+            python3 setup.py install
+      - run:
+          name: Test
+          command: |
+            source venv/bin/activate
+            python3 tensorpipe/test/python/tensorpipe.py
   format:
     docker:
       - image: ubuntu:18.04
@@ -82,26 +119,37 @@ workflows:
           name: gcc5
           docker_image: ubuntu:18.04
           apt_get: "gcc-5 g++-5"
-          cmake_compiler: -DCMAKE_C_COMPILER=gcc-5 -DCMAKE_CXX_COMPILER=g++-5
+          c_compiler: gcc-5
+          cxx_compiler: g++-5
       - build:
           name: gcc7
           docker_image: ubuntu:18.04
           apt_get: "gcc-7 g++-7"
-          cmake_compiler: -DCMAKE_C_COMPILER=gcc-7 -DCMAKE_CXX_COMPILER=g++-7
+          c_compiler: gcc-7
+          cxx_compiler: g++-7
       - build:
           name: clang6
           docker_image: ubuntu:18.04
           apt_get: "clang-6.0"
-          cmake_compiler: -DCMAKE_C_COMPILER=clang-6.0 -DCMAKE_CXX_COMPILER=clang++-6.0
+          c_compiler: clang-6.0
+          cxx_compiler: clang++-6.0
       - build:
           name: gcc7-asan
           docker_image: ubuntu:18.04
           apt_get: "gcc-7 g++-7"
-          cmake_compiler: -DCMAKE_C_COMPILER=gcc-7 -DCMAKE_CXX_COMPILER=g++-7 -DSANITIZE=address
+          c_compiler: gcc-7
+          cxx_compiler: g++-7
+          cmake_args: -DSANITIZE=address
       - build:
           name: gcc7-tsan
           docker_image: ubuntu:18.04
           apt_get: "gcc-7 g++-7"
-          cmake_compiler: -DCMAKE_C_COMPILER=gcc-7 -DCMAKE_CXX_COMPILER=g++-7 -DSANITIZE=thread
+          c_compiler: gcc-7
+          cxx_compiler: g++-7
+          cmake_args: -DSANITIZE=thread
+      - python:
+          name: python
+          docker_image: ubuntu:18.04
+          apt_get: "clang-6.0"
       - format:
           name: clang-format

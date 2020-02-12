@@ -56,6 +56,10 @@ add_subdirectory(channel/basic)
 add_subdirectory(transport/shm)
 add_subdirectory(transport/uv)
 
+if(BUILD_PYTHON_MODULE)
+  add_subdirectory(python)
+endif()
+
 add_subdirectory(test)
 
 add_subdirectory(benchmark)
