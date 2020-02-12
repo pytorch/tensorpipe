@@ -484,13 +484,14 @@ void Pipe::writeWhenEstablished_(Message&& message, write_callback_fn fn) {
 
   messageBeingWritten.sequenceNumber = nextMessageBeingWritten_++;
   pbMessageDescriptor->set_size_in_bytes(message.length);
+  pbMessageDescriptor->set_metadata(message.metadata);
 
   for (const auto& tensor : message.tensors) {
     proto::MessageDescriptor::TensorDescriptor* pbTensorDescriptor =
         pbMessageDescriptor->add_tensor_descriptors();
     pbTensorDescriptor->set_device_type(proto::DeviceType::DEVICE_TYPE_CPU);
     pbTensorDescriptor->set_size_in_bytes(tensor.length);
-    pbTensorDescriptor->set_user_data(tensor.metadata);
+    pbTensorDescriptor->set_metadata(tensor.metadata);
 
     bool foundAChannel = false;
     for (const auto& channelFactoryIter :
@@ -768,13 +769,14 @@ void Pipe::onReadOfMessageDescriptor_(const proto::Packet& pbPacketIn) {
   MessageBeingAllocated messageBeingAllocated;
   message.length = pbMessageDescriptor.size_in_bytes();
   messageBeingAllocated.length = message.length;
+  message.metadata = pbMessageDescriptor.metadata();
   for (const auto& pbTensorDescriptor :
        pbMessageDescriptor.tensor_descriptors()) {
     Message::Tensor tensor;
     MessageBeingAllocated::Tensor tensorBeingAllocated;
     tensor.length = pbTensorDescriptor.size_in_bytes();
     tensorBeingAllocated.length = tensor.length;
-    tensor.metadata = pbTensorDescriptor.user_data();
+    tensor.metadata = pbTensorDescriptor.metadata();
     tensorBeingAllocated.channelName = pbTensorDescriptor.channel_name();
     tensorBeingAllocated.channelDescriptor = std::vector<uint8_t>(
         pbTensorDescriptor.channel_descriptor().data(),

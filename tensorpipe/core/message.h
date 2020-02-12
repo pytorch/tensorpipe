@@ -27,6 +27,8 @@ class Message final {
   std::unique_ptr<uint8_t[]> data;
   size_t length{0};
 
+  std::string metadata;
+
   struct Tensor {
     std::unique_ptr<uint8_t[]> data;
     size_t length{0};
@@ -38,10 +40,6 @@ class Message final {
 
   // Holds the tensors that are offered to the side channels.
   std::vector<Tensor> tensors;
-
-  // Opaque pointer to be used by downstream callers. May be used to
-  // ensure the memory pointed to by this message is kept alive.
-  void* privateData{nullptr};
 };
 
 } // namespace tensorpipe

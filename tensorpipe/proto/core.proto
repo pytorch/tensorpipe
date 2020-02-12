@@ -48,17 +48,17 @@ enum DeviceType {
 
 message MessageDescriptor {
   message TensorDescriptor {
-    DeviceType device_type = 1;
-    int64 size_in_bytes = 2;
+    int64 size_in_bytes = 1;
+    bytes metadata = 2;
 
-    string channel_name = 3;
-    bytes channel_descriptor = 4;
-
-    bytes user_data = 5;
+    DeviceType device_type = 3;
+    string channel_name = 4;
+    bytes channel_descriptor = 5;
   }
 
   int64 size_in_bytes = 1;
-  repeated TensorDescriptor tensor_descriptors = 2;
+  bytes metadata = 2;
+  repeated TensorDescriptor tensor_descriptors = 3;
 }
 
 message Packet {
