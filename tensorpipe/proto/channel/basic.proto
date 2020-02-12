@@ -10,14 +10,21 @@ syntax = "proto3";
 
 package tensorpipe.channel.basic.proto;
 
-message Operation {
+message Descriptor {
   uint64 operation_id = 1;
-  uint64 size_in_bytes = 2;
+}
+
+message Request {
+  uint64 operation_id = 1;
+}
+
+message Reply {
+  uint64 operation_id = 1;
 }
 
 message Packet {
   oneof type {
-    Operation request = 1;
-    Operation reply = 2;
+    Request request = 1;
+    Reply reply = 2;
   }
 }

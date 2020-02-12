@@ -64,10 +64,10 @@ class BasicChannel : public Channel,
   void onPacket_(const proto::Packet& packet);
 
   // Called when protobuf packet is a request.
-  void onRequest_(const proto::Operation& request);
+  void onRequest_(const proto::Request& request);
 
   // Called when protobuf packet is a reply.
-  void onReply_(const proto::Operation& reply);
+  void onReply_(const proto::Reply& reply);
 
   // Allow factory class to call `init_()`.
   friend class BasicChannelFactory;

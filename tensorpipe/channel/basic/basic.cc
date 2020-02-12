@@ -48,18 +48,17 @@ BasicChannel::TDescriptor BasicChannel::send(
     const void* ptr,
     size_t length,
     TSendCallback callback) {
-  proto::Operation op;
+  proto::Descriptor pbDescriptor;
 
   {
     std::unique_lock<std::mutex> lock(mutex_);
     const auto id = id_++;
-    op.set_operation_id(id);
-    op.set_size_in_bytes(length);
+    pbDescriptor.set_operation_id(id);
     sendOperations_.emplace_back(
         SendOperation{id, ptr, length, std::move(callback)});
   }
 
-  return saveDescriptor(op);
+  return saveDescriptor(pbDescriptor);
 }
 
 // Receive memory region from peer.
@@ -68,17 +67,8 @@ void BasicChannel::recv(
     void* ptr,
     size_t length,
     TRecvCallback callback) {
-  const auto op = loadDescriptor<proto::Operation>(descriptor);
-  const auto id = op.operation_id();
-
-  // The descriptor encodes the size in bytes for this operation. Make
-  // sure that the size the sender will send is equal to the size of
-  // the memory region passed to this function. If they are not, this
-  // is a programming error.
-  TP_THROW_ASSERT_IF(length != op.size_in_bytes())
-      << ": recv was called with length=" << length
-      << ", whereas the descriptor encoded length=" << op.size_in_bytes()
-      << ".";
+  const auto pbDescriptor = loadDescriptor<proto::Descriptor>(descriptor);
+  const auto id = pbDescriptor.operation_id();
 
   {
     std::unique_lock<std::mutex> lock(mutex_);
@@ -88,7 +78,8 @@ void BasicChannel::recv(
 
   // Ask peer to start sending data now that we have a target pointer.
   proto::Packet packet;
-  *packet.mutable_request() = op;
+  proto::Request* pbRequest = packet.mutable_request();
+  pbRequest->set_operation_id(id);
   connection_->write(packet, wrapWriteCallback_());
   return;
 }
@@ -117,7 +108,7 @@ void BasicChannel::onPacket_(const proto::Packet& packet) {
   readPacket_();
 }
 
-void BasicChannel::onRequest_(const proto::Operation& request) {
+void BasicChannel::onRequest_(const proto::Request& request) {
   std::unique_lock<std::mutex> lock(mutex_);
 
   // Find the send operation matching the request's operation ID.
@@ -133,9 +124,10 @@ void BasicChannel::onRequest_(const proto::Operation& request) {
   auto& op = *it;
 
   // Write packet announcing the payload.
-  proto::Packet packet;
-  *packet.mutable_reply() = request;
-  connection_->write(packet, wrapWriteCallback_());
+  proto::Packet pbPacketOut;
+  proto::Reply* pbReply = pbPacketOut.mutable_reply();
+  pbReply->set_operation_id(id);
+  connection_->write(pbPacketOut, wrapWriteCallback_());
 
   // Write payload.
   connection_->write(
@@ -144,7 +136,7 @@ void BasicChannel::onRequest_(const proto::Operation& request) {
       }));
 }
 
-void BasicChannel::onReply_(const proto::Operation& reply) {
+void BasicChannel::onReply_(const proto::Reply& reply) {
   std::unique_lock<std::mutex> lock(mutex_);
 
   // Find the recv operation matching the reply's operation ID.
