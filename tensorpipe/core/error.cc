@@ -18,4 +18,10 @@ std::string LogicError::what() const {
   return ss.str();
 }
 
+std::string PipeClosedError::what() const {
+  std::ostringstream ss;
+  ss << "pipe got closed";
+  return ss.str();
+}
+
 } // namespace tensorpipe

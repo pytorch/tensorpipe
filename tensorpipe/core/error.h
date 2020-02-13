@@ -24,4 +24,11 @@ class LogicError final : public BaseError {
   const std::string reason_;
 };
 
+class PipeClosedError final : public BaseError {
+ public:
+  explicit PipeClosedError() {}
+
+  std::string what() const override;
+};
+
 } // namespace tensorpipe

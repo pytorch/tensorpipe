@@ -216,26 +216,12 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
   // Helpers to schedule our callbacks into user code
   //
 
-  // The callbacks that are ready to be fired. These are scheduled from
-  // anywhere and then retrieved and triggered from the context's caller
-  // thread.
-  CallbackQueue<read_descriptor_callback_fn, const Error&, Message>
-      scheduledReadDescriptorCallbacks_;
-  CallbackQueue<read_callback_fn, const Error&, Message>
-      scheduledReadCallbacks_;
-  CallbackQueue<write_callback_fn, const Error&, Message>
-      scheduledWriteCallbacks_;
-
   void triggerReadDescriptorCallback_(
       read_descriptor_callback_fn&&,
       const Error&,
       Message&&);
   void triggerReadCallback_(read_callback_fn&&, const Error&, Message&&);
   void triggerWriteCallback_(write_callback_fn&&, const Error&, Message&&);
-
-  std::atomic_flag isRunOfScheduledCallbacksTriggered_ = ATOMIC_FLAG_INIT;
-  void triggerRunOfScheduledCallbacks_();
-  void runScheduledCallbacks_();
 
   //
   // Error handling

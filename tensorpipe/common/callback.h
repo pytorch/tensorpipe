@@ -53,35 +53,6 @@ auto cb_apply(F&& f, T&& t) {
 
 } // namespace
 
-// A queue of callbacks plus the arguments they must be invoked with. Typical
-// usage involves one thread scheduling them to the queue once it intends for
-// them to fire, and another thread actually running them.
-template <typename F, typename... Args>
-class CallbackQueue {
- public:
-  void schedule(F&& fn, Args&&... args) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    queue_.emplace_back(std::move(fn), std::tuple<Args...>(std::move(args)...));
-  };
-
-  void run() {
-    std::unique_lock<std::mutex> lock(mutex_);
-    while (!queue_.empty()) {
-      F fn{std::move(std::get<0>(queue_.front()))};
-      std::tuple<Args...> args{std::move(std::get<1>(queue_.front()))};
-      queue_.pop_front();
-      lock.unlock();
-      // In C++17 use std::apply.
-      cb_apply(std::move(fn), std::move(args));
-      lock.lock();
-    }
-  }
-
- private:
-  std::mutex mutex_;
-  std::deque<std::tuple<F, std::tuple<Args...>>> queue_;
-};
-
 // A wrapper for a callback that "burns out" after it fires and thus needs to be
 // rearmed every time. Invocations that are triggered while the callback is
 // unarmed are stashed and will be delayed until a callback is provided again.

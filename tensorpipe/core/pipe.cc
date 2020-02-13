@@ -14,6 +14,7 @@
 #include <tensorpipe/common/callback.h>
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/error_macros.h>
+#include <tensorpipe/core/error.h>
 #include <tensorpipe/core/listener.h>
 #include <tensorpipe/proto/core.pb.h>
 
@@ -114,6 +115,8 @@ Pipe::~Pipe() {
     listener_->unregisterConnectionRequest_(iter.second);
   }
   channelRegistrationIds_.clear();
+  error_ = TP_CREATE_ERROR(PipeClosedError);
+  flushEverythingOnError_();
 }
 
 //
@@ -389,41 +392,42 @@ void Pipe::triggerReadDescriptorCallback_(
     read_descriptor_callback_fn&& fn,
     const Error& error,
     Message&& message) {
-  scheduledReadDescriptorCallbacks_.schedule(
-      std::move(fn), error, std::move(message));
-  triggerRunOfScheduledCallbacks_();
+  // Capturing a Message makes the closure non-copyable so we need this wrapper.
+  std::shared_ptr<Message> sharedMessage =
+      std::make_shared<Message>(std::move(message));
+  context_->callCallback_([fn{std::move(fn)},
+                           error,
+                           sharedMessage{std::move(sharedMessage)}]() mutable {
+    fn(error, std::move(*sharedMessage));
+  });
 }
 
 void Pipe::triggerReadCallback_(
     read_callback_fn&& fn,
     const Error& error,
     Message&& message) {
-  scheduledReadCallbacks_.schedule(std::move(fn), error, std::move(message));
-  triggerRunOfScheduledCallbacks_();
+  // Capturing a Message makes the closure non-copyable so we need this wrapper.
+  std::shared_ptr<Message> sharedMessage =
+      std::make_shared<Message>(std::move(message));
+  context_->callCallback_([fn{std::move(fn)},
+                           error,
+                           sharedMessage{std::move(sharedMessage)}]() mutable {
+    fn(error, std::move(*sharedMessage));
+  });
 }
 
 void Pipe::triggerWriteCallback_(
     write_callback_fn&& fn,
     const Error& error,
     Message&& message) {
-  scheduledWriteCallbacks_.schedule(std::move(fn), error, std::move(message));
-  triggerRunOfScheduledCallbacks_();
-}
-
-void Pipe::triggerRunOfScheduledCallbacks_() {
-  if (!isRunOfScheduledCallbacksTriggered_.test_and_set()) {
-    context_->callCallback_(
-        runIfAlive(*this, std::function<void(Pipe&)>([](Pipe& pipe) {
-          pipe.isRunOfScheduledCallbacksTriggered_.clear();
-          pipe.runScheduledCallbacks_();
-        })));
-  }
-}
-
-void Pipe::runScheduledCallbacks_() {
-  scheduledReadDescriptorCallbacks_.run();
-  scheduledReadCallbacks_.run();
-  scheduledWriteCallbacks_.run();
+  // Capturing a Message makes the closure non-copyable so we need this wrapper.
+  std::shared_ptr<Message> sharedMessage =
+      std::make_shared<Message>(std::move(message));
+  context_->callCallback_([fn{std::move(fn)},
+                           error,
+                           sharedMessage{std::move(sharedMessage)}]() mutable {
+    fn(error, std::move(*sharedMessage));
+  });
 }
 
 //
@@ -437,7 +441,7 @@ void Pipe::flushEverythingOnError_() {
     Message message{std::move(messagesBeingRead_.front().message)};
     read_callback_fn fn{std::move(messagesBeingRead_.front().callback)};
     messagesBeingRead_.pop_front();
-    scheduledReadCallbacks_.schedule(std::move(fn), error_, std::move(message));
+    triggerReadCallback_(std::move(fn), error_, std::move(message));
   }
   while (!writesWaitingUntilPipeIsEstablished_.empty()) {
     Message message{
@@ -445,17 +449,14 @@ void Pipe::flushEverythingOnError_() {
     write_callback_fn fn{
         std::move(std::get<1>(writesWaitingUntilPipeIsEstablished_.front()))};
     writesWaitingUntilPipeIsEstablished_.pop_front();
-    scheduledWriteCallbacks_.schedule(
-        std::move(fn), error_, std::move(message));
+    triggerWriteCallback_(std::move(fn), error_, std::move(message));
   }
   while (!messagesBeingWritten_.empty()) {
     Message message{std::move(messagesBeingWritten_.front().message)};
     write_callback_fn fn{std::move(messagesBeingWritten_.front().callback)};
     messagesBeingWritten_.pop_front();
-    scheduledWriteCallbacks_.schedule(
-        std::move(fn), error_, std::move(message));
+    triggerWriteCallback_(std::move(fn), error_, std::move(message));
   }
-  triggerRunOfScheduledCallbacks_();
 }
 
 //
