@@ -40,14 +40,14 @@ namespace {
 // NOTE: This is an incomplete implementation of C++17's `std::apply`.
 template <typename F, typename T, size_t... I>
 auto cb_apply(F&& f, T&& t, std::index_sequence<I...>) {
-  return f(std::get<I>(std::move(t))...);
+  return f(std::get<I>(std::forward<T>(t))...);
 }
 
 template <typename F, typename T>
 auto cb_apply(F&& f, T&& t) {
   return cb_apply(
       std::move(f),
-      std::move(t),
+      std::forward<T>(t),
       std::make_index_sequence<std::tuple_size<T>::value>{});
 }
 
@@ -58,11 +58,13 @@ auto cb_apply(F&& f, T&& t) {
 // unarmed are stashed and will be delayed until a callback is provided again.
 template <typename F, typename... Args>
 class RearmableCallback {
+  using TStoredArgs = std::tuple<typename std::remove_reference<Args>::type...>;
+
  public:
   void arm(F&& f) {
     std::unique_lock<std::mutex> lock(mutex_);
     if (!queue_.empty()) {
-      std::tuple<Args...> args{std::move(queue_.front())};
+      TStoredArgs args{std::move(queue_.front())};
       queue_.pop_front();
       lock.unlock();
       cb_apply(std::move(f), std::move(args));
@@ -71,34 +73,34 @@ class RearmableCallback {
     }
   };
 
-  void trigger(Args&&... args) {
+  void trigger(Args... args) {
     std::unique_lock<std::mutex> lock(mutex_);
     if (callback_.has_value()) {
       F f{std::move(callback_.value())};
       callback_.reset();
       lock.unlock();
-      cb_apply(std::move(f), std::tuple<Args...>(std::move(args)...));
+      cb_apply(std::move(f), std::tuple<Args...>(std::forward<Args>(args)...));
     } else {
-      queue_.push_back(std::tuple<Args...>(std::move(args)...));
+      queue_.emplace_back(std::forward<Args>(args)...);
     }
   }
 
   // This method is intended for "flushing" the callback, for example when an
   // error condition is reached which means that no more callbacks will be
   // processed but the current ones still must be honored.
-  void triggerIfArmed(Args&&... args) {
+  void triggerIfArmed(Args... args) {
     std::lock_guard<std::mutex> lock(mutex_);
     if (callback_.has_value()) {
       F f{std::move(callback_.value())};
       callback_.reset();
-      cb_apply(std::move(f), std::tuple<Args...>(std::move(args)...));
+      cb_apply(std::move(f), std::tuple<Args...>(std::forward<Args>(args)...));
     }
   }
 
  private:
   std::mutex mutex_;
   optional<F> callback_;
-  std::deque<std::tuple<Args...>> queue_;
+  std::deque<TStoredArgs> queue_;
 };
 
 } // namespace tensorpipe

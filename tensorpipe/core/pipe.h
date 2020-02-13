@@ -110,7 +110,7 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
   optional<uint64_t> registrationId_;
   std::unordered_map<std::string, uint64_t> channelRegistrationIds_;
 
-  RearmableCallback<read_descriptor_callback_fn, const Error&, Message>
+  RearmableCallback<read_descriptor_callback_fn, const Error&, Message&&>
       readDescriptorCallback_;
 
   struct MessageBeingAllocated {
