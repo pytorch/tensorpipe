@@ -208,6 +208,32 @@ void testConnectionPair(
   context->join();
 }
 
+[[nodiscard]] std::pair<channel::Channel::TDescriptor, std::future<void>>
+sendWithFuture(
+    std::shared_ptr<channel::Channel> channel,
+    const void* ptr,
+    size_t length) {
+  auto promise = std::make_shared<std::promise<void>>();
+  auto future = promise->get_future();
+  auto descriptor = channel->send(
+      ptr, length, [promise{std::move(promise)}] { promise->set_value(); });
+  return {std::move(descriptor), std::move(future)};
+}
+
+[[nodiscard]] std::future<void> recvWithFuture(
+    std::shared_ptr<channel::Channel> channel,
+    channel::Channel::TDescriptor descriptor,
+    void* ptr,
+    size_t length) {
+  auto promise = std::make_shared<std::promise<void>>();
+  auto future = promise->get_future();
+  channel->recv(
+      std::move(descriptor), ptr, length, [promise{std::move(promise)}] {
+        promise->set_value();
+      });
+  return future;
+}
+
 } // namespace
 
 TEST(ChannelFactory, Name) {
@@ -247,7 +273,8 @@ TEST(ChannelFactory, CreateChannel) {
         // Perform send and wait for completion.
         channel::Channel::TDescriptor descriptor;
         std::future<void> future;
-        std::tie(descriptor, future) = channel->send(data.data(), data.size());
+        std::tie(descriptor, future) =
+            sendWithFuture(channel, data.data(), data.size());
         descriptorQueue.push(std::move(descriptor));
         future.wait();
       },
@@ -261,7 +288,8 @@ TEST(ChannelFactory, CreateChannel) {
         }
 
         // Perform recv and wait for completion.
-        channel->recv(descriptorQueue.pop(), data.data(), data.size()).wait();
+        recvWithFuture(channel, descriptorQueue.pop(), data.data(), data.size())
+            .wait();
 
         // Validate contents of vector.
         for (auto i = 0; i < data.size(); i++) {

@@ -66,17 +66,6 @@ class Channel {
       void* ptr,
       size_t length,
       TRecvCallback callback) = 0;
-
-  // Send memory region to peer (but return a future).
-  [[nodiscard]] std::pair<TDescriptor, std::future<void>> send(
-      const void* ptr,
-      size_t length);
-
-  // Receive memory region from peer (but return a future).
-  [[nodiscard]] std::future<void> recv(
-      TDescriptor descriptor,
-      void* ptr,
-      size_t length);
 };
 
 // Abstract base class for channel factory classes.
