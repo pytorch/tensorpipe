@@ -46,28 +46,33 @@ void testConnectionPair(
   context->join();
 }
 
-[[nodiscard]] std::pair<channel::Channel::TDescriptor, std::future<void>>
+[[nodiscard]] std::pair<channel::Channel::TDescriptor, std::future<Error>>
 sendWithFuture(
     std::shared_ptr<channel::Channel> channel,
     const void* ptr,
     size_t length) {
-  auto promise = std::make_shared<std::promise<void>>();
+  auto promise = std::make_shared<std::promise<Error>>();
   auto future = promise->get_future();
   auto descriptor = channel->send(
-      ptr, length, [promise{std::move(promise)}] { promise->set_value(); });
+      ptr, length, [promise{std::move(promise)}](const Error& error) {
+        promise->set_value(error);
+      });
   return {std::move(descriptor), std::move(future)};
 }
 
-[[nodiscard]] std::future<void> recvWithFuture(
+[[nodiscard]] std::future<Error> recvWithFuture(
     std::shared_ptr<channel::Channel> channel,
     channel::Channel::TDescriptor descriptor,
     void* ptr,
     size_t length) {
-  auto promise = std::make_shared<std::promise<void>>();
+  auto promise = std::make_shared<std::promise<Error>>();
   auto future = promise->get_future();
   channel->recv(
-      std::move(descriptor), ptr, length, [promise{std::move(promise)}] {
-        promise->set_value();
+      std::move(descriptor),
+      ptr,
+      length,
+      [promise{std::move(promise)}](const Error& error) {
+        promise->set_value(error);
       });
   return future;
 }
@@ -94,11 +99,11 @@ TEST(BasicChannel, Operation) {
 
         // Perform send and wait for completion.
         channel::Channel::TDescriptor descriptor;
-        std::future<void> future;
+        std::future<Error> future;
         std::tie(descriptor, future) =
             sendWithFuture(channel, data.data(), data.size());
         descriptorQueue.push(std::move(descriptor));
-        future.wait();
+        ASSERT_FALSE(future.get());
       },
       [&](std::shared_ptr<transport::Connection> conn) {
         auto channel = factory2->createChannel(std::move(conn));
@@ -110,8 +115,9 @@ TEST(BasicChannel, Operation) {
         }
 
         // Perform recv and wait for completion.
-        recvWithFuture(channel, descriptorQueue.pop(), data.data(), data.size())
-            .wait();
+        std::future<Error> future = recvWithFuture(
+            channel, descriptorQueue.pop(), data.data(), data.size());
+        ASSERT_FALSE(future.get());
 
         // Validate contents of vector.
         for (auto i = 0; i < data.size(); i++) {

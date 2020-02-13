@@ -177,7 +177,7 @@ void BasicChannel::sendCompleted(const uint64_t id) {
 
   // Release lock before executing callback.
   lock.unlock();
-  op.callback();
+  op.callback(Error::kSuccess);
 }
 
 void BasicChannel::recvCompleted(const uint64_t id) {
@@ -195,7 +195,7 @@ void BasicChannel::recvCompleted(const uint64_t id) {
 
   // Release lock before executing callback.
   lock.unlock();
-  op.callback();
+  op.callback(Error::kSuccess);
 }
 
 BasicChannel::TReadCallback BasicChannel::wrapReadCallback_(
@@ -294,14 +294,12 @@ bool BasicChannel::processError(const Error& error) {
 
     // Notify pending send callbacks of error.
     for (auto& op : sendOperations) {
-      // TODO(pietern): pass error.
-      op.callback();
+      op.callback(error_);
     }
 
     // Notify pending recv callbacks of error.
     for (auto& op : recvOperations) {
-      // TODO(pietern): pass error.
-      op.callback();
+      op.callback(error_);
     }
 
     return true;

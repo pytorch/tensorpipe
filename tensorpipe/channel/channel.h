@@ -49,8 +49,8 @@ namespace channel {
 class Channel {
  public:
   using TDescriptor = std::vector<uint8_t>;
-  using TSendCallback = std::function<void()>;
-  using TRecvCallback = std::function<void()>;
+  using TSendCallback = std::function<void(const Error&)>;
+  using TRecvCallback = std::function<void(const Error&)>;
 
   virtual ~Channel();
 

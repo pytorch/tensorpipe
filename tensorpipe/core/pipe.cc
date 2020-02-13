@@ -290,9 +290,16 @@ void Pipe::acceptCallbackEntryPoint_(
   }
 }
 
-void Pipe::channelRecvCallbackEntryPoint_(bound_channel_recv_callback_fn fn) {
+void Pipe::channelRecvCallbackEntryPoint_(
+    bound_channel_recv_callback_fn fn,
+    const Error& error) {
   std::unique_lock<std::mutex> lock(mutex_);
   if (error_) {
+    return;
+  }
+  if (error) {
+    error_ = error;
+    flushEverythingOnError_();
     return;
   }
   if (fn) {
@@ -300,9 +307,16 @@ void Pipe::channelRecvCallbackEntryPoint_(bound_channel_recv_callback_fn fn) {
   }
 }
 
-void Pipe::channelSendCallbackEntryPoint_(bound_channel_send_callback_fn fn) {
+void Pipe::channelSendCallbackEntryPoint_(
+    bound_channel_send_callback_fn fn,
+    const Error& error) {
   std::unique_lock<std::mutex> lock(mutex_);
   if (error_) {
+    return;
+  }
+  if (error) {
+    error_ = error;
+    flushEverythingOnError_();
     return;
   }
   if (fn) {
@@ -370,18 +384,20 @@ Pipe::channel_recv_callback_fn Pipe::wrapChannelRecvCallback_(
     bound_channel_recv_callback_fn fn) {
   return runIfAlive(
       *this,
-      std::function<void(Pipe&)>([fn{std::move(fn)}](Pipe& pipe) mutable {
-        pipe.channelRecvCallbackEntryPoint_(std::move(fn));
-      }));
+      std::function<void(Pipe&, const Error&)>(
+          [fn{std::move(fn)}](Pipe& pipe, const Error& error) mutable {
+            pipe.channelRecvCallbackEntryPoint_(std::move(fn), error);
+          }));
 }
 
 Pipe::channel_send_callback_fn Pipe::wrapChannelSendCallback_(
     bound_channel_send_callback_fn fn) {
   return runIfAlive(
       *this,
-      std::function<void(Pipe&)>([fn{std::move(fn)}](Pipe& pipe) mutable {
-        pipe.channelSendCallbackEntryPoint_(std::move(fn));
-      }));
+      std::function<void(Pipe&, const Error&)>(
+          [fn{std::move(fn)}](Pipe& pipe, const Error& error) mutable {
+            pipe.channelSendCallbackEntryPoint_(std::move(fn), error);
+          }));
 }
 
 //

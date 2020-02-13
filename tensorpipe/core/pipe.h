@@ -204,13 +204,17 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
   using bound_channel_recv_callback_fn = std::function<void(Pipe&)>;
   channel_recv_callback_fn wrapChannelRecvCallback_(
       bound_channel_recv_callback_fn = nullptr);
-  void channelRecvCallbackEntryPoint_(bound_channel_recv_callback_fn);
+  void channelRecvCallbackEntryPoint_(
+      bound_channel_recv_callback_fn,
+      const Error&);
 
   using channel_send_callback_fn = channel::Channel::TSendCallback;
   using bound_channel_send_callback_fn = std::function<void(Pipe&)>;
   channel_send_callback_fn wrapChannelSendCallback_(
       bound_channel_send_callback_fn = nullptr);
-  void channelSendCallbackEntryPoint_(bound_channel_send_callback_fn);
+  void channelSendCallbackEntryPoint_(
+      bound_channel_send_callback_fn,
+      const Error&);
 
   //
   // Helpers to schedule our callbacks into user code
