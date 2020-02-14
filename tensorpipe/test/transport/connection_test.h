@@ -39,10 +39,11 @@ class ConnectionTest : public ::testing::Test {
 
     auto listener = helper->getListener();
     tensorpipe::Queue<std::shared_ptr<Connection>> queue;
-    listener->accept([&](const Error& error, std::shared_ptr<Connection> conn) {
-      ASSERT_FALSE(error) << error.what();
-      queue.push(std::move(conn));
-    });
+    listener->accept(
+        [&](const tensorpipe::Error& error, std::shared_ptr<Connection> conn) {
+          ASSERT_FALSE(error) << error.what();
+          queue.push(std::move(conn));
+        });
 
     // Start thread for listening side.
     std::thread listeningThread([&]() { listeningFn(queue.pop()); });

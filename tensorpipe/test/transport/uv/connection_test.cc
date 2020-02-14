@@ -10,6 +10,7 @@
 
 #include <gtest/gtest.h>
 
+using namespace tensorpipe;
 using namespace tensorpipe::transport;
 
 using UVConnectionTest = ConnectionTest<UVConnectionTestHelper>;
