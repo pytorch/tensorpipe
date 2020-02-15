@@ -112,16 +112,15 @@ void Reactor::run() {
   }
 }
 
-Reactor::Trigger::Trigger(Fd&& headerFd, Fd&& dataFd, TToken token)
+Reactor::Trigger::Trigger(Fd&& headerFd, Fd&& dataFd)
     : producer_(util::ringbuffer::shm::load<TReactorRingBuffer>(
           // The header and data segment objects take over ownership
           // of file descriptors. Release them to avoid double close.
           headerFd.release(),
-          dataFd.release())),
-      token_(token) {}
+          dataFd.release())) {}
 
-void Reactor::Trigger::run() {
-  writeToken(producer_, token_);
+void Reactor::Trigger::run(TToken token) {
+  writeToken(producer_, token);
 }
 
 } // namespace shm

@@ -54,36 +54,40 @@ TEST(Reactor, Basic) {
       [](int fd) {
         tensorpipe::Queue<int> queue;
         auto reactor = std::make_shared<Reactor>();
-        auto token = reactor->add([&] { queue.push(1); });
+        auto token1 = reactor->add([&] { queue.push(1); });
+        auto token2 = reactor->add([&] { queue.push(2); });
 
         // Share reactor fds and token with other process.
         {
           auto socket = Socket(fd);
           auto fds = reactor->fds();
           auto error = socket.sendPayloadAndFds(
-              token, std::get<0>(fds), std::get<1>(fds));
+              token1, token2, std::get<0>(fds), std::get<1>(fds));
           ASSERT_FALSE(error) << error.what();
         }
 
         // Wait for other process to run trigger.
-        queue.pop();
+        ASSERT_EQ(queue.pop(), 1);
+        ASSERT_EQ(queue.pop(), 2);
       },
       [](int fd) {
-        Reactor::TToken token;
+        Reactor::TToken token1;
+        Reactor::TToken token2;
         Fd header;
         Fd data;
 
         // Wait for other process to share reactor fds and token.
         {
           auto socket = Socket(fd);
-          auto error = socket.recvPayloadAndFds(token, header, data);
+          auto error = socket.recvPayloadAndFds(token1, token2, header, data);
           ASSERT_FALSE(error) << error.what();
         }
 
         // Create and run trigger. This should wake up the other
         // process and run the registered function.
-        Reactor::Trigger trigger(std::move(header), std::move(data), token);
-        trigger.run();
+        Reactor::Trigger trigger(std::move(header), std::move(data));
+        trigger.run(token1);
+        trigger.run(token2);
       });
 }
 
