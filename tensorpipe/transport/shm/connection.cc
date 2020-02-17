@@ -12,6 +12,7 @@
 
 #include <vector>
 
+#include <tensorpipe/common/callback.h>
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/error_macros.h>
 #include <tensorpipe/transport/error.h>
@@ -53,10 +54,16 @@ void Connection::start() {
   inbox_.emplace(std::move(inboxRingBuffer));
 
   // Register method to be called when our peer writes to our inbox.
-  inboxReactorToken_ = reactor_->add([this] { handleInboxReadable(); });
+  inboxReactorToken_ = reactor_->add(
+      runIfAlive(*this, std::function<void(Connection&)>([](Connection& conn) {
+        conn.handleInboxReadable();
+      })));
 
   // Register method to be called when our peer reads from our outbox.
-  outboxReactorToken_ = reactor_->add([this] { handleOutboxWritable(); });
+  outboxReactorToken_ = reactor_->add(
+      runIfAlive(*this, std::function<void(Connection&)>([](Connection& conn) {
+        conn.handleOutboxWritable();
+      })));
 
   // We're sending file descriptors first, so wait for writability.
   state_ = SEND_FDS;
