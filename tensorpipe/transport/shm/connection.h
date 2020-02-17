@@ -101,6 +101,14 @@ class Connection final : public transport::Connection,
   // take care to acquire the connection's lock here.
   void handleInboxReadable();
 
+  // Handle outbox being writable.
+  //
+  // This is triggered from the reactor loop when this connection's
+  // peer has read an entry from our outbox. It is called once per
+  // message. Because it's called from another thread, we must always
+  // take care to acquire the connection's lock here.
+  void handleOutboxWritable();
+
  private:
   std::mutex mutex_;
   State state_{INITIALIZING};
@@ -117,7 +125,12 @@ class Connection final : public transport::Connection,
 
   // Outbox.
   optional<TProducer> outbox_;
-  optional<Reactor::Trigger> outboxTrigger_;
+  optional<Reactor::TToken> outboxReactorToken_;
+
+  // Peer trigger/tokens.
+  optional<Reactor::Trigger> peerReactorTrigger_;
+  optional<Reactor::TToken> peerInboxReactorToken_;
+  optional<Reactor::TToken> peerOutboxReactorToken_;
 
   // Reads happen only if the user supplied a callback (and optionally
   // a destination buffer). The callback is run from the event loop
@@ -155,7 +168,7 @@ class Connection final : public transport::Connection,
    public:
     WriteOperation(const void* ptr, size_t len, write_callback_fn fn);
 
-    void handleWrite(TProducer& producer);
+    bool handleWrite(TProducer& producer);
 
     void handleError(const Error& error);
 

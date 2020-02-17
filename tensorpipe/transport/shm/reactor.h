@@ -91,13 +91,12 @@ class Reactor final : public std::enable_shared_from_this<Reactor> {
  public:
   class Trigger {
    public:
-    Trigger(Fd&& header, Fd&& data, TToken token);
+    Trigger(Fd&& header, Fd&& data);
 
-    void run();
+    void run(TToken token);
 
    private:
     TReactorProducer producer_;
-    TToken token_;
   };
 };
 

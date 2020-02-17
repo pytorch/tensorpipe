@@ -52,8 +52,11 @@ void Connection::start() {
       util::ringbuffer::shm::create<TRingBuffer>(kDefaultSize);
   inbox_.emplace(std::move(inboxRingBuffer));
 
-  // Register to be called when our peer writes to our inbox.
+  // Register method to be called when our peer writes to our inbox.
   inboxReactorToken_ = reactor_->add([this] { handleInboxReadable(); });
+
+  // Register method to be called when our peer reads from our outbox.
+  outboxReactorToken_ = reactor_->add([this] { handleOutboxWritable(); });
 
   // We're sending file descriptors first, so wait for writability.
   state_ = SEND_FDS;
@@ -129,11 +132,13 @@ void Connection::handleEventIn(std::unique_lock<std::mutex> lock) {
     Fd reactorDataFd;
     Fd outboxHeaderFd;
     Fd outboxDataFd;
-    Reactor::TToken reactorToken;
+    Reactor::TToken peerInboxReactorToken;
+    Reactor::TToken peerOutboxReactorToken;
 
     // Receive the reactor token, reactor fds, and inbox fds.
     auto err = socket_->recvPayloadAndFds(
-        reactorToken,
+        peerInboxReactorToken,
+        peerOutboxReactorToken,
         reactorHeaderFd,
         reactorDataFd,
         outboxHeaderFd,
@@ -147,9 +152,12 @@ void Connection::handleEventIn(std::unique_lock<std::mutex> lock) {
     outbox_.emplace(util::ringbuffer::shm::load<TRingBuffer>(
         outboxHeaderFd.release(), outboxDataFd.release()));
 
-    // Initialize remote reactor trigger for outbox writes.
-    outboxTrigger_.emplace(
-        std::move(reactorHeaderFd), std::move(reactorDataFd), reactorToken);
+    // Initialize remote reactor trigger.
+    peerReactorTrigger_.emplace(
+        std::move(reactorHeaderFd), std::move(reactorDataFd));
+
+    peerInboxReactorToken_ = peerInboxReactorToken;
+    peerOutboxReactorToken_ = peerOutboxReactorToken;
 
     // The connection is usable now.
     state_ = ESTABLISHED;
@@ -179,6 +187,7 @@ void Connection::handleEventOut(std::unique_lock<std::mutex> lock) {
     // Send our reactor token, reactor fds, and inbox fds.
     auto err = socket_->sendPayloadAndFds(
         inboxReactorToken_.value(),
+        outboxReactorToken_.value(),
         reactorHeaderFd,
         reactorDataFd,
         inboxHeaderFd_,
@@ -215,6 +224,11 @@ void Connection::handleInboxReadable() {
   processReadOperations(std::move(lock));
 }
 
+void Connection::handleOutboxWritable() {
+  std::unique_lock<std::mutex> lock(mutex_);
+  processWriteOperations(std::move(lock));
+}
+
 void Connection::triggerProcessReadOperations() {
   loop_->defer([ptr{shared_from_this()}, this] {
     std::unique_lock<std::mutex> lock(mutex_);
@@ -247,6 +261,7 @@ void Connection::processReadOperations(std::unique_lock<std::mutex> lock) {
 
   for (auto& readOperation : operationsToRead) {
     readOperation.handleRead(*inbox_);
+    peerReactorTrigger_->run(peerOutboxReactorToken_.value());
   }
 
   for (auto& readOperation : operationsToError) {
@@ -283,9 +298,21 @@ void Connection::processWriteOperations(std::unique_lock<std::mutex> lock) {
   // without requiring reentrant locking.
   lock.unlock();
 
+  int nbSuccessful = 0;
   for (auto& writeOperation : operationsToWrite) {
-    writeOperation.handleWrite(*outbox_);
-    outboxTrigger_->run();
+    bool writeSuccess = writeOperation.handleWrite(*outbox_);
+    if (!writeSuccess) {
+      lock.lock();
+      writeOperations_.insert(
+          writeOperations_.begin(),
+          operationsToWrite.begin() + nbSuccessful,
+          operationsToWrite.end());
+      lock.unlock();
+      return;
+    }
+
+    ++nbSuccessful;
+    peerReactorTrigger_->run(peerInboxReactorToken_.value());
   }
 
   for (auto& writeOperation : operationsToError) {
@@ -320,6 +347,10 @@ void Connection::closeHoldingMutex() {
   if (inboxReactorToken_.has_value()) {
     reactor_->remove(inboxReactorToken_.value());
     inboxReactorToken_.reset();
+  }
+  if (outboxReactorToken_.has_value()) {
+    reactor_->remove(outboxReactorToken_.value());
+    outboxReactorToken_.reset();
   }
   if (socket_) {
     loop_->unregisterDescriptor(socket_->fd());
@@ -382,13 +413,13 @@ Connection::WriteOperation::WriteOperation(
     write_callback_fn fn)
     : ptr_(ptr), len_(len), fn_(std::move(fn)) {}
 
-void Connection::WriteOperation::handleWrite(TProducer& outbox) {
+bool Connection::WriteOperation::handleWrite(TProducer& outbox) {
   // Attempting to write a message larger than the ring buffer. We might want to
   // chunk it in the future.
   const int buf_size = outbox.getHeader().kDataPoolByteSize;
   if (len_ > buf_size) {
     fn_(TP_CREATE_ERROR(ShortWriteError, len_, buf_size));
-    return;
+    return true;
   }
 
   ssize_t ret;
@@ -406,11 +437,19 @@ void Connection::WriteOperation::handleWrite(TProducer& outbox) {
   }
 
   ret = outbox.writeInTxWithSize<uint32_t>(len_, ptr_);
+  if (ret == -ENOSPC) {
+    ret = outbox.cancelTx();
+    TP_THROW_SYSTEM_IF(ret < 0, -ret);
+    return false;
+  }
+
   TP_THROW_SYSTEM_IF(ret < 0, -ret);
   ret = outbox.commitTx();
   TP_THROW_SYSTEM_IF(ret < 0, -ret);
 
   fn_(Error::kSuccess);
+
+  return true;
 }
 
 void Connection::WriteOperation::handleError(const Error& error) {

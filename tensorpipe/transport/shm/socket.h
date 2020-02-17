@@ -61,7 +61,7 @@ void loadFdsFromArray(int* array, std::index_sequence<Idxs...>, Fds&... fds) {
 } // namespace
 
 template <typename T, typename... Fds>
-Error sendToSocket(int socketFd, const T& t, const Fds&... fds) {
+Error sendToSocket(int socketFd, const T& t1, const T& t2, const Fds&... fds) {
   using TPayload = int;
 
   // Build message.
@@ -70,10 +70,11 @@ Error sendToSocket(int socketFd, const T& t, const Fds&... fds) {
   msg.msg_namelen = 0;
   msg.msg_flags = 0;
 
-  // Build iov to write T.
+  // Build iov to write Ts.
+  std::array<T, 2> tbuf = {t1, t2};
   struct iovec iov;
-  iov.iov_base = const_cast<T*>(&t);
-  iov.iov_len = sizeof(t);
+  iov.iov_base = tbuf.data();
+  iov.iov_len = sizeof(tbuf);
   msg.msg_iov = &iov;
   msg.msg_iovlen = sizeof(iov) / sizeof(iovec);
 
@@ -111,11 +112,11 @@ Error sendToSocket(int socketFd, const T& t, const Fds&... fds) {
 template <typename... Fds>
 Error sendFdsToSocket(int socketFd, const Fds&... fds) {
   char dummy = 0;
-  return sendToSocket(socketFd, dummy, fds...);
+  return sendToSocket(socketFd, dummy, dummy, fds...);
 }
 
 template <typename T, typename... Fds>
-Error recvFromSocket(int socketFd, T& t, Fds&... fds) {
+Error recvFromSocket(int socketFd, T& t1, T& t2, Fds&... fds) {
   using TPayload = int;
 
   // Build message.
@@ -124,10 +125,11 @@ Error recvFromSocket(int socketFd, T& t, Fds&... fds) {
   msg.msg_namelen = 0;
   msg.msg_flags = 0;
 
-  // Build iov to read T.
+  // Build iov to read Ts.
+  std::array<T, 2> tbuf;
   struct iovec iov;
-  iov.iov_base = &t;
-  iov.iov_len = sizeof(t);
+  iov.iov_base = tbuf.data();
+  iov.iov_len = sizeof(tbuf);
   msg.msg_iov = &iov;
   msg.msg_iovlen = sizeof(iov) / sizeof(iovec);
 
@@ -151,6 +153,9 @@ Error recvFromSocket(int socketFd, T& t, Fds&... fds) {
     break;
   }
 
+  t1 = tbuf[0];
+  t2 = tbuf[1];
+
   // Read control message.
   struct cmsghdr* cmsg;
   cmsg = CMSG_FIRSTHDR(&msg);
@@ -167,7 +172,7 @@ Error recvFromSocket(int socketFd, T& t, Fds&... fds) {
 template <typename... Fds>
 Error recvFdsFromSocket(int socketFd, Fds&... fds) {
   char dummy = 0;
-  return recvFromSocket(socketFd, dummy, fds...);
+  return recvFromSocket(socketFd, dummy, dummy, fds...);
 }
 
 class Sockaddr final {
@@ -236,8 +241,8 @@ class Socket final : public Fd, public std::enable_shared_from_this<Socket> {
       typename... Fds,
       typename std::enable_if<std::is_trivially_copyable<T>::value, bool>::
           type = false>
-  Error sendPayloadAndFds(const T& t, const Fds&... fds) {
-    return sendToSocket(fd_, t, fds...);
+  Error sendPayloadAndFds(const T& t1, const T& t2, const Fds&... fds) {
+    return sendToSocket(fd_, t1, t2, fds...);
   }
 
   // Receive object and file descriptor.
@@ -246,8 +251,8 @@ class Socket final : public Fd, public std::enable_shared_from_this<Socket> {
       typename... Fds,
       typename std::enable_if<std::is_trivially_copyable<T>::value, bool>::
           type = false>
-  Error recvPayloadAndFds(T& t, Fds&... fds) {
-    return recvFromSocket(fd_, t, fds...);
+  Error recvPayloadAndFds(T& t1, T& t2, Fds&... fds) {
+    return recvFromSocket(fd_, t1, t2, fds...);
   }
 
  private:
