@@ -13,9 +13,7 @@
 using namespace tensorpipe;
 using namespace tensorpipe::transport;
 
-using UVTransportTest = TransportTest<UVTransportTestHelper>;
-
-TEST_F(UVTransportTest, LargeWrite) {
+TEST_P(TransportTest, LargeWrite) {
   constexpr int kMsgSize = 16 * 1024 * 1024;
   std::string msg(kMsgSize, 0x42);
 

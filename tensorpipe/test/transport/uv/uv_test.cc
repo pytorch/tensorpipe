@@ -10,4 +10,6 @@
 
 #include <tensorpipe/test/transport/transport_test.h>
 
-INSTANTIATE_TYPED_TEST_CASE_P(Uv, TransportTest, UVTransportTestHelper);
+UVTransportTestHelper helper;
+
+INSTANTIATE_TEST_CASE_P(Uv, TransportTest, ::testing::Values(&helper));

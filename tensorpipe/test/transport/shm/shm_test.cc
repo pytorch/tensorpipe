@@ -10,4 +10,6 @@
 
 #include <tensorpipe/test/transport/transport_test.h>
 
-INSTANTIATE_TYPED_TEST_CASE_P(Shm, TransportTest, SHMTransportTestHelper);
+SHMTransportTestHelper helper;
+
+INSTANTIATE_TEST_CASE_P(Shm, TransportTest, ::testing::Values(&helper));
