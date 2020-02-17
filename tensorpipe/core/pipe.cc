@@ -451,7 +451,8 @@ void Pipe::triggerWriteCallback_(
 //
 
 void Pipe::flushEverythingOnError_() {
-  readDescriptorCallback_.triggerIfArmed(error_, Message());
+  readDescriptorCallback_.triggerAll(
+      [&]() { return std::make_tuple(error_, Message()); });
   messagesBeingAllocated_.clear();
   while (!messagesBeingRead_.empty()) {
     Message message{std::move(messagesBeingRead_.front().message)};

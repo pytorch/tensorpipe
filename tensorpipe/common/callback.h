@@ -63,44 +63,44 @@ class RearmableCallback {
  public:
   void arm(F&& f) {
     std::unique_lock<std::mutex> lock(mutex_);
-    if (!queue_.empty()) {
-      TStoredArgs args{std::move(queue_.front())};
-      queue_.pop_front();
+    if (!args_.empty()) {
+      TStoredArgs args{std::move(args_.front())};
+      args_.pop_front();
       lock.unlock();
       cb_apply(std::move(f), std::move(args));
     } else {
-      callback_ = std::move(f);
+      callbacks_.push_back(std::move(f));
     }
   };
 
   void trigger(Args... args) {
     std::unique_lock<std::mutex> lock(mutex_);
-    if (callback_.has_value()) {
-      F f{std::move(callback_.value())};
-      callback_.reset();
+    if (!callbacks_.empty()) {
+      F f{std::move(callbacks_.front())};
+      callbacks_.pop_front();
       lock.unlock();
       cb_apply(std::move(f), std::tuple<Args...>(std::forward<Args>(args)...));
     } else {
-      queue_.emplace_back(std::forward<Args>(args)...);
+      args_.emplace_back(std::forward<Args>(args)...);
     }
   }
 
   // This method is intended for "flushing" the callback, for example when an
   // error condition is reached which means that no more callbacks will be
   // processed but the current ones still must be honored.
-  void triggerIfArmed(Args... args) {
+  void triggerAll(std::function<std::tuple<Args...>()> fn) {
     std::lock_guard<std::mutex> lock(mutex_);
-    if (callback_.has_value()) {
-      F f{std::move(callback_.value())};
-      callback_.reset();
-      cb_apply(std::move(f), std::tuple<Args...>(std::forward<Args>(args)...));
+    while (!callbacks_.empty()) {
+      F f{std::move(callbacks_.front())};
+      callbacks_.pop_front();
+      cb_apply(std::move(f), fn());
     }
   }
 
  private:
   std::mutex mutex_;
-  optional<F> callback_;
-  std::deque<TStoredArgs> queue_;
+  std::deque<F> callbacks_;
+  std::deque<TStoredArgs> args_;
 };
 
 } // namespace tensorpipe
