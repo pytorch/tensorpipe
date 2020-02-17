@@ -17,7 +17,7 @@ struct Options {
   std::string mode; // server or client
   std::string transport; // shm or uv
   std::string address; // address for listen or connect
-  int io_num; // number of write/read pairs
+  int io_num{0}; // number of write/read pairs
   int chunk_bytes{8};
 };
 

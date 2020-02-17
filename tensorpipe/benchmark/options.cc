@@ -48,7 +48,7 @@ static void validateOptions(Options options, const char* argv0) {
     fprintf(stderr, "Missing argument: --address must be set\n");
     status = EXIT_FAILURE;
   }
-  if (options.io_num == 0) {
+  if (options.io_num <= 0) {
     fprintf(stderr, "Missing argument: --io-num must be set\n");
     status = EXIT_FAILURE;
   }
