@@ -6,17 +6,17 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <tensorpipe/test/transport/shm/connection_test.h>
+#include <tensorpipe/test/transport/shm/shm_test.h>
 
 #include <gtest/gtest.h>
 
 using namespace tensorpipe;
 using namespace tensorpipe::transport;
 
-using SHMConnectionTest = ConnectionTest<SHMConnectionTestHelper>;
+using SHMTransportTest = TransportTest<SHMTransportTestHelper>;
 
 // NOTE: This test is disabled until chunking is implemented.
-TEST_F(SHMConnectionTest, DISABLED_LargeWrite) {
+TEST_F(SHMTransportTest, DISABLED_LargeWrite) {
   // This is larger than the default ring buffer size.
   const int kMsgSize = 2 * shm::Connection::kDefaultSize;
   std::string msg(kMsgSize, 0x42);
@@ -39,7 +39,7 @@ TEST_F(SHMConnectionTest, DISABLED_LargeWrite) {
       });
 }
 
-TEST_F(SHMConnectionTest, QueueWrites) {
+TEST_F(SHMTransportTest, QueueWrites) {
   // This is large enough that two of those will not fit in the ring buffer at
   // the same time.
   constexpr size_t numBytes = (3 * shm::Connection::kDefaultSize) / 4;

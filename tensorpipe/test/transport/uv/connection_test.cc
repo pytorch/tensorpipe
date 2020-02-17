@@ -6,16 +6,16 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <tensorpipe/test/transport/uv/connection_test.h>
+#include <tensorpipe/test/transport/uv/uv_test.h>
 
 #include <gtest/gtest.h>
 
 using namespace tensorpipe;
 using namespace tensorpipe::transport;
 
-using UVConnectionTest = ConnectionTest<UVConnectionTestHelper>;
+using UVTransportTest = TransportTest<UVTransportTestHelper>;
 
-TEST_F(UVConnectionTest, LargeWrite) {
+TEST_F(UVTransportTest, LargeWrite) {
   constexpr int kMsgSize = 16 * 1024 * 1024;
   std::string msg(kMsgSize, 0x42);
 

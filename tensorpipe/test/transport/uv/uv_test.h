@@ -8,30 +8,29 @@
 
 #pragma once
 
-#include <tensorpipe/test/transport/connection_test.h>
+#include <tensorpipe/test/transport/transport_test.h>
 #include <tensorpipe/transport/uv/connection.h>
 #include <tensorpipe/transport/uv/listener.h>
 #include <tensorpipe/transport/uv/loop.h>
 
-class UVConnectionTestHelper : public ConnectionTestHelper {
+class UVTransportTestHelper : public TransportTestHelper {
  public:
-  UVConnectionTestHelper() : loop_(tensorpipe::transport::uv::Loop::create()) {}
+  UVTransportTestHelper() : loop_(tensorpipe::transport::uv::Loop::create()) {}
 
-  ~UVConnectionTestHelper() override {
+  ~UVTransportTestHelper() override {
     loop_->join();
   }
 
   std::shared_ptr<tensorpipe::transport::Listener> getListener() override {
-    using namespace tensorpipe::transport;
-    auto addr = uv::Sockaddr::createInetSockAddr(kIPAddr);
-    return uv::Listener::create(loop_, addr);
+    auto addr =
+        tensorpipe::transport::uv::Sockaddr::createInetSockAddr(kIPAddr);
+    return tensorpipe::transport::uv::Listener::create(loop_, addr);
   }
 
   std::shared_ptr<tensorpipe::transport::Connection> connect(
       const std::string& addr) override {
-    using namespace tensorpipe::transport;
-    auto saddr = uv::Sockaddr::createInetSockAddr(addr);
-    return uv::Connection::create(loop_, saddr);
+    auto saddr = tensorpipe::transport::uv::Sockaddr::createInetSockAddr(addr);
+    return tensorpipe::transport::uv::Connection::create(loop_, saddr);
   }
 
   static std::string transportName() {
