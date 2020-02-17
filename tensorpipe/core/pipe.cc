@@ -650,8 +650,9 @@ void Pipe::onReadWhileServerWaitingForBrochure_(
     pbChannelSelection->set_registration_id(channelRegistrationIds_[name]);
   }
 
+  connection_->write(pbPacketOut, wrapWriteCallback_());
+
   if (!needToWaitForConnections) {
-    connection_->write(pbPacketOut, wrapWriteCallback_());
     state_ = ESTABLISHED;
     doWritesAccumulatedWhileWaitingForPipeToBeEstablished_();
     connection_->read(wrapReadPacketCallback_(
@@ -659,7 +660,6 @@ void Pipe::onReadWhileServerWaitingForBrochure_(
           pipe.onReadOfMessageDescriptor_(pbPacketIn);
         }));
   } else {
-    connection_->write(pbPacketOut, wrapWriteCallback_());
     state_ = SERVER_WAITING_FOR_CONNECTIONS;
   }
 }
@@ -815,11 +815,6 @@ void Pipe::onReadOfMessageData_(int64_t sequenceNumber) {
   MessageBeingRead& messageBeingRead = *iter;
   messageBeingRead.dataStillBeingRead = false;
   checkForMessagesDoneReading_();
-  // FIXME Only rearm this if we the message descriptor callback is armed.
-  connection_->read(
-      wrapReadPacketCallback_([](Pipe& pipe, const proto::Packet& pbPacketIn) {
-        pipe.onReadOfMessageDescriptor_(pbPacketIn);
-      }));
 }
 
 void Pipe::onRecvOfTensorData_(int64_t sequenceNumber) {
