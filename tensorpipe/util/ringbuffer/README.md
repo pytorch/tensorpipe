@@ -1,7 +1,10 @@
 # ringbuffer
 
 > This code was written by David Carrillo Cisneros (davidca@fb.com).
+>
 > Modified to work with C++14 by Pieter Noordhuis (pietern@fb.com)
+>
+> For further changes, refer to the source control history.
 
 ## Usage
 
@@ -14,7 +17,7 @@ The resulting ringbuffer can be used to create multiple Producers and Consumers.
 
 Producers can only write data while Consumers can only read data. API for both
 is transactional. A succesful transaction will produce/consume data, while an
-unsuccesful will have no effect. Only one producer can have an active write
+unsuccessful will have no effect. Only one producer can have an active write
 transaction at any given time. Similarly, only one consumer can have an active
 read transaction at any given time.
 
@@ -25,10 +28,9 @@ they only write/read to the ringbuffer corresponding to the CPU where they
 are running. That way, at any given time, only one producer (or consumer) is
 accessing one ringbuffer.
 
-
 ## Design Guidelines
 
- The following use use cases shaped the design:
+The following use use cases shaped the design:
 
   1. Split control (buffer's header) and data sections. Shared memory
      segments can be loaded with distinct protection policies and/or

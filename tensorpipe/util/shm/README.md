@@ -1,28 +1,24 @@
 # shared memory
 
 > This code was written by David Carrillo Cisneros (davidca@fb.com).
+>
 > Modified to work with C++14 by Pieter Noordhuis (pietern@fb.com)
+>
+> For further changes, refer to the source control history.
 
 A wrapper around Linux's shared-memory mechanisms to create, load,
 link and unlink shared memory regions.
 
-Current version is hardcode to work create files and subfolders
-inside /dev/shm/tensorpipe/ .
-
-Permissions for shared memory follow Linux file system permissions.
-E.g. an authorized users can inspect memory content by dumping the
-content of the shared memory file content with:
-
-```
-$ xxd /dev/shm/tensorpipe/<your file>
-```
+Current version uses `O_TMPFILE` to use unnamed regular files for
+shared memory segments. Because the segments are not mapped to regular
+files, the user must use a separate mechanism to share access (e.g.
+through sharing their file descriptors).
 
 ## Design choices
 
 1. Decided against using Boost's shared memory to leverage Linux-only such as:
-  a. directory structure inside of shared memory,
-  b. huge TLB pages
-  c. fine-tuned memory write-only/read-only page modes
+  a. huge TLB pages
+  b. fine-tuned memory write-only/read-only page modes
   (e.g. allow segments as write only, reducing cache contention).
 
 2. Support load at any memory address. To simplify user experience,
