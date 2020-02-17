@@ -10,6 +10,7 @@
 
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <vector>
 
 #include <tensorpipe/common/optional.h>
@@ -49,10 +50,11 @@ class Listener final : public transport::Listener,
   void handleEvents(int events) override;
 
  private:
+  std::mutex mutex_;
   std::shared_ptr<Loop> loop_;
   std::shared_ptr<Socket> listener_;
   Sockaddr addr_;
-  optional<accept_callback_fn> fn_;
+  std::deque<accept_callback_fn> fns_;
 };
 
 } // namespace shm

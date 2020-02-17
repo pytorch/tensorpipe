@@ -80,3 +80,53 @@ TYPED_TEST(ConnectionTest, DestroyConnectionFromCallback) {
         });
       });
 }
+
+TYPED_TEST(ConnectionTest, AcceptCallbacksAreQueued) {
+  TypeParam helper;
+  auto listener = helper.getListener();
+  int numAccepts = 0;
+  std::promise<void> donePromise;
+  for (int i = 0; i < 10; i += 1) {
+    listener->accept([&, i](const Error& error, std::shared_ptr<Connection>) {
+      if (error) {
+        donePromise.set_exception(
+            std::make_exception_ptr(std::runtime_error(error.what())));
+      } else {
+        EXPECT_EQ(i, numAccepts);
+        numAccepts++;
+        if (numAccepts == 10) {
+          donePromise.set_value();
+        }
+      }
+    });
+  }
+  for (int i = 0; i < 10; i += 1) {
+    helper.connect(listener->addr());
+  }
+  donePromise.get_future().get();
+}
+
+TYPED_TEST(ConnectionTest, IncomingConnectionsAreQueued) {
+  TypeParam helper;
+  auto listener = helper.getListener();
+  int numAccepts = 0;
+  std::promise<void> donePromise;
+  for (int i = 0; i < 10; i += 1) {
+    helper.connect(listener->addr());
+  }
+  for (int i = 0; i < 10; i += 1) {
+    listener->accept([&, i](const Error& error, std::shared_ptr<Connection>) {
+      if (error) {
+        donePromise.set_exception(
+            std::make_exception_ptr(std::runtime_error(error.what())));
+      } else {
+        EXPECT_EQ(i, numAccepts);
+        numAccepts++;
+        if (numAccepts == 10) {
+          donePromise.set_value();
+        }
+      }
+    });
+  }
+  donePromise.get_future().get();
+}

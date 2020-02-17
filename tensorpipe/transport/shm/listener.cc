@@ -35,16 +35,21 @@ Listener::Listener(
 }
 
 Listener::~Listener() {
-  if (fn_.has_value()) {
+  if (!fns_.empty()) {
     loop_->unregisterDescriptor(listener_->fd());
   }
 }
 
 void Listener::accept(accept_callback_fn fn) {
-  fn_.emplace(std::move(fn));
+  std::unique_lock<std::mutex> lock(mutex_);
+  fns_.push_back(std::move(fn));
 
-  // Register with loop for readability events.
-  loop_->registerDescriptor(listener_->fd(), EPOLLIN, shared_from_this());
+  // Only register if we go from 0 to 1 pending callbacks. In other cases we
+  // already had a pending callback and thus we were already registered.
+  if (fns_.size() == 1) {
+    // Register with loop for readability events.
+    loop_->registerDescriptor(listener_->fd(), EPOLLIN, shared_from_this());
+  }
 }
 
 address_t Listener::addr() const {
@@ -52,15 +57,19 @@ address_t Listener::addr() const {
 }
 
 void Listener::handleEvents(int events) {
+  std::unique_lock<std::mutex> lock(mutex_);
   TP_ARG_CHECK_EQ(events, EPOLLIN);
-  TP_DCHECK(fn_.has_value())
+  TP_DCHECK(!fns_.empty())
       << "when the callback is disarmed the listener's descriptor is supposed "
       << "to be unregistered";
 
-  auto fn = std::move(fn_).value();
-  loop_->unregisterDescriptor(listener_->fd());
-  fn_.reset();
+  auto fn = std::move(fns_.front());
+  fns_.pop_front();
+  if (fns_.empty()) {
+    loop_->unregisterDescriptor(listener_->fd());
+  }
   auto socket = listener_->accept();
+  lock.unlock();
   if (socket) {
     fn(Error::kSuccess, Connection::create(loop_, socket));
   } else {
