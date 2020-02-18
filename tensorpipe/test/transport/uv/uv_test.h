@@ -9,35 +9,15 @@
 #pragma once
 
 #include <tensorpipe/test/transport/transport_test.h>
-#include <tensorpipe/transport/uv/connection.h>
-#include <tensorpipe/transport/uv/listener.h>
-#include <tensorpipe/transport/uv/loop.h>
+#include <tensorpipe/transport/uv/context.h>
 
 class UVTransportTestHelper : public TransportTestHelper {
  public:
-  UVTransportTestHelper() : loop_(tensorpipe::transport::uv::Loop::create()) {}
-
-  ~UVTransportTestHelper() override {
-    loop_->join();
+  std::shared_ptr<tensorpipe::transport::Context> getContext() override {
+    return std::make_shared<tensorpipe::transport::uv::Context>();
   }
 
-  std::shared_ptr<tensorpipe::transport::Listener> getListener() override {
-    auto addr =
-        tensorpipe::transport::uv::Sockaddr::createInetSockAddr(kIPAddr);
-    return tensorpipe::transport::uv::Listener::create(loop_, addr);
+  std::string defaultAddr() override {
+    return "127.0.0.1";
   }
-
-  std::shared_ptr<tensorpipe::transport::Connection> connect(
-      const std::string& addr) override {
-    auto saddr = tensorpipe::transport::uv::Sockaddr::createInetSockAddr(addr);
-    return tensorpipe::transport::uv::Connection::create(loop_, saddr);
-  }
-
-  static std::string transportName() {
-    return "uv";
-  }
-
- private:
-  const std::string kIPAddr = "127.0.0.1";
-  std::shared_ptr<tensorpipe::transport::uv::Loop> loop_;
 };
