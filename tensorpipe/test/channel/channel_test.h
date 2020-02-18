@@ -144,6 +144,9 @@ TYPED_TEST_P(ChannelFactoryTest, CreateChannel) {
           EXPECT_EQ(data[i], i);
         }
       });
+
+  factory1->join();
+  factory2->join();
 }
 
 REGISTER_TYPED_TEST_CASE_P(ChannelFactoryTest, DomainDescriptor, CreateChannel);

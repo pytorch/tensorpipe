@@ -104,6 +104,8 @@ class ChannelFactory {
       std::shared_ptr<transport::Connection>,
       Channel::Endpoint) = 0;
 
+  virtual void join();
+
  private:
   std::string name_;
 };

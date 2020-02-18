@@ -75,8 +75,11 @@ std::shared_ptr<channel::ChannelFactory> Context::getChannelFactory_(
 
 void Context::join() {
   done_ = true;
-  for (auto& context : contexts_) {
-    context.second->join();
+  for (auto& iter : contexts_) {
+    iter.second->join();
+  }
+  for (auto& iter : channelFactories_) {
+    iter.second->join();
   }
   callbackQueue_.push(nullopt);
   callbackCaller_.join();
