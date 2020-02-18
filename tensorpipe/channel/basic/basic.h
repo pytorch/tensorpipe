@@ -27,7 +27,8 @@ class BasicChannelFactory : public ChannelFactory {
   const std::string& domainDescriptor() const override;
 
   std::shared_ptr<Channel> createChannel(
-      std::shared_ptr<transport::Connection>) override;
+      std::shared_ptr<transport::Connection>,
+      Channel::Endpoint) override;
 
  private:
   std::string domainDescriptor_;

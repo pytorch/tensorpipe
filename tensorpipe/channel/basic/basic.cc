@@ -28,7 +28,8 @@ const std::string& BasicChannelFactory::domainDescriptor() const {
 }
 
 std::shared_ptr<Channel> BasicChannelFactory::createChannel(
-    std::shared_ptr<transport::Connection> connection) {
+    std::shared_ptr<transport::Connection> connection,
+    Channel::Endpoint /* unused */) {
   auto channel = std::make_shared<BasicChannel>(
       BasicChannel::ConstructorToken(), std::move(connection));
   channel->init_();

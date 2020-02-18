@@ -713,7 +713,9 @@ void Pipe::onReadWhileClientWaitingForBrochureAnswer_(
     connection->write(pbPacketOut, wrapWriteCallback_());
 
     channels_.emplace(
-        name, channelFactory.createChannel(std::move(connection)));
+        name,
+        channelFactory.createChannel(
+            std::move(connection), channel::Channel::Endpoint::kConnect));
   }
 
   state_ = ESTABLISHED;
@@ -765,7 +767,9 @@ void Pipe::onAcceptWhileServerWaitingForChannel_(
       channelFactoryIter->second;
 
   channels_.emplace(
-      name, channelFactory->createChannel(std::move(receivedConnection)));
+      name,
+      channelFactory->createChannel(
+          std::move(receivedConnection), channel::Channel::Endpoint::kListen));
 
   if (!registrationId_.has_value() && channelRegistrationIds_.empty()) {
     state_ = ESTABLISHED;

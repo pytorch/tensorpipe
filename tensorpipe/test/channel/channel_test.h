@@ -107,7 +107,8 @@ TYPED_TEST_P(ChannelFactoryTest, CreateChannel) {
 
   testConnectionPair(
       [&](std::shared_ptr<tensorpipe::transport::Connection> conn) {
-        auto channel = factory1->createChannel(std::move(conn));
+        auto channel = factory1->createChannel(
+            std::move(conn), tensorpipe::channel::Channel::Endpoint::kListen);
 
         // Initialize with sequential values.
         std::vector<uint8_t> data(256);
@@ -124,7 +125,8 @@ TYPED_TEST_P(ChannelFactoryTest, CreateChannel) {
         ASSERT_FALSE(future.get());
       },
       [&](std::shared_ptr<tensorpipe::transport::Connection> conn) {
-        auto channel = factory2->createChannel(std::move(conn));
+        auto channel = factory2->createChannel(
+            std::move(conn), tensorpipe::channel::Channel::Endpoint::kConnect);
 
         // Initialize with zeroes.
         std::vector<uint8_t> data(256);

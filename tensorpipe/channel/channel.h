@@ -52,6 +52,8 @@ class Channel {
   using TSendCallback = std::function<void(const Error&)>;
   using TRecvCallback = std::function<void(const Error&)>;
 
+  enum class Endpoint : bool { kConnect, kListen };
+
   virtual ~Channel();
 
   // Send memory region to peer.
@@ -99,7 +101,8 @@ class ChannelFactory {
   // as soon as initialization has completed.
   //
   virtual std::shared_ptr<Channel> createChannel(
-      std::shared_ptr<transport::Connection>) = 0;
+      std::shared_ptr<transport::Connection>,
+      Channel::Endpoint) = 0;
 
  private:
   std::string name_;
