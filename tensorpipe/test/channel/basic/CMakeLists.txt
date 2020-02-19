@@ -5,6 +5,9 @@
 # LICENSE file in the root directory of this source tree.
 
 add_tensorpipe_test(channel_basic_test basic_test.cc)
-target_link_libraries(channel_basic_test tensorpipe)
-target_link_libraries(channel_basic_test tensorpipe_basic)
-target_link_libraries(channel_basic_test tensorpipe_uv)
+target_link_libraries(
+  channel_basic_test
+  tensorpipe
+  tensorpipe_basic
+  tensorpipe_uv
+  )

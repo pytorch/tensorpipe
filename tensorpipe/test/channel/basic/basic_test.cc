@@ -6,18 +6,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <tensorpipe/channel/basic/basic.h>
-#include <tensorpipe/test/channel/channel_test.h>
+#include <tensorpipe/test/channel/basic/basic_test.h>
 
-using namespace tensorpipe;
+BasicChannelTestHelper helper;
 
-TEST(BasicChannelFactoryTest, Name) {
-  std::shared_ptr<channel::ChannelFactory> factory =
-      std::make_shared<channel::basic::BasicChannelFactory>();
-  EXPECT_EQ(factory->name(), "basic");
-}
-
-INSTANTIATE_TYPED_TEST_CASE_P(
-    Basic,
-    ChannelFactoryTest,
-    channel::basic::BasicChannelFactory);
+INSTANTIATE_TEST_CASE_P(Basic, ChannelTest, ::testing::Values(&helper));
