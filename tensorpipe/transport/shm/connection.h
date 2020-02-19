@@ -20,6 +20,8 @@
 #include <tensorpipe/util/ringbuffer/producer.h>
 #include <tensorpipe/util/ringbuffer/shm.h>
 
+#include <google/protobuf/io/zero_copy_stream.h>
+
 namespace tensorpipe {
 namespace transport {
 namespace shm {
@@ -77,6 +79,10 @@ class Connection final : public transport::Connection,
 
   // Implementation of transport::Connection
   void write(const void* ptr, size_t length, write_callback_fn fn) override;
+
+  // Implementation of transport::Connection
+  void write(const google::protobuf::MessageLite& message, write_callback_fn fn)
+      override;
 
   // Implementation of EventHandler.
   void handleEvents(int events) override;
@@ -166,7 +172,9 @@ class Connection final : public transport::Connection,
   //
   class WriteOperation {
    public:
+    using write_fn = std::function<bool(TProducer&)>;
     WriteOperation(const void* ptr, size_t len, write_callback_fn fn);
+    WriteOperation(write_fn writer, write_callback_fn fn);
 
     bool handleWrite(TProducer& producer);
 
@@ -175,7 +183,25 @@ class Connection final : public transport::Connection,
    private:
     const void* ptr_{nullptr};
     size_t len_{0};
+    write_fn writer_;
     write_callback_fn fn_;
+  };
+
+  class RingBufferZeroCopyOutputStream
+      : public google::protobuf::io::ZeroCopyOutputStream {
+   public:
+    RingBufferZeroCopyOutputStream(TProducer* buffer, size_t payloadSize);
+
+    bool Next(void** data, int* size) override;
+
+    void BackUp(int /* unused */) override;
+
+    int64_t ByteCount() const override;
+
+   private:
+    TProducer* buffer_;
+    const size_t payloadSize_;
+    int64_t bytesCount_{0};
   };
 
   // Pending read operations.

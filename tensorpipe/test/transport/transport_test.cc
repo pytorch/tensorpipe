@@ -8,6 +8,8 @@
 
 #include <tensorpipe/test/transport/transport_test.h>
 
+#include <tensorpipe/proto/core.pb.h>
+
 using namespace tensorpipe;
 using namespace tensorpipe::transport;
 
@@ -130,4 +132,26 @@ TEST_P(TransportTest, IncomingConnectionsAreQueued) {
   }
 
   ctx->join();
+}
+
+TEST_P(TransportTest, ProtobufWrite) {
+  constexpr size_t kSize = 0x42;
+  tensorpipe::proto::MessageDescriptor message;
+  message.set_size_in_bytes(kSize);
+
+  this->test_connection(
+      [&](std::shared_ptr<Connection> conn) {
+        conn->read<tensorpipe::proto::MessageDescriptor>(
+            [&, conn](
+                const Error& error,
+                const tensorpipe::proto::MessageDescriptor& receivedMsg) {
+              ASSERT_FALSE(error) << error.what();
+              ASSERT_EQ(receivedMsg.size_in_bytes(), kSize);
+            });
+      },
+      [&](std::shared_ptr<Connection> conn) {
+        conn->write(message, [conn](const Error& error) {
+          ASSERT_FALSE(error) << error.what();
+        });
+      });
 }

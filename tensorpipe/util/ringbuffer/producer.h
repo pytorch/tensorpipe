@@ -57,8 +57,7 @@ class Producer : public RingBufferWrapper<THeaderExtraData> {
     if (unlikely(!inTx())) {
       return -EINVAL;
     }
-    return this->copyToRingBuffer_(
-        static_cast<const uint8_t*>(data), size, this->tx_size_);
+    return this->copyToRingBuffer_(static_cast<const uint8_t*>(data), size);
   }
 
   template <class T>
@@ -78,14 +77,14 @@ class Producer : public RingBufferWrapper<THeaderExtraData> {
 
     // Copy length.
     auto plen = reinterpret_cast<const uint8_t*>(&length);
-    auto s = this->copyToRingBuffer_(plen, sizeof(TSize), this->tx_size_);
+    auto s = this->copyToRingBuffer_(plen, sizeof(TSize));
     if (0 > s) {
       return s;
     }
 
     // Copy data.
     auto ptr = static_cast<const uint8_t*>(data);
-    auto sdata = this->copyToRingBuffer_(ptr, length, this->tx_size_);
+    auto sdata = this->copyToRingBuffer_(ptr, length);
     if (0 > sdata) {
       return sdata;
     }
@@ -181,6 +180,49 @@ class Producer : public RingBufferWrapper<THeaderExtraData> {
     return s;
   }
 
+  [[nodiscard]] std::pair<ssize_t, void*> reserveContiguousInTx(
+      const size_t size) {
+    if (unlikely(size == 0)) {
+      TP_LOG_WARNING() << "Reserve of size zero is not supported. "
+                       << "Is size set correctly?";
+      return {-EINVAL, nullptr};
+    }
+
+    if (unlikely(size > this->header_.kDataPoolByteSize)) {
+      TP_LOG_WARNING() << "Asked to reserve " << size << " bytes in a buffer"
+                       << " of size " << this->header_.kDataPoolByteSize;
+      return {-EINVAL, nullptr};
+    }
+
+    // Single writer, safe to read head.
+    uint64_t head = this->header_.readHead();
+    uint64_t tail = this->header_.readTail();
+
+    uint64_t used = head - tail;
+    if (unlikely(used > this->header_.kDataPoolByteSize)) {
+      TP_LOG_ERROR()
+          << "number of used bytes found to be larger than ring buffer size";
+      return {-EPERM, nullptr};
+    }
+
+    uint64_t space = this->header_.kDataPoolByteSize - used - this->tx_size_;
+    if (space < size) {
+      return {-ENOSPC, nullptr};
+    }
+
+    uint64_t start = (head + this->tx_size_) & this->header_.kDataModMask;
+    uint64_t end = (start + size) & this->header_.kDataModMask;
+
+    // Check if the chunk is contiguous.
+    if (unlikely(end < start)) {
+      end = this->header_.kDataPoolByteSize;
+    }
+
+    this->tx_size_ += end - start;
+
+    return {end - start, &this->data_[start]};
+  }
+
  protected:
   bool inTx_{false};
 
@@ -188,8 +230,7 @@ class Producer : public RingBufferWrapper<THeaderExtraData> {
   // If successful, increases tx_size_ by size.
   [[nodiscard]] ssize_t copyToRingBuffer_(
       const uint8_t* d,
-      const size_t size,
-      const size_t rb_offset) noexcept {
+      const size_t size) noexcept {
     TP_THROW_IF_NULLPTR(d);
 
     if (unlikely(size == 0)) {
@@ -217,13 +258,11 @@ class Producer : public RingBufferWrapper<THeaderExtraData> {
 
     // Check that there is enough space.
     uint64_t space = this->header_.kDataPoolByteSize - used;
-    if (unlikely(rb_offset + size > space)) {
-      // TP_LOG_INFO() << "rb_offset: " << rb_offset << " size: " << size << "
-      // space: " << space;
+    if (unlikely(this->tx_size_ + size > space)) {
       return -ENOSPC;
     }
 
-    uint64_t start = (rb_offset + head) & this->header_.kDataModMask;
+    uint64_t start = (head + this->tx_size_) & this->header_.kDataModMask;
     uint64_t end = (start + size) & this->header_.kDataModMask;
 
     if (likely(start < end)) {

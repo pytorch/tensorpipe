@@ -78,10 +78,11 @@ void BasicChannel::recv(
   }
 
   // Ask peer to start sending data now that we have a target pointer.
-  proto::Packet packet;
-  proto::Request* pbRequest = packet.mutable_request();
+  auto packet = std::make_shared<proto::Packet>();
+  proto::Request* pbRequest = packet->mutable_request();
   pbRequest->set_operation_id(id);
-  connection_->write(packet, wrapWriteCallback_());
+  connection_->write(
+      *packet, wrapWriteCallback_([packet](BasicChannel& /* unused */) {}));
   return;
 }
 
@@ -125,10 +126,12 @@ void BasicChannel::onRequest_(const proto::Request& request) {
   auto& op = *it;
 
   // Write packet announcing the payload.
-  proto::Packet pbPacketOut;
-  proto::Reply* pbReply = pbPacketOut.mutable_reply();
+  auto pbPacketOut = std::make_shared<proto::Packet>();
+  proto::Reply* pbReply = pbPacketOut->mutable_reply();
   pbReply->set_operation_id(id);
-  connection_->write(pbPacketOut, wrapWriteCallback_());
+  connection_->write(
+      *pbPacketOut,
+      wrapWriteCallback_([pbPacketOut](BasicChannel& /* unused */) {}));
 
   // Write payload.
   connection_->write(

@@ -105,6 +105,27 @@ void Connection::write(const void* ptr, size_t length, write_callback_fn fn) {
   triggerProcessWriteOperations();
 }
 
+// Implementation of transport::Connection
+void Connection::write(
+    const google::protobuf::MessageLite& message,
+    write_callback_fn fn) {
+  std::unique_lock<std::mutex> guard(mutex_);
+  writeOperations_.emplace_back(
+      [&](TProducer& outbox) {
+        size_t len = message.ByteSize();
+        const auto ret = outbox.writeInTx(static_cast<uint32_t>(len));
+        if (ret == -ENOSPC) {
+          return false;
+        }
+        TP_THROW_SYSTEM_IF(ret < 0, -ret);
+
+        RingBufferZeroCopyOutputStream os(&outbox, len);
+        return message.SerializeToZeroCopyStream(&os);
+      },
+      std::move(fn));
+  triggerProcessWriteOperations();
+}
+
 void Connection::handleEvents(int events) {
   std::unique_lock<std::mutex> lock(mutex_);
 
@@ -420,6 +441,11 @@ Connection::WriteOperation::WriteOperation(
     write_callback_fn fn)
     : ptr_(ptr), len_(len), fn_(std::move(fn)) {}
 
+Connection::WriteOperation::WriteOperation(
+    write_fn writer,
+    write_callback_fn fn)
+    : writer_(std::move(writer)), fn_(std::move(fn)) {}
+
 bool Connection::WriteOperation::handleWrite(TProducer& outbox) {
   // Attempting to write a message larger than the ring buffer. We might want to
   // chunk it in the future.
@@ -443,14 +469,23 @@ bool Connection::WriteOperation::handleWrite(TProducer& outbox) {
     break;
   }
 
-  ret = outbox.writeInTxWithSize<uint32_t>(len_, ptr_);
-  if (ret == -ENOSPC) {
+  bool writeSuccess = true;
+  if (ptr_ == nullptr) {
+    writeSuccess = writer_(outbox);
+  } else {
+    ret = outbox.writeInTxWithSize<uint32_t>(len_, ptr_);
+    TP_THROW_SYSTEM_IF(ret < 0 && ret != -ENOSPC, -ret);
+    if (ret == -ENOSPC) {
+      writeSuccess = false;
+    }
+  }
+
+  if (!writeSuccess) {
     ret = outbox.cancelTx();
     TP_THROW_SYSTEM_IF(ret < 0, -ret);
     return false;
   }
 
-  TP_THROW_SYSTEM_IF(ret < 0, -ret);
   ret = outbox.commitTx();
   TP_THROW_SYSTEM_IF(ret < 0, -ret);
 
@@ -461,6 +496,30 @@ bool Connection::WriteOperation::handleWrite(TProducer& outbox) {
 
 void Connection::WriteOperation::handleError(const Error& error) {
   fn_(error);
+}
+
+Connection::RingBufferZeroCopyOutputStream::RingBufferZeroCopyOutputStream(
+    TProducer* buffer,
+    size_t payloadSize)
+    : buffer_(buffer), payloadSize_(payloadSize) {}
+
+bool Connection::RingBufferZeroCopyOutputStream::Next(void** data, int* size) {
+  std::tie(*size, *data) =
+      buffer_->reserveContiguousInTx(payloadSize_ - bytesCount_);
+  if (*size == -ENOSPC) {
+    return false;
+  }
+  TP_THROW_SYSTEM_IF(*size < 0, -*size);
+
+  bytesCount_ += *size;
+
+  return true;
+}
+
+void Connection::RingBufferZeroCopyOutputStream::BackUp(int /* unused */) {}
+
+int64_t Connection::RingBufferZeroCopyOutputStream::ByteCount() const {
+  return bytesCount_;
 }
 
 } // namespace shm

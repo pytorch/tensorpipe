@@ -63,12 +63,14 @@ Pipe::Pipe(
 void Pipe::start_() {
   std::unique_lock<std::mutex> lock(mutex_);
   if (state_ == CLIENT_ABOUT_TO_SEND_HELLO_AND_BROCHURE) {
-    proto::Packet pbPacketOut;
+    auto pbPacketOut = std::make_shared<proto::Packet>();
     // This makes the packet contain a SpontaneousConnection message.
-    pbPacketOut.mutable_spontaneous_connection();
-    connection_->write(pbPacketOut, wrapWriteCallback_());
-    pbPacketOut.Clear();
-    proto::Brochure* pbBrochure = pbPacketOut.mutable_brochure();
+    pbPacketOut->mutable_spontaneous_connection();
+    connection_->write(
+        *pbPacketOut, wrapWriteCallback_([pbPacketOut](Pipe& /* unused */) {}));
+
+    auto pbPacketOut2 = std::make_shared<proto::Packet>();
+    proto::Brochure* pbBrochure = pbPacketOut2->mutable_brochure();
     auto pbAllTransportAdvertisements =
         pbBrochure->mutable_transport_advertisement();
     for (const auto& contextIter : context_->contexts_) {
@@ -90,7 +92,9 @@ void Pipe::start_() {
       pbChannelAdvertisement->set_domain_descriptor(
           channelFactory.domainDescriptor());
     }
-    connection_->write(pbPacketOut, wrapWriteCallback_());
+    connection_->write(
+        *pbPacketOut2,
+        wrapWriteCallback_([pbPacketOut2](Pipe& /* unused */) {}));
     state_ = CLIENT_WAITING_FOR_BROCHURE_ANSWER;
     connection_->read(wrapReadPacketCallback_(
         [](Pipe& pipe, const proto::Packet& pbPacketIn) {
@@ -409,8 +413,7 @@ void Pipe::triggerReadDescriptorCallback_(
     const Error& error,
     Message&& message) {
   // Capturing a Message makes the closure non-copyable so we need this wrapper.
-  std::shared_ptr<Message> sharedMessage =
-      std::make_shared<Message>(std::move(message));
+  auto sharedMessage = std::make_shared<Message>(std::move(message));
   context_->callCallback_([fn{std::move(fn)},
                            error,
                            sharedMessage{std::move(sharedMessage)}]() mutable {
@@ -423,8 +426,7 @@ void Pipe::triggerReadCallback_(
     const Error& error,
     Message&& message) {
   // Capturing a Message makes the closure non-copyable so we need this wrapper.
-  std::shared_ptr<Message> sharedMessage =
-      std::make_shared<Message>(std::move(message));
+  auto sharedMessage = std::make_shared<Message>(std::move(message));
   context_->callCallback_([fn{std::move(fn)},
                            error,
                            sharedMessage{std::move(sharedMessage)}]() mutable {
@@ -437,8 +439,7 @@ void Pipe::triggerWriteCallback_(
     const Error& error,
     Message&& message) {
   // Capturing a Message makes the closure non-copyable so we need this wrapper.
-  std::shared_ptr<Message> sharedMessage =
-      std::make_shared<Message>(std::move(message));
+  auto sharedMessage = std::make_shared<Message>(std::move(message));
   context_->callCallback_([fn{std::move(fn)},
                            error,
                            sharedMessage{std::move(sharedMessage)}]() mutable {
@@ -496,9 +497,9 @@ void Pipe::writeWhenEstablished_(Message&& message, write_callback_fn fn) {
   TP_DCHECK_EQ(state_, ESTABLISHED);
 
   MessageBeingWritten messageBeingWritten;
-  proto::Packet pbPacketOut;
+  auto pbPacketOut = std::make_shared<proto::Packet>();
   proto::MessageDescriptor* pbMessageDescriptor =
-      pbPacketOut.mutable_message_descriptor();
+      pbPacketOut->mutable_message_descriptor();
 
   messageBeingWritten.sequenceNumber = nextMessageBeingWritten_++;
   pbMessageDescriptor->set_size_in_bytes(message.length);
@@ -541,7 +542,9 @@ void Pipe::writeWhenEstablished_(Message&& message, write_callback_fn fn) {
     TP_THROW_ASSERT_IF(!foundAChannel);
   }
 
-  connection_->write(pbPacketOut, wrapWriteCallback_());
+  connection_->write(
+      *pbPacketOut, wrapWriteCallback_([pbPacketOut](Pipe& /* unused */) {}));
+
   connection_->write(
       message.data.get(),
       message.length,
@@ -562,9 +565,9 @@ void Pipe::onReadWhileServerWaitingForBrochure_(
   TP_DCHECK_EQ(pbPacketIn.type_case(), proto::Packet::kBrochure);
   const proto::Brochure& pbBrochure = pbPacketIn.brochure();
 
-  proto::Packet pbPacketOut;
+  auto pbPacketOut = std::make_shared<proto::Packet>();
   proto::BrochureAnswer* pbBrochureAnswer =
-      pbPacketOut.mutable_brochure_answer();
+      pbPacketOut->mutable_brochure_answer();
   bool needToWaitForConnections = false;
 
   bool foundATransport = false;
@@ -651,7 +654,8 @@ void Pipe::onReadWhileServerWaitingForBrochure_(
     pbChannelSelection->set_registration_id(channelRegistrationIds_[name]);
   }
 
-  connection_->write(pbPacketOut, wrapWriteCallback_());
+  connection_->write(
+      *pbPacketOut, wrapWriteCallback_([pbPacketOut](Pipe& /* unused */) {}));
 
   if (!needToWaitForConnections) {
     state_ = ESTABLISHED;
@@ -680,13 +684,13 @@ void Pipe::onReadWhileClientWaitingForBrochureAnswer_(
   if (transport != transport_) {
     std::shared_ptr<transport::Connection> connection =
         context.connect(address);
-
-    proto::Packet pbPacketOut;
+    auto pbPacketOut = std::make_shared<proto::Packet>();
     proto::RequestedConnection* pbRequestedConnection =
-        pbPacketOut.mutable_requested_connection();
+        pbPacketOut->mutable_requested_connection();
     pbRequestedConnection->set_registration_id(
         pbBrochureAnswer.registration_id());
-    connection->write(pbPacketOut, wrapWriteCallback_());
+    connection->write(
+        *pbPacketOut, wrapWriteCallback_([pbPacketOut](Pipe& /* unused */) {}));
 
     transport_ = transport;
     connection_ = std::move(connection);
@@ -705,12 +709,13 @@ void Pipe::onReadWhileClientWaitingForBrochureAnswer_(
     std::shared_ptr<transport::Connection> connection =
         context.connect(address);
 
-    proto::Packet pbPacketOut;
+    auto pbPacketOut = std::make_shared<proto::Packet>();
     proto::RequestedConnection* pbRequestedConnection =
-        pbPacketOut.mutable_requested_connection();
+        pbPacketOut->mutable_requested_connection();
     pbRequestedConnection->set_registration_id(
         pbChannelSelection.registration_id());
-    connection->write(pbPacketOut, wrapWriteCallback_());
+    connection->write(
+        *pbPacketOut, wrapWriteCallback_([pbPacketOut](Pipe& /* unused */) {}));
 
     channels_.emplace(
         name,
