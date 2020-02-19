@@ -7,6 +7,7 @@
  */
 
 #include <tensorpipe/common/defs.h>
+#include <tensorpipe/test/transport/shm/shm_test.h>
 #include <tensorpipe/transport/shm/context.h>
 
 #include <gtest/gtest.h>
@@ -16,7 +17,7 @@ using namespace tensorpipe::transport;
 
 TEST(Context, Basics) {
   auto context = std::make_shared<shm::Context>();
-  auto addr = "foobar";
+  auto addr = createUniqueShmAddr();
 
   {
     std::mutex mutex;

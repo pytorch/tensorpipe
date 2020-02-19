@@ -24,6 +24,8 @@
 
 using namespace tensorpipe;
 
+namespace {
+
 std::unique_ptr<uint8_t[]> copyStringToBuffer(const std::string& s) {
   auto b = std::make_unique<uint8_t[]>(s.size());
   std::memcpy(b.get(), s.data(), s.size());
@@ -98,6 +100,17 @@ Message makeMessage() {
   return message;
 }
 
+std::string createUniqueShmAddr() {
+  const ::testing::TestInfo* const test_info =
+      ::testing::UnitTest::GetInstance()->current_test_info();
+  std::ostringstream ss;
+  // Once we upgrade googletest, also use test_info->test_suite_name() here.
+  ss << "shm://tensorpipe_test_" << test_info->name() << "_" << getpid();
+  return ss.str();
+}
+
+} // namespace
+
 TEST(Context, ClientPingSerial) {
   auto context = Context::create();
 
@@ -108,7 +121,8 @@ TEST(Context, ClientPingSerial) {
   context->registerChannelFactory(
       0, "basic", std::make_shared<channel::basic::BasicChannelFactory>());
 
-  auto listener = Listener::create(context, {"shm://foobar", "uv://127.0.0.1"});
+  auto listener =
+      Listener::create(context, {createUniqueShmAddr(), "uv://127.0.0.1"});
 
   auto clientPipe = Pipe::create(context, listener->url("uv"));
 
@@ -183,7 +197,8 @@ TEST(Context, ClientPingInline) {
   context->registerChannelFactory(
       0, "basic", std::make_shared<channel::basic::BasicChannelFactory>());
 
-  auto listener = Listener::create(context, {"shm://foobar", "uv://127.0.0.1"});
+  auto listener =
+      Listener::create(context, {createUniqueShmAddr(), "uv://127.0.0.1"});
 
   std::shared_ptr<Pipe> serverPipe;
   listener->accept([&](const Error& error, std::shared_ptr<Pipe> pipe) {
@@ -245,7 +260,8 @@ TEST(Context, ServerPingPongTwice) {
   context->registerChannelFactory(
       0, "basic", std::make_shared<channel::basic::BasicChannelFactory>());
 
-  auto listener = Listener::create(context, {"shm://foobar", "uv://127.0.0.1"});
+  auto listener =
+      Listener::create(context, {createUniqueShmAddr(), "uv://127.0.0.1"});
 
   std::shared_ptr<Pipe> serverPipe;
 

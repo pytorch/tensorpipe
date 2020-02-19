@@ -9,8 +9,9 @@
 #pragma once
 
 #include <tensorpipe/test/transport/transport_test.h>
-
 #include <tensorpipe/transport/shm/context.h>
+
+std::string createUniqueShmAddr();
 
 class SHMTransportTestHelper : public TransportTestHelper {
  public:
@@ -19,6 +20,6 @@ class SHMTransportTestHelper : public TransportTestHelper {
   }
 
   std::string defaultAddr() override {
-    return "foobar";
+    return createUniqueShmAddr();
   }
 };

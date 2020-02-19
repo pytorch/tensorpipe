@@ -7,6 +7,7 @@
  */
 
 #include <tensorpipe/common/defs.h>
+#include <tensorpipe/test/transport/shm/shm_test.h>
 #include <tensorpipe/transport/shm/listener.h>
 #include <tensorpipe/transport/shm/loop.h>
 
@@ -17,7 +18,7 @@ using namespace tensorpipe::transport;
 
 TEST(Listener, Basics) {
   auto loop = shm::Loop::create();
-  auto addr = shm::Sockaddr::createAbstractUnixAddr("foobar");
+  auto addr = shm::Sockaddr::createAbstractUnixAddr(createUniqueShmAddr());
 
   {
     std::mutex mutex;

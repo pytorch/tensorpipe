@@ -8,7 +8,21 @@
 
 #include <tensorpipe/test/transport/shm/shm_test.h>
 
+#include <sstream>
+
+#include <sys/types.h>
+#include <unistd.h>
+
 #include <tensorpipe/test/transport/transport_test.h>
+
+std::string createUniqueShmAddr() {
+  const ::testing::TestInfo* const test_info =
+      ::testing::UnitTest::GetInstance()->current_test_info();
+  std::ostringstream ss;
+  // Once we upgrade googletest, also use test_info->test_suite_name() here.
+  ss << "tensorpipe_test_" << test_info->name() << "_" << getpid();
+  return ss.str();
+}
 
 SHMTransportTestHelper helper;
 
