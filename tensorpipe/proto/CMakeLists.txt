@@ -13,7 +13,7 @@ protobuf_generate_cpp(
 add_library(tensorpipe_proto ${PROTOBUF_SOURCES})
 target_include_directories(tensorpipe_proto PUBLIC ${CMAKE_BINARY_DIR})
 target_include_directories(tensorpipe_proto PUBLIC ${Protobuf_INCLUDE_DIRS})
-target_link_libraries(tensorpipe_proto PRIVATE ${Protobuf_LIBRARIES})
+target_link_libraries(tensorpipe_proto PUBLIC ${Protobuf_LIBRARIES})
 
 # We need to have a CMakeLists.txt file in each subdirectory in order to
 # preserve the hierarchy, because CMake's protobuf tools flatten the tree.
