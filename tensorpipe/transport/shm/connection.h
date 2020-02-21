@@ -147,6 +147,11 @@ class Connection final : public transport::Connection,
   // preserved for longer, it must be copied elsewhere.
   //
   class ReadOperation {
+    enum Mode {
+      READ_LENGTH,
+      READ_PAYLOAD,
+    };
+
    public:
     explicit ReadOperation(void* ptr, size_t len, read_callback_fn fn);
 
@@ -155,11 +160,18 @@ class Connection final : public transport::Connection,
     // Processes a pending read.
     void handleRead(TConsumer& consumer);
 
+    bool completed() const {
+      return (mode_ == READ_PAYLOAD && bytesRead_ == len_);
+    }
+
     void handleError(const Error& error);
 
    private:
+    Mode mode_{READ_LENGTH};
     void* ptr_{nullptr};
+    std::shared_ptr<uint8_t> buf_;
     size_t len_{0};
+    size_t bytesRead_{0};
     read_callback_fn fn_;
   };
 
@@ -171,19 +183,30 @@ class Connection final : public transport::Connection,
   // after the callback has been called.
   //
   class WriteOperation {
+    enum Mode {
+      WRITE_LENGTH,
+      WRITE_PAYLOAD,
+    };
+
    public:
-    using write_fn = std::function<bool(TProducer&)>;
+    using write_fn = std::function<ssize_t(TProducer&)>;
     WriteOperation(const void* ptr, size_t len, write_callback_fn fn);
     WriteOperation(write_fn writer, write_callback_fn fn);
 
     bool handleWrite(TProducer& producer);
 
+    bool completed() const {
+      return (mode_ == WRITE_PAYLOAD && bytesWritten_ == len_);
+    }
+
     void handleError(const Error& error);
 
    private:
+    Mode mode_{WRITE_LENGTH};
     const void* ptr_{nullptr};
-    size_t len_{0};
     write_fn writer_;
+    size_t len_{0};
+    size_t bytesWritten_{0};
     write_callback_fn fn_;
   };
 

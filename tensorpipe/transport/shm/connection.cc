@@ -111,16 +111,21 @@ void Connection::write(
     write_callback_fn fn) {
   std::unique_lock<std::mutex> guard(mutex_);
   writeOperations_.emplace_back(
-      [&](TProducer& outbox) {
+      [&message](TProducer& outbox) -> ssize_t {
         size_t len = message.ByteSize();
         const auto ret = outbox.writeInTx(static_cast<uint32_t>(len));
-        if (ret == -ENOSPC) {
-          return false;
+        if (ret < 0) {
+          return ret;
         }
-        TP_THROW_SYSTEM_IF(ret < 0, -ret);
 
         RingBufferZeroCopyOutputStream os(&outbox, len);
-        return message.SerializeToZeroCopyStream(&os);
+        if (!message.SerializeToZeroCopyStream(&os)) {
+          return -ENOSPC;
+        }
+
+        TP_DCHECK(len == os.ByteCount());
+
+        return os.ByteCount();
       },
       std::move(fn));
   triggerProcessWriteOperations();
@@ -287,9 +292,22 @@ void Connection::processReadOperations(std::unique_lock<std::mutex> lock) {
   // requiring reentrant locking.
   lock.unlock();
 
+  int nbSuccessful = 0;
   for (auto& readOperation : operationsToRead) {
     readOperation.handleRead(*inbox_);
+
+    ++nbSuccessful;
     peerReactorTrigger_->run(peerOutboxReactorToken_.value());
+
+    if (!readOperation.completed()) {
+      lock.lock();
+      readOperations_.insert(
+          readOperations_.begin(),
+          operationsToRead.begin() + nbSuccessful,
+          operationsToRead.end());
+      lock.unlock();
+      return;
+    }
   }
 
   for (auto& readOperation : operationsToError) {
@@ -328,8 +346,7 @@ void Connection::processWriteOperations(std::unique_lock<std::mutex> lock) {
 
   int nbSuccessful = 0;
   for (auto& writeOperation : operationsToWrite) {
-    bool writeSuccess = writeOperation.handleWrite(*outbox_);
-    if (!writeSuccess) {
+    if (!writeOperation.handleWrite(*outbox_)) {
       lock.lock();
       writeOperations_.insert(
           writeOperations_.begin(),
@@ -407,27 +424,36 @@ void Connection::ReadOperation::handleRead(TConsumer& inbox) {
     break;
   }
 
-  if (ptr_ != nullptr) {
-    const auto ret = inbox.copyInTxWithSize<uint32_t>(
-        len_, reinterpret_cast<uint8_t*>(ptr_));
+  if (mode_ == READ_LENGTH) {
+    ssize_t ret;
+    const uint32_t* length_ptr;
+    std::tie(ret, length_ptr) = inbox.readInTx<uint32_t>();
     TP_THROW_SYSTEM_IF(ret < 0, -ret);
-    TP_DCHECK_EQ(ret, len_);
-    fn_(Error::kSuccess, ptr_, len_);
-  } else {
-    const auto tup = inbox.readInTxWithSize<uint32_t>();
-    const auto ret = std::get<0>(tup);
-    const auto ptr = std::get<1>(tup);
-    if (ret == -ENODATA) {
-      fn_(TP_CREATE_ERROR(EOFError), nullptr, 0);
-      return;
+    if (ptr_ != nullptr) {
+      TP_DCHECK_EQ(*length_ptr, len_);
+    } else {
+      len_ = *length_ptr;
+      // Note: this is a std::shared_ptr<uint8_t[]> semantically. A
+      // shared_ptr with array type is supported in C++17 and higher.
+      buf_ = std::shared_ptr<uint8_t>(
+          new uint8_t[len_], std::default_delete<uint8_t[]>());
+      ptr_ = buf_.get();
     }
-    TP_THROW_SYSTEM_IF(ret < 0, -ret);
-    fn_(Error::kSuccess, ptr, ret);
+    mode_ = READ_PAYLOAD;
   }
+
+  const auto ret = inbox.copyAtMostInTx(
+      len_ - bytesRead_, reinterpret_cast<uint8_t*>(ptr_) + bytesRead_);
+  TP_THROW_SYSTEM_IF(ret < 0, -ret);
+  bytesRead_ += ret;
 
   {
     const auto ret = inbox.commitTx();
     TP_THROW_SYSTEM_IF(ret < 0, -ret);
+  }
+
+  if (completed()) {
+    fn_(Error::kSuccess, ptr_, len_);
   }
 }
 
@@ -447,21 +473,11 @@ Connection::WriteOperation::WriteOperation(
     : writer_(std::move(writer)), fn_(std::move(fn)) {}
 
 bool Connection::WriteOperation::handleWrite(TProducer& outbox) {
-  // Attempting to write a message larger than the ring buffer. We might want to
-  // chunk it in the future.
-  const int buf_size = outbox.getHeader().kDataPoolByteSize;
-  if (len_ > buf_size) {
-    fn_(TP_CREATE_ERROR(ShortWriteError, len_, buf_size));
-    return true;
-  }
-
-  ssize_t ret;
-
   // Start write transaction.
   // Retry because this must succeed.
   // TODO: fallback if it doesn't.
   for (;;) {
-    ret = outbox.startTx();
+    const auto ret = outbox.startTx();
     TP_DCHECK(ret >= 0 || ret == -EAGAIN);
     if (ret < 0) {
       continue;
@@ -469,27 +485,41 @@ bool Connection::WriteOperation::handleWrite(TProducer& outbox) {
     break;
   }
 
-  bool writeSuccess = true;
-  if (ptr_ == nullptr) {
-    writeSuccess = writer_(outbox);
+  ssize_t ret;
+  if (writer_) {
+    ret = writer_(outbox);
+    mode_ = WRITE_PAYLOAD;
   } else {
-    ret = outbox.writeInTxWithSize<uint32_t>(len_, ptr_);
-    TP_THROW_SYSTEM_IF(ret < 0 && ret != -ENOSPC, -ret);
-    if (ret == -ENOSPC) {
-      writeSuccess = false;
+    if (mode_ == WRITE_LENGTH) {
+      ret = outbox.writeInTx(static_cast<uint32_t>(len_));
+      if (ret > 0) {
+        mode_ = WRITE_PAYLOAD;
+      }
+    }
+    if (mode_ == WRITE_PAYLOAD) {
+      ret = outbox.writeAtMostInTx(
+          len_, static_cast<const uint8_t*>(ptr_) + bytesWritten_);
+      if (ret > 0) {
+        bytesWritten_ += ret;
+      }
     }
   }
 
-  if (!writeSuccess) {
-    ret = outbox.cancelTx();
+  if (ret == -ENOSPC) {
+    const auto ret = outbox.cancelTx();
     TP_THROW_SYSTEM_IF(ret < 0, -ret);
     return false;
   }
-
-  ret = outbox.commitTx();
   TP_THROW_SYSTEM_IF(ret < 0, -ret);
 
-  fn_(Error::kSuccess);
+  {
+    const auto ret = outbox.commitTx();
+    TP_THROW_SYSTEM_IF(ret < 0, -ret);
+  }
+
+  if (completed()) {
+    fn_(Error::kSuccess);
+  }
 
   return true;
 }
