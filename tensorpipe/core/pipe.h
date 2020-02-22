@@ -158,7 +158,7 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
   void start_();
 
   //
-  // Entry points fro callbacks from transports and listener
+  // Entry points for callbacks from transports and listener
   // and helpers to prepare them
   //
 
@@ -190,13 +190,15 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
       bound_write_callback_fn = nullptr);
   void writeCallbackEntryPoint_(bound_write_callback_fn, const Error&);
 
-  using accept_callback_fn =
-      std::function<void(std::string, std::shared_ptr<transport::Connection>)>;
-  using bound_accept_callback_fn = std::function<
+  using connection_request_callback_fn = std::function<
+      void(const Error&, std::string, std::shared_ptr<transport::Connection>)>;
+  using bound_connection_request_callback_fn = std::function<
       void(Pipe&, std::string, std::shared_ptr<transport::Connection>)>;
-  accept_callback_fn wrapAcceptCallback_(bound_accept_callback_fn = nullptr);
-  void acceptCallbackEntryPoint_(
-      bound_accept_callback_fn,
+  connection_request_callback_fn wrapConnectionRequestCallback_(
+      bound_connection_request_callback_fn = nullptr);
+  void connectionRequestCallbackEntryPoint_(
+      bound_connection_request_callback_fn,
+      const Error&,
       std::string,
       std::shared_ptr<transport::Connection>);
 

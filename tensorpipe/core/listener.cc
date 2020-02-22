@@ -17,18 +17,8 @@ namespace tensorpipe {
 std::shared_ptr<Listener> Listener::create(
     std::shared_ptr<Context> context,
     const std::vector<std::string>& urls) {
-  std::unordered_map<std::string, std::shared_ptr<transport::Listener>>
-      transportListeners;
-  for (const auto& url : urls) {
-    std::string transport;
-    std::string address;
-    std::tie(transport, address) = splitSchemeOfURL(url);
-    transportListeners.emplace(
-        transport,
-        context->getContextForTransport_(transport)->listen(address));
-  }
-  auto listener = std::make_shared<Listener>(
-      ConstructorToken(), std::move(context), std::move(transportListeners));
+  auto listener =
+      std::make_shared<Listener>(ConstructorToken(), std::move(context), urls);
   listener->start_();
   return listener;
 }
@@ -36,40 +26,61 @@ std::shared_ptr<Listener> Listener::create(
 Listener::Listener(
     ConstructorToken /* unused */,
     std::shared_ptr<Context> context,
-    std::unordered_map<std::string, std::shared_ptr<transport::Listener>>
-        listeners)
-    : context_(std::move(context)), listeners_(std::move(listeners)) {
-  for (const auto& it : listeners_) {
-    addresses_[it.first] = it.second->addr();
+    const std::vector<std::string>& urls)
+    : context_(std::move(context)) {
+  for (const auto& url : urls) {
+    std::string transport;
+    std::string address;
+    std::tie(transport, address) = splitSchemeOfURL(url);
+    auto iter = context_->contexts_.find(transport);
+    if (iter == context_->contexts_.end()) {
+      TP_THROW_EINVAL() << "unsupported transport " << transport;
+    }
+    transport::Context& context = *(iter->second);
+    std::shared_ptr<transport::Listener> listener = context.listen(address);
+    addresses_.emplace(transport, listener->addr());
+    listeners_.emplace(transport, std::move(listener));
   }
 }
 
 void Listener::start_() {
+  std::unique_lock<std::mutex> lock(mutex_);
   for (const auto& listener : listeners_) {
     armListener_(listener.first);
   }
 }
 
+//
+// Entry points for user code
+//
+
 void Listener::accept(accept_callback_fn fn) {
+  std::unique_lock<std::mutex> lock(mutex_);
+
+  if (error_) {
+    triggerAcceptCallback_(std::move(fn), error_, std::shared_ptr<Pipe>());
+    return;
+  }
+
   acceptCallback_.arm(runIfAlive(
       *this,
       std::function<void(Listener&, const Error&, std::shared_ptr<Pipe>)>(
           [fn{std::move(fn)}](
               Listener& listener,
               const Error& error,
-              std::shared_ptr<Pipe> pipe) {
-            listener.context_->callCallback_(
-                [fn{std::move(fn)}, error, pipe{std::move(pipe)}]() {
-                  fn(error, std::move(pipe));
-                });
+              std::shared_ptr<Pipe> pipe) mutable {
+            listener.triggerAcceptCallback_(
+                std::move(fn), error, std::move(pipe));
           })));
 }
 
 const std::map<std::string, std::string>& Listener::addresses() const {
+  std::unique_lock<std::mutex> lock(mutex_);
   return addresses_;
 }
 
 const std::string& Listener::address(const std::string& transport) const {
+  std::unique_lock<std::mutex> lock(mutex_);
   const auto it = addresses_.find(transport);
   TP_THROW_ASSERT_IF(it == addresses_.end())
       << ": transport '" << transport << "' not in use by this listener.";
@@ -77,31 +88,174 @@ const std::string& Listener::address(const std::string& transport) const {
 }
 
 std::string Listener::url(const std::string& transport) const {
+  // std::unique_lock<std::mutex> lock(mutex_);
   return transport + "://" + address(transport);
 }
+
+//
+// Entry points for internal code
+//
+
+uint64_t Listener::registerConnectionRequest_(
+    connection_request_callback_fn fn) {
+  std::unique_lock<std::mutex> lock(mutex_);
+
+  uint64_t registrationId = nextConnectionRequestRegistrationId_++;
+  if (error_) {
+    triggerConnectionRequestCallback_(
+        std::move(fn),
+        error_,
+        std::string(),
+        std::shared_ptr<transport::Connection>());
+  } else {
+    connectionRequestRegistrations_.emplace(registrationId, std::move(fn));
+  }
+  return registrationId;
+}
+
+void Listener::unregisterConnectionRequest_(uint64_t registrationId) {
+  std::unique_lock<std::mutex> lock(mutex_);
+  connectionRequestRegistrations_.erase(registrationId);
+}
+
+//
+// Entry points for callbacks from transports
+//
+
+void Listener::readPacketCallbackEntryPoint_(
+    bound_read_packet_callback_fn fn,
+    const Error& error,
+    const proto::Packet& packet) {
+  std::unique_lock<std::mutex> lock(mutex_);
+  if (error_) {
+    return;
+  }
+  if (error) {
+    error_ = error;
+    flushEverythingOnError_();
+    return;
+  }
+  if (fn) {
+    fn(*this, packet);
+  }
+}
+
+void Listener::acceptCallbackEntryPoint_(
+    bound_accept_callback_fn fn,
+    const Error& error,
+    std::shared_ptr<transport::Connection> connection) {
+  std::unique_lock<std::mutex> lock(mutex_);
+  if (error_) {
+    return;
+  }
+  if (error) {
+    error_ = error;
+    flushEverythingOnError_();
+    return;
+  }
+  if (fn) {
+    fn(*this, std::move(connection));
+  }
+}
+
+//
+// Helpers to prepare callbacks from transports
+//
+
+Listener::transport_read_packet_callback_fn Listener::wrapReadPacketCallback_(
+    bound_read_packet_callback_fn fn) {
+  return runIfAlive(
+      *this,
+      std::function<void(Listener&, const Error&, const proto::Packet&)>(
+          [fn{std::move(fn)}](
+              Listener& listener,
+              const Error& error,
+              const proto::Packet& packet) {
+            listener.readPacketCallbackEntryPoint_(
+                std::move(fn), error, packet);
+          }));
+}
+
+Listener::transport_accept_callback_fn Listener::wrapAcceptCallback_(
+    bound_accept_callback_fn fn) {
+  return runIfAlive(
+      *this,
+      std::function<void(
+          Listener&, const Error&, std::shared_ptr<transport::Connection>)>(
+          [fn{std::move(fn)}](
+              Listener& listener,
+              const Error& error,
+              std::shared_ptr<transport::Connection> connection) {
+            listener.acceptCallbackEntryPoint_(
+                std::move(fn), error, std::move(connection));
+          }));
+}
+
+//
+// Helpers to schedule our callbacks into user code
+//
+
+void Listener::triggerAcceptCallback_(
+    accept_callback_fn fn,
+    const Error& error,
+    std::shared_ptr<Pipe> pipe) {
+  context_->callCallback_(
+      [fn{std::move(fn)}, error, pipe{std::move(pipe)}]() mutable {
+        fn(error, std::move(pipe));
+      });
+}
+
+void Listener::triggerConnectionRequestCallback_(
+    connection_request_callback_fn fn,
+    const Error& error,
+    std::string transport,
+    std::shared_ptr<transport::Connection> connection) {
+  context_->callCallback_([fn{std::move(fn)},
+                           error,
+                           transport{std::move(transport)},
+                           connection{std::move(connection)}]() mutable {
+    fn(error, std::move(transport), std::move(connection));
+  });
+}
+
+//
+// Error handling
+//
+
+void Listener::flushEverythingOnError_() {
+  acceptCallback_.triggerAll(
+      [&]() { return std::make_tuple(error_, std::shared_ptr<Pipe>()); });
+  for (auto& iter : connectionRequestRegistrations_) {
+    connection_request_callback_fn fn = std::move(iter.second);
+    triggerConnectionRequestCallback_(
+        std::move(fn),
+        error_,
+        std::string(),
+        std::shared_ptr<transport::Connection>());
+  }
+  connectionRequestRegistrations_.clear();
+}
+
+//
+// Everything else
+//
 
 void Listener::onAccept_(
     std::string transport,
     std::shared_ptr<transport::Connection> connection) {
   // Keep it alive until we figure out what to do with it.
   connectionsWaitingForHello_.insert(connection);
-  connection->read(runIfAlive(
-      *this,
-      std::function<void(Listener&, const Error&, const void*, size_t)>(
-          [transport{std::move(transport)},
-           weakConnection{std::weak_ptr<transport::Connection>(connection)}](
-              Listener& listener,
-              const Error& /* unused */,
-              const void* ptr,
-              size_t len) mutable {
-            // TODO Implement proper error handling in Listener.
-            std::shared_ptr<transport::Connection> connection =
-                weakConnection.lock();
-            TP_DCHECK(connection);
-            listener.connectionsWaitingForHello_.erase(connection);
-            listener.onConnectionHelloRead_(
-                std::move(transport), std::move(connection), ptr, len);
-          })));
+  connection->read<proto::Packet>(wrapReadPacketCallback_(
+      [transport{std::move(transport)},
+       weakConnection{std::weak_ptr<transport::Connection>(connection)}](
+          Listener& listener, const proto::Packet pbPacketIn) mutable {
+        std::shared_ptr<transport::Connection> connection =
+            weakConnection.lock();
+        TP_DCHECK(connection);
+        listener.connectionsWaitingForHello_.erase(connection);
+        listener.onConnectionHelloRead_(
+            std::move(transport), std::move(connection), pbPacketIn);
+      }));
 }
 
 void Listener::armListener_(std::string transport) {
@@ -110,30 +264,19 @@ void Listener::armListener_(std::string transport) {
     TP_THROW_EINVAL() << "unsupported transport " << transport;
   }
   auto transportListener = iter->second;
-  transportListener->accept(runIfAlive(
-      *this,
-      std::function<void(
-          Listener&, const Error&, std::shared_ptr<transport::Connection>)>(
-          [transport](
-              Listener& listener,
-              const Error& /* unused */,
-              std::shared_ptr<transport::Connection> connection) {
-            // TODO Implement proper error handling in Listener.
-            listener.onAccept_(transport, std::move(connection));
-            listener.armListener_(transport);
-          })));
+  transportListener->accept(wrapAcceptCallback_(
+      [transport](
+          Listener& listener,
+          std::shared_ptr<transport::Connection> connection) {
+        listener.onAccept_(transport, std::move(connection));
+        listener.armListener_(transport);
+      }));
 }
 
 void Listener::onConnectionHelloRead_(
     std::string transport,
     std::shared_ptr<transport::Connection> connection,
-    const void* ptr,
-    size_t len) {
-  proto::Packet pbPacketIn;
-  {
-    bool success = pbPacketIn.ParseFromArray(ptr, len);
-    TP_DCHECK(success) << "couldn't parse packet";
-  }
+    const proto::Packet& pbPacketIn) {
   if (pbPacketIn.has_spontaneous_connection()) {
     std::shared_ptr<Pipe> pipe = std::make_shared<Pipe>(
         Pipe::ConstructorToken(),
@@ -149,23 +292,15 @@ void Listener::onConnectionHelloRead_(
     uint64_t registrationId = pbRequestedConnection.registration_id();
     auto fn = std::move(connectionRequestRegistrations_.at(registrationId));
     connectionRequestRegistrations_.erase(registrationId);
-    fn(std::move(transport), std::move(connection));
+    triggerConnectionRequestCallback_(
+        std::move(fn),
+        Error::kSuccess,
+        std::move(transport),
+        std::move(connection));
   } else {
     TP_LOG_ERROR() << "packet contained unknown content: "
                    << pbPacketIn.type_case();
   }
-}
-
-uint64_t Listener::registerConnectionRequest_(
-    std::function<void(std::string, std::shared_ptr<transport::Connection>)>
-        fn) {
-  uint64_t registrationId = nextConnectionRequestRegistrationId_++;
-  connectionRequestRegistrations_.emplace(registrationId, std::move(fn));
-  return registrationId;
-}
-
-void Listener::unregisterConnectionRequest_(uint64_t registrationId) {
-  connectionRequestRegistrations_.erase(registrationId);
 }
 
 } // namespace tensorpipe

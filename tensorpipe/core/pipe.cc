@@ -281,12 +281,18 @@ void Pipe::writeCallbackEntryPoint_(
   }
 }
 
-void Pipe::acceptCallbackEntryPoint_(
-    bound_accept_callback_fn fn,
+void Pipe::connectionRequestCallbackEntryPoint_(
+    bound_connection_request_callback_fn fn,
+    const Error& error,
     std::string transport,
     std::shared_ptr<transport::Connection> connection) {
   std::unique_lock<std::mutex> lock(mutex_);
   if (error_) {
+    return;
+  }
+  if (error) {
+    error_ = error;
+    flushEverythingOnError_();
     return;
   }
   if (fn) {
@@ -369,18 +375,25 @@ Pipe::transport_write_callback_fn Pipe::wrapWriteCallback_(
           }));
 }
 
-Pipe::accept_callback_fn Pipe::wrapAcceptCallback_(
-    bound_accept_callback_fn fn) {
+Pipe::connection_request_callback_fn Pipe::wrapConnectionRequestCallback_(
+    bound_connection_request_callback_fn fn) {
   return runIfAlive(
       *this,
       std::function<void(
-          Pipe&, std::string, std::shared_ptr<transport::Connection>)>(
+          Pipe&,
+          const Error&,
+          std::string,
+          std::shared_ptr<transport::Connection>)>(
           [fn{std::move(fn)}](
               Pipe& pipe,
+              const Error& error,
               std::string transport,
               std::shared_ptr<transport::Connection> connection) mutable {
-            pipe.acceptCallbackEntryPoint_(
-                std::move(fn), std::move(transport), std::move(connection));
+            pipe.connectionRequestCallbackEntryPoint_(
+                std::move(fn),
+                error,
+                std::move(transport),
+                std::move(connection));
           }));
 }
 
@@ -455,26 +468,24 @@ void Pipe::flushEverythingOnError_() {
   readDescriptorCallback_.triggerAll(
       [&]() { return std::make_tuple(error_, Message()); });
   messagesBeingAllocated_.clear();
-  while (!messagesBeingRead_.empty()) {
-    Message message{std::move(messagesBeingRead_.front().message)};
-    read_callback_fn fn{std::move(messagesBeingRead_.front().callback)};
-    messagesBeingRead_.pop_front();
+  for (auto& iter : messagesBeingRead_) {
+    read_callback_fn fn{std::move(iter.callback)};
+    Message message{std::move(iter.message)};
     triggerReadCallback_(std::move(fn), error_, std::move(message));
   }
-  while (!writesWaitingUntilPipeIsEstablished_.empty()) {
-    Message message{
-        std::move(std::get<0>(writesWaitingUntilPipeIsEstablished_.front()))};
-    write_callback_fn fn{
-        std::move(std::get<1>(writesWaitingUntilPipeIsEstablished_.front()))};
-    writesWaitingUntilPipeIsEstablished_.pop_front();
+  messagesBeingRead_.clear();
+  for (auto& iter : writesWaitingUntilPipeIsEstablished_) {
+    write_callback_fn fn{std::move(std::get<1>(iter))};
+    Message message{std::move(std::get<0>(iter))};
     triggerWriteCallback_(std::move(fn), error_, std::move(message));
   }
-  while (!messagesBeingWritten_.empty()) {
-    Message message{std::move(messagesBeingWritten_.front().message)};
-    write_callback_fn fn{std::move(messagesBeingWritten_.front().callback)};
-    messagesBeingWritten_.pop_front();
+  writesWaitingUntilPipeIsEstablished_.clear();
+  for (auto& iter : messagesBeingWritten_) {
+    write_callback_fn fn{std::move(iter.callback)};
+    Message message{std::move(iter.message)};
     triggerWriteCallback_(std::move(fn), error_, std::move(message));
   }
+  messagesBeingWritten_.clear();
 }
 
 //
@@ -603,7 +614,7 @@ void Pipe::onReadWhileServerWaitingForBrochure_(
       transport_ = transport;
       TP_DCHECK(!registrationId_.has_value());
       registrationId_.emplace(
-          listener_->registerConnectionRequest_(wrapAcceptCallback_(
+          listener_->registerConnectionRequest_(wrapConnectionRequestCallback_(
               [](Pipe& pipe,
                  std::string transport,
                  std::shared_ptr<transport::Connection> connection) {
@@ -640,7 +651,7 @@ void Pipe::onReadWhileServerWaitingForBrochure_(
     }
 
     channelRegistrationIds_[name] =
-        listener_->registerConnectionRequest_(wrapAcceptCallback_(
+        listener_->registerConnectionRequest_(wrapConnectionRequestCallback_(
             [name](
                 Pipe& pipe,
                 std::string transport,

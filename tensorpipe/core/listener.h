@@ -48,7 +48,11 @@ class Listener final : public std::enable_shared_from_this<Listener> {
   Listener(
       ConstructorToken,
       std::shared_ptr<Context>,
-      std::unordered_map<std::string, std::shared_ptr<transport::Listener>>);
+      const std::vector<std::string>&);
+
+  //
+  // Entry points for user code
+  //
 
   using accept_callback_fn =
       std::function<void(const Error&, std::shared_ptr<Pipe>)>;
@@ -77,6 +81,12 @@ class Listener final : public std::enable_shared_from_this<Listener> {
   std::string url(const std::string& transport) const;
 
  private:
+  using connection_request_callback_fn = std::function<
+      void(const Error&, std::string, std::shared_ptr<transport::Connection>)>;
+
+  mutable std::mutex mutex_;
+  Error error_;
+
   std::shared_ptr<Context> context_;
   std::unordered_map<std::string, std::shared_ptr<transport::Listener>>
       listeners_;
@@ -84,31 +94,11 @@ class Listener final : public std::enable_shared_from_this<Listener> {
   RearmableCallback<accept_callback_fn, const Error&, std::shared_ptr<Pipe>>
       acceptCallback_;
 
-  void start_();
-  void armListener_(std::string);
-  void onAccept_(std::string, std::shared_ptr<transport::Connection>);
-  void onConnectionHelloRead_(
-      std::string,
-      std::shared_ptr<transport::Connection>,
-      const void*,
-      size_t);
-
-  //
-  // Utilities for internal components to say they expect an incoming connection
-  //
-
   // Needed to keep them alive.
   std::unordered_set<std::shared_ptr<transport::Connection>>
       connectionsWaitingForHello_;
 
   uint64_t nextConnectionRequestRegistrationId_{0};
-
-  using connection_request_callback_fn =
-      std::function<void(std::string, std::shared_ptr<transport::Connection>)>;
-
-  uint64_t registerConnectionRequest_(connection_request_callback_fn);
-
-  void unregisterConnectionRequest_(uint64_t);
 
   // FIXME Consider using a (ordered) map, because keys are IDs which are
   // generated in sequence and thus we can do a quick (but partial) check of
@@ -116,6 +106,79 @@ class Listener final : public std::enable_shared_from_this<Listener> {
   // largest key, which in an ordered map are the first and last item.
   std::unordered_map<uint64_t, connection_request_callback_fn>
       connectionRequestRegistrations_;
+
+  //
+  // Initialization
+  //
+
+  void start_();
+
+  //
+  // Entry points for internal code
+  //
+
+  uint64_t registerConnectionRequest_(connection_request_callback_fn);
+
+  void unregisterConnectionRequest_(uint64_t);
+
+  //
+  // Entry points for callbacks from transports and listener
+  // and helpers to prepare them
+  //
+
+  using transport_read_packet_callback_fn =
+      transport::Connection::read_proto_callback_fn<proto::Packet>;
+  using bound_read_packet_callback_fn =
+      std::function<void(Listener&, const proto::Packet&)>;
+  transport_read_packet_callback_fn wrapReadPacketCallback_(
+      bound_read_packet_callback_fn = nullptr);
+  void readPacketCallbackEntryPoint_(
+      bound_read_packet_callback_fn,
+      const Error&,
+      const proto::Packet&);
+
+  using transport_accept_callback_fn =
+      std::function<void(const Error&, std::shared_ptr<transport::Connection>)>;
+  using bound_accept_callback_fn =
+      std::function<void(Listener&, std::shared_ptr<transport::Connection>)>;
+  transport_accept_callback_fn wrapAcceptCallback_(
+      bound_accept_callback_fn = nullptr);
+  void acceptCallbackEntryPoint_(
+      bound_accept_callback_fn,
+      const Error&,
+      std::shared_ptr<transport::Connection>);
+
+  //
+  // Helpers to schedule our callbacks into user code
+  //
+
+  void triggerAcceptCallback_(
+      accept_callback_fn,
+      const Error&,
+      std::shared_ptr<Pipe>);
+
+  void triggerConnectionRequestCallback_(
+      connection_request_callback_fn,
+      const Error&,
+      std::string,
+      std::shared_ptr<transport::Connection>);
+
+  //
+  // Error handling
+  //
+
+  void flushEverythingOnError_();
+
+  //
+  // Everything else
+  //
+
+  void armListener_(std::string);
+  void onAccept_(std::string, std::shared_ptr<transport::Connection>);
+  void onConnectionHelloRead_(
+      std::string,
+      std::shared_ptr<transport::Connection>,
+      const proto::Packet&);
 
   friend class Context;
   friend class Pipe;
