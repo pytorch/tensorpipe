@@ -9,7 +9,6 @@
 #include <tensorpipe/benchmark/measurements.h>
 #include <tensorpipe/benchmark/options.h>
 #include <tensorpipe/common/defs.h>
-#include <tensorpipe/common/queue.h>
 #include <tensorpipe/core/context.h>
 #include <tensorpipe/core/listener.h>
 #include <tensorpipe/core/pipe.h>
@@ -19,15 +18,15 @@
 using namespace tensorpipe;
 using namespace tensorpipe::benchmark;
 
-std::unique_ptr<uint8_t[]> data;
-size_t dataLen;
-
-std::promise<void> doneProm;
-std::future<void> doneFut = doneProm.get_future();
-
 Measurements measurements;
 
-static void printMeasurements() {
+struct Data {
+  std::unique_ptr<uint8_t[]> expected;
+  std::unique_ptr<uint8_t[]> temporary;
+  size_t len;
+};
+
+static void printMeasurements(Measurements& measurements, size_t dataLen) {
   measurements.sort();
   fprintf(
       stderr,
@@ -52,8 +51,7 @@ static void printMeasurements() {
 }
 
 static std::unique_ptr<uint8_t[]> createData(const int chunkBytes) {
-  auto data = std::unique_ptr<uint8_t[]>(
-      new uint8_t[chunkBytes], std::default_delete<uint8_t[]>());
+  auto data = std::make_unique<uint8_t[]>(chunkBytes);
   // Generate fixed data for validation between peers
   for (int i = 0; i < chunkBytes; i++) {
     data[i] = (i >> 8) ^ (i & 0xff);
@@ -61,23 +59,34 @@ static std::unique_ptr<uint8_t[]> createData(const int chunkBytes) {
   return data;
 }
 
-static void serverPongPingNonBlock(std::shared_ptr<Pipe> pipe, int& ioNum) {
-  pipe->readDescriptor([pipe, &ioNum](const Error& error, Message&& message) {
+static void serverPongPingNonBlock(
+    std::shared_ptr<Pipe> pipe,
+    int& ioNum,
+    std::promise<void>& doneProm,
+    Data& data,
+    Measurements& measurements) {
+  pipe->readDescriptor([pipe, &ioNum, &doneProm, &data, &measurements](
+                           const Error& error, Message&& message) {
     TP_THROW_ASSERT_IF(error) << error.what();
-    TP_DCHECK_EQ(message.length, dataLen);
-    message.data = std::make_unique<uint8_t[]>(message.length);
+    TP_DCHECK_EQ(message.length, data.len);
+    message.data = std::move(data.temporary);
     pipe->read(
         std::move(message),
-        [pipe, &ioNum](const Error& error, Message&& message) {
+        [pipe, &ioNum, &doneProm, &data, &measurements](
+            const Error& error, Message&& message) {
           TP_THROW_ASSERT_IF(error) << error.what();
-          int cmp = memcmp(message.data.get(), data.get(), message.length);
+          int cmp =
+              memcmp(message.data.get(), data.expected.get(), message.length);
           TP_DCHECK_EQ(cmp, 0);
           pipe->write(
               std::move(message),
-              [pipe, &ioNum](const Error& error, Message&& message) {
+              [pipe, &ioNum, &doneProm, &data, &measurements](
+                  const Error& error, Message&& message) {
                 TP_THROW_ASSERT_IF(error) << error.what();
+                data.temporary = std::move(message.data);
                 if (--ioNum > 0) {
-                  serverPongPingNonBlock(pipe, ioNum);
+                  serverPongPingNonBlock(
+                      pipe, ioNum, doneProm, data, measurements);
                 } else {
                   doneProm.set_value();
                 }
@@ -89,7 +98,12 @@ static void serverPongPingNonBlock(std::shared_ptr<Pipe> pipe, int& ioNum) {
 // Start with receiving ping
 static void runServer(const Options& options) {
   std::string addr = options.address;
-  int ioNum = options.io_num;
+  int ioNum = options.ioNum;
+  Data data = {createData(options.chunkBytes),
+               std::make_unique<uint8_t[]>(options.chunkBytes),
+               options.chunkBytes};
+  Measurements measurements;
+  measurements.reserve(options.ioNum);
 
   std::shared_ptr<Context> context = Context::create();
   if (options.transport == "shm") {
@@ -104,60 +118,73 @@ static void runServer(const Options& options) {
   }
 
   std::promise<std::shared_ptr<Pipe>> pipeProm;
-  std::future<std::shared_ptr<Pipe>> pipeFut = pipeProm.get_future();
   std::shared_ptr<Listener> listener = Listener::create(context, {addr});
   listener->accept([&](const Error& error, std::shared_ptr<Pipe> pipe) {
     TP_THROW_ASSERT_IF(error) << error.what();
-    // Save connection and notify conn future obj
     pipeProm.set_value(std::move(pipe));
   });
-  std::shared_ptr<Pipe> pipe = pipeFut.get();
+  std::shared_ptr<Pipe> pipe = pipeProm.get_future().get();
 
-  serverPongPingNonBlock(std::move(pipe), ioNum);
+  std::promise<void> doneProm;
+  serverPongPingNonBlock(std::move(pipe), ioNum, doneProm, data, measurements);
 
-  doneFut.get();
+  doneProm.get_future().get();
   listener.reset();
   context->join();
 }
 
-static void clientPingPongNonBlock(std::shared_ptr<Pipe> pipe, int& ioNum) {
+static void clientPingPongNonBlock(
+    std::shared_ptr<Pipe> pipe,
+    int& ioNum,
+    std::promise<void>& doneProm,
+    Data& data,
+    Measurements& measurements) {
   measurements.markStart();
   Message message;
-  message.data = std::move(data);
-  message.length = dataLen;
+  message.data = std::move(data.expected);
+  message.length = data.len;
   pipe->write(
       std::move(message),
-      [pipe, &ioNum](const Error& error, Message&& message) {
+      [pipe, &ioNum, &doneProm, &data, &measurements](
+          const Error& error, Message&& message) {
         TP_THROW_ASSERT_IF(error) << error.what();
-        data = std::move(message.data);
-        pipe->readDescriptor(
-            [pipe, &ioNum](const Error& error, Message&& message) {
-              TP_THROW_ASSERT_IF(error) << error.what();
-              TP_DCHECK_EQ(message.length, dataLen);
-              message.data = std::make_unique<uint8_t[]>(message.length);
-              pipe->read(
-                  std::move(message),
-                  [pipe, &ioNum](const Error& error, Message&& message) {
-                    TP_THROW_ASSERT_IF(error) << error.what();
-                    measurements.markStop();
-                    int cmp =
-                        memcmp(message.data.get(), data.get(), message.length);
-                    TP_DCHECK_EQ(cmp, 0);
-                    if (--ioNum > 0) {
-                      clientPingPongNonBlock(pipe, ioNum);
-                    } else {
-                      printMeasurements();
-                      doneProm.set_value();
-                    }
-                  });
-            });
+        data.expected = std::move(message.data);
+        pipe->readDescriptor([pipe, &ioNum, &doneProm, &data, &measurements](
+                                 const Error& error, Message&& message) {
+          TP_THROW_ASSERT_IF(error) << error.what();
+          TP_DCHECK_EQ(message.length, data.len);
+          message.data = std::move(data.temporary);
+          pipe->read(
+              std::move(message),
+              [pipe, &ioNum, &doneProm, &data, &measurements](
+                  const Error& error, Message&& message) {
+                measurements.markStop();
+                TP_THROW_ASSERT_IF(error) << error.what();
+                int cmp = memcmp(
+                    message.data.get(), data.expected.get(), message.length);
+                TP_DCHECK_EQ(cmp, 0);
+                data.temporary = std::move(message.data);
+                if (--ioNum > 0) {
+                  clientPingPongNonBlock(
+                      pipe, ioNum, doneProm, data, measurements);
+                } else {
+                  printMeasurements(measurements, data.len);
+                  doneProm.set_value();
+                }
+              });
+        });
       });
 }
 
 // Start with sending ping
 static void runClient(const Options& options) {
   std::string addr = options.address;
-  int ioNum = options.io_num;
+  int ioNum = options.ioNum;
+  Data data = {createData(options.chunkBytes),
+               std::make_unique<uint8_t[]>(options.chunkBytes),
+               options.chunkBytes};
+  Measurements measurements;
+  measurements.reserve(options.ioNum);
 
   std::shared_ptr<Context> context = Context::create();
   if (options.transport == "shm") {
@@ -172,9 +199,10 @@ static void runClient(const Options& options) {
   }
   std::shared_ptr<Pipe> pipe = Pipe::create(context, addr);
 
-  clientPingPongNonBlock(std::move(pipe), ioNum);
+  std::promise<void> doneProm;
+  clientPingPongNonBlock(std::move(pipe), ioNum, doneProm, data, measurements);
 
-  doneFut.get();
+  doneProm.get_future().get();
   context->join();
 }
 
@@ -183,13 +211,8 @@ int main(int argc, char** argv) {
   std::cout << "mode = " << x.mode << "\n";
   std::cout << "transport = " << x.transport << "\n";
   std::cout << "address = " << x.address << "\n";
-  std::cout << "io_num = " << x.io_num << "\n";
-  std::cout << "chunk_bytes = " << x.chunk_bytes << "\n";
-
-  // Initialize global
-  data = createData(x.chunk_bytes);
-  dataLen = x.chunk_bytes;
-  measurements.reserve(x.io_num);
+  std::cout << "io_num = " << x.ioNum << "\n";
+  std::cout << "chunk_bytes = " << x.chunkBytes << "\n";
 
   if (x.mode == "listen") {
     runServer(x);

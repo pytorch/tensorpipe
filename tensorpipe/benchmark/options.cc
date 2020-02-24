@@ -48,7 +48,7 @@ static void validateOptions(Options options, const char* argv0) {
     fprintf(stderr, "Missing argument: --address must be set\n");
     status = EXIT_FAILURE;
   }
-  if (options.io_num <= 0) {
+  if (options.ioNum <= 0) {
     fprintf(stderr, "Missing argument: --io-num must be set\n");
     status = EXIT_FAILURE;
   }
@@ -97,10 +97,10 @@ struct Options parseOptions(int argc, char** argv) {
         options.address = std::string(optarg, strlen(optarg));
         break;
       case 'n':
-        options.io_num = atoi(optarg);
+        options.ioNum = atoi(optarg);
         break;
       case 'c':
-        options.chunk_bytes = atoi(optarg);
+        options.chunkBytes = atoi(optarg);
         break;
       case 'h':
         // help
