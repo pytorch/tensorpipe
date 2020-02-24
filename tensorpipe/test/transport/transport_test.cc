@@ -136,21 +136,19 @@ TEST_P(TransportTest, IncomingConnectionsAreQueued) {
 
 TEST_P(TransportTest, ProtobufWrite) {
   constexpr size_t kSize = 0x42;
-  tensorpipe::proto::MessageDescriptor message;
-  message.set_size_in_bytes(kSize);
 
   this->test_connection(
       [&](std::shared_ptr<Connection> conn) {
-        conn->read<tensorpipe::proto::MessageDescriptor>(
-            [&, conn](
-                const Error& error,
-                const tensorpipe::proto::MessageDescriptor& receivedMsg) {
-              ASSERT_FALSE(error) << error.what();
-              ASSERT_EQ(receivedMsg.size_in_bytes(), kSize);
-            });
+        auto message = std::make_shared<tensorpipe::proto::MessageDescriptor>();
+        conn->read(*message, [&, conn, message](const Error& error) {
+          ASSERT_FALSE(error) << error.what();
+          ASSERT_EQ(message->size_in_bytes(), kSize);
+        });
       },
       [&](std::shared_ptr<Connection> conn) {
-        conn->write(message, [conn](const Error& error) {
+        auto message = std::make_shared<tensorpipe::proto::MessageDescriptor>();
+        message->set_size_in_bytes(kSize);
+        conn->write(*message, [conn, message](const Error& error) {
           ASSERT_FALSE(error) << error.what();
         });
       });

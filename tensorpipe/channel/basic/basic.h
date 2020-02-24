@@ -109,15 +109,13 @@ class BasicChannel : public Channel,
  protected:
   // Callback types used by the transport.
   using TReadCallback = transport::Connection::read_callback_fn;
-  using TReadProtoCallback =
-      transport::Connection::read_proto_callback_fn<proto::Packet>;
+  using TReadProtoCallback = transport::Connection::read_proto_callback_fn;
   using TWriteCallback = transport::Connection::write_callback_fn;
 
   // Callback types used in this class (in case of success).
   using TBoundReadCallback =
       std::function<void(BasicChannel&, const void*, size_t)>;
-  using TBoundReadProtoCallback =
-      std::function<void(BasicChannel&, const proto::Packet&)>;
+  using TBoundReadProtoCallback = std::function<void(BasicChannel&)>;
   using TBoundWriteCallback = std::function<void(BasicChannel&)>;
 
   // Generate callback to use with the underlying connection. The
@@ -149,7 +147,6 @@ class BasicChannel : public Channel,
   // Called when callback returned by `wrapReadCallback_` gets called.
   void readProtoCallbackEntryPoint_(
       const Error& error,
-      const proto::Packet& packet,
       TBoundReadProtoCallback fn);
 
   // Called when callback returned by `wrapWriteCallback_` gets called.

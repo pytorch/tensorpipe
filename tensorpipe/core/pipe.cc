@@ -96,15 +96,17 @@ void Pipe::start_() {
         *pbPacketOut2,
         wrapWriteCallback_([pbPacketOut2](Pipe& /* unused */) {}));
     state_ = CLIENT_WAITING_FOR_BROCHURE_ANSWER;
-    connection_->read(wrapReadPacketCallback_(
-        [](Pipe& pipe, const proto::Packet& pbPacketIn) {
-          pipe.onReadWhileClientWaitingForBrochureAnswer_(pbPacketIn);
+    auto pbPacketIn = std::make_shared<proto::Packet>();
+    connection_->read(
+        *pbPacketIn, wrapReadPacketCallback_([pbPacketIn](Pipe& pipe) {
+          pipe.onReadWhileClientWaitingForBrochureAnswer_(*pbPacketIn);
         }));
   }
   if (state_ == SERVER_WAITING_FOR_BROCHURE) {
-    connection_->read(wrapReadPacketCallback_(
-        [](Pipe& pipe, const proto::Packet& pbPacketIn) {
-          pipe.onReadWhileServerWaitingForBrochure_(pbPacketIn);
+    auto pbPacketIn = std::make_shared<proto::Packet>();
+    connection_->read(
+        *pbPacketIn, wrapReadPacketCallback_([pbPacketIn](Pipe& pipe) {
+          pipe.onReadWhileServerWaitingForBrochure_(*pbPacketIn);
         }));
   }
 }
@@ -201,9 +203,10 @@ void Pipe::read(Message&& message, read_callback_fn fn) {
 
   messagesBeingRead_.push_back(std::move(messageBeingRead));
 
+  auto pbPacketIn = std::make_shared<proto::Packet>();
   connection_->read(
-      wrapReadPacketCallback_([](Pipe& pipe, const proto::Packet& pbPacketIn) {
-        pipe.onReadOfMessageDescriptor_(pbPacketIn);
+      *pbPacketIn, wrapReadPacketCallback_([pbPacketIn](Pipe& pipe) {
+        pipe.onReadOfMessageDescriptor_(*pbPacketIn);
       }));
 }
 
@@ -248,8 +251,7 @@ void Pipe::readCallbackEntryPoint_(
 
 void Pipe::readPacketCallbackEntryPoint_(
     bound_read_packet_callback_fn fn,
-    const Error& error,
-    const proto::Packet& packet) {
+    const Error& error) {
   std::unique_lock<std::mutex> lock(mutex_);
   if (error_) {
     return;
@@ -260,7 +262,7 @@ void Pipe::readPacketCallbackEntryPoint_(
     return;
   }
   if (fn) {
-    fn(*this, packet);
+    fn(*this);
   }
 }
 
@@ -356,12 +358,9 @@ Pipe::transport_read_packet_callback_fn Pipe::wrapReadPacketCallback_(
     bound_read_packet_callback_fn fn) {
   return runIfAlive(
       *this,
-      std::function<void(Pipe&, const Error&, const proto::Packet&)>(
-          [fn{std::move(fn)}](
-              Pipe& pipe,
-              const Error& error,
-              const proto::Packet& packet) mutable {
-            pipe.readPacketCallbackEntryPoint_(std::move(fn), error, packet);
+      std::function<void(Pipe&, const Error&)>(
+          [fn{std::move(fn)}](Pipe& pipe, const Error& error) mutable {
+            pipe.readPacketCallbackEntryPoint_(std::move(fn), error);
           }));
 }
 
@@ -671,9 +670,10 @@ void Pipe::onReadWhileServerWaitingForBrochure_(
   if (!needToWaitForConnections) {
     state_ = ESTABLISHED;
     doWritesAccumulatedWhileWaitingForPipeToBeEstablished_();
-    connection_->read(wrapReadPacketCallback_(
-        [](Pipe& pipe, const proto::Packet& pbPacketIn) {
-          pipe.onReadOfMessageDescriptor_(pbPacketIn);
+    auto pbPacketIn = std::make_shared<proto::Packet>();
+    connection_->read(
+        *pbPacketIn, wrapReadPacketCallback_([pbPacketIn](Pipe& pipe) {
+          pipe.onReadOfMessageDescriptor_(*pbPacketIn);
         }));
   } else {
     state_ = SERVER_WAITING_FOR_CONNECTIONS;
@@ -736,9 +736,10 @@ void Pipe::onReadWhileClientWaitingForBrochureAnswer_(
 
   state_ = ESTABLISHED;
   doWritesAccumulatedWhileWaitingForPipeToBeEstablished_();
+  auto pbPacketIn2 = std::make_shared<proto::Packet>();
   connection_->read(
-      wrapReadPacketCallback_([](Pipe& pipe, const proto::Packet& pbPacketIn) {
-        pipe.onReadOfMessageDescriptor_(pbPacketIn);
+      *pbPacketIn2, wrapReadPacketCallback_([pbPacketIn2](Pipe& pipe) {
+        pipe.onReadOfMessageDescriptor_(*pbPacketIn2);
       }));
 }
 
@@ -756,9 +757,10 @@ void Pipe::onAcceptWhileServerWaitingForConnection_(
   if (!registrationId_.has_value() && channelRegistrationIds_.empty()) {
     state_ = ESTABLISHED;
     doWritesAccumulatedWhileWaitingForPipeToBeEstablished_();
-    connection_->read(wrapReadPacketCallback_(
-        [](Pipe& pipe, const proto::Packet& pbPacketIn) {
-          pipe.onReadOfMessageDescriptor_(pbPacketIn);
+    auto pbPacketIn = std::make_shared<proto::Packet>();
+    connection_->read(
+        *pbPacketIn, wrapReadPacketCallback_([pbPacketIn](Pipe& pipe) {
+          pipe.onReadOfMessageDescriptor_(*pbPacketIn);
         }));
   }
 }
@@ -790,9 +792,10 @@ void Pipe::onAcceptWhileServerWaitingForChannel_(
   if (!registrationId_.has_value() && channelRegistrationIds_.empty()) {
     state_ = ESTABLISHED;
     doWritesAccumulatedWhileWaitingForPipeToBeEstablished_();
-    connection_->read(wrapReadPacketCallback_(
-        [](Pipe& pipe, const proto::Packet& pbPacketIn) {
-          pipe.onReadOfMessageDescriptor_(pbPacketIn);
+    auto pbPacketIn = std::make_shared<proto::Packet>();
+    connection_->read(
+        *pbPacketIn, wrapReadPacketCallback_([pbPacketIn](Pipe& pipe) {
+          pipe.onReadOfMessageDescriptor_(*pbPacketIn);
         }));
   }
 }

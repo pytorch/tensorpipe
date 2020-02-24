@@ -124,8 +124,7 @@ void Listener::unregisterConnectionRequest_(uint64_t registrationId) {
 
 void Listener::readPacketCallbackEntryPoint_(
     bound_read_packet_callback_fn fn,
-    const Error& error,
-    const proto::Packet& packet) {
+    const Error& error) {
   std::unique_lock<std::mutex> lock(mutex_);
   if (error_) {
     return;
@@ -136,7 +135,7 @@ void Listener::readPacketCallbackEntryPoint_(
     return;
   }
   if (fn) {
-    fn(*this, packet);
+    fn(*this);
   }
 }
 
@@ -166,13 +165,9 @@ Listener::transport_read_packet_callback_fn Listener::wrapReadPacketCallback_(
     bound_read_packet_callback_fn fn) {
   return runIfAlive(
       *this,
-      std::function<void(Listener&, const Error&, const proto::Packet&)>(
-          [fn{std::move(fn)}](
-              Listener& listener,
-              const Error& error,
-              const proto::Packet& packet) {
-            listener.readPacketCallbackEntryPoint_(
-                std::move(fn), error, packet);
+      std::function<void(Listener&, const Error&)>(
+          [fn{std::move(fn)}](Listener& listener, const Error& error) {
+            listener.readPacketCallbackEntryPoint_(std::move(fn), error);
           }));
 }
 
@@ -245,17 +240,21 @@ void Listener::onAccept_(
     std::shared_ptr<transport::Connection> connection) {
   // Keep it alive until we figure out what to do with it.
   connectionsWaitingForHello_.insert(connection);
-  connection->read<proto::Packet>(wrapReadPacketCallback_(
-      [transport{std::move(transport)},
-       weakConnection{std::weak_ptr<transport::Connection>(connection)}](
-          Listener& listener, const proto::Packet pbPacketIn) mutable {
-        std::shared_ptr<transport::Connection> connection =
-            weakConnection.lock();
-        TP_DCHECK(connection);
-        listener.connectionsWaitingForHello_.erase(connection);
-        listener.onConnectionHelloRead_(
-            std::move(transport), std::move(connection), pbPacketIn);
-      }));
+  auto pbPacketIn = std::make_shared<proto::Packet>();
+  connection->read(
+      *pbPacketIn,
+      wrapReadPacketCallback_(
+          [pbPacketIn,
+           transport{std::move(transport)},
+           weakConnection{std::weak_ptr<transport::Connection>(connection)}](
+              Listener& listener) mutable {
+            std::shared_ptr<transport::Connection> connection =
+                weakConnection.lock();
+            TP_DCHECK(connection);
+            listener.connectionsWaitingForHello_.erase(connection);
+            listener.onConnectionHelloRead_(
+                std::move(transport), std::move(connection), *pbPacketIn);
+          }));
 }
 
 void Listener::armListener_(std::string transport) {

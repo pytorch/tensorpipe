@@ -91,9 +91,10 @@ void BasicChannel::init_() {
 }
 
 void BasicChannel::readPacket_() {
-  connection_->read(wrapReadProtoCallback_(
-      [](BasicChannel& channel, const proto::Packet& packet) {
-        channel.onPacket_(packet);
+  auto packet = std::make_shared<proto::Packet>();
+  connection_->read(
+      *packet, wrapReadProtoCallback_([packet](BasicChannel& channel) {
+        channel.onPacket_(*packet);
       }));
 }
 
@@ -220,12 +221,9 @@ BasicChannel::TReadProtoCallback BasicChannel::wrapReadProtoCallback_(
     TBoundReadProtoCallback fn) {
   return runIfAlive(
       *this,
-      std::function<void(BasicChannel&, const Error&, const proto::Packet&)>(
-          [fn{std::move(fn)}](
-              BasicChannel& channel,
-              const Error& error,
-              const proto::Packet& packet) {
-            channel.readProtoCallbackEntryPoint_(error, packet, std::move(fn));
+      std::function<void(BasicChannel&, const Error&)>(
+          [fn{std::move(fn)}](BasicChannel& channel, const Error& error) {
+            channel.readProtoCallbackEntryPoint_(error, std::move(fn));
           }));
 }
 
@@ -254,13 +252,12 @@ void BasicChannel::readCallbackEntryPoint_(
 
 void BasicChannel::readProtoCallbackEntryPoint_(
     const Error& error,
-    const proto::Packet& packet,
     TBoundReadProtoCallback fn) {
   if (processError(error)) {
     return;
   }
   if (fn) {
-    fn(*this, packet);
+    fn(*this);
   }
 }
 

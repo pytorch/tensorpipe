@@ -76,24 +76,24 @@ TEST_P(TransportTest, QueueWrites) {
 
 TEST_P(TransportTest, ProtobufWriteWrapAround) {
   constexpr size_t kSize = (3 * shm::Connection::kDefaultSize) / 4;
-  tensorpipe::proto::ChannelAdvertisement message;
-  message.set_domain_descriptor(std::string(kSize, 'B'));
 
   this->test_connection(
       [&](std::shared_ptr<Connection> conn) {
         for (int i = 0; i < 2; ++i) {
-          conn->read<tensorpipe::proto::ChannelAdvertisement>(
-              [&, conn](
-                  const Error& error,
-                  const tensorpipe::proto::ChannelAdvertisement& receivedMsg) {
-                ASSERT_FALSE(error) << error.what();
-                ASSERT_EQ(receivedMsg.domain_descriptor().length(), kSize);
-              });
+          auto message =
+              std::make_shared<tensorpipe::proto::ChannelAdvertisement>();
+          conn->read(*message, [&, conn, message](const Error& error) {
+            ASSERT_FALSE(error) << error.what();
+            ASSERT_EQ(message->domain_descriptor().length(), kSize);
+          });
         }
       },
       [&](std::shared_ptr<Connection> conn) {
         for (int i = 0; i < 2; ++i) {
-          conn->write(message, [conn](const Error& error) {
+          auto message =
+              std::make_shared<tensorpipe::proto::ChannelAdvertisement>();
+          message->set_domain_descriptor(std::string(kSize, 'B'));
+          conn->write(*message, [conn, message](const Error& error) {
             ASSERT_FALSE(error) << error.what();
           });
         }

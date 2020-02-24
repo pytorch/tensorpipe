@@ -127,15 +127,13 @@ class Listener final : public std::enable_shared_from_this<Listener> {
   //
 
   using transport_read_packet_callback_fn =
-      transport::Connection::read_proto_callback_fn<proto::Packet>;
-  using bound_read_packet_callback_fn =
-      std::function<void(Listener&, const proto::Packet&)>;
+      transport::Connection::read_proto_callback_fn;
+  using bound_read_packet_callback_fn = std::function<void(Listener&)>;
   transport_read_packet_callback_fn wrapReadPacketCallback_(
       bound_read_packet_callback_fn = nullptr);
   void readPacketCallbackEntryPoint_(
       bound_read_packet_callback_fn,
-      const Error&,
-      const proto::Packet&);
+      const Error&);
 
   using transport_accept_callback_fn =
       std::function<void(const Error&, std::shared_ptr<transport::Connection>)>;

@@ -13,6 +13,18 @@
 namespace tensorpipe {
 namespace transport {
 
+void Connection::read(
+    google::protobuf::MessageLite& message,
+    read_proto_callback_fn fn) {
+  read([&message, fn{std::move(fn)}](
+           const Error& error, const void* ptr, size_t len) {
+    if (!error) {
+      message.ParseFromArray(ptr, len);
+    }
+    fn(error);
+  });
+}
+
 void Connection::write(
     const google::protobuf::MessageLite& message,
     write_callback_fn fn) {
