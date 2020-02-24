@@ -4,9 +4,18 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-add_executable(benchmark benchmark.cc options.cc)
-target_link_libraries("benchmark"
-  -Wl,--no-whole-archive
+add_executable(benchmark_transport benchmark_transport.cc options.cc)
+target_link_libraries(
+  benchmark_transport
   tensorpipe
   tensorpipe_shm
-  tensorpipe_uv)
+  tensorpipe_uv
+  )
+
+add_executable(benchmark_pipe benchmark_pipe.cc options.cc)
+target_link_libraries(
+  benchmark_pipe
+  tensorpipe
+  tensorpipe_shm
+  tensorpipe_uv
+  )
