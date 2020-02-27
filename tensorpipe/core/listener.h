@@ -34,10 +34,8 @@ namespace tensorpipe {
 // side channels have been established.
 //
 class Listener final : public std::enable_shared_from_this<Listener> {
-  // The constructor needs to be public (so that make_shared can invoke it) but
-  // in order to prevent external users from calling it (to force them to use
-  // the `create` static member function) we make it accept an instance of this
-  // private class.
+  // Use the passkey idiom to allow make_shared to call what should be a private
+  // constructor. See https://abseil.io/tips/134 for more information.
   struct ConstructorToken {};
 
  public:

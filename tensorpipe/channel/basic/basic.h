@@ -37,6 +37,8 @@ class BasicChannelFactory : public ChannelFactory {
 
 class BasicChannel : public Channel,
                      public std::enable_shared_from_this<BasicChannel> {
+  // Use the passkey idiom to allow make_shared to call what should be a private
+  // constructor. See https://abseil.io/tips/134 for more information.
   struct ConstructorToken {};
 
  public:
