@@ -162,7 +162,7 @@ class BasicChannel : public Channel,
 
   // Helper function to process transport error.
   // Shared between read and write callback entry points.
-  bool processError(const Error& error, TLock lock);
+  bool processError_(const Error& error, TLock lock);
 };
 
 } // namespace basic

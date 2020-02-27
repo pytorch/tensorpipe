@@ -126,12 +126,7 @@ void Listener::readPacketCallbackEntryPoint_(
     bound_read_packet_callback_fn fn,
     const Error& error) {
   std::unique_lock<std::mutex> lock(mutex_);
-  if (error_) {
-    return;
-  }
-  if (error) {
-    error_ = error;
-    flushEverythingOnError_(lock);
+  if (processError_(error, lock)) {
     return;
   }
   if (fn) {
@@ -144,12 +139,7 @@ void Listener::acceptCallbackEntryPoint_(
     const Error& error,
     std::shared_ptr<transport::Connection> connection) {
   std::unique_lock<std::mutex> lock(mutex_);
-  if (error_) {
-    return;
-  }
-  if (error) {
-    error_ = error;
-    flushEverythingOnError_(lock);
+  if (processError_(error, lock)) {
     return;
   }
   if (fn) {
@@ -217,8 +207,20 @@ void Listener::triggerConnectionRequestCallback_(
 // Error handling
 //
 
-void Listener::flushEverythingOnError_(TLock lock) {
+bool Listener::processError_(const Error& error, TLock lock) {
   TP_DCHECK(lock.owns_lock() && lock.mutex() == &mutex_);
+
+  // Nothing to do if we already were in an error state or if there is no error.
+  if (error_) {
+    return true;
+  }
+  if (!error) {
+    return false;
+  }
+
+  // Otherwise enter the error state and do the cleanup.
+  error_ = error;
+
   acceptCallback_.triggerAll(
       [&]() { return std::make_tuple(error_, std::shared_ptr<Pipe>()); });
   for (auto& iter : connectionRequestRegistrations_) {
@@ -230,6 +232,8 @@ void Listener::flushEverythingOnError_(TLock lock) {
         std::shared_ptr<transport::Connection>());
   }
   connectionRequestRegistrations_.clear();
+
+  return true;
 }
 
 //

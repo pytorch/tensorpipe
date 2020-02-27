@@ -174,7 +174,7 @@ class Listener final : public std::enable_shared_from_this<Listener> {
   // Error handling
   //
 
-  void flushEverythingOnError_(TLock);
+  bool processError_(const Error&, TLock);
 
   //
   // Everything else

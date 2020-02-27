@@ -250,7 +250,7 @@ void BasicChannel::readCallbackEntryPoint_(
     size_t length,
     TBoundReadCallback fn) {
   std::unique_lock<std::mutex> lock(mutex_);
-  if (processError(error, lock)) {
+  if (processError_(error, lock)) {
     return;
   }
   if (fn) {
@@ -262,7 +262,7 @@ void BasicChannel::readProtoCallbackEntryPoint_(
     const Error& error,
     TBoundReadProtoCallback fn) {
   std::unique_lock<std::mutex> lock(mutex_);
-  if (processError(error, lock)) {
+  if (processError_(error, lock)) {
     return;
   }
   if (fn) {
@@ -274,7 +274,7 @@ void BasicChannel::writeCallbackEntryPoint_(
     const Error& error,
     TBoundWriteCallback fn) {
   std::unique_lock<std::mutex> lock(mutex_);
-  if (processError(error, lock)) {
+  if (processError_(error, lock)) {
     return;
   }
   if (fn) {
@@ -282,41 +282,38 @@ void BasicChannel::writeCallbackEntryPoint_(
   }
 }
 
-bool BasicChannel::processError(const Error& error, TLock lock) {
+bool BasicChannel::processError_(const Error& error, TLock lock) {
   TP_DCHECK(lock.owns_lock() && lock.mutex() == &mutex_);
 
-  // Ignore if an error was already set.
+  // Nothing to do if we already were in an error state or if there is no error.
   if (error_) {
     return true;
   }
-
-  // If this is the first callback with an error, make sure that all
-  // pending user specified callbacks get called with that same error.
-  // Once the channel is in an error state it doesn't recover.
-  if (error) {
-    error_ = error;
-
-    // Move pending operations to stack.
-    auto sendOperations = std::move(sendOperations_);
-    auto recvOperations = std::move(recvOperations_);
-
-    // Release lock before executing callbacks.
-    lock.unlock();
-
-    // Notify pending send callbacks of error.
-    for (auto& op : sendOperations) {
-      op.callback(error_);
-    }
-
-    // Notify pending recv callbacks of error.
-    for (auto& op : recvOperations) {
-      op.callback(error_);
-    }
-
-    return true;
+  if (!error) {
+    return false;
   }
 
-  return false;
+  // Otherwise enter the error state and do the cleanup.
+  error_ = error;
+
+  // Move pending operations to stack.
+  auto sendOperations = std::move(sendOperations_);
+  auto recvOperations = std::move(recvOperations_);
+
+  // Release lock before executing callbacks.
+  lock.unlock();
+
+  // Notify pending send callbacks of error.
+  for (auto& op : sendOperations) {
+    op.callback(error_);
+  }
+
+  // Notify pending recv callbacks of error.
+  for (auto& op : recvOperations) {
+    op.callback(error_);
+  }
+
+  return true;
 }
 
 } // namespace basic

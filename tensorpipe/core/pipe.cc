@@ -127,8 +127,7 @@ Pipe::~Pipe() {
     listener_->unregisterConnectionRequest_(iter.second);
   }
   channelRegistrationIds_.clear();
-  error_ = TP_CREATE_ERROR(PipeClosedError);
-  flushEverythingOnError_(lock);
+  processError_(TP_CREATE_ERROR(PipeClosedError), lock);
 }
 
 //
@@ -246,12 +245,7 @@ void Pipe::readCallbackEntryPoint_(
     const void* ptr,
     size_t len) {
   std::unique_lock<std::mutex> lock(mutex_);
-  if (error_) {
-    return;
-  }
-  if (error) {
-    error_ = error;
-    flushEverythingOnError_(lock);
+  if (processError_(error, lock)) {
     return;
   }
   if (fn) {
@@ -263,12 +257,7 @@ void Pipe::readPacketCallbackEntryPoint_(
     bound_read_packet_callback_fn fn,
     const Error& error) {
   std::unique_lock<std::mutex> lock(mutex_);
-  if (error_) {
-    return;
-  }
-  if (error) {
-    error_ = error;
-    flushEverythingOnError_(lock);
+  if (processError_(error, lock)) {
     return;
   }
   if (fn) {
@@ -280,12 +269,7 @@ void Pipe::writeCallbackEntryPoint_(
     bound_write_callback_fn fn,
     const Error& error) {
   std::unique_lock<std::mutex> lock(mutex_);
-  if (error_) {
-    return;
-  }
-  if (error) {
-    error_ = error;
-    flushEverythingOnError_(lock);
+  if (processError_(error, lock)) {
     return;
   }
   if (fn) {
@@ -299,12 +283,7 @@ void Pipe::connectionRequestCallbackEntryPoint_(
     std::string transport,
     std::shared_ptr<transport::Connection> connection) {
   std::unique_lock<std::mutex> lock(mutex_);
-  if (error_) {
-    return;
-  }
-  if (error) {
-    error_ = error;
-    flushEverythingOnError_(lock);
+  if (processError_(error, lock)) {
     return;
   }
   if (fn) {
@@ -316,12 +295,7 @@ void Pipe::channelRecvCallbackEntryPoint_(
     bound_channel_recv_callback_fn fn,
     const Error& error) {
   std::unique_lock<std::mutex> lock(mutex_);
-  if (error_) {
-    return;
-  }
-  if (error) {
-    error_ = error;
-    flushEverythingOnError_(lock);
+  if (processError_(error, lock)) {
     return;
   }
   if (fn) {
@@ -333,12 +307,7 @@ void Pipe::channelSendCallbackEntryPoint_(
     bound_channel_send_callback_fn fn,
     const Error& error) {
   std::unique_lock<std::mutex> lock(mutex_);
-  if (error_) {
-    return;
-  }
-  if (error) {
-    error_ = error;
-    flushEverythingOnError_(lock);
+  if (processError_(error, lock)) {
     return;
   }
   if (fn) {
@@ -473,8 +442,20 @@ void Pipe::triggerWriteCallback_(
 // Error handling
 //
 
-void Pipe::flushEverythingOnError_(TLock lock) {
+bool Pipe::processError_(const Error& error, TLock lock) {
   TP_DCHECK(lock.owns_lock() && lock.mutex() == &mutex_);
+
+  // Nothing to do if we already were in an error state or if there is no error.
+  if (error_) {
+    return true;
+  }
+  if (!error) {
+    return false;
+  }
+
+  // Otherwise enter the error state and do the cleanup.
+  error_ = error;
+
   readDescriptorCallback_.triggerAll(
       [&]() { return std::make_tuple(error_, Message()); });
   messagesBeingAllocated_.clear();
@@ -496,6 +477,8 @@ void Pipe::flushEverythingOnError_(TLock lock) {
     triggerWriteCallback_(std::move(fn), error_, std::move(message));
   }
   messagesBeingWritten_.clear();
+
+  return true;
 }
 
 //
