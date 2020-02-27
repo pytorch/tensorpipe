@@ -139,15 +139,21 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
   struct MessageBeingRead {
     int64_t sequenceNumber{-1};
     Message message;
-    std::function<void(const Error&, Message)> callback;
+    read_callback_fn callback;
     bool dataStillBeingRead{true};
     int64_t numTensorDataStillBeingReceived{0};
+  };
+
+  struct MessageBeingQueued {
+    int64_t sequenceNumber{-1};
+    Message message;
+    write_callback_fn callback;
   };
 
   struct MessageBeingWritten {
     int64_t sequenceNumber{-1};
     Message message;
-    std::function<void(const Error&, Message)> callback;
+    write_callback_fn callback;
     bool dataStillBeingWritten{true};
     int64_t numTensorDataStillBeingSent{0};
   };
@@ -155,11 +161,14 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
   std::deque<MessageBeingAllocated> messagesBeingAllocated_;
   int64_t nextMessageBeingRead_{0};
   std::deque<MessageBeingRead> messagesBeingRead_;
-  int64_t nextMessageBeingWritten_{0};
-  std::deque<MessageBeingWritten> messagesBeingWritten_;
+  int64_t nextReadCallbackToCall_{0};
+  std::condition_variable readCallbackCalled_;
 
-  std::deque<std::tuple<Message, write_callback_fn>>
-      writesWaitingUntilPipeIsEstablished_;
+  int64_t nextMessageBeingWritten_{0};
+  std::deque<MessageBeingQueued> messagesBeingQueued_;
+  std::deque<MessageBeingWritten> messagesBeingWritten_;
+  int64_t nextWriteCallbackToCall_{0};
+  std::condition_variable writeCallbackCalled_;
 
   Error error_;
 
@@ -190,8 +199,18 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
       const Error&,
       Message,
       TLock);
-  void triggerReadCallback_(read_callback_fn&&, const Error&, Message, TLock);
-  void triggerWriteCallback_(write_callback_fn&&, const Error&, Message, TLock);
+  void triggerReadCallback_(
+      int64_t,
+      read_callback_fn&&,
+      const Error&,
+      Message,
+      TLock);
+  void triggerWriteCallback_(
+      int64_t,
+      write_callback_fn&&,
+      const Error&,
+      Message,
+      TLock);
 
   //
   // Error handling
@@ -204,7 +223,7 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
   //
 
   void doWritesAccumulatedWhileWaitingForPipeToBeEstablished_(TLock);
-  void writeWhenEstablished_(Message, write_callback_fn, TLock);
+  void writeWhenEstablished_(int64_t, Message, write_callback_fn, TLock);
   void onReadWhileServerWaitingForBrochure_(const proto::Packet&, TLock);
   void onReadWhileClientWaitingForBrochureAnswer_(const proto::Packet&, TLock);
   void onAcceptWhileServerWaitingForConnection_(

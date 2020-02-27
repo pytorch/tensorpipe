@@ -173,8 +173,11 @@ void Pipe::readDescriptor(read_descriptor_callback_fn fn) {
 void Pipe::read(Message message, read_callback_fn fn) {
   std::unique_lock<std::mutex> lock(mutex_);
 
+  int64_t sequenceNumber = nextMessageBeingRead_++;
+
   if (error_) {
-    triggerReadCallback_(std::move(fn), error_, std::move(message), lock);
+    triggerReadCallback_(
+        sequenceNumber, std::move(fn), error_, std::move(message), lock);
     return;
   }
 
@@ -188,13 +191,13 @@ void Pipe::read(Message message, read_callback_fn fn) {
 
   MessageBeingRead messageBeingRead;
 
-  messageBeingRead.sequenceNumber = nextMessageBeingRead_++;
+  messageBeingRead.sequenceNumber = sequenceNumber;
   TP_DCHECK_GE(messageBeingAllocated.length, 0);
   TP_THROW_ASSERT_IF(message.length != messageBeingAllocated.length);
   connection_->read(
       message.data,
       message.length,
-      readCallbackWrapper_([sequenceNumber{messageBeingRead.sequenceNumber}](
+      readCallbackWrapper_([sequenceNumber](
                                Pipe& pipe,
                                const void* /* unused */,
                                size_t /* unused */,
@@ -216,11 +219,9 @@ void Pipe::read(Message message, read_callback_fn fn) {
         std::move(tensorBeingAllocated.channelDescriptor),
         tensor.data,
         tensor.length,
-        channelRecvCallbackWrapper_(
-            [sequenceNumber{messageBeingRead.sequenceNumber}](
-                Pipe& pipe, TLock lock) {
-              pipe.onRecvOfTensorData_(sequenceNumber, lock);
-            }));
+        channelRecvCallbackWrapper_([sequenceNumber](Pipe& pipe, TLock lock) {
+          pipe.onRecvOfTensorData_(sequenceNumber, lock);
+        }));
     messageBeingRead.numTensorDataStillBeingReceived++;
   }
 
@@ -240,16 +241,20 @@ void Pipe::read(Message message, read_callback_fn fn) {
 void Pipe::write(Message message, write_callback_fn fn) {
   std::unique_lock<std::mutex> lock(mutex_);
 
+  int64_t sequenceNumber = nextMessageBeingWritten_++;
+
   if (error_) {
-    triggerWriteCallback_(std::move(fn), error_, std::move(message), lock);
+    triggerWriteCallback_(
+        sequenceNumber, std::move(fn), error_, std::move(message), lock);
     return;
   }
 
   if (state_ == ESTABLISHED) {
-    writeWhenEstablished_(std::move(message), std::move(fn), lock);
+    writeWhenEstablished_(
+        sequenceNumber, std::move(message), std::move(fn), lock);
   } else {
-    writesWaitingUntilPipeIsEstablished_.emplace_back(
-        std::move(message), std::move(fn));
+    messagesBeingQueued_.push_back(
+        MessageBeingQueued{sequenceNumber, std::move(message), std::move(fn)});
   }
 }
 
@@ -263,43 +268,41 @@ void Pipe::triggerReadDescriptorCallback_(
     Message message,
     TLock lock) {
   TP_DCHECK(lock.owns_lock() && lock.mutex() == &mutex_);
-  // Capturing a Message makes the closure non-copyable so we need this wrapper.
-  auto sharedMessage = std::make_shared<Message>(std::move(message));
-  context_->callCallback_([fn{std::move(fn)},
-                           error,
-                           sharedMessage{std::move(sharedMessage)}]() mutable {
-    fn(error, std::move(*sharedMessage));
-  });
+  lock.unlock();
+  fn(error, std::move(message));
+  lock.lock();
 }
 
 void Pipe::triggerReadCallback_(
+    int64_t sequenceNumber,
     read_callback_fn&& fn,
     const Error& error,
     Message message,
     TLock lock) {
   TP_DCHECK(lock.owns_lock() && lock.mutex() == &mutex_);
-  // Capturing a Message makes the closure non-copyable so we need this wrapper.
-  auto sharedMessage = std::make_shared<Message>(std::move(message));
-  context_->callCallback_([fn{std::move(fn)},
-                           error,
-                           sharedMessage{std::move(sharedMessage)}]() mutable {
-    fn(error, std::move(*sharedMessage));
-  });
+  readCallbackCalled_.wait(
+      lock, [&]() { return nextReadCallbackToCall_ == sequenceNumber; });
+  lock.unlock();
+  fn(error, std::move(message));
+  lock.lock();
+  nextReadCallbackToCall_++;
+  readCallbackCalled_.notify_all();
 }
 
 void Pipe::triggerWriteCallback_(
+    int64_t sequenceNumber,
     write_callback_fn&& fn,
     const Error& error,
     Message message,
     TLock lock) {
   TP_DCHECK(lock.owns_lock() && lock.mutex() == &mutex_);
-  // Capturing a Message makes the closure non-copyable so we need this wrapper.
-  auto sharedMessage = std::make_shared<Message>(std::move(message));
-  context_->callCallback_([fn{std::move(fn)},
-                           error,
-                           sharedMessage{std::move(sharedMessage)}]() mutable {
-    fn(error, std::move(*sharedMessage));
-  });
+  writeCallbackCalled_.wait(
+      lock, [&]() { return nextWriteCallbackToCall_ == sequenceNumber; });
+  lock.unlock();
+  fn(error, std::move(message));
+  lock.lock();
+  nextWriteCallbackToCall_++;
+  writeCallbackCalled_.notify_all();
 }
 
 //
@@ -312,24 +315,36 @@ void Pipe::handleError_(TLock lock) {
   readDescriptorCallback_.triggerAll(
       [&]() { return std::make_tuple(error_, Message()); }, lock);
   messagesBeingAllocated_.clear();
-  for (auto& iter : messagesBeingRead_) {
-    read_callback_fn fn{std::move(iter.callback)};
-    Message message{std::move(iter.message)};
-    triggerReadCallback_(std::move(fn), error_, std::move(message), lock);
+  while (!messagesBeingRead_.empty()) {
+    MessageBeingRead m = std::move(messagesBeingRead_.front());
+    messagesBeingRead_.pop_front();
+    triggerReadCallback_(
+        m.sequenceNumber,
+        std::move(m.callback),
+        error_,
+        std::move(m.message),
+        lock);
   }
-  messagesBeingRead_.clear();
-  for (auto& iter : writesWaitingUntilPipeIsEstablished_) {
-    write_callback_fn fn{std::move(std::get<1>(iter))};
-    Message message{std::move(std::get<0>(iter))};
-    triggerWriteCallback_(std::move(fn), error_, std::move(message), lock);
+  while (!messagesBeingWritten_.empty()) {
+    MessageBeingWritten m = std::move(messagesBeingWritten_.front());
+    messagesBeingWritten_.pop_front();
+    triggerWriteCallback_(
+        m.sequenceNumber,
+        std::move(m.callback),
+        error_,
+        std::move(m.message),
+        lock);
   }
-  writesWaitingUntilPipeIsEstablished_.clear();
-  for (auto& iter : messagesBeingWritten_) {
-    write_callback_fn fn{std::move(iter.callback)};
-    Message message{std::move(iter.message)};
-    triggerWriteCallback_(std::move(fn), error_, std::move(message), lock);
+  while (!messagesBeingQueued_.empty()) {
+    MessageBeingQueued m = std::move(messagesBeingQueued_.front());
+    messagesBeingQueued_.pop_front();
+    triggerWriteCallback_(
+        m.sequenceNumber,
+        std::move(m.callback),
+        error_,
+        std::move(m.message),
+        lock);
   }
-  messagesBeingWritten_.clear();
 }
 
 //
@@ -339,17 +354,16 @@ void Pipe::handleError_(TLock lock) {
 void Pipe::doWritesAccumulatedWhileWaitingForPipeToBeEstablished_(TLock lock) {
   TP_DCHECK(lock.owns_lock() && lock.mutex() == &mutex_);
   TP_DCHECK_EQ(state_, ESTABLISHED);
-  Message message;
-  write_callback_fn fn;
-  while (!writesWaitingUntilPipeIsEstablished_.empty()) {
-    std::tie(message, fn) =
-        std::move(writesWaitingUntilPipeIsEstablished_.front());
-    writesWaitingUntilPipeIsEstablished_.pop_front();
-    writeWhenEstablished_(std::move(message), std::move(fn), lock);
+  while (!messagesBeingQueued_.empty()) {
+    MessageBeingQueued m = std::move(messagesBeingQueued_.front());
+    messagesBeingQueued_.pop_front();
+    writeWhenEstablished_(
+        m.sequenceNumber, std::move(m.message), std::move(m.callback), lock);
   }
 }
 
 void Pipe::writeWhenEstablished_(
+    int64_t sequenceNumber,
     Message message,
     write_callback_fn fn,
     TLock lock) {
@@ -361,7 +375,7 @@ void Pipe::writeWhenEstablished_(
   proto::MessageDescriptor* pbMessageDescriptor =
       pbPacketOut->mutable_message_descriptor();
 
-  messageBeingWritten.sequenceNumber = nextMessageBeingWritten_++;
+  messageBeingWritten.sequenceNumber = sequenceNumber;
   pbMessageDescriptor->set_size_in_bytes(message.length);
   pbMessageDescriptor->set_metadata(message.metadata);
 
@@ -386,11 +400,9 @@ void Pipe::writeWhenEstablished_(
       std::vector<uint8_t> descriptor = channel.send(
           tensor.data,
           tensor.length,
-          channelSendCallbackWrapper_(
-              [sequenceNumber{messageBeingWritten.sequenceNumber}](
-                  Pipe& pipe, TLock lock) {
-                pipe.onSendOfTensorData_(sequenceNumber, lock);
-              }));
+          channelSendCallbackWrapper_([sequenceNumber](Pipe& pipe, TLock lock) {
+            pipe.onSendOfTensorData_(sequenceNumber, lock);
+          }));
       messageBeingWritten.numTensorDataStillBeingSent++;
       pbTensorDescriptor->set_channel_name(name);
       // FIXME This makes a copy
@@ -411,11 +423,9 @@ void Pipe::writeWhenEstablished_(
   connection_->write(
       message.data,
       message.length,
-      writeCallbackWrapper_(
-          [sequenceNumber{messageBeingWritten.sequenceNumber}](
-              Pipe& pipe, TLock lock) {
-            pipe.onWriteOfMessageData_(sequenceNumber, lock);
-          }));
+      writeCallbackWrapper_([sequenceNumber](Pipe& pipe, TLock lock) {
+        pipe.onWriteOfMessageData_(sequenceNumber, lock);
+      }));
 
   messageBeingWritten.message = std::move(message);
   messageBeingWritten.callback = std::move(fn);
@@ -766,6 +776,7 @@ void Pipe::checkForMessagesDoneReading_(TLock lock) {
     MessageBeingRead messageRead = std::move(messagesBeingRead_.front());
     messagesBeingRead_.pop_front();
     triggerReadCallback_(
+        messageRead.sequenceNumber,
         std::move(messageRead.callback),
         Error::kSuccess,
         std::move(messageRead.message),
@@ -785,6 +796,7 @@ void Pipe::checkForMessagesDoneWriting_(TLock lock) {
         std::move(messagesBeingWritten_.front());
     messagesBeingWritten_.pop_front();
     triggerWriteCallback_(
+        messageWritten.sequenceNumber,
         std::move(messageWritten.callback),
         Error::kSuccess,
         std::move(messageWritten.message),
