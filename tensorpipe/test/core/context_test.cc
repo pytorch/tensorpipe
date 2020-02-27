@@ -107,6 +107,12 @@ std::string createUniqueShmAddr() {
 } // namespace
 
 TEST(Context, ClientPingSerial) {
+  std::vector<std::unique_ptr<uint8_t[]>> buffers;
+  std::promise<std::shared_ptr<Pipe>> serverPipePromise;
+  std::promise<Message> writtenMessagePromise;
+  std::promise<Message> readDescriptorPromise;
+  std::promise<Message> readMessagePromise;
+
   auto context = Context::create();
 
   context->registerTransport(
@@ -119,11 +125,8 @@ TEST(Context, ClientPingSerial) {
   auto listener =
       Listener::create(context, {createUniqueShmAddr(), "uv://127.0.0.1"});
 
-  std::vector<std::unique_ptr<uint8_t[]>> buffers;
-
   auto clientPipe = Pipe::create(context, listener->url("uv"));
 
-  std::promise<std::shared_ptr<Pipe>> serverPipePromise;
   listener->accept([&](const Error& error, std::shared_ptr<Pipe> pipe) {
     if (error) {
       serverPipePromise.set_exception(
@@ -134,7 +137,6 @@ TEST(Context, ClientPingSerial) {
   });
   std::shared_ptr<Pipe> serverPipe = serverPipePromise.get_future().get();
 
-  std::promise<Message> writtenMessagePromise;
   clientPipe->write(makeMessage(), [&](const Error& error, Message message) {
     if (error) {
       writtenMessagePromise.set_exception(
@@ -144,7 +146,6 @@ TEST(Context, ClientPingSerial) {
     }
   });
 
-  std::promise<Message> readDescriptorPromise;
   serverPipe->readDescriptor([&](const Error& error, Message message) {
     if (error) {
       readDescriptorPromise.set_exception(
@@ -164,7 +165,6 @@ TEST(Context, ClientPingSerial) {
     buffers.push_back(std::move(tensorData));
   }
 
-  std::promise<Message> readMessagePromise;
   serverPipe->read(
       std::move(message), [&](const Error& error, Message message) {
         if (error) {
@@ -187,6 +187,7 @@ TEST(Context, ClientPingSerial) {
 }
 
 TEST(Context, ClientPingInline) {
+  std::vector<std::unique_ptr<uint8_t[]>> buffers;
   std::promise<void> donePromise;
 
   auto context = Context::create();
@@ -200,8 +201,6 @@ TEST(Context, ClientPingInline) {
 
   auto listener =
       Listener::create(context, {createUniqueShmAddr(), "uv://127.0.0.1"});
-
-  std::vector<std::unique_ptr<uint8_t[]>> buffers;
 
   std::shared_ptr<Pipe> serverPipe;
   listener->accept([&serverPipe, &donePromise, &buffers](
@@ -260,6 +259,7 @@ TEST(Context, ClientPingInline) {
 }
 
 TEST(Context, ServerPingPongTwice) {
+  std::vector<std::unique_ptr<uint8_t[]>> buffers;
   std::promise<void> donePromise;
 
   auto context = Context::create();
@@ -273,8 +273,6 @@ TEST(Context, ServerPingPongTwice) {
 
   auto listener =
       Listener::create(context, {createUniqueShmAddr(), "uv://127.0.0.1"});
-
-  std::vector<std::unique_ptr<uint8_t[]>> buffers;
 
   std::shared_ptr<Pipe> serverPipe;
   int numPingsGoneThrough = 0;

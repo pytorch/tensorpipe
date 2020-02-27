@@ -150,36 +150,31 @@ Pipe::~Pipe() {
 void Pipe::readDescriptor(read_descriptor_callback_fn fn) {
   std::unique_lock<std::mutex> lock(mutex_);
 
+  int64_t sequenceNumber = nextMessageBeingRead_++;
+
   if (error_) {
-    triggerReadDescriptorCallback_(std::move(fn), error_, Message(), lock);
+    triggerReadDescriptorCallback_(
+        sequenceNumber, std::move(fn), error_, Message(), lock);
     return;
   }
 
-  readDescriptorCallback_.arm(
-      runIfAlive(
-          *this,
-          std::function<void(Pipe&, const Error&, Message, TLock)>(
-              [fn{std::move(fn)}](
-                  Pipe& pipe,
-                  const Error& error,
-                  Message message,
-                  TLock lock) mutable {
-                pipe.triggerReadDescriptorCallback_(
-                    std::move(fn), error, std::move(message), lock);
-              })),
-      lock);
+  messagesBeingExpected_.push_back(
+      MessageBeingExpected{sequenceNumber, std::move(fn)});
+
+  if (messagesBeingExpected_.size() == 1 && state_ == ESTABLISHED &&
+      connectionState_ == NEXT_UP_IS_DESCRIPTOR) {
+    auto pbPacketIn = std::make_shared<proto::Packet>();
+    connection_->read(
+        *pbPacketIn,
+        readPacketCallbackWrapper_([pbPacketIn](Pipe& pipe, TLock lock) {
+          pipe.onReadOfMessageDescriptor_(*pbPacketIn, lock);
+        }));
+    connectionState_ = NEXT_UP_IS_DATA;
+  }
 }
 
 void Pipe::read(Message message, read_callback_fn fn) {
   std::unique_lock<std::mutex> lock(mutex_);
-
-  int64_t sequenceNumber = nextMessageBeingRead_++;
-
-  if (error_) {
-    triggerReadCallback_(
-        sequenceNumber, std::move(fn), error_, std::move(message), lock);
-    return;
-  }
 
   // This is such a bad logical error on the user's side that it doesn't deserve
   // to pass through the channel for "expected errors" (i.e., the callback).
@@ -189,11 +184,20 @@ void Pipe::read(Message message, read_callback_fn fn) {
       std::move(messagesBeingAllocated_.front())};
   messagesBeingAllocated_.pop_front();
 
+  int64_t sequenceNumber = messageBeingAllocated.sequenceNumber;
+
+  if (error_) {
+    triggerReadCallback_(
+        sequenceNumber, std::move(fn), error_, std::move(message), lock);
+    return;
+  }
+
   MessageBeingRead messageBeingRead;
 
   messageBeingRead.sequenceNumber = sequenceNumber;
   TP_DCHECK_GE(messageBeingAllocated.length, 0);
   TP_THROW_ASSERT_IF(message.length != messageBeingAllocated.length);
+  TP_DCHECK_EQ(connectionState_, NEXT_UP_IS_DATA);
   connection_->read(
       message.data,
       message.length,
@@ -204,6 +208,7 @@ void Pipe::read(Message message, read_callback_fn fn) {
                                TLock lock) {
         pipe.onReadOfMessageData_(sequenceNumber, lock);
       }));
+  connectionState_ = NEXT_UP_IS_DESCRIPTOR;
 
   size_t numTensors = message.tensors.size();
   TP_THROW_ASSERT_IF(numTensors != messageBeingAllocated.tensors.size());
@@ -230,12 +235,16 @@ void Pipe::read(Message message, read_callback_fn fn) {
 
   messagesBeingRead_.push_back(std::move(messageBeingRead));
 
-  auto pbPacketIn = std::make_shared<proto::Packet>();
-  connection_->read(
-      *pbPacketIn,
-      readPacketCallbackWrapper_([pbPacketIn](Pipe& pipe, TLock lock) {
-        pipe.onReadOfMessageDescriptor_(*pbPacketIn, lock);
-      }));
+  TP_DCHECK_EQ(connectionState_, NEXT_UP_IS_DESCRIPTOR);
+  if (!messagesBeingExpected_.empty()) {
+    auto pbPacketIn = std::make_shared<proto::Packet>();
+    connection_->read(
+        *pbPacketIn,
+        readPacketCallbackWrapper_([pbPacketIn](Pipe& pipe, TLock lock) {
+          pipe.onReadOfMessageDescriptor_(*pbPacketIn, lock);
+        }));
+    connectionState_ = NEXT_UP_IS_DATA;
+  }
 }
 
 void Pipe::write(Message message, write_callback_fn fn) {
@@ -263,14 +272,20 @@ void Pipe::write(Message message, write_callback_fn fn) {
 //
 
 void Pipe::triggerReadDescriptorCallback_(
+    int64_t sequenceNumber,
     read_descriptor_callback_fn&& fn,
     const Error& error,
     Message message,
     TLock lock) {
   TP_DCHECK(lock.owns_lock() && lock.mutex() == &mutex_);
+  readDescriptorCallbackCalled_.wait(lock, [&]() {
+    return nextReadDescriptorCallbackToCall_ == sequenceNumber;
+  });
   lock.unlock();
   fn(error, std::move(message));
   lock.lock();
+  nextReadDescriptorCallbackToCall_++;
+  readDescriptorCallbackCalled_.notify_all();
 }
 
 void Pipe::triggerReadCallback_(
@@ -312,9 +327,12 @@ void Pipe::triggerWriteCallback_(
 void Pipe::handleError_(TLock lock) {
   TP_DCHECK(lock.owns_lock() && lock.mutex() == &mutex_);
 
-  readDescriptorCallback_.triggerAll(
-      [&]() { return std::make_tuple(error_, Message()); }, lock);
-  messagesBeingAllocated_.clear();
+  while (!messagesBeingExpected_.empty()) {
+    MessageBeingExpected m = std::move(messagesBeingExpected_.front());
+    messagesBeingExpected_.pop_front();
+    triggerReadDescriptorCallback_(
+        m.sequenceNumber, std::move(m.callback), error_, Message(), lock);
+  }
   while (!messagesBeingRead_.empty()) {
     MessageBeingRead m = std::move(messagesBeingRead_.front());
     messagesBeingRead_.pop_front();
@@ -540,12 +558,16 @@ void Pipe::onReadWhileServerWaitingForBrochure_(
   if (!needToWaitForConnections) {
     state_ = ESTABLISHED;
     doWritesAccumulatedWhileWaitingForPipeToBeEstablished_(lock);
-    auto pbPacketIn = std::make_shared<proto::Packet>();
-    connection_->read(
-        *pbPacketIn,
-        readPacketCallbackWrapper_([pbPacketIn](Pipe& pipe, TLock lock) {
-          pipe.onReadOfMessageDescriptor_(*pbPacketIn, lock);
-        }));
+    TP_DCHECK_EQ(connectionState_, NEXT_UP_IS_DESCRIPTOR);
+    if (!messagesBeingExpected_.empty()) {
+      auto pbPacketIn = std::make_shared<proto::Packet>();
+      connection_->read(
+          *pbPacketIn,
+          readPacketCallbackWrapper_([pbPacketIn](Pipe& pipe, TLock lock) {
+            pipe.onReadOfMessageDescriptor_(*pbPacketIn, lock);
+          }));
+      connectionState_ = NEXT_UP_IS_DATA;
+    }
   } else {
     state_ = SERVER_WAITING_FOR_CONNECTIONS;
   }
@@ -613,12 +635,16 @@ void Pipe::onReadWhileClientWaitingForBrochureAnswer_(
 
   state_ = ESTABLISHED;
   doWritesAccumulatedWhileWaitingForPipeToBeEstablished_(lock);
-  auto pbPacketIn2 = std::make_shared<proto::Packet>();
-  connection_->read(
-      *pbPacketIn2,
-      readPacketCallbackWrapper_([pbPacketIn2](Pipe& pipe, TLock lock) {
-        pipe.onReadOfMessageDescriptor_(*pbPacketIn2, lock);
-      }));
+  TP_DCHECK_EQ(connectionState_, NEXT_UP_IS_DESCRIPTOR);
+  if (!messagesBeingExpected_.empty()) {
+    auto pbPacketIn2 = std::make_shared<proto::Packet>();
+    connection_->read(
+        *pbPacketIn2,
+        readPacketCallbackWrapper_([pbPacketIn2](Pipe& pipe, TLock lock) {
+          pipe.onReadOfMessageDescriptor_(*pbPacketIn2, lock);
+        }));
+    connectionState_ = NEXT_UP_IS_DATA;
+  }
 }
 
 void Pipe::onAcceptWhileServerWaitingForConnection_(
@@ -637,12 +663,16 @@ void Pipe::onAcceptWhileServerWaitingForConnection_(
   if (!registrationId_.has_value() && channelRegistrationIds_.empty()) {
     state_ = ESTABLISHED;
     doWritesAccumulatedWhileWaitingForPipeToBeEstablished_(lock);
-    auto pbPacketIn = std::make_shared<proto::Packet>();
-    connection_->read(
-        *pbPacketIn,
-        readPacketCallbackWrapper_([pbPacketIn](Pipe& pipe, TLock lock) {
-          pipe.onReadOfMessageDescriptor_(*pbPacketIn, lock);
-        }));
+    TP_DCHECK_EQ(connectionState_, NEXT_UP_IS_DESCRIPTOR);
+    if (!messagesBeingExpected_.empty()) {
+      auto pbPacketIn = std::make_shared<proto::Packet>();
+      connection_->read(
+          *pbPacketIn,
+          readPacketCallbackWrapper_([pbPacketIn](Pipe& pipe, TLock lock) {
+            pipe.onReadOfMessageDescriptor_(*pbPacketIn, lock);
+          }));
+      connectionState_ = NEXT_UP_IS_DATA;
+    }
   }
 }
 
@@ -675,12 +705,16 @@ void Pipe::onAcceptWhileServerWaitingForChannel_(
   if (!registrationId_.has_value() && channelRegistrationIds_.empty()) {
     state_ = ESTABLISHED;
     doWritesAccumulatedWhileWaitingForPipeToBeEstablished_(lock);
-    auto pbPacketIn = std::make_shared<proto::Packet>();
-    connection_->read(
-        *pbPacketIn,
-        readPacketCallbackWrapper_([pbPacketIn](Pipe& pipe, TLock lock) {
-          pipe.onReadOfMessageDescriptor_(*pbPacketIn, lock);
-        }));
+    TP_DCHECK_EQ(connectionState_, NEXT_UP_IS_DESCRIPTOR);
+    if (!messagesBeingExpected_.empty()) {
+      auto pbPacketIn = std::make_shared<proto::Packet>();
+      connection_->read(
+          *pbPacketIn,
+          readPacketCallbackWrapper_([pbPacketIn](Pipe& pipe, TLock lock) {
+            pipe.onReadOfMessageDescriptor_(*pbPacketIn, lock);
+          }));
+      connectionState_ = NEXT_UP_IS_DATA;
+    }
   }
 }
 
@@ -689,12 +723,20 @@ void Pipe::onReadOfMessageDescriptor_(
     TLock lock) {
   TP_DCHECK(lock.owns_lock() && lock.mutex() == &mutex_);
   TP_DCHECK_EQ(state_, ESTABLISHED);
-  TP_DCHECK_EQ(pbPacketIn.type_case(), proto::Packet::kMessageDescriptor);
 
+  TP_DCHECK(!messagesBeingExpected_.empty());
+  MessageBeingExpected messageBeingExpected =
+      std::move(messagesBeingExpected_.front());
+  messagesBeingExpected_.pop_front();
+
+  TP_DCHECK_EQ(pbPacketIn.type_case(), proto::Packet::kMessageDescriptor);
   const proto::MessageDescriptor& pbMessageDescriptor =
       pbPacketIn.message_descriptor();
+
   Message message;
   MessageBeingAllocated messageBeingAllocated;
+
+  messageBeingAllocated.sequenceNumber = messageBeingExpected.sequenceNumber;
   message.length = pbMessageDescriptor.size_in_bytes();
   messageBeingAllocated.length = message.length;
   message.metadata = pbMessageDescriptor.metadata();
@@ -713,8 +755,15 @@ void Pipe::onReadOfMessageDescriptor_(
     message.tensors.push_back(std::move(tensor));
     messageBeingAllocated.tensors.push_back(std::move(tensorBeingAllocated));
   }
+
   messagesBeingAllocated_.push_back(std::move(messageBeingAllocated));
-  readDescriptorCallback_.trigger(Error::kSuccess, std::move(message), lock);
+
+  triggerReadDescriptorCallback_(
+      messageBeingExpected.sequenceNumber,
+      std::move(messageBeingExpected.callback),
+      Error::kSuccess,
+      std::move(message),
+      lock);
 }
 
 void Pipe::onReadOfMessageData_(int64_t sequenceNumber, TLock lock) {

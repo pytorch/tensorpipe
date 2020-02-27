@@ -120,13 +120,17 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
   optional<uint64_t> registrationId_;
   std::unordered_map<std::string, uint64_t> channelRegistrationIds_;
 
-  RearmableCallbackWithExternalLock<
-      std::function<void(const Error&, Message, TLock)>,
-      const Error&,
-      Message>
-      readDescriptorCallback_;
+  enum ConnectionState { NEXT_UP_IS_DESCRIPTOR, NEXT_UP_IS_DATA };
+
+  ConnectionState connectionState_{NEXT_UP_IS_DESCRIPTOR};
+
+  struct MessageBeingExpected {
+    int64_t sequenceNumber{-1};
+    read_descriptor_callback_fn callback;
+  };
 
   struct MessageBeingAllocated {
+    int64_t sequenceNumber{-1};
     ssize_t length{-1};
     struct Tensor {
       ssize_t length{-1};
@@ -158,8 +162,11 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
     int64_t numTensorDataStillBeingSent{0};
   };
 
-  std::deque<MessageBeingAllocated> messagesBeingAllocated_;
   int64_t nextMessageBeingRead_{0};
+  std::deque<MessageBeingExpected> messagesBeingExpected_;
+  int64_t nextReadDescriptorCallbackToCall_{0};
+  std::condition_variable readDescriptorCallbackCalled_;
+  std::deque<MessageBeingAllocated> messagesBeingAllocated_;
   std::deque<MessageBeingRead> messagesBeingRead_;
   int64_t nextReadCallbackToCall_{0};
   std::condition_variable readCallbackCalled_;
@@ -195,6 +202,7 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
   //
 
   void triggerReadDescriptorCallback_(
+      int64_t,
       read_descriptor_callback_fn&&,
       const Error&,
       Message,
