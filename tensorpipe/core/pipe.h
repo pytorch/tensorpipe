@@ -87,6 +87,16 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
   void write(Message, write_callback_fn);
 
  private:
+  // Each time a thread starts running some of the pipe's code, we acquire this
+  // mutex. There are two "entry points" where control is handed to the pipe:
+  // the public user-facing functions, and the callbacks (which we always wrap
+  // with wrapFooCallback_, which first calls fooEntryPoint_, which is where the
+  // mutex is acquired). Some internal methods may however want to temporarily
+  // release the lock, so we give all of them a reference to the lock that has
+  // been acquired at the entry point.
+  std::mutex mutex_;
+  using TLock = std::unique_lock<std::mutex>&;
+
   enum State {
     INITIALIZING,
     CLIENT_ABOUT_TO_SEND_HELLO_AND_BROCHURE,
@@ -149,7 +159,6 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
       writesWaitingUntilPipeIsEstablished_;
 
   Error error_;
-  std::mutex mutex_;
 
   //
   // Initialization
@@ -164,7 +173,7 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
 
   using transport_read_callback_fn = transport::Connection::read_callback_fn;
   using bound_read_callback_fn =
-      std::function<void(Pipe&, const void*, size_t)>;
+      std::function<void(Pipe&, const void*, size_t, TLock)>;
   transport_read_callback_fn wrapReadCallback_(
       bound_read_callback_fn = nullptr);
   void readCallbackEntryPoint_(
@@ -175,7 +184,7 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
 
   using transport_read_packet_callback_fn =
       transport::Connection::read_proto_callback_fn;
-  using bound_read_packet_callback_fn = std::function<void(Pipe&)>;
+  using bound_read_packet_callback_fn = std::function<void(Pipe&, TLock)>;
   transport_read_packet_callback_fn wrapReadPacketCallback_(
       bound_read_packet_callback_fn = nullptr);
   void readPacketCallbackEntryPoint_(
@@ -183,7 +192,7 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
       const Error&);
 
   using transport_write_callback_fn = transport::Connection::write_callback_fn;
-  using bound_write_callback_fn = std::function<void(Pipe&)>;
+  using bound_write_callback_fn = std::function<void(Pipe&, TLock)>;
   transport_write_callback_fn wrapWriteCallback_(
       bound_write_callback_fn = nullptr);
   void writeCallbackEntryPoint_(bound_write_callback_fn, const Error&);
@@ -191,7 +200,7 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
   using connection_request_callback_fn = std::function<
       void(const Error&, std::string, std::shared_ptr<transport::Connection>)>;
   using bound_connection_request_callback_fn = std::function<
-      void(Pipe&, std::string, std::shared_ptr<transport::Connection>)>;
+      void(Pipe&, std::string, std::shared_ptr<transport::Connection>, TLock)>;
   connection_request_callback_fn wrapConnectionRequestCallback_(
       bound_connection_request_callback_fn = nullptr);
   void connectionRequestCallbackEntryPoint_(
@@ -201,7 +210,7 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
       std::shared_ptr<transport::Connection>);
 
   using channel_recv_callback_fn = channel::Channel::TRecvCallback;
-  using bound_channel_recv_callback_fn = std::function<void(Pipe&)>;
+  using bound_channel_recv_callback_fn = std::function<void(Pipe&, TLock)>;
   channel_recv_callback_fn wrapChannelRecvCallback_(
       bound_channel_recv_callback_fn = nullptr);
   void channelRecvCallbackEntryPoint_(
@@ -209,7 +218,7 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
       const Error&);
 
   using channel_send_callback_fn = channel::Channel::TSendCallback;
-  using bound_channel_send_callback_fn = std::function<void(Pipe&)>;
+  using bound_channel_send_callback_fn = std::function<void(Pipe&, TLock)>;
   channel_send_callback_fn wrapChannelSendCallback_(
       bound_channel_send_callback_fn = nullptr);
   void channelSendCallbackEntryPoint_(
@@ -231,31 +240,33 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
   // Error handling
   //
 
-  void flushEverythingOnError_();
+  void flushEverythingOnError_(TLock);
 
   //
   // Everything else
   //
 
-  void doWritesAccumulatedWhileWaitingForPipeToBeEstablished_();
-  void writeWhenEstablished_(Message, write_callback_fn);
-  void onReadWhileServerWaitingForBrochure_(const proto::Packet&);
-  void onReadWhileClientWaitingForBrochureAnswer_(const proto::Packet&);
+  void doWritesAccumulatedWhileWaitingForPipeToBeEstablished_(TLock);
+  void writeWhenEstablished_(Message, write_callback_fn, TLock);
+  void onReadWhileServerWaitingForBrochure_(const proto::Packet&, TLock);
+  void onReadWhileClientWaitingForBrochureAnswer_(const proto::Packet&, TLock);
   void onAcceptWhileServerWaitingForConnection_(
       std::string,
-      std::shared_ptr<transport::Connection>);
+      std::shared_ptr<transport::Connection>,
+      TLock);
   void onAcceptWhileServerWaitingForChannel_(
       std::string,
       std::string,
-      std::shared_ptr<transport::Connection>);
-  void onReadOfMessageDescriptor_(const proto::Packet&);
-  void onReadOfMessageData_(int64_t);
-  void onRecvOfTensorData_(int64_t);
-  void onWriteOfMessageData_(int64_t);
-  void onSendOfTensorData_(int64_t);
+      std::shared_ptr<transport::Connection>,
+      TLock);
+  void onReadOfMessageDescriptor_(const proto::Packet&, TLock);
+  void onReadOfMessageData_(int64_t, TLock);
+  void onRecvOfTensorData_(int64_t, TLock);
+  void onWriteOfMessageData_(int64_t, TLock);
+  void onSendOfTensorData_(int64_t, TLock);
 
-  void checkForMessagesDoneReading_();
-  void checkForMessagesDoneWriting_();
+  void checkForMessagesDoneReading_(TLock);
+  void checkForMessagesDoneWriting_(TLock);
 
   friend class Context;
   friend class Listener;

@@ -82,38 +82,43 @@ void BasicChannel::recv(
   proto::Request* pbRequest = packet->mutable_request();
   pbRequest->set_operation_id(id);
   connection_->write(
-      *packet, wrapWriteCallback_([packet](BasicChannel& /* unused */) {}));
+      *packet,
+      wrapWriteCallback_(
+          [packet](BasicChannel& /* unused */, TLock /* unused */) {}));
   return;
 }
 
 void BasicChannel::init_() {
-  readPacket_();
+  std::unique_lock<std::mutex> lock(mutex_);
+  readPacket_(lock);
 }
 
-void BasicChannel::readPacket_() {
+void BasicChannel::readPacket_(TLock lock) {
+  TP_DCHECK(lock.owns_lock() && lock.mutex() == &mutex_);
   auto packet = std::make_shared<proto::Packet>();
   connection_->read(
-      *packet, wrapReadProtoCallback_([packet](BasicChannel& channel) {
-        channel.onPacket_(*packet);
+      *packet,
+      wrapReadProtoCallback_([packet](BasicChannel& channel, TLock lock) {
+        channel.onPacket_(*packet, lock);
       }));
 }
 
-void BasicChannel::onPacket_(const proto::Packet& packet) {
+void BasicChannel::onPacket_(const proto::Packet& packet, TLock lock) {
+  TP_DCHECK(lock.owns_lock() && lock.mutex() == &mutex_);
   if (packet.has_request()) {
-    onRequest_(packet.request());
+    onRequest_(packet.request(), lock);
   } else if (packet.has_reply()) {
-    onReply_(packet.reply());
+    onReply_(packet.reply(), lock);
   } else {
     TP_THROW_ASSERT() << "Packet is not a request nor a reply.";
   }
 
   // Wait for next request.
-  readPacket_();
+  readPacket_(lock);
 }
 
-void BasicChannel::onRequest_(const proto::Request& request) {
-  std::unique_lock<std::mutex> lock(mutex_);
-
+void BasicChannel::onRequest_(const proto::Request& request, TLock lock) {
+  TP_DCHECK(lock.owns_lock() && lock.mutex() == &mutex_);
   // Find the send operation matching the request's operation ID.
   const auto id = request.operation_id();
   auto it = std::find_if(
@@ -132,18 +137,20 @@ void BasicChannel::onRequest_(const proto::Request& request) {
   pbReply->set_operation_id(id);
   connection_->write(
       *pbPacketOut,
-      wrapWriteCallback_([pbPacketOut](BasicChannel& /* unused */) {}));
+      wrapWriteCallback_(
+          [pbPacketOut](BasicChannel& /* unused */, TLock /* unused */) {}));
 
   // Write payload.
   connection_->write(
-      op.ptr, op.length, wrapWriteCallback_([id](BasicChannel& channel) {
-        channel.sendCompleted(id);
+      op.ptr,
+      op.length,
+      wrapWriteCallback_([id](BasicChannel& channel, TLock lock) {
+        channel.sendCompleted(id, lock);
       }));
 }
 
-void BasicChannel::onReply_(const proto::Reply& reply) {
-  std::unique_lock<std::mutex> lock(mutex_);
-
+void BasicChannel::onReply_(const proto::Reply& reply, TLock lock) {
+  TP_DCHECK(lock.owns_lock() && lock.mutex() == &mutex_);
   // Find the recv operation matching the reply's operation ID.
   const auto id = reply.operation_id();
   auto it = std::find_if(
@@ -160,15 +167,15 @@ void BasicChannel::onReply_(const proto::Reply& reply) {
   connection_->read(
       op.ptr,
       op.length,
-      wrapReadCallback_(
-          [id](
-              BasicChannel& channel,
-              const void* /* unused */,
-              size_t /* unused */) { channel.recvCompleted(id); }));
+      wrapReadCallback_([id](
+                            BasicChannel& channel,
+                            const void* /* unused */,
+                            size_t /* unused */,
+                            TLock lock) { channel.recvCompleted(id, lock); }));
 }
 
-void BasicChannel::sendCompleted(const uint64_t id) {
-  std::unique_lock<std::mutex> lock(mutex_);
+void BasicChannel::sendCompleted(const uint64_t id, TLock lock) {
+  TP_DCHECK(lock.owns_lock() && lock.mutex() == &mutex_);
   auto it = std::find_if(
       sendOperations_.begin(), sendOperations_.end(), [id](const auto& op) {
         return op.id == id;
@@ -185,8 +192,8 @@ void BasicChannel::sendCompleted(const uint64_t id) {
   op.callback(Error::kSuccess);
 }
 
-void BasicChannel::recvCompleted(const uint64_t id) {
-  std::unique_lock<std::mutex> lock(mutex_);
+void BasicChannel::recvCompleted(const uint64_t id, TLock lock) {
+  TP_DCHECK(lock.owns_lock() && lock.mutex() == &mutex_);
   auto it = std::find_if(
       recvOperations_.begin(), recvOperations_.end(), [id](const auto& op) {
         return op.id == id;
@@ -242,38 +249,41 @@ void BasicChannel::readCallbackEntryPoint_(
     const void* ptr,
     size_t length,
     TBoundReadCallback fn) {
-  if (processError(error)) {
+  std::unique_lock<std::mutex> lock(mutex_);
+  if (processError(error, lock)) {
     return;
   }
   if (fn) {
-    fn(*this, ptr, length);
+    fn(*this, ptr, length, lock);
   }
 }
 
 void BasicChannel::readProtoCallbackEntryPoint_(
     const Error& error,
     TBoundReadProtoCallback fn) {
-  if (processError(error)) {
+  std::unique_lock<std::mutex> lock(mutex_);
+  if (processError(error, lock)) {
     return;
   }
   if (fn) {
-    fn(*this);
+    fn(*this, lock);
   }
 }
 
 void BasicChannel::writeCallbackEntryPoint_(
     const Error& error,
     TBoundWriteCallback fn) {
-  if (processError(error)) {
+  std::unique_lock<std::mutex> lock(mutex_);
+  if (processError(error, lock)) {
     return;
   }
   if (fn) {
-    fn(*this);
+    fn(*this, lock);
   }
 }
 
-bool BasicChannel::processError(const Error& error) {
-  std::unique_lock<std::mutex> lock(mutex_);
+bool BasicChannel::processError(const Error& error, TLock lock) {
+  TP_DCHECK(lock.owns_lock() && lock.mutex() == &mutex_);
 
   // Ignore if an error was already set.
   if (error_) {

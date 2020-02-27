@@ -46,7 +46,7 @@ Listener::Listener(
 void Listener::start_() {
   std::unique_lock<std::mutex> lock(mutex_);
   for (const auto& listener : listeners_) {
-    armListener_(listener.first);
+    armListener_(listener.first, lock);
   }
 }
 
@@ -131,11 +131,11 @@ void Listener::readPacketCallbackEntryPoint_(
   }
   if (error) {
     error_ = error;
-    flushEverythingOnError_();
+    flushEverythingOnError_(lock);
     return;
   }
   if (fn) {
-    fn(*this);
+    fn(*this, lock);
   }
 }
 
@@ -149,11 +149,11 @@ void Listener::acceptCallbackEntryPoint_(
   }
   if (error) {
     error_ = error;
-    flushEverythingOnError_();
+    flushEverythingOnError_(lock);
     return;
   }
   if (fn) {
-    fn(*this, std::move(connection));
+    fn(*this, std::move(connection), lock);
   }
 }
 
@@ -217,7 +217,8 @@ void Listener::triggerConnectionRequestCallback_(
 // Error handling
 //
 
-void Listener::flushEverythingOnError_() {
+void Listener::flushEverythingOnError_(TLock lock) {
+  TP_DCHECK(lock.owns_lock() && lock.mutex() == &mutex_);
   acceptCallback_.triggerAll(
       [&]() { return std::make_tuple(error_, std::shared_ptr<Pipe>()); });
   for (auto& iter : connectionRequestRegistrations_) {
@@ -237,7 +238,9 @@ void Listener::flushEverythingOnError_() {
 
 void Listener::onAccept_(
     std::string transport,
-    std::shared_ptr<transport::Connection> connection) {
+    std::shared_ptr<transport::Connection> connection,
+    TLock lock) {
+  TP_DCHECK(lock.owns_lock() && lock.mutex() == &mutex_);
   // Keep it alive until we figure out what to do with it.
   connectionsWaitingForHello_.insert(connection);
   auto pbPacketIn = std::make_shared<proto::Packet>();
@@ -247,35 +250,39 @@ void Listener::onAccept_(
           [pbPacketIn,
            transport{std::move(transport)},
            weakConnection{std::weak_ptr<transport::Connection>(connection)}](
-              Listener& listener) mutable {
+              Listener& listener, TLock lock) mutable {
             std::shared_ptr<transport::Connection> connection =
                 weakConnection.lock();
             TP_DCHECK(connection);
             listener.connectionsWaitingForHello_.erase(connection);
             listener.onConnectionHelloRead_(
-                std::move(transport), std::move(connection), *pbPacketIn);
+                std::move(transport), std::move(connection), *pbPacketIn, lock);
           }));
 }
 
-void Listener::armListener_(std::string transport) {
+void Listener::armListener_(std::string transport, TLock lock) {
+  TP_DCHECK(lock.owns_lock() && lock.mutex() == &mutex_);
   auto iter = listeners_.find(transport);
   if (iter == listeners_.end()) {
     TP_THROW_EINVAL() << "unsupported transport " << transport;
   }
   auto transportListener = iter->second;
-  transportListener->accept(wrapAcceptCallback_(
-      [transport](
-          Listener& listener,
-          std::shared_ptr<transport::Connection> connection) {
-        listener.onAccept_(transport, std::move(connection));
-        listener.armListener_(transport);
+  transportListener->accept(
+      wrapAcceptCallback_([transport](
+                              Listener& listener,
+                              std::shared_ptr<transport::Connection> connection,
+                              TLock lock) {
+        listener.onAccept_(transport, std::move(connection), lock);
+        listener.armListener_(transport, lock);
       }));
 }
 
 void Listener::onConnectionHelloRead_(
     std::string transport,
     std::shared_ptr<transport::Connection> connection,
-    const proto::Packet& pbPacketIn) {
+    const proto::Packet& pbPacketIn,
+    TLock lock) {
+  TP_DCHECK(lock.owns_lock() && lock.mutex() == &mutex_);
   if (pbPacketIn.has_spontaneous_connection()) {
     std::shared_ptr<Pipe> pipe = std::make_shared<Pipe>(
         Pipe::ConstructorToken(),

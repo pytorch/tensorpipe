@@ -81,10 +81,19 @@ class Listener final : public std::enable_shared_from_this<Listener> {
   std::string url(const std::string& transport) const;
 
  private:
+  // Each time a thread starts running some of the listener's code, we acquire
+  // this mutex. There are two "entry points" where control is handed to the
+  // listener: the public user-facing functions, and the callbacks (which we
+  // always wrap with wrapFooCallback_, which first calls fooEntryPoint_, which
+  // is where the mutex is acquired). Some internal methods may however want to
+  // temporarily release the lock, so we give all of them a reference to the
+  // lock that has been acquired at the entry point.
+  mutable std::mutex mutex_;
+  using TLock = std::unique_lock<std::mutex>&;
+
   using connection_request_callback_fn = std::function<
       void(const Error&, std::string, std::shared_ptr<transport::Connection>)>;
 
-  mutable std::mutex mutex_;
   Error error_;
 
   std::shared_ptr<Context> context_;
@@ -128,7 +137,7 @@ class Listener final : public std::enable_shared_from_this<Listener> {
 
   using transport_read_packet_callback_fn =
       transport::Connection::read_proto_callback_fn;
-  using bound_read_packet_callback_fn = std::function<void(Listener&)>;
+  using bound_read_packet_callback_fn = std::function<void(Listener&, TLock)>;
   transport_read_packet_callback_fn wrapReadPacketCallback_(
       bound_read_packet_callback_fn = nullptr);
   void readPacketCallbackEntryPoint_(
@@ -137,8 +146,8 @@ class Listener final : public std::enable_shared_from_this<Listener> {
 
   using transport_accept_callback_fn =
       std::function<void(const Error&, std::shared_ptr<transport::Connection>)>;
-  using bound_accept_callback_fn =
-      std::function<void(Listener&, std::shared_ptr<transport::Connection>)>;
+  using bound_accept_callback_fn = std::function<
+      void(Listener&, std::shared_ptr<transport::Connection>, TLock)>;
   transport_accept_callback_fn wrapAcceptCallback_(
       bound_accept_callback_fn = nullptr);
   void acceptCallbackEntryPoint_(
@@ -165,18 +174,19 @@ class Listener final : public std::enable_shared_from_this<Listener> {
   // Error handling
   //
 
-  void flushEverythingOnError_();
+  void flushEverythingOnError_(TLock);
 
   //
   // Everything else
   //
 
-  void armListener_(std::string);
-  void onAccept_(std::string, std::shared_ptr<transport::Connection>);
+  void armListener_(std::string, TLock);
+  void onAccept_(std::string, std::shared_ptr<transport::Connection>, TLock);
   void onConnectionHelloRead_(
       std::string,
       std::shared_ptr<transport::Connection>,
-      const proto::Packet&);
+      const proto::Packet&,
+      TLock);
 
   friend class Context;
   friend class Pipe;

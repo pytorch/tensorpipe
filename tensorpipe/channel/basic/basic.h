@@ -55,26 +55,34 @@ class BasicChannel : public Channel,
       TRecvCallback callback) override;
 
  private:
+  // Each time a thread starts running some of the channel's code, we acquire
+  // this mutex. There are two "entry points" where control is handed to the
+  // channel: the public user-facing functions, and the callbacks (which we
+  // always wrap with wrapFooCallback_, which first calls fooEntryPoint_, which
+  // is where the mutex is acquired). Some internal methods may however want to
+  // temporarily release the lock, so we give all of them a reference to the
+  // lock that has been acquired at the entry point.
+  std::mutex mutex_;
+  using TLock = std::unique_lock<std::mutex>&;
+
   // Called by factory class after construction.
   void init_();
 
   // Arm connection to read next protobuf packet.
-  void readPacket_();
+  void readPacket_(TLock lock);
 
   // Called when a protobuf packet was received.
-  void onPacket_(const proto::Packet& packet);
+  void onPacket_(const proto::Packet& packet, TLock lock);
 
   // Called when protobuf packet is a request.
-  void onRequest_(const proto::Request& request);
+  void onRequest_(const proto::Request& request, TLock lock);
 
   // Called when protobuf packet is a reply.
-  void onReply_(const proto::Reply& reply);
+  void onReply_(const proto::Reply& reply, TLock lock);
 
   // Allow factory class to call `init_()`.
   friend class BasicChannelFactory;
 
- private:
-  std::mutex mutex_;
   std::shared_ptr<transport::Connection> connection_;
   Error error_{Error::kSuccess};
 
@@ -101,10 +109,10 @@ class BasicChannel : public Channel,
   std::list<RecvOperation> recvOperations_;
 
   // Called if send operation was successful.
-  void sendCompleted(const uint64_t);
+  void sendCompleted(const uint64_t, TLock);
 
   // Called if recv operation was successful.
-  void recvCompleted(const uint64_t);
+  void recvCompleted(const uint64_t, TLock);
 
  protected:
   // Callback types used by the transport.
@@ -114,9 +122,9 @@ class BasicChannel : public Channel,
 
   // Callback types used in this class (in case of success).
   using TBoundReadCallback =
-      std::function<void(BasicChannel&, const void*, size_t)>;
-  using TBoundReadProtoCallback = std::function<void(BasicChannel&)>;
-  using TBoundWriteCallback = std::function<void(BasicChannel&)>;
+      std::function<void(BasicChannel&, const void*, size_t, TLock)>;
+  using TBoundReadProtoCallback = std::function<void(BasicChannel&, TLock)>;
+  using TBoundWriteCallback = std::function<void(BasicChannel&, TLock)>;
 
   // Generate callback to use with the underlying connection. The
   // wrapped callback ensures that the channel stays alive while it
@@ -154,7 +162,7 @@ class BasicChannel : public Channel,
 
   // Helper function to process transport error.
   // Shared between read and write callback entry points.
-  bool processError(const Error& error);
+  bool processError(const Error& error, TLock lock);
 };
 
 } // namespace basic
