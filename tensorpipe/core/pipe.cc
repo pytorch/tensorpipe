@@ -46,7 +46,13 @@ Pipe::Pipe(
     : state_(CLIENT_ABOUT_TO_SEND_HELLO_AND_BROCHURE),
       context_(std::move(context)),
       transport_(std::move(transport)),
-      connection_(std::move(connection)) {}
+      connection_(std::move(connection)),
+      readCallbackWrapper_(*this),
+      readPacketCallbackWrapper_(*this),
+      writeCallbackWrapper_(*this),
+      connectionRequestCallbackWrapper_(*this),
+      channelRecvCallbackWrapper_(*this),
+      channelSendCallbackWrapper_(*this) {}
 
 Pipe::Pipe(
     ConstructorToken /* unused */,
@@ -58,7 +64,13 @@ Pipe::Pipe(
       context_(std::move(context)),
       listener_(std::move(listener)),
       transport_(std::move(transport)),
-      connection_(std::move(connection)) {}
+      connection_(std::move(connection)),
+      readCallbackWrapper_(*this),
+      readPacketCallbackWrapper_(*this),
+      writeCallbackWrapper_(*this),
+      connectionRequestCallbackWrapper_(*this),
+      channelRecvCallbackWrapper_(*this),
+      channelSendCallbackWrapper_(*this) {}
 
 void Pipe::start_() {
   std::unique_lock<std::mutex> lock(mutex_);
@@ -68,7 +80,7 @@ void Pipe::start_() {
     pbPacketOut->mutable_spontaneous_connection();
     connection_->write(
         *pbPacketOut,
-        wrapWriteCallback_(
+        writeCallbackWrapper_(
             [pbPacketOut](Pipe& /* unused */, TLock /* unused */) {}));
 
     auto pbPacketOut2 = std::make_shared<proto::Packet>();
@@ -96,13 +108,13 @@ void Pipe::start_() {
     }
     connection_->write(
         *pbPacketOut2,
-        wrapWriteCallback_(
+        writeCallbackWrapper_(
             [pbPacketOut2](Pipe& /* unused */, TLock /* unused */) {}));
     state_ = CLIENT_WAITING_FOR_BROCHURE_ANSWER;
     auto pbPacketIn = std::make_shared<proto::Packet>();
     connection_->read(
         *pbPacketIn,
-        wrapReadPacketCallback_([pbPacketIn](Pipe& pipe, TLock lock) {
+        readPacketCallbackWrapper_([pbPacketIn](Pipe& pipe, TLock lock) {
           pipe.onReadWhileClientWaitingForBrochureAnswer_(*pbPacketIn, lock);
         }));
   }
@@ -110,7 +122,7 @@ void Pipe::start_() {
     auto pbPacketIn = std::make_shared<proto::Packet>();
     connection_->read(
         *pbPacketIn,
-        wrapReadPacketCallback_([pbPacketIn](Pipe& pipe, TLock lock) {
+        readPacketCallbackWrapper_([pbPacketIn](Pipe& pipe, TLock lock) {
           pipe.onReadWhileServerWaitingForBrochure_(*pbPacketIn, lock);
         }));
   }
@@ -127,7 +139,8 @@ Pipe::~Pipe() {
     listener_->unregisterConnectionRequest_(iter.second);
   }
   channelRegistrationIds_.clear();
-  processError_(TP_CREATE_ERROR(PipeClosedError), lock);
+  error_ = TP_CREATE_ERROR(PipeClosedError);
+  handleError_(lock);
 }
 
 //
@@ -176,11 +189,11 @@ void Pipe::read(Message message, read_callback_fn fn) {
   connection_->read(
       message.data,
       message.length,
-      wrapReadCallback_([sequenceNumber{messageBeingRead.sequenceNumber}](
-                            Pipe& pipe,
-                            const void* /* unused */,
-                            size_t /* unused */,
-                            TLock lock) {
+      readCallbackWrapper_([sequenceNumber{messageBeingRead.sequenceNumber}](
+                               Pipe& pipe,
+                               const void* /* unused */,
+                               size_t /* unused */,
+                               TLock lock) {
         pipe.onReadOfMessageData_(sequenceNumber, lock);
       }));
 
@@ -198,7 +211,7 @@ void Pipe::read(Message message, read_callback_fn fn) {
         std::move(tensorBeingAllocated.channelDescriptor),
         tensor.data,
         tensor.length,
-        wrapChannelRecvCallback_(
+        channelRecvCallbackWrapper_(
             [sequenceNumber{messageBeingRead.sequenceNumber}](
                 Pipe& pipe, TLock lock) {
               pipe.onRecvOfTensorData_(sequenceNumber, lock);
@@ -214,7 +227,7 @@ void Pipe::read(Message message, read_callback_fn fn) {
   auto pbPacketIn = std::make_shared<proto::Packet>();
   connection_->read(
       *pbPacketIn,
-      wrapReadPacketCallback_([pbPacketIn](Pipe& pipe, TLock lock) {
+      readPacketCallbackWrapper_([pbPacketIn](Pipe& pipe, TLock lock) {
         pipe.onReadOfMessageDescriptor_(*pbPacketIn, lock);
       }));
 }
@@ -233,166 +246,6 @@ void Pipe::write(Message message, write_callback_fn fn) {
     writesWaitingUntilPipeIsEstablished_.emplace_back(
         std::move(message), std::move(fn));
   }
-}
-
-//
-// Entry points for callbacks from transports and listener
-//
-
-void Pipe::readCallbackEntryPoint_(
-    bound_read_callback_fn fn,
-    const Error& error,
-    const void* ptr,
-    size_t len) {
-  std::unique_lock<std::mutex> lock(mutex_);
-  if (processError_(error, lock)) {
-    return;
-  }
-  if (fn) {
-    fn(*this, ptr, len, lock);
-  }
-}
-
-void Pipe::readPacketCallbackEntryPoint_(
-    bound_read_packet_callback_fn fn,
-    const Error& error) {
-  std::unique_lock<std::mutex> lock(mutex_);
-  if (processError_(error, lock)) {
-    return;
-  }
-  if (fn) {
-    fn(*this, lock);
-  }
-}
-
-void Pipe::writeCallbackEntryPoint_(
-    bound_write_callback_fn fn,
-    const Error& error) {
-  std::unique_lock<std::mutex> lock(mutex_);
-  if (processError_(error, lock)) {
-    return;
-  }
-  if (fn) {
-    fn(*this, lock);
-  }
-}
-
-void Pipe::connectionRequestCallbackEntryPoint_(
-    bound_connection_request_callback_fn fn,
-    const Error& error,
-    std::string transport,
-    std::shared_ptr<transport::Connection> connection) {
-  std::unique_lock<std::mutex> lock(mutex_);
-  if (processError_(error, lock)) {
-    return;
-  }
-  if (fn) {
-    fn(*this, std::move(transport), std::move(connection), lock);
-  }
-}
-
-void Pipe::channelRecvCallbackEntryPoint_(
-    bound_channel_recv_callback_fn fn,
-    const Error& error) {
-  std::unique_lock<std::mutex> lock(mutex_);
-  if (processError_(error, lock)) {
-    return;
-  }
-  if (fn) {
-    fn(*this, lock);
-  }
-}
-
-void Pipe::channelSendCallbackEntryPoint_(
-    bound_channel_send_callback_fn fn,
-    const Error& error) {
-  std::unique_lock<std::mutex> lock(mutex_);
-  if (processError_(error, lock)) {
-    return;
-  }
-  if (fn) {
-    fn(*this, lock);
-  }
-}
-
-//
-// Helpers to prepare callbacks from transports
-//
-
-Pipe::transport_read_callback_fn Pipe::wrapReadCallback_(
-    bound_read_callback_fn fn) {
-  return runIfAlive(
-      *this,
-      std::function<void(Pipe&, const Error&, const void*, size_t)>(
-          [fn{std::move(fn)}](
-              Pipe& pipe,
-              const Error& error,
-              const void* ptr,
-              size_t len) mutable {
-            pipe.readCallbackEntryPoint_(std::move(fn), error, ptr, len);
-          }));
-}
-
-Pipe::transport_read_packet_callback_fn Pipe::wrapReadPacketCallback_(
-    bound_read_packet_callback_fn fn) {
-  return runIfAlive(
-      *this,
-      std::function<void(Pipe&, const Error&)>(
-          [fn{std::move(fn)}](Pipe& pipe, const Error& error) mutable {
-            pipe.readPacketCallbackEntryPoint_(std::move(fn), error);
-          }));
-}
-
-Pipe::transport_write_callback_fn Pipe::wrapWriteCallback_(
-    bound_write_callback_fn fn) {
-  return runIfAlive(
-      *this,
-      std::function<void(Pipe&, const Error&)>(
-          [fn{std::move(fn)}](Pipe& pipe, const Error& error) mutable {
-            pipe.writeCallbackEntryPoint_(std::move(fn), error);
-          }));
-}
-
-Pipe::connection_request_callback_fn Pipe::wrapConnectionRequestCallback_(
-    bound_connection_request_callback_fn fn) {
-  return runIfAlive(
-      *this,
-      std::function<void(
-          Pipe&,
-          const Error&,
-          std::string,
-          std::shared_ptr<transport::Connection>)>(
-          [fn{std::move(fn)}](
-              Pipe& pipe,
-              const Error& error,
-              std::string transport,
-              std::shared_ptr<transport::Connection> connection) mutable {
-            pipe.connectionRequestCallbackEntryPoint_(
-                std::move(fn),
-                error,
-                std::move(transport),
-                std::move(connection));
-          }));
-}
-
-Pipe::channel_recv_callback_fn Pipe::wrapChannelRecvCallback_(
-    bound_channel_recv_callback_fn fn) {
-  return runIfAlive(
-      *this,
-      std::function<void(Pipe&, const Error&)>(
-          [fn{std::move(fn)}](Pipe& pipe, const Error& error) mutable {
-            pipe.channelRecvCallbackEntryPoint_(std::move(fn), error);
-          }));
-}
-
-Pipe::channel_send_callback_fn Pipe::wrapChannelSendCallback_(
-    bound_channel_send_callback_fn fn) {
-  return runIfAlive(
-      *this,
-      std::function<void(Pipe&, const Error&)>(
-          [fn{std::move(fn)}](Pipe& pipe, const Error& error) mutable {
-            pipe.channelSendCallbackEntryPoint_(std::move(fn), error);
-          }));
 }
 
 //
@@ -442,19 +295,8 @@ void Pipe::triggerWriteCallback_(
 // Error handling
 //
 
-bool Pipe::processError_(const Error& error, TLock lock) {
+void Pipe::handleError_(TLock lock) {
   TP_DCHECK(lock.owns_lock() && lock.mutex() == &mutex_);
-
-  // Nothing to do if we already were in an error state or if there is no error.
-  if (error_) {
-    return true;
-  }
-  if (!error) {
-    return false;
-  }
-
-  // Otherwise enter the error state and do the cleanup.
-  error_ = error;
 
   readDescriptorCallback_.triggerAll(
       [&]() { return std::make_tuple(error_, Message()); });
@@ -477,8 +319,6 @@ bool Pipe::processError_(const Error& error, TLock lock) {
     triggerWriteCallback_(std::move(fn), error_, std::move(message));
   }
   messagesBeingWritten_.clear();
-
-  return true;
 }
 
 //
@@ -534,7 +374,7 @@ void Pipe::writeWhenEstablished_(
       std::vector<uint8_t> descriptor = channel.send(
           tensor.data,
           tensor.length,
-          wrapChannelSendCallback_(
+          channelSendCallbackWrapper_(
               [sequenceNumber{messageBeingWritten.sequenceNumber}](
                   Pipe& pipe, TLock lock) {
                 pipe.onSendOfTensorData_(sequenceNumber, lock);
@@ -553,16 +393,17 @@ void Pipe::writeWhenEstablished_(
 
   connection_->write(
       *pbPacketOut,
-      wrapWriteCallback_(
+      writeCallbackWrapper_(
           [pbPacketOut](Pipe& /* unused */, TLock /* unused */) {}));
 
   connection_->write(
       message.data,
       message.length,
-      wrapWriteCallback_([sequenceNumber{messageBeingWritten.sequenceNumber}](
-                             Pipe& pipe, TLock lock) {
-        pipe.onWriteOfMessageData_(sequenceNumber, lock);
-      }));
+      writeCallbackWrapper_(
+          [sequenceNumber{messageBeingWritten.sequenceNumber}](
+              Pipe& pipe, TLock lock) {
+            pipe.onWriteOfMessageData_(sequenceNumber, lock);
+          }));
 
   messageBeingWritten.message = std::move(message);
   messageBeingWritten.callback = std::move(fn);
@@ -615,8 +456,8 @@ void Pipe::onReadWhileServerWaitingForBrochure_(
     if (transport != transport_) {
       transport_ = transport;
       TP_DCHECK(!registrationId_.has_value());
-      registrationId_.emplace(
-          listener_->registerConnectionRequest_(wrapConnectionRequestCallback_(
+      registrationId_.emplace(listener_->registerConnectionRequest_(
+          connectionRequestCallbackWrapper_(
               [](Pipe& pipe,
                  std::string transport,
                  std::shared_ptr<transport::Connection> connection,
@@ -654,7 +495,7 @@ void Pipe::onReadWhileServerWaitingForBrochure_(
     }
 
     channelRegistrationIds_[name] =
-        listener_->registerConnectionRequest_(wrapConnectionRequestCallback_(
+        listener_->registerConnectionRequest_(connectionRequestCallbackWrapper_(
             [name](
                 Pipe& pipe,
                 std::string transport,
@@ -671,7 +512,7 @@ void Pipe::onReadWhileServerWaitingForBrochure_(
 
   connection_->write(
       *pbPacketOut,
-      wrapWriteCallback_(
+      writeCallbackWrapper_(
           [pbPacketOut](Pipe& /* unused */, TLock /* unused */) {}));
 
   if (!needToWaitForConnections) {
@@ -680,7 +521,7 @@ void Pipe::onReadWhileServerWaitingForBrochure_(
     auto pbPacketIn = std::make_shared<proto::Packet>();
     connection_->read(
         *pbPacketIn,
-        wrapReadPacketCallback_([pbPacketIn](Pipe& pipe, TLock lock) {
+        readPacketCallbackWrapper_([pbPacketIn](Pipe& pipe, TLock lock) {
           pipe.onReadOfMessageDescriptor_(*pbPacketIn, lock);
         }));
   } else {
@@ -712,7 +553,7 @@ void Pipe::onReadWhileClientWaitingForBrochureAnswer_(
         pbBrochureAnswer.registration_id());
     connection->write(
         *pbPacketOut,
-        wrapWriteCallback_(
+        writeCallbackWrapper_(
             [pbPacketOut](Pipe& /* unused */, TLock /* unused */) {}));
 
     transport_ = transport;
@@ -739,7 +580,7 @@ void Pipe::onReadWhileClientWaitingForBrochureAnswer_(
         pbChannelSelection.registration_id());
     connection->write(
         *pbPacketOut,
-        wrapWriteCallback_(
+        writeCallbackWrapper_(
             [pbPacketOut](Pipe& /* unused */, TLock /* unused */) {}));
 
     channels_.emplace(
@@ -753,7 +594,7 @@ void Pipe::onReadWhileClientWaitingForBrochureAnswer_(
   auto pbPacketIn2 = std::make_shared<proto::Packet>();
   connection_->read(
       *pbPacketIn2,
-      wrapReadPacketCallback_([pbPacketIn2](Pipe& pipe, TLock lock) {
+      readPacketCallbackWrapper_([pbPacketIn2](Pipe& pipe, TLock lock) {
         pipe.onReadOfMessageDescriptor_(*pbPacketIn2, lock);
       }));
 }
@@ -777,7 +618,7 @@ void Pipe::onAcceptWhileServerWaitingForConnection_(
     auto pbPacketIn = std::make_shared<proto::Packet>();
     connection_->read(
         *pbPacketIn,
-        wrapReadPacketCallback_([pbPacketIn](Pipe& pipe, TLock lock) {
+        readPacketCallbackWrapper_([pbPacketIn](Pipe& pipe, TLock lock) {
           pipe.onReadOfMessageDescriptor_(*pbPacketIn, lock);
         }));
   }
@@ -815,7 +656,7 @@ void Pipe::onAcceptWhileServerWaitingForChannel_(
     auto pbPacketIn = std::make_shared<proto::Packet>();
     connection_->read(
         *pbPacketIn,
-        wrapReadPacketCallback_([pbPacketIn](Pipe& pipe, TLock lock) {
+        readPacketCallbackWrapper_([pbPacketIn](Pipe& pipe, TLock lock) {
           pipe.onReadOfMessageDescriptor_(*pbPacketIn, lock);
         }));
   }

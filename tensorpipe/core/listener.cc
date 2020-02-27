@@ -27,7 +27,9 @@ Listener::Listener(
     ConstructorToken /* unused */,
     std::shared_ptr<Context> context,
     const std::vector<std::string>& urls)
-    : context_(std::move(context)) {
+    : context_(std::move(context)),
+      readPacketCallbackWrapper_(*this),
+      acceptCallbackWrapper_(*this) {
   for (const auto& url : urls) {
     std::string transport;
     std::string address;
@@ -119,64 +121,6 @@ void Listener::unregisterConnectionRequest_(uint64_t registrationId) {
 }
 
 //
-// Entry points for callbacks from transports
-//
-
-void Listener::readPacketCallbackEntryPoint_(
-    bound_read_packet_callback_fn fn,
-    const Error& error) {
-  std::unique_lock<std::mutex> lock(mutex_);
-  if (processError_(error, lock)) {
-    return;
-  }
-  if (fn) {
-    fn(*this, lock);
-  }
-}
-
-void Listener::acceptCallbackEntryPoint_(
-    bound_accept_callback_fn fn,
-    const Error& error,
-    std::shared_ptr<transport::Connection> connection) {
-  std::unique_lock<std::mutex> lock(mutex_);
-  if (processError_(error, lock)) {
-    return;
-  }
-  if (fn) {
-    fn(*this, std::move(connection), lock);
-  }
-}
-
-//
-// Helpers to prepare callbacks from transports
-//
-
-Listener::transport_read_packet_callback_fn Listener::wrapReadPacketCallback_(
-    bound_read_packet_callback_fn fn) {
-  return runIfAlive(
-      *this,
-      std::function<void(Listener&, const Error&)>(
-          [fn{std::move(fn)}](Listener& listener, const Error& error) {
-            listener.readPacketCallbackEntryPoint_(std::move(fn), error);
-          }));
-}
-
-Listener::transport_accept_callback_fn Listener::wrapAcceptCallback_(
-    bound_accept_callback_fn fn) {
-  return runIfAlive(
-      *this,
-      std::function<void(
-          Listener&, const Error&, std::shared_ptr<transport::Connection>)>(
-          [fn{std::move(fn)}](
-              Listener& listener,
-              const Error& error,
-              std::shared_ptr<transport::Connection> connection) {
-            listener.acceptCallbackEntryPoint_(
-                std::move(fn), error, std::move(connection));
-          }));
-}
-
-//
 // Helpers to schedule our callbacks into user code
 //
 
@@ -207,19 +151,8 @@ void Listener::triggerConnectionRequestCallback_(
 // Error handling
 //
 
-bool Listener::processError_(const Error& error, TLock lock) {
+void Listener::handleError_(TLock lock) {
   TP_DCHECK(lock.owns_lock() && lock.mutex() == &mutex_);
-
-  // Nothing to do if we already were in an error state or if there is no error.
-  if (error_) {
-    return true;
-  }
-  if (!error) {
-    return false;
-  }
-
-  // Otherwise enter the error state and do the cleanup.
-  error_ = error;
 
   acceptCallback_.triggerAll(
       [&]() { return std::make_tuple(error_, std::shared_ptr<Pipe>()); });
@@ -232,8 +165,6 @@ bool Listener::processError_(const Error& error, TLock lock) {
         std::shared_ptr<transport::Connection>());
   }
   connectionRequestRegistrations_.clear();
-
-  return true;
 }
 
 //
@@ -250,7 +181,7 @@ void Listener::onAccept_(
   auto pbPacketIn = std::make_shared<proto::Packet>();
   connection->read(
       *pbPacketIn,
-      wrapReadPacketCallback_(
+      readPacketCallbackWrapper_(
           [pbPacketIn,
            transport{std::move(transport)},
            weakConnection{std::weak_ptr<transport::Connection>(connection)}](
@@ -271,11 +202,11 @@ void Listener::armListener_(std::string transport, TLock lock) {
     TP_THROW_EINVAL() << "unsupported transport " << transport;
   }
   auto transportListener = iter->second;
-  transportListener->accept(
-      wrapAcceptCallback_([transport](
-                              Listener& listener,
-                              std::shared_ptr<transport::Connection> connection,
-                              TLock lock) {
+  transportListener->accept(acceptCallbackWrapper_(
+      [transport](
+          Listener& listener,
+          std::shared_ptr<transport::Connection> connection,
+          TLock lock) {
         listener.onAccept_(transport, std::move(connection), lock);
         listener.armListener_(transport, lock);
       }));

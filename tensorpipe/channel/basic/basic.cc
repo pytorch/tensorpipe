@@ -39,7 +39,10 @@ std::shared_ptr<Channel> BasicChannelFactory::createChannel(
 BasicChannel::BasicChannel(
     ConstructorToken /* unused */,
     std::shared_ptr<transport::Connection> connection)
-    : connection_(std::move(connection)) {
+    : connection_(std::move(connection)),
+      readCallbackWrapper_(*this),
+      readProtoCallbackWrapper_(*this),
+      writeCallbackWrapper_(*this) {
   // The factory calls `init_()` after construction so that we can use
   // `shared_from_this()`. The shared_ptr that refers to the object
   // itself isn't usable when the constructor is still being executed.
@@ -83,7 +86,7 @@ void BasicChannel::recv(
   pbRequest->set_operation_id(id);
   connection_->write(
       *packet,
-      wrapWriteCallback_(
+      writeCallbackWrapper_(
           [packet](BasicChannel& /* unused */, TLock /* unused */) {}));
   return;
 }
@@ -98,7 +101,7 @@ void BasicChannel::readPacket_(TLock lock) {
   auto packet = std::make_shared<proto::Packet>();
   connection_->read(
       *packet,
-      wrapReadProtoCallback_([packet](BasicChannel& channel, TLock lock) {
+      readProtoCallbackWrapper_([packet](BasicChannel& channel, TLock lock) {
         channel.onPacket_(*packet, lock);
       }));
 }
@@ -137,14 +140,14 @@ void BasicChannel::onRequest_(const proto::Request& request, TLock lock) {
   pbReply->set_operation_id(id);
   connection_->write(
       *pbPacketOut,
-      wrapWriteCallback_(
+      writeCallbackWrapper_(
           [pbPacketOut](BasicChannel& /* unused */, TLock /* unused */) {}));
 
   // Write payload.
   connection_->write(
       op.ptr,
       op.length,
-      wrapWriteCallback_([id](BasicChannel& channel, TLock lock) {
+      writeCallbackWrapper_([id](BasicChannel& channel, TLock lock) {
         channel.sendCompleted(id, lock);
       }));
 }
@@ -167,11 +170,12 @@ void BasicChannel::onReply_(const proto::Reply& reply, TLock lock) {
   connection_->read(
       op.ptr,
       op.length,
-      wrapReadCallback_([id](
-                            BasicChannel& channel,
-                            const void* /* unused */,
-                            size_t /* unused */,
-                            TLock lock) { channel.recvCompleted(id, lock); }));
+      readCallbackWrapper_(
+          [id](
+              BasicChannel& channel,
+              const void* /* unused */,
+              size_t /* unused */,
+              TLock lock) { channel.recvCompleted(id, lock); }));
 }
 
 void BasicChannel::sendCompleted(const uint64_t id, TLock lock) {
@@ -210,91 +214,8 @@ void BasicChannel::recvCompleted(const uint64_t id, TLock lock) {
   op.callback(Error::kSuccess);
 }
 
-BasicChannel::TReadCallback BasicChannel::wrapReadCallback_(
-    TBoundReadCallback fn) {
-  return runIfAlive(
-      *this,
-      std::function<void(BasicChannel&, const Error&, const void*, size_t)>(
-          [fn{std::move(fn)}](
-              BasicChannel& channel,
-              const Error& error,
-              const void* ptr,
-              size_t length) {
-            channel.readCallbackEntryPoint_(error, ptr, length, std::move(fn));
-          }));
-}
-
-BasicChannel::TReadProtoCallback BasicChannel::wrapReadProtoCallback_(
-    TBoundReadProtoCallback fn) {
-  return runIfAlive(
-      *this,
-      std::function<void(BasicChannel&, const Error&)>(
-          [fn{std::move(fn)}](BasicChannel& channel, const Error& error) {
-            channel.readProtoCallbackEntryPoint_(error, std::move(fn));
-          }));
-}
-
-BasicChannel::TWriteCallback BasicChannel::wrapWriteCallback_(
-    TBoundWriteCallback fn) {
-  return runIfAlive(
-      *this,
-      std::function<void(BasicChannel&, const Error&)>(
-          [fn{std::move(fn)}](BasicChannel& channel, const Error& error) {
-            channel.writeCallbackEntryPoint_(error, std::move(fn));
-          }));
-}
-
-void BasicChannel::readCallbackEntryPoint_(
-    const Error& error,
-    const void* ptr,
-    size_t length,
-    TBoundReadCallback fn) {
-  std::unique_lock<std::mutex> lock(mutex_);
-  if (processError_(error, lock)) {
-    return;
-  }
-  if (fn) {
-    fn(*this, ptr, length, lock);
-  }
-}
-
-void BasicChannel::readProtoCallbackEntryPoint_(
-    const Error& error,
-    TBoundReadProtoCallback fn) {
-  std::unique_lock<std::mutex> lock(mutex_);
-  if (processError_(error, lock)) {
-    return;
-  }
-  if (fn) {
-    fn(*this, lock);
-  }
-}
-
-void BasicChannel::writeCallbackEntryPoint_(
-    const Error& error,
-    TBoundWriteCallback fn) {
-  std::unique_lock<std::mutex> lock(mutex_);
-  if (processError_(error, lock)) {
-    return;
-  }
-  if (fn) {
-    fn(*this, lock);
-  }
-}
-
-bool BasicChannel::processError_(const Error& error, TLock lock) {
+void BasicChannel::handleError_(TLock lock) {
   TP_DCHECK(lock.owns_lock() && lock.mutex() == &mutex_);
-
-  // Nothing to do if we already were in an error state or if there is no error.
-  if (error_) {
-    return true;
-  }
-  if (!error) {
-    return false;
-  }
-
-  // Otherwise enter the error state and do the cleanup.
-  error_ = error;
 
   // Move pending operations to stack.
   auto sendOperations = std::move(sendOperations_);
@@ -312,8 +233,6 @@ bool BasicChannel::processError_(const Error& error, TLock lock) {
   for (auto& op : recvOperations) {
     op.callback(error_);
   }
-
-  return true;
 }
 
 } // namespace basic

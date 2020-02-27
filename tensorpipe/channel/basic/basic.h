@@ -11,6 +11,7 @@
 #include <list>
 
 #include <tensorpipe/channel/channel.h>
+#include <tensorpipe/common/callback.h>
 #include <tensorpipe/common/error.h>
 #include <tensorpipe/proto/channel/basic.pb.h>
 
@@ -114,55 +115,18 @@ class BasicChannel : public Channel,
   // Called if recv operation was successful.
   void recvCompleted(const uint64_t, TLock);
 
- protected:
-  // Callback types used by the transport.
-  using TReadCallback = transport::Connection::read_callback_fn;
-  using TReadProtoCallback = transport::Connection::read_proto_callback_fn;
-  using TWriteCallback = transport::Connection::write_callback_fn;
-
-  // Callback types used in this class (in case of success).
-  using TBoundReadCallback =
-      std::function<void(BasicChannel&, const void*, size_t, TLock)>;
-  using TBoundReadProtoCallback = std::function<void(BasicChannel&, TLock)>;
-  using TBoundWriteCallback = std::function<void(BasicChannel&, TLock)>;
-
-  // Generate callback to use with the underlying connection. The
-  // wrapped callback ensures that the channel stays alive while it
-  // is called and calls into `readCallbackEntryPoint_` such that
-  // all error handling can be consolidated.
-  //
-  // Note: the bound callback is only called if the read from the
-  // connection completed successfully.
-  //
-
-  // Read bytes.
-  TReadCallback wrapReadCallback_(TBoundReadCallback fn = nullptr);
-
-  // Read protobuf packet.
-  TReadProtoCallback wrapReadProtoCallback_(
-      TBoundReadProtoCallback fn = nullptr);
-
-  // Generic write (for both bytes and protobuf packets).
-  TWriteCallback wrapWriteCallback_(TBoundWriteCallback fn = nullptr);
-
-  // Called when callback returned by `wrapReadCallback_` gets called.
-  void readCallbackEntryPoint_(
-      const Error& error,
-      const void* ptr,
-      size_t length,
-      TBoundReadCallback fn);
-
-  // Called when callback returned by `wrapReadCallback_` gets called.
-  void readProtoCallbackEntryPoint_(
-      const Error& error,
-      TBoundReadProtoCallback fn);
-
-  // Called when callback returned by `wrapWriteCallback_` gets called.
-  void writeCallbackEntryPoint_(const Error& error, TBoundWriteCallback fn);
+  // Helpers to prepare callbacks from transports
+  CallbackWrapper<BasicChannel, const void*, size_t> readCallbackWrapper_;
+  CallbackWrapper<BasicChannel> readProtoCallbackWrapper_;
+  CallbackWrapper<BasicChannel> writeCallbackWrapper_;
 
   // Helper function to process transport error.
   // Shared between read and write callback entry points.
-  bool processError_(const Error& error, TLock lock);
+  void handleError_(TLock lock);
+
+  // For some odd reason it seems we need to use a qualified name here...
+  template <typename T, typename... Args>
+  friend class tensorpipe::CallbackWrapper;
 };
 
 } // namespace basic

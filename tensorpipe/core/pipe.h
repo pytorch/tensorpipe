@@ -167,63 +167,16 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
   void start_();
 
   //
-  // Entry points for callbacks from transports and listener
-  // and helpers to prepare them
+  // Helpers to prepare callbacks from transports and listener
   //
 
-  using transport_read_callback_fn = transport::Connection::read_callback_fn;
-  using bound_read_callback_fn =
-      std::function<void(Pipe&, const void*, size_t, TLock)>;
-  transport_read_callback_fn wrapReadCallback_(
-      bound_read_callback_fn = nullptr);
-  void readCallbackEntryPoint_(
-      bound_read_callback_fn,
-      const Error&,
-      const void*,
-      size_t);
-
-  using transport_read_packet_callback_fn =
-      transport::Connection::read_proto_callback_fn;
-  using bound_read_packet_callback_fn = std::function<void(Pipe&, TLock)>;
-  transport_read_packet_callback_fn wrapReadPacketCallback_(
-      bound_read_packet_callback_fn = nullptr);
-  void readPacketCallbackEntryPoint_(
-      bound_read_packet_callback_fn,
-      const Error&);
-
-  using transport_write_callback_fn = transport::Connection::write_callback_fn;
-  using bound_write_callback_fn = std::function<void(Pipe&, TLock)>;
-  transport_write_callback_fn wrapWriteCallback_(
-      bound_write_callback_fn = nullptr);
-  void writeCallbackEntryPoint_(bound_write_callback_fn, const Error&);
-
-  using connection_request_callback_fn = std::function<
-      void(const Error&, std::string, std::shared_ptr<transport::Connection>)>;
-  using bound_connection_request_callback_fn = std::function<
-      void(Pipe&, std::string, std::shared_ptr<transport::Connection>, TLock)>;
-  connection_request_callback_fn wrapConnectionRequestCallback_(
-      bound_connection_request_callback_fn = nullptr);
-  void connectionRequestCallbackEntryPoint_(
-      bound_connection_request_callback_fn,
-      const Error&,
-      std::string,
-      std::shared_ptr<transport::Connection>);
-
-  using channel_recv_callback_fn = channel::Channel::TRecvCallback;
-  using bound_channel_recv_callback_fn = std::function<void(Pipe&, TLock)>;
-  channel_recv_callback_fn wrapChannelRecvCallback_(
-      bound_channel_recv_callback_fn = nullptr);
-  void channelRecvCallbackEntryPoint_(
-      bound_channel_recv_callback_fn,
-      const Error&);
-
-  using channel_send_callback_fn = channel::Channel::TSendCallback;
-  using bound_channel_send_callback_fn = std::function<void(Pipe&, TLock)>;
-  channel_send_callback_fn wrapChannelSendCallback_(
-      bound_channel_send_callback_fn = nullptr);
-  void channelSendCallbackEntryPoint_(
-      bound_channel_send_callback_fn,
-      const Error&);
+  CallbackWrapper<Pipe, const void*, size_t> readCallbackWrapper_;
+  CallbackWrapper<Pipe> readPacketCallbackWrapper_;
+  CallbackWrapper<Pipe> writeCallbackWrapper_;
+  CallbackWrapper<Pipe, std::string, std::shared_ptr<transport::Connection>>
+      connectionRequestCallbackWrapper_;
+  CallbackWrapper<Pipe> channelRecvCallbackWrapper_;
+  CallbackWrapper<Pipe> channelSendCallbackWrapper_;
 
   //
   // Helpers to schedule our callbacks into user code
@@ -240,7 +193,7 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
   // Error handling
   //
 
-  bool processError_(const Error&, TLock);
+  void handleError_(TLock);
 
   //
   // Everything else
@@ -270,6 +223,8 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
 
   friend class Context;
   friend class Listener;
+  template <typename T, typename... Args>
+  friend class CallbackWrapper;
 };
 
 } // namespace tensorpipe

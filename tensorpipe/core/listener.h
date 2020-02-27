@@ -131,29 +131,12 @@ class Listener final : public std::enable_shared_from_this<Listener> {
   void unregisterConnectionRequest_(uint64_t);
 
   //
-  // Entry points for callbacks from transports and listener
-  // and helpers to prepare them
+  // Helpers to prepare callbacks from transports
   //
 
-  using transport_read_packet_callback_fn =
-      transport::Connection::read_proto_callback_fn;
-  using bound_read_packet_callback_fn = std::function<void(Listener&, TLock)>;
-  transport_read_packet_callback_fn wrapReadPacketCallback_(
-      bound_read_packet_callback_fn = nullptr);
-  void readPacketCallbackEntryPoint_(
-      bound_read_packet_callback_fn,
-      const Error&);
-
-  using transport_accept_callback_fn =
-      std::function<void(const Error&, std::shared_ptr<transport::Connection>)>;
-  using bound_accept_callback_fn = std::function<
-      void(Listener&, std::shared_ptr<transport::Connection>, TLock)>;
-  transport_accept_callback_fn wrapAcceptCallback_(
-      bound_accept_callback_fn = nullptr);
-  void acceptCallbackEntryPoint_(
-      bound_accept_callback_fn,
-      const Error&,
-      std::shared_ptr<transport::Connection>);
+  CallbackWrapper<Listener> readPacketCallbackWrapper_;
+  CallbackWrapper<Listener, std::shared_ptr<transport::Connection>>
+      acceptCallbackWrapper_;
 
   //
   // Helpers to schedule our callbacks into user code
@@ -174,7 +157,7 @@ class Listener final : public std::enable_shared_from_this<Listener> {
   // Error handling
   //
 
-  bool processError_(const Error&, TLock);
+  void handleError_(TLock);
 
   //
   // Everything else
@@ -190,6 +173,8 @@ class Listener final : public std::enable_shared_from_this<Listener> {
 
   friend class Context;
   friend class Pipe;
+  template <typename T, typename... Args>
+  friend class CallbackWrapper;
 };
 
 } // namespace tensorpipe
