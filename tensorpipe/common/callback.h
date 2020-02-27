@@ -58,8 +58,9 @@ auto cb_apply(F&& f, T&& t) {
 // A wrapper for a callback that "burns out" after it fires and thus needs to be
 // rearmed every time. Invocations that are triggered while the callback is
 // unarmed are stashed and will be delayed until a callback is provided again.
+// (This version of the class has its own lock which it uses to be thread safe)
 template <typename F, typename... Args>
-class RearmableCallback {
+class RearmableCallbackWithOwnLock {
   using TStoredArgs = std::tuple<typename std::remove_reference<Args>::type...>;
 
  public:
@@ -101,6 +102,59 @@ class RearmableCallback {
 
  private:
   std::mutex mutex_;
+  std::deque<F> callbacks_;
+  std::deque<TStoredArgs> args_;
+};
+
+// A wrapper for a callback that "burns out" after it fires and thus needs to be
+// rearmed every time. Invocations that are triggered while the callback is
+// unarmed are stashed and will be delayed until a callback is provided again.
+// (This version of the class forwards a user-provided lock to the callback)
+template <typename F, typename... Args>
+class RearmableCallbackWithExternalLock {
+  using TLock = std::unique_lock<std::mutex>&;
+  using TStoredArgs = std::tuple<typename std::remove_reference<Args>::type...>;
+
+ public:
+  void arm(F&& f, TLock lock) {
+    TP_DCHECK(lock.owns_lock());
+    if (!args_.empty()) {
+      TStoredArgs args{std::move(args_.front())};
+      args_.pop_front();
+      cb_apply(
+          std::move(f),
+          std::tuple_cat(std::move(args), std::forward_as_tuple(lock)));
+    } else {
+      callbacks_.push_back(std::move(f));
+    }
+  };
+
+  void trigger(Args... args, TLock lock) {
+    TP_DCHECK(lock.owns_lock());
+    if (!callbacks_.empty()) {
+      F f{std::move(callbacks_.front())};
+      callbacks_.pop_front();
+      cb_apply(
+          std::move(f),
+          std::tuple<Args..., TLock>(std::forward<Args>(args)..., lock));
+    } else {
+      args_.emplace_back(std::forward<Args>(args)...);
+    }
+  }
+
+  // This method is intended for "flushing" the callback, for example when an
+  // error condition is reached which means that no more callbacks will be
+  // processed but the current ones still must be honored.
+  void triggerAll(std::function<std::tuple<Args...>()> fn, TLock lock) {
+    TP_DCHECK(lock.owns_lock());
+    while (!callbacks_.empty()) {
+      F f{std::move(callbacks_.front())};
+      callbacks_.pop_front();
+      cb_apply(std::move(f), std::tuple_cat(fn(), std::forward_as_tuple(lock)));
+    }
+  }
+
+ private:
   std::deque<F> callbacks_;
   std::deque<TStoredArgs> args_;
 };

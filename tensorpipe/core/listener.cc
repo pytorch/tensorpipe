@@ -60,20 +60,25 @@ void Listener::accept(accept_callback_fn fn) {
   std::unique_lock<std::mutex> lock(mutex_);
 
   if (error_) {
-    triggerAcceptCallback_(std::move(fn), error_, std::shared_ptr<Pipe>());
+    triggerAcceptCallback_(
+        std::move(fn), error_, std::shared_ptr<Pipe>(), lock);
     return;
   }
 
-  acceptCallback_.arm(runIfAlive(
-      *this,
-      std::function<void(Listener&, const Error&, std::shared_ptr<Pipe>)>(
-          [fn{std::move(fn)}](
-              Listener& listener,
-              const Error& error,
-              std::shared_ptr<Pipe> pipe) mutable {
-            listener.triggerAcceptCallback_(
-                std::move(fn), error, std::move(pipe));
-          })));
+  acceptCallback_.arm(
+      runIfAlive(
+          *this,
+          std::function<void(
+              Listener&, const Error&, std::shared_ptr<Pipe>, TLock)>(
+              [fn{std::move(fn)}](
+                  Listener& listener,
+                  const Error& error,
+                  std::shared_ptr<Pipe> pipe,
+                  TLock lock) mutable {
+                listener.triggerAcceptCallback_(
+                    std::move(fn), error, std::move(pipe), lock);
+              })),
+      lock);
 }
 
 const std::map<std::string, std::string>& Listener::addresses() const {
@@ -108,7 +113,8 @@ uint64_t Listener::registerConnectionRequest_(
         std::move(fn),
         error_,
         std::string(),
-        std::shared_ptr<transport::Connection>());
+        std::shared_ptr<transport::Connection>(),
+        lock);
   } else {
     connectionRequestRegistrations_.emplace(registrationId, std::move(fn));
   }
@@ -127,7 +133,9 @@ void Listener::unregisterConnectionRequest_(uint64_t registrationId) {
 void Listener::triggerAcceptCallback_(
     accept_callback_fn fn,
     const Error& error,
-    std::shared_ptr<Pipe> pipe) {
+    std::shared_ptr<Pipe> pipe,
+    TLock lock) {
+  TP_DCHECK(lock.owns_lock() && lock.mutex() == &mutex_);
   context_->callCallback_(
       [fn{std::move(fn)}, error, pipe{std::move(pipe)}]() mutable {
         fn(error, std::move(pipe));
@@ -138,7 +146,9 @@ void Listener::triggerConnectionRequestCallback_(
     connection_request_callback_fn fn,
     const Error& error,
     std::string transport,
-    std::shared_ptr<transport::Connection> connection) {
+    std::shared_ptr<transport::Connection> connection,
+    TLock lock) {
+  TP_DCHECK(lock.owns_lock() && lock.mutex() == &mutex_);
   context_->callCallback_([fn{std::move(fn)},
                            error,
                            transport{std::move(transport)},
@@ -155,14 +165,15 @@ void Listener::handleError_(TLock lock) {
   TP_DCHECK(lock.owns_lock() && lock.mutex() == &mutex_);
 
   acceptCallback_.triggerAll(
-      [&]() { return std::make_tuple(error_, std::shared_ptr<Pipe>()); });
+      [&]() { return std::make_tuple(error_, std::shared_ptr<Pipe>()); }, lock);
   for (auto& iter : connectionRequestRegistrations_) {
     connection_request_callback_fn fn = std::move(iter.second);
     triggerConnectionRequestCallback_(
         std::move(fn),
         error_,
         std::string(),
-        std::shared_ptr<transport::Connection>());
+        std::shared_ptr<transport::Connection>(),
+        lock);
   }
   connectionRequestRegistrations_.clear();
 }
@@ -226,7 +237,7 @@ void Listener::onConnectionHelloRead_(
         std::move(transport),
         std::move(connection));
     pipe->start_();
-    acceptCallback_.trigger(Error::kSuccess, std::move(pipe));
+    acceptCallback_.trigger(Error::kSuccess, std::move(pipe), lock);
   } else if (pbPacketIn.has_requested_connection()) {
     const proto::RequestedConnection& pbRequestedConnection =
         pbPacketIn.requested_connection();
@@ -237,7 +248,8 @@ void Listener::onConnectionHelloRead_(
         std::move(fn),
         Error::kSuccess,
         std::move(transport),
-        std::move(connection));
+        std::move(connection),
+        lock);
   } else {
     TP_LOG_ERROR() << "packet contained unknown content: "
                    << pbPacketIn.type_case();

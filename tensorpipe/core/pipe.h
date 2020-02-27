@@ -120,7 +120,10 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
   optional<uint64_t> registrationId_;
   std::unordered_map<std::string, uint64_t> channelRegistrationIds_;
 
-  RearmableCallback<read_descriptor_callback_fn, const Error&, Message>
+  RearmableCallbackWithExternalLock<
+      std::function<void(const Error&, Message, TLock)>,
+      const Error&,
+      Message>
       readDescriptorCallback_;
 
   struct MessageBeingAllocated {
@@ -185,9 +188,10 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
   void triggerReadDescriptorCallback_(
       read_descriptor_callback_fn&&,
       const Error&,
-      Message);
-  void triggerReadCallback_(read_callback_fn&&, const Error&, Message);
-  void triggerWriteCallback_(write_callback_fn&&, const Error&, Message);
+      Message,
+      TLock);
+  void triggerReadCallback_(read_callback_fn&&, const Error&, Message, TLock);
+  void triggerWriteCallback_(write_callback_fn&&, const Error&, Message, TLock);
 
   //
   // Error handling

@@ -100,7 +100,10 @@ class Listener final : public std::enable_shared_from_this<Listener> {
   std::unordered_map<std::string, std::shared_ptr<transport::Listener>>
       listeners_;
   std::map<std::string, transport::address_t> addresses_;
-  RearmableCallback<accept_callback_fn, const Error&, std::shared_ptr<Pipe>>
+  RearmableCallbackWithExternalLock<
+      std::function<void(const Error&, std::shared_ptr<Pipe>, TLock)>,
+      const Error&,
+      std::shared_ptr<Pipe>>
       acceptCallback_;
 
   // Needed to keep them alive.
@@ -145,13 +148,15 @@ class Listener final : public std::enable_shared_from_this<Listener> {
   void triggerAcceptCallback_(
       accept_callback_fn,
       const Error&,
-      std::shared_ptr<Pipe>);
+      std::shared_ptr<Pipe>,
+      TLock);
 
   void triggerConnectionRequestCallback_(
       connection_request_callback_fn,
       const Error&,
       std::string,
-      std::shared_ptr<transport::Connection>);
+      std::shared_ptr<transport::Connection>,
+      TLock);
 
   //
   // Error handling
