@@ -139,15 +139,15 @@ void Pipe::readDescriptor(read_descriptor_callback_fn fn) {
 
   readDescriptorCallback_.arm(runIfAlive(
       *this,
-      std::function<void(Pipe&, const Error&, Message&&)>(
+      std::function<void(Pipe&, const Error&, Message)>(
           [fn{std::move(fn)}](
-              Pipe& pipe, const Error& error, Message&& message) mutable {
+              Pipe& pipe, const Error& error, Message message) mutable {
             pipe.triggerReadDescriptorCallback_(
                 std::move(fn), error, std::move(message));
           })));
 }
 
-void Pipe::read(Message&& message, read_callback_fn fn) {
+void Pipe::read(Message message, read_callback_fn fn) {
   std::unique_lock<std::mutex> lock(mutex_);
 
   if (error_) {
@@ -169,7 +169,7 @@ void Pipe::read(Message&& message, read_callback_fn fn) {
   TP_DCHECK_GE(messageBeingAllocated.length, 0);
   TP_THROW_ASSERT_IF(message.length != messageBeingAllocated.length);
   connection_->read(
-      message.data.get(),
+      message.data,
       message.length,
       wrapReadCallback_(
           [sequenceNumber{messageBeingRead.sequenceNumber}](
@@ -189,7 +189,7 @@ void Pipe::read(Message&& message, read_callback_fn fn) {
         channels_.at(tensorBeingAllocated.channelName);
     channel->recv(
         std::move(tensorBeingAllocated.channelDescriptor),
-        tensor.data.get(),
+        tensor.data,
         tensor.length,
         wrapChannelRecvCallback_(
             [sequenceNumber{messageBeingRead.sequenceNumber}](Pipe& pipe) {
@@ -210,7 +210,7 @@ void Pipe::read(Message&& message, read_callback_fn fn) {
       }));
 }
 
-void Pipe::write(Message&& message, write_callback_fn fn) {
+void Pipe::write(Message message, write_callback_fn fn) {
   std::unique_lock<std::mutex> lock(mutex_);
 
   if (error_) {
@@ -423,7 +423,7 @@ Pipe::channel_send_callback_fn Pipe::wrapChannelSendCallback_(
 void Pipe::triggerReadDescriptorCallback_(
     read_descriptor_callback_fn&& fn,
     const Error& error,
-    Message&& message) {
+    Message message) {
   // Capturing a Message makes the closure non-copyable so we need this wrapper.
   auto sharedMessage = std::make_shared<Message>(std::move(message));
   context_->callCallback_([fn{std::move(fn)},
@@ -436,7 +436,7 @@ void Pipe::triggerReadDescriptorCallback_(
 void Pipe::triggerReadCallback_(
     read_callback_fn&& fn,
     const Error& error,
-    Message&& message) {
+    Message message) {
   // Capturing a Message makes the closure non-copyable so we need this wrapper.
   auto sharedMessage = std::make_shared<Message>(std::move(message));
   context_->callCallback_([fn{std::move(fn)},
@@ -449,7 +449,7 @@ void Pipe::triggerReadCallback_(
 void Pipe::triggerWriteCallback_(
     write_callback_fn&& fn,
     const Error& error,
-    Message&& message) {
+    Message message) {
   // Capturing a Message makes the closure non-copyable so we need this wrapper.
   auto sharedMessage = std::make_shared<Message>(std::move(message));
   context_->callCallback_([fn{std::move(fn)},
@@ -503,7 +503,7 @@ void Pipe::doWritesAccumulatedWhileWaitingForPipeToBeEstablished_() {
   }
 }
 
-void Pipe::writeWhenEstablished_(Message&& message, write_callback_fn fn) {
+void Pipe::writeWhenEstablished_(Message message, write_callback_fn fn) {
   TP_DCHECK_EQ(state_, ESTABLISHED);
 
   MessageBeingWritten messageBeingWritten;
@@ -534,7 +534,7 @@ void Pipe::writeWhenEstablished_(Message&& message, write_callback_fn fn) {
       channel::Channel& channel = *(channelIter->second);
 
       std::vector<uint8_t> descriptor = channel.send(
-          tensor.data.get(),
+          tensor.data,
           tensor.length,
           wrapChannelSendCallback_(
               [sequenceNumber{messageBeingWritten.sequenceNumber}](Pipe& pipe) {
@@ -556,7 +556,7 @@ void Pipe::writeWhenEstablished_(Message&& message, write_callback_fn fn) {
       *pbPacketOut, wrapWriteCallback_([pbPacketOut](Pipe& /* unused */) {}));
 
   connection_->write(
-      message.data.get(),
+      message.data,
       message.length,
       wrapWriteCallback_(
           [sequenceNumber{messageBeingWritten.sequenceNumber}](Pipe& pipe) {

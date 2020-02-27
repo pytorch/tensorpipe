@@ -26,16 +26,10 @@ using namespace tensorpipe;
 
 namespace {
 
-std::unique_ptr<uint8_t[]> copyStringToBuffer(const std::string& s) {
-  auto b = std::make_unique<uint8_t[]>(s.size());
-  std::memcpy(b.get(), s.data(), s.size());
-  return b;
-}
-
 ::testing::AssertionResult buffersAreEqual(
-    const std::unique_ptr<uint8_t[]>& ptr1,
+    const void* ptr1,
     const size_t len1,
-    const std::unique_ptr<uint8_t[]>& ptr2,
+    const void* ptr2,
     const size_t len2) {
   if (ptr1 == nullptr && ptr2 == nullptr) {
     if (len1 == 0 && len2 == 0) {
@@ -62,7 +56,7 @@ std::unique_ptr<uint8_t[]> copyStringToBuffer(const std::string& s) {
     return ::testing::AssertionFailure()
         << "first length is " << len1 << " but second one is " << len2;
   }
-  if (std::memcmp(ptr1.get(), ptr2.get(), len1) != 0) {
+  if (std::memcmp(ptr1, ptr2, len1) != 0) {
     return ::testing::AssertionFailure() << "buffer contents aren't equal";
   }
   return ::testing::AssertionSuccess();
@@ -87,15 +81,16 @@ std::unique_ptr<uint8_t[]> copyStringToBuffer(const std::string& s) {
   return ::testing::AssertionSuccess();
 }
 
+std::string kMessageData = "I'm a message";
+std::string kTensorData = "And I'm a tensor";
+
 Message makeMessage() {
   Message message;
-  std::string messageData = "I'm a message";
-  std::string tensorData = "And I'm a tensor";
-  message.data = copyStringToBuffer(messageData);
-  message.length = messageData.length();
+  message.data = kMessageData.data();
+  message.length = kMessageData.length();
   Message::Tensor tensor;
-  tensor.data = copyStringToBuffer(tensorData);
-  tensor.length = tensorData.length();
+  tensor.data = kTensorData.data();
+  tensor.length = kTensorData.length();
   message.tensors.push_back(std::move(tensor));
   return message;
 }
@@ -124,6 +119,8 @@ TEST(Context, ClientPingSerial) {
   auto listener =
       Listener::create(context, {createUniqueShmAddr(), "uv://127.0.0.1"});
 
+  std::vector<std::unique_ptr<uint8_t[]>> buffers;
+
   auto clientPipe = Pipe::create(context, listener->url("uv"));
 
   std::promise<std::shared_ptr<Pipe>> serverPipePromise;
@@ -138,7 +135,7 @@ TEST(Context, ClientPingSerial) {
   std::shared_ptr<Pipe> serverPipe = serverPipePromise.get_future().get();
 
   std::promise<Message> writtenMessagePromise;
-  clientPipe->write(makeMessage(), [&](const Error& error, Message&& message) {
+  clientPipe->write(makeMessage(), [&](const Error& error, Message message) {
     if (error) {
       writtenMessagePromise.set_exception(
           std::make_exception_ptr(std::runtime_error(error.what())));
@@ -148,7 +145,7 @@ TEST(Context, ClientPingSerial) {
   });
 
   std::promise<Message> readDescriptorPromise;
-  serverPipe->readDescriptor([&](const Error& error, Message&& message) {
+  serverPipe->readDescriptor([&](const Error& error, Message message) {
     if (error) {
       readDescriptorPromise.set_exception(
           std::make_exception_ptr(std::runtime_error(error.what())));
@@ -158,14 +155,18 @@ TEST(Context, ClientPingSerial) {
   });
 
   Message message(readDescriptorPromise.get_future().get());
-  message.data = std::make_unique<uint8_t[]>(message.length);
+  auto messageData = std::make_unique<uint8_t[]>(message.length);
+  message.data = messageData.get();
+  buffers.push_back(std::move(messageData));
   for (auto& tensor : message.tensors) {
-    tensor.data = std::make_unique<uint8_t[]>(tensor.length);
+    auto tensorData = std::make_unique<uint8_t[]>(tensor.length);
+    tensor.data = tensorData.get();
+    buffers.push_back(std::move(tensorData));
   }
 
   std::promise<Message> readMessagePromise;
   serverPipe->read(
-      std::move(message), [&](const Error& error, Message&& message) {
+      std::move(message), [&](const Error& error, Message message) {
         if (error) {
           readMessagePromise.set_exception(
               std::make_exception_ptr(std::runtime_error(error.what())));
@@ -200,26 +201,36 @@ TEST(Context, ClientPingInline) {
   auto listener =
       Listener::create(context, {createUniqueShmAddr(), "uv://127.0.0.1"});
 
+  std::vector<std::unique_ptr<uint8_t[]>> buffers;
+
   std::shared_ptr<Pipe> serverPipe;
-  listener->accept([&](const Error& error, std::shared_ptr<Pipe> pipe) {
+  listener->accept([&serverPipe, &donePromise, &buffers](
+                       const Error& error, std::shared_ptr<Pipe> pipe) {
     if (error) {
       ADD_FAILURE() << error.what();
       donePromise.set_value();
       return;
     }
     serverPipe = std::move(pipe);
-    serverPipe->readDescriptor([&](const Error& error, Message&& message) {
+    serverPipe->readDescriptor([&serverPipe, &donePromise, &buffers](
+                                   const Error& error, Message message) {
       if (error) {
         ADD_FAILURE() << error.what();
         donePromise.set_value();
         return;
       }
-      message.data = std::make_unique<uint8_t[]>(message.length);
+      auto messageData = std::make_unique<uint8_t[]>(message.length);
+      message.data = messageData.get();
+      buffers.push_back(std::move(messageData));
       for (auto& tensor : message.tensors) {
-        tensor.data = std::make_unique<uint8_t[]>(tensor.length);
+        auto tensorData = std::make_unique<uint8_t[]>(tensor.length);
+        tensor.data = tensorData.get();
+        buffers.push_back(std::move(tensorData));
       }
       serverPipe->read(
-          std::move(message), [&](const Error& error, Message&& message) {
+          std::move(message),
+          [&donePromise, &buffers](
+              const Error& error, Message message) mutable {
             if (error) {
               ADD_FAILURE() << error.what();
               donePromise.set_value();
@@ -232,7 +243,7 @@ TEST(Context, ClientPingInline) {
   });
 
   auto clientPipe = Pipe::create(context, listener->url("uv"));
-  clientPipe->write(makeMessage(), [&](const Error& error, Message&& message) {
+  clientPipe->write(makeMessage(), [&](const Error& error, Message message) {
     if (error) {
       ADD_FAILURE() << error.what();
       donePromise.set_value();
@@ -263,10 +274,12 @@ TEST(Context, ServerPingPongTwice) {
   auto listener =
       Listener::create(context, {createUniqueShmAddr(), "uv://127.0.0.1"});
 
-  std::shared_ptr<Pipe> serverPipe;
+  std::vector<std::unique_ptr<uint8_t[]>> buffers;
 
+  std::shared_ptr<Pipe> serverPipe;
   int numPingsGoneThrough = 0;
-  listener->accept([&](const Error& error, std::shared_ptr<Pipe> pipe) {
+  listener->accept([&serverPipe, &donePromise, &buffers, &numPingsGoneThrough](
+                       const Error& error, std::shared_ptr<Pipe> pipe) {
     if (error) {
       ADD_FAILURE() << error.what();
       donePromise.set_value();
@@ -276,29 +289,35 @@ TEST(Context, ServerPingPongTwice) {
     for (int i = 0; i < 2; i++) {
       serverPipe->write(
           makeMessage(),
-          [serverPipe, &donePromise, &numPingsGoneThrough, i](
-              const Error& error, Message&& message) {
+          [&serverPipe, &donePromise, &buffers, &numPingsGoneThrough, i](
+              const Error& error, Message message) {
             if (error) {
               ADD_FAILURE() << error.what();
               donePromise.set_value();
               return;
             }
             serverPipe->readDescriptor(
-                [serverPipe, &donePromise, &numPingsGoneThrough, i](
-                    const Error& error, Message&& message) {
+                [&serverPipe, &donePromise, &buffers, &numPingsGoneThrough, i](
+                    const Error& error, Message message) {
                   if (error) {
                     ADD_FAILURE() << error.what();
                     donePromise.set_value();
                     return;
                   }
-                  message.data = std::make_unique<uint8_t[]>(message.length);
+                  auto messageData =
+                      std::make_unique<uint8_t[]>(message.length);
+                  message.data = messageData.get();
+                  buffers.push_back(std::move(messageData));
                   for (auto& tensor : message.tensors) {
-                    tensor.data = std::make_unique<uint8_t[]>(tensor.length);
+                    auto tensorData =
+                        std::make_unique<uint8_t[]>(tensor.length);
+                    tensor.data = tensorData.get();
+                    buffers.push_back(std::move(tensorData));
                   }
                   serverPipe->read(
                       std::move(message),
-                      [&donePromise, &numPingsGoneThrough, i](
-                          const Error& error, Message&& message) {
+                      [&donePromise, &buffers, &numPingsGoneThrough, i](
+                          const Error& error, Message message) {
                         if (error) {
                           ADD_FAILURE() << error.what();
                           donePromise.set_value();
@@ -318,25 +337,33 @@ TEST(Context, ServerPingPongTwice) {
 
   auto clientPipe = Pipe::create(context, listener->url("uv"));
   for (int i = 0; i < 2; i++) {
-    clientPipe->readDescriptor([&](const Error& error, Message&& message) {
+    clientPipe->readDescriptor([&clientPipe, &donePromise, &buffers](
+                                   const Error& error, Message message) {
       if (error) {
         ADD_FAILURE() << error.what();
         donePromise.set_value();
         return;
       }
-      message.data = std::make_unique<uint8_t[]>(message.length);
+      auto messageData = std::make_unique<uint8_t[]>(message.length);
+      message.data = messageData.get();
+      buffers.push_back(std::move(messageData));
       for (auto& tensor : message.tensors) {
-        tensor.data = std::make_unique<uint8_t[]>(tensor.length);
+        auto tensorData = std::make_unique<uint8_t[]>(tensor.length);
+        tensor.data = tensorData.get();
+        buffers.push_back(std::move(tensorData));
       }
       clientPipe->read(
-          std::move(message), [&](const Error& error, Message&& message) {
+          std::move(message),
+          [&clientPipe, &donePromise, &buffers](
+              const Error& error, Message message) mutable {
             if (error) {
               ADD_FAILURE() << error.what();
               donePromise.set_value();
               return;
             }
             clientPipe->write(
-                std::move(message), [&](const Error& error, Message&& message) {
+                std::move(message),
+                [&donePromise, &buffers](const Error& error, Message message) {
                   if (error) {
                     ADD_FAILURE() << error.what();
                     donePromise.set_value();

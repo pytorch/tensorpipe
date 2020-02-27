@@ -69,21 +69,19 @@ static void serverPongPingNonBlock(
                            const Error& error, Message&& message) {
     TP_THROW_ASSERT_IF(error) << error.what();
     TP_DCHECK_EQ(message.length, data.len);
-    message.data = std::move(data.temporary);
+    message.data = data.temporary.get();
     pipe->read(
         std::move(message),
         [pipe, &ioNum, &doneProm, &data, &measurements](
             const Error& error, Message&& message) {
           TP_THROW_ASSERT_IF(error) << error.what();
-          int cmp =
-              memcmp(message.data.get(), data.expected.get(), message.length);
+          int cmp = memcmp(message.data, data.expected.get(), message.length);
           TP_DCHECK_EQ(cmp, 0);
           pipe->write(
               std::move(message),
               [pipe, &ioNum, &doneProm, &data, &measurements](
                   const Error& error, Message&& message) {
                 TP_THROW_ASSERT_IF(error) << error.what();
-                data.temporary = std::move(message.data);
                 if (--ioNum > 0) {
                   serverPongPingNonBlock(
                       pipe, ioNum, doneProm, data, measurements);
@@ -141,29 +139,27 @@ static void clientPingPongNonBlock(
     Measurements& measurements) {
   measurements.markStart();
   Message message;
-  message.data = std::move(data.expected);
+  message.data = data.expected.get();
   message.length = data.len;
   pipe->write(
       std::move(message),
       [pipe, &ioNum, &doneProm, &data, &measurements](
           const Error& error, Message&& message) {
         TP_THROW_ASSERT_IF(error) << error.what();
-        data.expected = std::move(message.data);
         pipe->readDescriptor([pipe, &ioNum, &doneProm, &data, &measurements](
                                  const Error& error, Message&& message) {
           TP_THROW_ASSERT_IF(error) << error.what();
           TP_DCHECK_EQ(message.length, data.len);
-          message.data = std::move(data.temporary);
+          message.data = data.temporary.get();
           pipe->read(
               std::move(message),
               [pipe, &ioNum, &doneProm, &data, &measurements](
                   const Error& error, Message&& message) {
                 measurements.markStop();
                 TP_THROW_ASSERT_IF(error) << error.what();
-                int cmp = memcmp(
-                    message.data.get(), data.expected.get(), message.length);
+                int cmp =
+                    memcmp(message.data, data.expected.get(), message.length);
                 TP_DCHECK_EQ(cmp, 0);
-                data.temporary = std::move(message.data);
                 if (--ioNum > 0) {
                   clientPingPongNonBlock(
                       pipe, ioNum, doneProm, data, measurements);

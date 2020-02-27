@@ -100,16 +100,14 @@ class OutgoingMessage {
 
 tensorpipe::Message prepareToWrite(std::shared_ptr<OutgoingMessage> pyMessage) {
   tensorpipe::Message tpMessage{
-      std::unique_ptr<uint8_t[]>(
-          reinterpret_cast<uint8_t*>(pyMessage->buffer.ptr())),
+      pyMessage->buffer.ptr(),
       pyMessage->buffer.length(),
       {reinterpret_cast<char*>(pyMessage->metadata.ptr()),
        pyMessage->metadata.length()}};
   tpMessage.tensors.reserve(pyMessage->tensors.size());
   for (const auto& pyTensor : pyMessage->tensors) {
     tensorpipe::Message::Tensor tpTensor{
-        std::unique_ptr<uint8_t[]>(
-            reinterpret_cast<uint8_t*>(pyTensor->buffer.ptr())),
+        pyTensor->buffer.ptr(),
         pyTensor->buffer.length(),
         {reinterpret_cast<char*>(pyTensor->metadata.ptr()),
          pyTensor->metadata.length()}};
@@ -177,17 +175,13 @@ std::shared_ptr<IncomingMessage> prepareToAllocate(
 
 tensorpipe::Message prepareToRead(std::shared_ptr<IncomingMessage> pyMessage) {
   TP_THROW_ASSERT_IF(!pyMessage->buffer.has_value()) << "No buffer";
-  tensorpipe::Message tpMessage{
-      std::unique_ptr<uint8_t[]>(
-          reinterpret_cast<uint8_t*>(pyMessage->buffer.value().ptr())),
-      pyMessage->buffer.value().length()};
+  tensorpipe::Message tpMessage{pyMessage->buffer.value().ptr(),
+                                pyMessage->buffer.value().length()};
   tpMessage.tensors.reserve(pyMessage->tensors.size());
   for (const auto& pyTensor : pyMessage->tensors) {
     TP_THROW_ASSERT_IF(!pyTensor->buffer.has_value()) << "No buffer";
-    tensorpipe::Message::Tensor tpTensor{
-        std::unique_ptr<uint8_t[]>(
-            reinterpret_cast<uint8_t*>(pyTensor->buffer.value().ptr())),
-        pyTensor->buffer.value().length()};
+    tensorpipe::Message::Tensor tpTensor{pyTensor->buffer.value().ptr(),
+                                         pyTensor->buffer.value().length()};
     tpMessage.tensors.push_back(std::move(tpTensor));
   }
   return tpMessage;
@@ -293,7 +287,7 @@ PYBIND11_MODULE(pytensorpipe, module) {
       [](std::shared_ptr<tensorpipe::Pipe> pipe, py::object callback) {
         pipe->readDescriptor(
             [callback{std::move(callback)}](
-                const tensorpipe::Error& error, tensorpipe::Message&& message) {
+                const tensorpipe::Error& error, tensorpipe::Message message) {
               if (error) {
                 TP_LOG_ERROR() << error.what();
                 return;
@@ -316,15 +310,10 @@ PYBIND11_MODULE(pytensorpipe, module) {
         pipe->read(
             std::move(tpMessage),
             [callback{std::move(callback)}](
-                const tensorpipe::Error& error,
-                tensorpipe::Message&& tpMessage) {
+                const tensorpipe::Error& error, tensorpipe::Message tpMessage) {
               if (error) {
                 TP_LOG_ERROR() << error.what();
                 return;
-              }
-              tpMessage.data.release();
-              for (auto& tpTensor : tpMessage.tensors) {
-                tpTensor.data.release();
               }
               py::gil_scoped_acquire acquire;
               try {
@@ -344,15 +333,10 @@ PYBIND11_MODULE(pytensorpipe, module) {
         pipe->write(
             std::move(tpMessage),
             [callback{std::move(callback)}](
-                const tensorpipe::Error& error,
-                tensorpipe::Message&& tpMessage) {
+                const tensorpipe::Error& error, tensorpipe::Message tpMessage) {
               if (error) {
                 TP_LOG_ERROR() << error.what();
                 return;
-              }
-              tpMessage.data.release();
-              for (auto& tpTensor : tpMessage.tensors) {
-                tpTensor.data.release();
               }
               py::gil_scoped_acquire acquire;
               try {

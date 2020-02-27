@@ -74,17 +74,17 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
   //
 
   using read_descriptor_callback_fn =
-      std::function<void(const Error&, Message&&)>;
+      std::function<void(const Error&, Message)>;
 
   void readDescriptor(read_descriptor_callback_fn);
 
-  using read_callback_fn = std::function<void(const Error&, Message&&)>;
+  using read_callback_fn = std::function<void(const Error&, Message)>;
 
-  void read(Message&&, read_callback_fn);
+  void read(Message, read_callback_fn);
 
-  using write_callback_fn = std::function<void(const Error&, Message&&)>;
+  using write_callback_fn = std::function<void(const Error&, Message)>;
 
-  void write(Message&&, write_callback_fn);
+  void write(Message, write_callback_fn);
 
  private:
   enum State {
@@ -110,7 +110,7 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
   optional<uint64_t> registrationId_;
   std::unordered_map<std::string, uint64_t> channelRegistrationIds_;
 
-  RearmableCallback<read_descriptor_callback_fn, const Error&, Message&&>
+  RearmableCallback<read_descriptor_callback_fn, const Error&, Message>
       readDescriptorCallback_;
 
   struct MessageBeingAllocated {
@@ -126,7 +126,7 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
   struct MessageBeingRead {
     int64_t sequenceNumber{-1};
     Message message;
-    std::function<void(const Error&, Message&&)> callback;
+    std::function<void(const Error&, Message)> callback;
     bool dataStillBeingRead{true};
     int64_t numTensorDataStillBeingReceived{0};
   };
@@ -134,7 +134,7 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
   struct MessageBeingWritten {
     int64_t sequenceNumber{-1};
     Message message;
-    std::function<void(const Error&, Message&&)> callback;
+    std::function<void(const Error&, Message)> callback;
     bool dataStillBeingWritten{true};
     int64_t numTensorDataStillBeingSent{0};
   };
@@ -223,9 +223,9 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
   void triggerReadDescriptorCallback_(
       read_descriptor_callback_fn&&,
       const Error&,
-      Message&&);
-  void triggerReadCallback_(read_callback_fn&&, const Error&, Message&&);
-  void triggerWriteCallback_(write_callback_fn&&, const Error&, Message&&);
+      Message);
+  void triggerReadCallback_(read_callback_fn&&, const Error&, Message);
+  void triggerWriteCallback_(write_callback_fn&&, const Error&, Message);
 
   //
   // Error handling
@@ -238,7 +238,7 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
   //
 
   void doWritesAccumulatedWhileWaitingForPipeToBeEstablished_();
-  void writeWhenEstablished_(Message&&, write_callback_fn);
+  void writeWhenEstablished_(Message, write_callback_fn);
   void onReadWhileServerWaitingForBrochure_(const proto::Packet&);
   void onReadWhileClientWaitingForBrochureAnswer_(const proto::Packet&);
   void onAcceptWhileServerWaitingForConnection_(

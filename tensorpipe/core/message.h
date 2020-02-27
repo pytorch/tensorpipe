@@ -24,13 +24,23 @@ namespace tensorpipe {
 //
 class Message final {
  public:
-  std::unique_ptr<uint8_t[]> data;
+  Message() = default;
+
+  // Messages are movable.
+  Message(Message&&) = default;
+  Message& operator=(Message&&) = default;
+
+  // But they are not copyable.
+  Message(const Message&) = delete;
+  Message& operator=(const Message&) = delete;
+
+  void* data{nullptr};
   size_t length{0};
 
   std::string metadata;
 
   struct Tensor {
-    std::unique_ptr<uint8_t[]> data;
+    void* data{nullptr};
     size_t length{0};
 
     // Users may include arbitrary metadata in the following fields.
