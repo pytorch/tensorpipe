@@ -53,10 +53,10 @@ TEST_P(TransportTest, MultiWrite) {
   this->test_connection(
       [&](std::shared_ptr<Connection> conn) {
         for (int i = 0; i < numMsg; i++) {
-          conn->write(msg[i].c_str(), msg[i].length(),
-                      [conn](const Error& error) {
-                        ASSERT_FALSE(error) << error.what();
-                      });
+          conn->write(
+              msg[i].c_str(), msg[i].length(), [conn](const Error& error) {
+                ASSERT_FALSE(error) << error.what();
+              });
         }
         writeDoneProm.set_value();
       },

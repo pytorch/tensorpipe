@@ -25,33 +25,35 @@ using namespace tensorpipe;
 
 namespace {
 
-::testing::AssertionResult buffersAreEqual(const void* ptr1, const size_t len1,
-                                           const void* ptr2,
-                                           const size_t len2) {
+::testing::AssertionResult buffersAreEqual(
+    const void* ptr1,
+    const size_t len1,
+    const void* ptr2,
+    const size_t len2) {
   if (ptr1 == nullptr && ptr2 == nullptr) {
     if (len1 == 0 && len2 == 0) {
       return ::testing::AssertionSuccess();
     }
     if (len1 != 0) {
       return ::testing::AssertionFailure()
-             << "first pointer is null but length isn't 0";
+          << "first pointer is null but length isn't 0";
     }
     if (len1 != 0) {
       return ::testing::AssertionFailure()
-             << "second pointer is null but length isn't 0";
+          << "second pointer is null but length isn't 0";
     }
   }
   if (ptr1 == nullptr) {
     return ::testing::AssertionFailure()
-           << "first pointer is null but second one isn't";
+        << "first pointer is null but second one isn't";
   }
   if (ptr2 == nullptr) {
     return ::testing::AssertionFailure()
-           << "second pointer is null but first one isn't";
+        << "second pointer is null but first one isn't";
   }
   if (len1 != len2) {
     return ::testing::AssertionFailure()
-           << "first length is " << len1 << " but second one is " << len2;
+        << "first length is " << len1 << " but second one is " << len2;
   }
   if (std::memcmp(ptr1, ptr2, len1) != 0) {
     return ::testing::AssertionFailure() << "buffer contents aren't equal";
@@ -59,17 +61,21 @@ namespace {
   return ::testing::AssertionSuccess();
 }
 
-::testing::AssertionResult messagesAreEqual(const Message& m1,
-                                            const Message& m2) {
+::testing::AssertionResult messagesAreEqual(
+    const Message& m1,
+    const Message& m2) {
   EXPECT_TRUE(buffersAreEqual(m1.data, m1.length, m2.data, m2.length));
   if (m1.tensors.size() != m2.tensors.size()) {
     return ::testing::AssertionFailure()
-           << "first message has " << m1.tensors.size() << " but second has "
-           << m2.tensors.size();
+        << "first message has " << m1.tensors.size() << " but second has "
+        << m2.tensors.size();
   }
   for (size_t idx = 0; idx < m1.tensors.size(); idx++) {
-    EXPECT_TRUE(buffersAreEqual(m1.tensors[idx].data, m1.tensors[idx].length,
-                                m2.tensors[idx].data, m2.tensors[idx].length));
+    EXPECT_TRUE(buffersAreEqual(
+        m1.tensors[idx].data,
+        m1.tensors[idx].length,
+        m2.tensors[idx].data,
+        m2.tensors[idx].length));
   }
   return ::testing::AssertionSuccess();
 }
@@ -98,7 +104,7 @@ std::string createUniqueShmAddr() {
   return ss.str();
 }
 
-}  // namespace
+} // namespace
 
 TEST(Context, ClientPingSerial) {
   std::vector<std::unique_ptr<uint8_t[]>> buffers;
@@ -109,10 +115,10 @@ TEST(Context, ClientPingSerial) {
 
   auto context = Context::create();
 
-  context->registerTransport(0, "uv",
-                             std::make_shared<transport::uv::Context>());
-  context->registerTransport(-1, "shm",
-                             std::make_shared<transport::shm::Context>());
+  context->registerTransport(
+      0, "uv", std::make_shared<transport::uv::Context>());
+  context->registerTransport(
+      -1, "shm", std::make_shared<transport::shm::Context>());
   context->registerChannelFactory(
       0, "basic", std::make_shared<channel::basic::BasicChannelFactory>());
 
@@ -171,8 +177,8 @@ TEST(Context, ClientPingSerial) {
 
   EXPECT_TRUE(
       messagesAreEqual(readMessagePromise.get_future().get(), makeMessage()));
-  EXPECT_TRUE(messagesAreEqual(writtenMessagePromise.get_future().get(),
-                               makeMessage()));
+  EXPECT_TRUE(messagesAreEqual(
+      writtenMessagePromise.get_future().get(), makeMessage()));
 
   serverPipe.reset();
   listener.reset();
@@ -186,10 +192,10 @@ TEST(Context, ClientPingInline) {
 
   auto context = Context::create();
 
-  context->registerTransport(0, "uv",
-                             std::make_shared<transport::uv::Context>());
-  context->registerTransport(-1, "shm",
-                             std::make_shared<transport::shm::Context>());
+  context->registerTransport(
+      0, "uv", std::make_shared<transport::uv::Context>());
+  context->registerTransport(
+      -1, "shm", std::make_shared<transport::shm::Context>());
   context->registerChannelFactory(
       0, "basic", std::make_shared<channel::basic::BasicChannelFactory>());
 
@@ -220,17 +226,18 @@ TEST(Context, ClientPingInline) {
         tensor.data = tensorData.get();
         buffers.push_back(std::move(tensorData));
       }
-      serverPipe->read(std::move(message),
-                       [&donePromise, &buffers](const Error& error,
-                                                Message message) mutable {
-                         if (error) {
-                           ADD_FAILURE() << error.what();
-                           donePromise.set_value();
-                           return;
-                         }
-                         EXPECT_TRUE(messagesAreEqual(message, makeMessage()));
-                         donePromise.set_value();
-                       });
+      serverPipe->read(
+          std::move(message),
+          [&donePromise, &buffers](
+              const Error& error, Message message) mutable {
+            if (error) {
+              ADD_FAILURE() << error.what();
+              donePromise.set_value();
+              return;
+            }
+            EXPECT_TRUE(messagesAreEqual(message, makeMessage()));
+            donePromise.set_value();
+          });
     });
   });
 
@@ -257,10 +264,10 @@ TEST(Context, ServerPingPongTwice) {
 
   auto context = Context::create();
 
-  context->registerTransport(0, "uv",
-                             std::make_shared<transport::uv::Context>());
-  context->registerTransport(-1, "shm",
-                             std::make_shared<transport::shm::Context>());
+  context->registerTransport(
+      0, "uv", std::make_shared<transport::uv::Context>());
+  context->registerTransport(
+      -1, "shm", std::make_shared<transport::shm::Context>());
   context->registerChannelFactory(
       0, "basic", std::make_shared<channel::basic::BasicChannelFactory>());
 
@@ -278,48 +285,51 @@ TEST(Context, ServerPingPongTwice) {
     }
     serverPipe = std::move(pipe);
     for (int i = 0; i < 2; i++) {
-      serverPipe->write(makeMessage(), [&serverPipe, &donePromise, &buffers,
-                                        &numPingsGoneThrough,
-                                        i](const Error& error,
-                                           Message message) {
-        if (error) {
-          ADD_FAILURE() << error.what();
-          donePromise.set_value();
-          return;
-        }
-        serverPipe->readDescriptor([&serverPipe, &donePromise, &buffers,
-                                    &numPingsGoneThrough,
-                                    i](const Error& error, Message message) {
-          if (error) {
-            ADD_FAILURE() << error.what();
-            donePromise.set_value();
-            return;
-          }
-          auto messageData = std::make_unique<uint8_t[]>(message.length);
-          message.data = messageData.get();
-          buffers.push_back(std::move(messageData));
-          for (auto& tensor : message.tensors) {
-            auto tensorData = std::make_unique<uint8_t[]>(tensor.length);
-            tensor.data = tensorData.get();
-            buffers.push_back(std::move(tensorData));
-          }
-          serverPipe->read(
-              std::move(message), [&donePromise, &buffers, &numPingsGoneThrough,
-                                   i](const Error& error, Message message) {
-                if (error) {
-                  ADD_FAILURE() << error.what();
-                  donePromise.set_value();
-                  return;
-                }
-                EXPECT_TRUE(messagesAreEqual(message, makeMessage()));
-                EXPECT_EQ(numPingsGoneThrough, i);
-                numPingsGoneThrough++;
-                if (numPingsGoneThrough == 2) {
-                  donePromise.set_value();
-                }
-              });
-        });
-      });
+      serverPipe->write(
+          makeMessage(),
+          [&serverPipe, &donePromise, &buffers, &numPingsGoneThrough, i](
+              const Error& error, Message message) {
+            if (error) {
+              ADD_FAILURE() << error.what();
+              donePromise.set_value();
+              return;
+            }
+            serverPipe->readDescriptor(
+                [&serverPipe, &donePromise, &buffers, &numPingsGoneThrough, i](
+                    const Error& error, Message message) {
+                  if (error) {
+                    ADD_FAILURE() << error.what();
+                    donePromise.set_value();
+                    return;
+                  }
+                  auto messageData =
+                      std::make_unique<uint8_t[]>(message.length);
+                  message.data = messageData.get();
+                  buffers.push_back(std::move(messageData));
+                  for (auto& tensor : message.tensors) {
+                    auto tensorData =
+                        std::make_unique<uint8_t[]>(tensor.length);
+                    tensor.data = tensorData.get();
+                    buffers.push_back(std::move(tensorData));
+                  }
+                  serverPipe->read(
+                      std::move(message),
+                      [&donePromise, &buffers, &numPingsGoneThrough, i](
+                          const Error& error, Message message) {
+                        if (error) {
+                          ADD_FAILURE() << error.what();
+                          donePromise.set_value();
+                          return;
+                        }
+                        EXPECT_TRUE(messagesAreEqual(message, makeMessage()));
+                        EXPECT_EQ(numPingsGoneThrough, i);
+                        numPingsGoneThrough++;
+                        if (numPingsGoneThrough == 2) {
+                          donePromise.set_value();
+                        }
+                      });
+                });
+          });
     }
   });
 
@@ -341,8 +351,9 @@ TEST(Context, ServerPingPongTwice) {
         buffers.push_back(std::move(tensorData));
       }
       clientPipe->read(
-          std::move(message), [&clientPipe, &donePromise, &buffers](
-                                  const Error& error, Message message) mutable {
+          std::move(message),
+          [&clientPipe, &donePromise, &buffers](
+              const Error& error, Message message) mutable {
             if (error) {
               ADD_FAILURE() << error.what();
               donePromise.set_value();
