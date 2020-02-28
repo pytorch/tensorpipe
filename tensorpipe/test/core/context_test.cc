@@ -6,7 +6,6 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <gtest/gtest.h>
 #include <tensorpipe/channel/basic/basic.h>
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/core/context.h>
@@ -20,6 +19,8 @@
 #include <future>
 #include <memory>
 #include <string>
+
+#include <gtest/gtest.h>
 
 using namespace tensorpipe;
 
