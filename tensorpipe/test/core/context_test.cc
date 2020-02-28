@@ -86,10 +86,11 @@ std::string kTensorData = "And I'm a tensor";
 
 Message makeMessage() {
   Message message;
-  message.data = kMessageData.data();
+  message.data =
+      reinterpret_cast<void*>(const_cast<char*>(kMessageData.data()));
   message.length = kMessageData.length();
   Message::Tensor tensor;
-  tensor.data = kTensorData.data();
+  tensor.data = reinterpret_cast<void*>(const_cast<char*>(kTensorData.data()));
   tensor.length = kTensorData.length();
   message.tensors.push_back(std::move(tensor));
   return message;

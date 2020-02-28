@@ -40,6 +40,7 @@ Example:
 
 ``` shell
 mkdir build
+cd build
 cmake ../ -DCMAKE_BUILD_TYPE=Debug -DSANITIZE=thread
 make
 ```
