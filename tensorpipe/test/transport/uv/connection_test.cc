@@ -64,7 +64,6 @@ TEST_P(TransportTest, MultiWrite) {
       [&](std::shared_ptr<Connection> conn) {
         writeDoneProm.get_future().get();
         for (int i = 0; i < numMsg; i++) {
-          // ASSERT_EQ(kMsgSize, msg[i].length());
           conn->read(
               [&, conn, i](const Error& error, const void* data, size_t len) {
                 ASSERT_FALSE(error) << error.what();
