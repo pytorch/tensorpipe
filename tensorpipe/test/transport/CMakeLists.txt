@@ -4,7 +4,13 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-add_library(tensorpipe_transport_test OBJECT transport_test.cc)
+add_library(
+  tensorpipe_transport_test
+  OBJECT
+  connection_test.cc
+  context_test.cc
+  listener_test.cc
+  )
 target_include_directories(
   tensorpipe_transport_test
   PUBLIC

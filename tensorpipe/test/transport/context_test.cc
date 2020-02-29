@@ -6,17 +6,16 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <tensorpipe/common/defs.h>
-#include <tensorpipe/transport/uv/context.h>
+#include <tensorpipe/test/transport/transport_test.h>
 
 #include <gtest/gtest.h>
 
 using namespace tensorpipe;
 using namespace tensorpipe::transport;
 
-TEST(Context, Basics) {
-  auto context = std::make_shared<uv::Context>();
-  auto addr = "127.0.0.1";
+TEST_P(TransportTest, Context_Basics) {
+  auto context = GetParam()->getContext();
+  auto addr = GetParam()->defaultAddr();
 
   {
     std::mutex mutex;
@@ -48,8 +47,8 @@ TEST(Context, Basics) {
   context->join();
 }
 
-TEST(Context, DomainDescriptor) {
-  auto context = std::make_shared<uv::Context>();
+TEST_P(TransportTest, Context_DomainDescriptor) {
+  auto context = GetParam()->getContext();
 
   {
     const auto& domainDescriptor = context->domainDescriptor();

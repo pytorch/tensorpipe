@@ -7,8 +7,6 @@
 add_tensorpipe_transport_test(
   transport_shm_test
   connection_test.cc
-  context_test.cc
-  listener_test.cc
   loop_test.cc
   reactor_test.cc
   shm_test.cc

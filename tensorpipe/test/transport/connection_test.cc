@@ -13,7 +13,7 @@
 using namespace tensorpipe;
 using namespace tensorpipe::transport;
 
-TEST_P(TransportTest, Initialization) {
+TEST_P(TransportTest, Connection_Initialization) {
   constexpr size_t numBytes = 13;
   std::array<char, numBytes> garbage;
 
@@ -34,7 +34,7 @@ TEST_P(TransportTest, Initialization) {
       });
 }
 
-TEST_P(TransportTest, InitializationError) {
+TEST_P(TransportTest, Connection_InitializationError) {
   this->test_connection(
       [&](std::shared_ptr<Connection> /* unused */) {
         // Closes connection
@@ -47,7 +47,7 @@ TEST_P(TransportTest, InitializationError) {
       });
 }
 
-TEST_P(TransportTest, DestroyConnectionFromCallback) {
+TEST_P(TransportTest, Connection_DestroyConnectionFromCallback) {
   this->test_connection(
       [&](std::shared_ptr<Connection> /* unused */) {
         // Closes connection
@@ -70,7 +70,7 @@ TEST_P(TransportTest, DestroyConnectionFromCallback) {
       });
 }
 
-TEST_P(TransportTest, AcceptCallbacksAreQueued) {
+TEST_P(TransportTest, Connection_AcceptCallbacksAreQueued) {
   auto ctx = GetParam()->getContext();
   auto addr = GetParam()->defaultAddr();
 
@@ -102,7 +102,7 @@ TEST_P(TransportTest, AcceptCallbacksAreQueued) {
   ctx->join();
 }
 
-TEST_P(TransportTest, IncomingConnectionsAreQueued) {
+TEST_P(TransportTest, Connection_IncomingConnectionsAreQueued) {
   auto ctx = GetParam()->getContext();
   auto addr = GetParam()->defaultAddr();
 
@@ -134,7 +134,7 @@ TEST_P(TransportTest, IncomingConnectionsAreQueued) {
   ctx->join();
 }
 
-TEST_P(TransportTest, ProtobufWrite) {
+TEST_P(TransportTest, Connection_ProtobufWrite) {
   constexpr size_t kSize = 0x42;
 
   this->test_connection(

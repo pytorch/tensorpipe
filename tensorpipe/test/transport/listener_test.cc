@@ -6,18 +6,16 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <tensorpipe/common/defs.h>
-#include <tensorpipe/test/transport/shm/shm_test.h>
-#include <tensorpipe/transport/shm/context.h>
+#include <tensorpipe/test/transport/transport_test.h>
 
 #include <gtest/gtest.h>
 
 using namespace tensorpipe;
 using namespace tensorpipe::transport;
 
-TEST(Context, Basics) {
-  auto context = std::make_shared<shm::Context>();
-  auto addr = createUniqueShmAddr();
+TEST_P(TransportTest, Listener_Basics) {
+  auto context = GetParam()->getContext();
+  auto addr = GetParam()->defaultAddr();
 
   {
     std::mutex mutex;
@@ -35,7 +33,7 @@ TEST(Context, Basics) {
         });
 
     // Connect to listener.
-    auto conn = context->connect(addr);
+    auto connection = context->connect(listener->addr());
 
     // Wait for new connection
     {
@@ -44,17 +42,6 @@ TEST(Context, Basics) {
         cv.wait(lock);
       }
     }
-  }
-
-  context->join();
-}
-
-TEST(Context, DomainDescriptor) {
-  auto context = std::make_shared<shm::Context>();
-
-  {
-    const auto& domainDescriptor = context->domainDescriptor();
-    EXPECT_FALSE(domainDescriptor.empty());
   }
 
   context->join();
