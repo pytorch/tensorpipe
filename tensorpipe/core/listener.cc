@@ -61,7 +61,11 @@ void Listener::accept(accept_callback_fn fn) {
 
   if (error_) {
     triggerAcceptCallback_(
-        std::move(fn), error_, std::shared_ptr<Pipe>(), lock);
+        std::move(fn),
+        error_,
+        std::string(),
+        std::shared_ptr<transport::Connection>(),
+        lock);
     return;
   }
 
@@ -69,15 +73,23 @@ void Listener::accept(accept_callback_fn fn) {
       runIfAlive(
           *this,
           std::function<void(
-              Listener&, const Error&, std::shared_ptr<Pipe>, TLock)>(
-              [fn{std::move(fn)}](
-                  Listener& listener,
-                  const Error& error,
-                  std::shared_ptr<Pipe> pipe,
-                  TLock lock) mutable {
-                listener.triggerAcceptCallback_(
-                    std::move(fn), error, std::move(pipe), lock);
-              })),
+              Listener&,
+              const Error&,
+              std::string,
+              std::shared_ptr<transport::Connection>,
+              TLock)>([fn{std::move(fn)}](
+                          Listener& listener,
+                          const Error& error,
+                          std::string transport,
+                          std::shared_ptr<transport::Connection> connection,
+                          TLock lock) mutable {
+            listener.triggerAcceptCallback_(
+                std::move(fn),
+                error,
+                std::move(transport),
+                std::move(connection),
+                lock);
+          })),
       lock);
 }
 
@@ -133,13 +145,25 @@ void Listener::unregisterConnectionRequest_(uint64_t registrationId) {
 void Listener::triggerAcceptCallback_(
     accept_callback_fn fn,
     const Error& error,
-    std::shared_ptr<Pipe> pipe,
+    std::string transport,
+    std::shared_ptr<transport::Connection> connection,
     TLock lock) {
   TP_DCHECK(lock.owns_lock() && lock.mutex() == &mutex_);
-  context_->callCallback_(
-      [fn{std::move(fn)}, error, pipe{std::move(pipe)}]() mutable {
-        fn(error, std::move(pipe));
-      });
+  lock.unlock();
+  // Create the pipe here, without holding the lock, as otherwise TSAN would
+  // report a false positive lock order inversion.
+  std::shared_ptr<Pipe> pipe;
+  if (!error) {
+    pipe = std::make_shared<Pipe>(
+        Pipe::ConstructorToken(),
+        context_,
+        shared_from_this(),
+        std::move(transport),
+        std::move(connection));
+    pipe->start_();
+  }
+  fn(error, std::move(pipe));
+  lock.lock();
 }
 
 void Listener::triggerConnectionRequestCallback_(
@@ -149,12 +173,9 @@ void Listener::triggerConnectionRequestCallback_(
     std::shared_ptr<transport::Connection> connection,
     TLock lock) {
   TP_DCHECK(lock.owns_lock() && lock.mutex() == &mutex_);
-  context_->callCallback_([fn{std::move(fn)},
-                           error,
-                           transport{std::move(transport)},
-                           connection{std::move(connection)}]() mutable {
-    fn(error, std::move(transport), std::move(connection));
-  });
+  lock.unlock();
+  fn(error, std::move(transport), std::move(connection));
+  lock.lock();
 }
 
 //
@@ -165,7 +186,11 @@ void Listener::handleError_(TLock lock) {
   TP_DCHECK(lock.owns_lock() && lock.mutex() == &mutex_);
 
   acceptCallback_.triggerAll(
-      [&]() { return std::make_tuple(error_, std::shared_ptr<Pipe>()); }, lock);
+      [&]() {
+        return std::make_tuple(
+            error_, std::string(), std::shared_ptr<transport::Connection>());
+      },
+      lock);
   for (auto& iter : connectionRequestRegistrations_) {
     connection_request_callback_fn fn = std::move(iter.second);
     triggerConnectionRequestCallback_(
@@ -230,14 +255,8 @@ void Listener::onConnectionHelloRead_(
     TLock lock) {
   TP_DCHECK(lock.owns_lock() && lock.mutex() == &mutex_);
   if (pbPacketIn.has_spontaneous_connection()) {
-    std::shared_ptr<Pipe> pipe = std::make_shared<Pipe>(
-        Pipe::ConstructorToken(),
-        context_,
-        shared_from_this(),
-        std::move(transport),
-        std::move(connection));
-    pipe->start_();
-    acceptCallback_.trigger(Error::kSuccess, std::move(pipe), lock);
+    acceptCallback_.trigger(
+        Error::kSuccess, std::move(transport), std::move(connection), lock);
   } else if (pbPacketIn.has_requested_connection()) {
     const proto::RequestedConnection& pbRequestedConnection =
         pbPacketIn.requested_connection();

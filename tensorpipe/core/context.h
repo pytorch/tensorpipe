@@ -66,13 +66,6 @@ class Context final {
   std::shared_ptr<transport::Context> getContextForTransport_(std::string);
   std::shared_ptr<channel::ChannelFactory> getChannelFactory_(std::string);
 
-  std::thread callbackCaller_;
-  Queue<optional<std::function<void()>>> callbackQueue_;
-
-  void start_();
-  void runCallbackCaller_();
-  void callCallback_(std::function<void()>);
-
   friend class Listener;
   friend class Pipe;
 };

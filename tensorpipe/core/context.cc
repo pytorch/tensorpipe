@@ -14,16 +14,10 @@
 namespace tensorpipe {
 
 std::shared_ptr<Context> Context::create() {
-  auto context = std::make_shared<Context>(ConstructorToken());
-  context->start_();
-  return context;
+  return std::make_shared<Context>(ConstructorToken());
 }
 
-Context::Context(ConstructorToken /* unused */) : callbackQueue_(1000) {}
-
-void Context::start_() {
-  callbackCaller_ = std::thread([this]() { runCallbackCaller_(); });
-}
+Context::Context(ConstructorToken /* unused */) {}
 
 void Context::registerTransport(
     int64_t priority,
@@ -81,8 +75,6 @@ void Context::join() {
   for (auto& iter : channelFactories_) {
     iter.second->join();
   }
-  callbackQueue_.push(nullopt);
-  callbackCaller_.join();
 }
 
 Context::~Context() {
@@ -93,21 +85,6 @@ Context::~Context() {
     join();
   }
   TP_DCHECK(done_);
-  TP_DCHECK(!callbackCaller_.joinable());
-}
-
-void Context::runCallbackCaller_() {
-  while (true) {
-    auto fn = callbackQueue_.pop();
-    if (!fn.has_value()) {
-      break;
-    }
-    fn.value()();
-  }
-}
-
-void Context::callCallback_(std::function<void()> fn) {
-  callbackQueue_.push(std::move(fn));
 }
 
 } // namespace tensorpipe
