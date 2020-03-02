@@ -60,6 +60,20 @@ class Producer : public RingBufferWrapper<THeaderExtraData> {
     return this->copyToRingBuffer_(static_cast<const uint8_t*>(data), size);
   }
 
+  [[nodiscard]] ssize_t writeAtMostInTx(
+      size_t size,
+      const void* data) noexcept {
+    if (unlikely(!inTx())) {
+      return -EINVAL;
+    }
+
+    const auto space = this->header_.freeSizeWeak() - this->tx_size_;
+    if (space == 0) {
+      return -ENOSPC;
+    }
+    return this->writeInTx(std::min(size, space), data);
+  }
+
   template <class T>
   [[nodiscard]] ssize_t writeInTx(const T& d) noexcept {
     return writeInTx(sizeof(T), &d);

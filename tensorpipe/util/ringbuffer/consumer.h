@@ -145,13 +145,25 @@ class Consumer : public RingBufferWrapper<THeaderExtraData> {
     std::tie(ptr, resized) = readFromRingBuffer_<true, false>(
         size, static_cast<uint8_t*>(buffer), size);
     if (unlikely(resized)) {
-      TP_LOG_ERROR() << "Unexpeted resizing of buffers";
+      TP_LOG_ERROR() << "Unexpected resizing of buffers";
       return -EPERM;
     }
     if (ptr == nullptr) {
       return -ENODATA;
     }
     return static_cast<ssize_t>(size);
+  }
+
+  // Copy up to the next <size> bytes to buffer.
+  [[nodiscard]] ssize_t copyAtMostInTx(
+      const size_t size,
+      uint8_t* buffer) noexcept {
+    if (unlikely(!inTx())) {
+      return -EINVAL;
+    }
+    // Single reader because we are in Tx, safe to read tail.
+    const uint64_t avail = this->header_.usedSizeWeak() - this->tx_size_;
+    return this->copyInTx(std::min(size, avail), buffer);
   }
 
   template <class T>

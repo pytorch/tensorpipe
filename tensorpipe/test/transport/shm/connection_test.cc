@@ -16,28 +16,64 @@
 using namespace tensorpipe;
 using namespace tensorpipe::transport;
 
-// NOTE: This test is disabled until chunking is implemented.
-TEST_P(TransportTest, DISABLED_LargeWrite) {
+TEST_P(TransportTest, Chunking) {
   // This is larger than the default ring buffer size.
-  const int kMsgSize = 2 * shm::Connection::kDefaultSize;
-  std::string msg(kMsgSize, 0x42);
+  const int kMsgSize = 5 * shm::Connection::kDefaultSize;
+  std::string srcBuf(kMsgSize, 0x42);
+  auto dstBuf = std::make_unique<char[]>(kMsgSize);
+  std::atomic<int> nbCallbackCalls = 0;
 
   this->test_connection(
       [&](std::shared_ptr<Connection> conn) {
-        conn->read([conn](
-                       const Error& error,
-                       const void* /* unused */,
-                       size_t /* unused */) {
-          ASSERT_TRUE(error);
-          ASSERT_EQ(error.what(), "eof");
+        conn->read(
+            dstBuf.get(),
+            kMsgSize,
+            [&, conn](const Error& error, const void* ptr, size_t len) {
+              ++nbCallbackCalls;
+              ASSERT_FALSE(error) << error.what();
+              ASSERT_EQ(len, kMsgSize);
+              ASSERT_EQ(ptr, dstBuf.get());
+              for (int i = 0; i < kMsgSize; ++i) {
+                ASSERT_EQ(dstBuf[i], srcBuf[i]);
+              }
+            });
+      },
+      [&](std::shared_ptr<Connection> conn) {
+        conn->write(
+            srcBuf.c_str(), srcBuf.length(), [&, conn](const Error& error) {
+              ++nbCallbackCalls;
+              ASSERT_FALSE(error) << error.what();
+            });
+      });
+
+  ASSERT_EQ(nbCallbackCalls, 2);
+}
+
+TEST_P(TransportTest, ChunkingImplicitRead) {
+  // This is larger than the default ring buffer size.
+  const size_t kMsgSize = 5 * shm::Connection::kDefaultSize;
+  std::string msg(kMsgSize, 0x42);
+  std::atomic<int> nbCallbackCalls = 0;
+
+  this->test_connection(
+      [&](std::shared_ptr<Connection> conn) {
+        conn->read([&, conn](const Error& error, const void* ptr, size_t len) {
+          ++nbCallbackCalls;
+          ASSERT_FALSE(error) << error.what();
+          ASSERT_EQ(len, kMsgSize);
+          for (int i = 0; i < kMsgSize; ++i) {
+            ASSERT_EQ(static_cast<const uint8_t*>(ptr)[i], msg[i]);
+          }
         });
       },
       [&](std::shared_ptr<Connection> conn) {
-        conn->write(msg.c_str(), msg.length(), [conn](const Error& error) {
-          ASSERT_TRUE(error);
-          ASSERT_EQ(error.what().substr(0, 11), "short write");
+        conn->write(msg.c_str(), msg.length(), [&, conn](const Error& error) {
+          ++nbCallbackCalls;
+          ASSERT_FALSE(error) << error.what();
         });
       });
+
+  ASSERT_EQ(nbCallbackCalls, 2);
 }
 
 TEST_P(TransportTest, QueueWrites) {
