@@ -13,7 +13,7 @@
 using namespace tensorpipe;
 using namespace tensorpipe::transport;
 
-TEST_P(TransportTest, Initialization) {
+TEST_P(TransportTest, Connection_Initialization) {
   constexpr size_t numBytes = 13;
   std::array<char, numBytes> garbage;
 
@@ -34,7 +34,7 @@ TEST_P(TransportTest, Initialization) {
       });
 }
 
-TEST_P(TransportTest, InitializationError) {
+TEST_P(TransportTest, Connection_InitializationError) {
   this->test_connection(
       [&](std::shared_ptr<Connection> /* unused */) {
         // Closes connection
@@ -47,7 +47,7 @@ TEST_P(TransportTest, InitializationError) {
       });
 }
 
-TEST_P(TransportTest, DestroyConnectionFromCallback) {
+TEST_P(TransportTest, Connection_DestroyConnectionFromCallback) {
   this->test_connection(
       [&](std::shared_ptr<Connection> /* unused */) {
         // Closes connection
@@ -70,71 +70,7 @@ TEST_P(TransportTest, DestroyConnectionFromCallback) {
       });
 }
 
-TEST_P(TransportTest, AcceptCallbacksAreQueued) {
-  auto ctx = GetParam()->getContext();
-  auto addr = GetParam()->defaultAddr();
-
-  {
-    auto listener = ctx->listen(addr);
-    int numAccepts = 0;
-    std::promise<void> donePromise;
-    for (int i = 0; i < 10; i += 1) {
-      listener->accept([&, i](const Error& error, std::shared_ptr<Connection>) {
-        if (error) {
-          donePromise.set_exception(
-              std::make_exception_ptr(std::runtime_error(error.what())));
-        } else {
-          EXPECT_EQ(i, numAccepts);
-          numAccepts++;
-          if (numAccepts == 10) {
-            donePromise.set_value();
-          }
-        }
-      });
-    }
-    for (int i = 0; i < 10; i += 1) {
-      ctx->connect(listener->addr());
-    }
-
-    donePromise.get_future().get();
-  }
-
-  ctx->join();
-}
-
-TEST_P(TransportTest, IncomingConnectionsAreQueued) {
-  auto ctx = GetParam()->getContext();
-  auto addr = GetParam()->defaultAddr();
-
-  {
-    auto listener = ctx->listen(addr);
-    int numAccepts = 0;
-    std::promise<void> donePromise;
-    for (int i = 0; i < 10; i += 1) {
-      ctx->connect(listener->addr());
-    }
-    for (int i = 0; i < 10; i += 1) {
-      listener->accept([&, i](const Error& error, std::shared_ptr<Connection>) {
-        if (error) {
-          donePromise.set_exception(
-              std::make_exception_ptr(std::runtime_error(error.what())));
-        } else {
-          EXPECT_EQ(i, numAccepts);
-          numAccepts++;
-          if (numAccepts == 10) {
-            donePromise.set_value();
-          }
-        }
-      });
-    }
-
-    donePromise.get_future().get();
-  }
-
-  ctx->join();
-}
-
-TEST_P(TransportTest, ProtobufWrite) {
+TEST_P(TransportTest, Connection_ProtobufWrite) {
   constexpr size_t kSize = 0x42;
 
   this->test_connection(
@@ -151,5 +87,48 @@ TEST_P(TransportTest, ProtobufWrite) {
         conn->write(*message, [conn, message](const Error& error) {
           ASSERT_FALSE(error) << error.what();
         });
+      });
+}
+
+TEST_P(TransportTest, Connection_QueueWritesBeforeReads) {
+  constexpr int kMsgSize = 16 * 1024;
+  constexpr int numMsg = 10;
+  std::string msg[numMsg];
+
+  for (int i = 0; i < numMsg; i++) {
+    msg[i] = std::string(kMsgSize, static_cast<char>(i));
+  }
+  std::promise<void> writeDoneProm;
+  std::promise<void> readDoneProm;
+
+  this->test_connection(
+      [&](std::shared_ptr<Connection> conn) {
+        for (int i = 0; i < numMsg; i++) {
+          conn->write(
+              msg[i].c_str(), msg[i].length(), [conn](const Error& error) {
+                ASSERT_FALSE(error) << error.what();
+              });
+        }
+        writeDoneProm.set_value();
+      },
+      [&](std::shared_ptr<Connection> conn) {
+        writeDoneProm.get_future().get();
+        for (int i = 0; i < numMsg; i++) {
+          conn->read(
+              [&, conn, i](const Error& error, const void* data, size_t len) {
+                ASSERT_FALSE(error) << error.what();
+                ASSERT_EQ(len, msg[i].length());
+                const char* cdata = (const char*)data;
+                for (int j = 0; j < len; ++j) {
+                  const char c = cdata[j];
+                  ASSERT_EQ(c, msg[i][j]) << "Wrong value at position " << j
+                                          << " of " << msg[i].length();
+                }
+                if (i == numMsg - 1) {
+                  readDoneProm.set_value();
+                }
+              });
+        }
+        readDoneProm.get_future().get();
       });
 }
