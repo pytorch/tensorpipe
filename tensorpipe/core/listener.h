@@ -99,9 +99,14 @@ class Listener final : public std::enable_shared_from_this<Listener> {
       listeners_;
   std::map<std::string, transport::address_t> addresses_;
   RearmableCallbackWithExternalLock<
-      std::function<void(const Error&, std::shared_ptr<Pipe>, TLock)>,
+      std::function<void(
+          const Error&,
+          std::string,
+          std::shared_ptr<transport::Connection>,
+          TLock)>,
       const Error&,
-      std::shared_ptr<Pipe>>
+      std::string,
+      std::shared_ptr<transport::Connection>>
       acceptCallback_;
 
   // Needed to keep them alive.
@@ -146,7 +151,8 @@ class Listener final : public std::enable_shared_from_this<Listener> {
   void triggerAcceptCallback_(
       accept_callback_fn,
       const Error&,
-      std::shared_ptr<Pipe>,
+      std::string,
+      std::shared_ptr<transport::Connection>,
       TLock);
 
   void triggerConnectionRequestCallback_(
