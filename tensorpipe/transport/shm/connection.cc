@@ -392,8 +392,8 @@ bool Connection::ReadOperation::handleRead(TConsumer& inbox) {
   bool lengthRead = false;
   if (mode_ == READ_LENGTH) {
     ssize_t ret;
-    const uint32_t* lengthPtr;
-    std::tie(ret, lengthPtr) = inbox.readInTx<uint32_t>();
+    uint32_t length;
+    ret = inbox.copyInTx(sizeof(length), &length);
     if (ret == -ENODATA) {
       ret = inbox.cancelTx();
       TP_THROW_SYSTEM_IF(ret < 0, -ret);
@@ -402,9 +402,9 @@ bool Connection::ReadOperation::handleRead(TConsumer& inbox) {
     TP_THROW_SYSTEM_IF(ret < 0, -ret);
 
     if (ptr_ != nullptr) {
-      TP_DCHECK_EQ(*lengthPtr, len_);
+      TP_DCHECK_EQ(length, len_);
     } else {
-      len_ = *lengthPtr;
+      len_ = length;
       buf_ = std::make_unique<uint8_t[]>(len_);
       ptr_ = buf_.get();
     }
