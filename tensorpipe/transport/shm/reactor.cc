@@ -18,7 +18,7 @@ namespace {
 
 void writeToken(TReactorProducer& producer, Reactor::TToken token) {
   for (;;) {
-    auto rv = producer.write(token);
+    auto rv = producer.write(&token, sizeof(token));
     if (rv == -EAGAIN) {
       std::this_thread::yield();
       continue;
@@ -90,7 +90,7 @@ std::tuple<int, int> Reactor::fds() const {
 void Reactor::run() {
   while (!done_.load()) {
     uint32_t token;
-    auto ret = consumer_->copy(token);
+    auto ret = consumer_->copy(sizeof(token), &token);
     if (ret == -ENODATA) {
       std::this_thread::yield();
       continue;
