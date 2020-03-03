@@ -21,7 +21,8 @@ TEST_P(TransportTest, Chunking) {
   const int kMsgSize = 5 * shm::Connection::kDefaultSize;
   std::string srcBuf(kMsgSize, 0x42);
   auto dstBuf = std::make_unique<char[]>(kMsgSize);
-  std::atomic<int> nbCallbackCalls = 0;
+  // Using direct initialization since std::atomic is not copy constructible.
+  std::atomic<int> nbCallbackCalls{0};
 
   this->test_connection(
       [&](std::shared_ptr<Connection> conn) {
@@ -53,7 +54,7 @@ TEST_P(TransportTest, ChunkingImplicitRead) {
   // This is larger than the default ring buffer size.
   const size_t kMsgSize = 5 * shm::Connection::kDefaultSize;
   std::string msg(kMsgSize, 0x42);
-  std::atomic<int> nbCallbackCalls = 0;
+  std::atomic<int> nbCallbackCalls{0};
 
   this->test_connection(
       [&](std::shared_ptr<Connection> conn) {
