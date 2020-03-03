@@ -391,52 +391,52 @@ bool Connection::ReadOperation::handleRead(TConsumer& inbox) {
 
   bool lengthRead = false;
   if (mode_ == READ_LENGTH) {
-    ssize_t ret;
     uint32_t length;
-    ret = inbox.copyInTx(sizeof(length), &length);
-    if (ret == -ENODATA) {
-      ret = inbox.cancelTx();
+    {
+      ssize_t ret;
+      ret = inbox.copyInTx(sizeof(length), &length);
+      if (ret == -ENODATA) {
+        ret = inbox.cancelTx();
+        TP_THROW_SYSTEM_IF(ret < 0, -ret);
+        return false;
+      }
       TP_THROW_SYSTEM_IF(ret < 0, -ret);
-      return false;
     }
-    TP_THROW_SYSTEM_IF(ret < 0, -ret);
 
-    if (ptr_ != nullptr) {
-      TP_DCHECK_EQ(length, len_);
-    } else {
+    if (ptr_ == nullptr) {
       len_ = length;
-      buf_ = std::make_unique<uint8_t[]>(len_);
-      ptr_ = buf_.get();
+      ssize_t avail;
+      std::tie(avail, ptr_) = inbox.readContiguousInTx(len_);
+      TP_THROW_SYSTEM_IF(avail < 0, -avail);
+      if (avail < len_) {
+        buf_ = std::make_unique<uint8_t[]>(len_);
+        std::memcpy(buf_.get(), ptr_, avail);
+        ptr_ = buf_.get();
+      }
+      bytesRead_ = avail;
+    } else {
+      TP_DCHECK_EQ(length, len_);
     }
     mode_ = READ_PAYLOAD;
-    lengthRead = true;
+    // If we just read the first contiguous chunk of data, there might still be
+    // available data in the buffer (when it wraps), hence falling through the
+    // following payload read.
   }
 
   {
     const auto ret = inbox.copyAtMostInTx(
         len_ - bytesRead_, reinterpret_cast<uint8_t*>(ptr_) + bytesRead_);
-    if (ret == -ENODATA) {
-      if (lengthRead) {
-        const auto ret = inbox.commitTx();
-        TP_THROW_SYSTEM_IF(ret < 0, -ret);
-        return true;
-      } else {
-        const auto ret = inbox.cancelTx();
-        TP_THROW_SYSTEM_IF(ret < 0, -ret);
-        return false;
-      }
-    }
     TP_THROW_SYSTEM_IF(ret < 0, -ret);
     bytesRead_ += ret;
+  }
+
+  if (completed()) {
+    fn_(Error::kSuccess, ptr_, len_);
   }
 
   {
     const auto ret = inbox.commitTx();
     TP_THROW_SYSTEM_IF(ret < 0, -ret);
-  }
-
-  if (completed()) {
-    fn_(Error::kSuccess, ptr_, len_);
   }
 
   return true;
