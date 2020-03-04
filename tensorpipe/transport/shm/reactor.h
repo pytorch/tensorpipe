@@ -24,14 +24,6 @@ namespace tensorpipe {
 namespace transport {
 namespace shm {
 
-// Extra data stored in ring buffer header.
-struct ReactorRingBufferExtraData {};
-
-using TReactorRingBuffer =
-    util::ringbuffer::RingBuffer<ReactorRingBufferExtraData>;
-using TReactorProducer = util::ringbuffer::Producer<ReactorRingBufferExtraData>;
-using TReactorConsumer = util::ringbuffer::Consumer<ReactorRingBufferExtraData>;
-
 // Reactor loop.
 //
 // Companion class to the event loop in `loop.h` that executes
@@ -68,8 +60,8 @@ class Reactor final : public std::enable_shared_from_this<Reactor> {
  private:
   Fd headerFd_;
   Fd dataFd_;
-  optional<TReactorConsumer> consumer_;
-  optional<TReactorProducer> producer_;
+  optional<util::ringbuffer::Consumer> consumer_;
+  optional<util::ringbuffer::Producer> producer_;
 
   std::mutex mutex_;
   std::thread thread_;
@@ -96,7 +88,7 @@ class Reactor final : public std::enable_shared_from_this<Reactor> {
     void run(TToken token);
 
    private:
-    TReactorProducer producer_;
+    util::ringbuffer::Producer producer_;
   };
 };
 

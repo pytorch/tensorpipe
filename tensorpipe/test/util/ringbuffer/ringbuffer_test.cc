@@ -25,26 +25,12 @@ struct TestData {
   }
 };
 
-struct MockExtraData {
-  bool canRead() const {
-    return true;
-  }
-  bool canWrite() const {
-    return true;
-  }
-};
-
-using TRingBufferHeader = RingBufferHeader<MockExtraData>;
-using TRingBuffer = RingBuffer<MockExtraData>;
-using TProducer = Producer<MockExtraData>;
-using TConsumer = Consumer<MockExtraData>;
-
-std::shared_ptr<TRingBuffer> makeRingBuffer(size_t size) {
-  auto header = std::make_shared<TRingBufferHeader>(size);
+std::shared_ptr<RingBuffer> makeRingBuffer(size_t size) {
+  auto header = std::make_shared<RingBufferHeader>(size);
   // In C++20 use std::make_shared<uint8_t[]>(size)
   auto data = std::shared_ptr<uint8_t>(
       new uint8_t[header->kDataPoolByteSize], std::default_delete<uint8_t[]>());
-  return std::make_shared<TRingBuffer>(std::move(header), std::move(data));
+  return std::make_shared<RingBuffer>(std::move(header), std::move(data));
 }
 
 TEST(RingBuffer, WriteCopy) {
@@ -55,9 +41,9 @@ TEST(RingBuffer, WriteCopy) {
 
   auto rb = makeRingBuffer(size);
   // Make a producer.
-  TProducer p{rb};
+  Producer p{rb};
   // Make a consumer.
-  TConsumer c{rb};
+  Consumer c{rb};
 
   EXPECT_EQ(rb->getHeader().usedSizeWeak(), 0);
 
@@ -118,9 +104,9 @@ TEST(RingBuffer, ReadMultipleElems) {
 
   auto rb = makeRingBuffer(size);
   // Make a producer.
-  TProducer p{rb};
+  Producer p{rb};
   // Make a consumer.
-  TConsumer c{rb};
+  Consumer c{rb};
 
   EXPECT_EQ(rb->getHeader().usedSizeWeak(), 0);
 
@@ -198,9 +184,9 @@ TEST(RingBuffer, CopyWrapping) {
 
   auto rb = makeRingBuffer(size);
   // Make a producer.
-  TProducer p{rb};
+  Producer p{rb};
   // Make a consumer.
-  TConsumer c{rb};
+  Consumer c{rb};
 
   EXPECT_EQ(rb->getHeader().usedSizeWeak(), 0);
 
@@ -252,9 +238,9 @@ TEST(RingBuffer, ReadTxWrappingOneCons) {
 
   auto rb = makeRingBuffer(size);
   // Make a producer.
-  TProducer p{rb};
+  Producer p{rb};
   // Make a consumer.
-  TConsumer c1{rb};
+  Consumer c1{rb};
 
   EXPECT_EQ(rb->getHeader().usedSizeWeak(), 0);
 
@@ -397,10 +383,10 @@ TEST(RingBuffer, ReadTxWrapping) {
 
   auto rb = makeRingBuffer(size);
   // Make a producer.
-  TProducer p{rb};
+  Producer p{rb};
   // Make consumers.
-  TConsumer c1{rb};
-  TConsumer c2{rb};
+  Consumer c1{rb};
+  Consumer c2{rb};
 
   EXPECT_EQ(rb->getHeader().usedSizeWeak(), 0);
 
