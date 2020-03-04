@@ -29,15 +29,6 @@ namespace shm {
 class Connection final : public transport::Connection,
                          public std::enable_shared_from_this<Connection>,
                          public EventHandler {
-  // Extra data stored in ringbuffer header.
-  struct RingBufferExtraData {
-    // Nothing yet.
-  };
-
-  using TRingBuffer = util::ringbuffer::RingBuffer<RingBufferExtraData>;
-  using TProducer = util::ringbuffer::Producer<RingBufferExtraData>;
-  using TConsumer = util::ringbuffer::Consumer<RingBufferExtraData>;
-
   // Use the passkey idiom to allow make_shared to call what should be a private
   // constructor. See https://abseil.io/tips/134 for more information.
   struct ConstructorToken {};
@@ -124,11 +115,11 @@ class Connection final : public transport::Connection,
   // Inbox.
   int inboxHeaderFd_;
   int inboxDataFd_;
-  optional<TConsumer> inbox_;
+  optional<util::ringbuffer::Consumer> inbox_;
   optional<Reactor::TToken> inboxReactorToken_;
 
   // Outbox.
-  optional<TProducer> outbox_;
+  optional<util::ringbuffer::Producer> outbox_;
   optional<Reactor::TToken> outboxReactorToken_;
 
   // Peer trigger/tokens.
@@ -156,7 +147,7 @@ class Connection final : public transport::Connection,
     explicit ReadOperation(read_callback_fn fn);
 
     // Processes a pending read.
-    bool handleRead(TConsumer& consumer);
+    bool handleRead(util::ringbuffer::Consumer& consumer);
 
     bool completed() const {
       return (mode_ == READ_PAYLOAD && bytesRead_ == len_);
@@ -187,11 +178,11 @@ class Connection final : public transport::Connection,
     };
 
    public:
-    using write_fn = std::function<ssize_t(TProducer&)>;
+    using write_fn = std::function<ssize_t(util::ringbuffer::Producer&)>;
     WriteOperation(const void* ptr, size_t len, write_callback_fn fn);
     WriteOperation(write_fn writer, write_callback_fn fn);
 
-    bool handleWrite(TProducer& producer);
+    bool handleWrite(util::ringbuffer::Producer& producer);
 
     bool completed() const {
       return (mode_ == WRITE_PAYLOAD && bytesWritten_ == len_);
@@ -211,7 +202,9 @@ class Connection final : public transport::Connection,
   class RingBufferZeroCopyOutputStream
       : public google::protobuf::io::ZeroCopyOutputStream {
    public:
-    RingBufferZeroCopyOutputStream(TProducer* buffer, size_t payloadSize);
+    RingBufferZeroCopyOutputStream(
+        util::ringbuffer::Producer* buffer,
+        size_t payloadSize);
 
     bool Next(void** data, int* size) override;
 
@@ -220,7 +213,7 @@ class Connection final : public transport::Connection,
     int64_t ByteCount() const override;
 
    private:
-    TProducer* buffer_;
+    util::ringbuffer::Producer* buffer_;
     const size_t payloadSize_;
     int64_t bytesCount_{0};
   };

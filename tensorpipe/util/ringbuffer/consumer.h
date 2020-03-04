@@ -19,13 +19,10 @@ namespace ringbuffer {
 ///
 /// Provides method to read data ringbuffer.
 ///
-template <class THeaderExtraData>
-class Consumer : public RingBufferWrapper<THeaderExtraData> {
+class Consumer : public RingBufferWrapper {
  public:
-  using TExtraData = THeaderExtraData;
-
   // Use base class constructor.
-  using RingBufferWrapper<THeaderExtraData>::RingBufferWrapper;
+  using RingBufferWrapper::RingBufferWrapper;
 
   Consumer(const Consumer&) = delete;
   Consumer(Consumer&&) = delete;

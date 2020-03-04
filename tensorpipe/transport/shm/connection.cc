@@ -48,9 +48,9 @@ Connection::~Connection() {
 
 void Connection::start() {
   // Create ringbuffer for inbox.
-  std::shared_ptr<TRingBuffer> inboxRingBuffer;
+  std::shared_ptr<util::ringbuffer::RingBuffer> inboxRingBuffer;
   std::tie(inboxHeaderFd_, inboxDataFd_, inboxRingBuffer) =
-      util::ringbuffer::shm::create<TRingBuffer>(kDefaultSize);
+      util::ringbuffer::shm::create(kDefaultSize);
   inbox_.emplace(std::move(inboxRingBuffer));
 
   // Register method to be called when our peer writes to our inbox.
@@ -103,7 +103,7 @@ void Connection::write(
     write_callback_fn fn) {
   std::unique_lock<std::mutex> guard(mutex_);
   writeOperations_.emplace_back(
-      [&message](TProducer& outbox) -> ssize_t {
+      [&message](util::ringbuffer::Producer& outbox) -> ssize_t {
         size_t len = message.ByteSize();
         if (len + sizeof(uint32_t) > kDefaultSize) {
           return -EPERM;
@@ -178,7 +178,7 @@ void Connection::handleEventIn(std::unique_lock<std::mutex> lock) {
     }
 
     // Load ringbuffer for outbox.
-    outbox_.emplace(util::ringbuffer::shm::load<TRingBuffer>(
+    outbox_.emplace(util::ringbuffer::shm::load(
         outboxHeaderFd.release(), outboxDataFd.release()));
 
     // Initialize remote reactor trigger.
@@ -377,7 +377,7 @@ Connection::ReadOperation::ReadOperation(
 Connection::ReadOperation::ReadOperation(read_callback_fn fn)
     : fn_(std::move(fn)) {}
 
-bool Connection::ReadOperation::handleRead(TConsumer& inbox) {
+bool Connection::ReadOperation::handleRead(util::ringbuffer::Consumer& inbox) {
   // Start read transaction.
   // Retry because this must succeed.
   for (;;) {
@@ -456,7 +456,8 @@ Connection::WriteOperation::WriteOperation(
     write_callback_fn fn)
     : writer_(std::move(writer)), fn_(std::move(fn)) {}
 
-bool Connection::WriteOperation::handleWrite(TProducer& outbox) {
+bool Connection::WriteOperation::handleWrite(
+    util::ringbuffer::Producer& outbox) {
   // Start write transaction.
   // Retry because this must succeed.
   // TODO: fallback if it doesn't.
@@ -517,7 +518,7 @@ void Connection::WriteOperation::handleError(const Error& error) {
 }
 
 Connection::RingBufferZeroCopyOutputStream::RingBufferZeroCopyOutputStream(
-    TProducer* buffer,
+    util::ringbuffer::Producer* buffer,
     size_t payloadSize)
     : buffer_(buffer), payloadSize_(payloadSize) {}
 

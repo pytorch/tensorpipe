@@ -19,14 +19,10 @@ namespace ringbuffer {
 ///
 /// Provides method to write into ringbuffer.
 ///
-template <class THeaderExtraData>
-class Producer : public RingBufferWrapper<THeaderExtraData> {
+class Producer : public RingBufferWrapper {
  public:
-  // Declare TExtraData in class namespace.
-  using TExtraData = THeaderExtraData;
-
   // Use base class constructor.
-  using RingBufferWrapper<THeaderExtraData>::RingBufferWrapper;
+  using RingBufferWrapper::RingBufferWrapper;
 
   Producer(const Producer&) = delete;
   Producer(Producer&&) = delete;

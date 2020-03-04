@@ -52,10 +52,6 @@ namespace ringbuffer {
 /// size is the smallest power of 2 larger than kMinByteSize_. Enforcing the
 /// size to be a power of two avoids costly division/modulo operations.
 ///
-/// TExtraData is an additional POD used to store user-defined additional
-/// data that can be accesible by all producers and consumers.
-///
-template <class TExtraData>
 class RingBufferHeader {
  public:
   const uint64_t kDataPoolByteSize;
@@ -116,15 +112,6 @@ class RingBufferHeader {
   // acquired by consumers.
   std::atomic_flag in_read_tx;
 
-  TExtraData extra_data;
-
-  // Enforce that TExtraData is a POD to make it safe to live in shared-memory.
-  // There may be weaker requirements but POD works is sufficient.
-  static_assert(
-      std::is_trivially_copyable<TExtraData>::value,
-      "RingBuffer ExtraData must live in shared memory and "
-      "therefore have no pointers");
-
  protected:
   // Written by producer.
   std::atomic<uint64_t> atomicHead_{0};
@@ -144,27 +131,24 @@ class RingBufferHeader {
 /// Process' view of a ring buffer.
 /// This cannot reside in shared memory since it has pointers.
 ///
-template <class THeaderExtraData>
 class RingBuffer final {
  public:
-  // Typenames in class namespace for templates that take RingBuffer.
-  using THeader = RingBufferHeader<THeaderExtraData>;
-  using TExtraData = THeaderExtraData;
-
   RingBuffer(const RingBuffer&) = delete;
   RingBuffer(RingBuffer&&) = delete;
 
-  RingBuffer(std::shared_ptr<THeader> header, std::shared_ptr<uint8_t> data)
+  RingBuffer(
+      std::shared_ptr<RingBufferHeader> header,
+      std::shared_ptr<uint8_t> data)
       : header_{std::move(header)}, data_{std::move(data)} {
     TP_THROW_IF_NULLPTR(header_) << "Header cannot be nullptr";
     TP_THROW_IF_NULLPTR(data_) << "Data cannot be nullptr";
   }
 
-  const THeader& getHeader() const {
+  const RingBufferHeader& getHeader() const {
     return *header_;
   }
 
-  THeader& getHeader() {
+  RingBufferHeader& getHeader() {
     return *header_;
   }
 
@@ -176,16 +160,8 @@ class RingBuffer final {
     return data_.get();
   }
 
-  auto& getExtraData() {
-    return header_->extra_data;
-  }
-
-  const auto& getExtraData() const {
-    return header_->extra_data;
-  }
-
  protected:
-  std::shared_ptr<THeader> header_;
+  std::shared_ptr<RingBufferHeader> header_;
 
   // Note: this is a std::shared_ptr<uint8_t[]> semantically.
   // A shared_ptr with array type is supported in C++17 and higher.
@@ -195,16 +171,11 @@ class RingBuffer final {
 ///
 /// Ringbuffer wrapper
 ///
-template <class THeaderExtraData>
 class RingBufferWrapper {
  public:
-  // Declare TExtraData in class namespace.
-  using TExtraData = THeaderExtraData;
-  using TRingBuffer = RingBuffer<TExtraData>;
-
   RingBufferWrapper(const RingBufferWrapper&) = delete;
 
-  RingBufferWrapper(std::shared_ptr<TRingBuffer> rb)
+  RingBufferWrapper(std::shared_ptr<RingBuffer> rb)
       : rb_{rb}, header_{rb->getHeader()}, data_{rb->getData()} {
     TP_THROW_IF_NULLPTR(rb);
     TP_THROW_IF_NULLPTR(data_);
@@ -222,17 +193,9 @@ class RingBufferWrapper {
     return rb_;
   }
 
-  auto& refHeaderExtraData() {
-    return this->header_.extra_data;
-  }
-
-  const auto& refHeaderExtraData() const {
-    return this->header_.extra_data;
-  }
-
  protected:
-  std::shared_ptr<TRingBuffer> rb_;
-  typename TRingBuffer::THeader& header_;
+  std::shared_ptr<RingBuffer> rb_;
+  RingBufferHeader& header_;
   uint8_t* const data_;
   unsigned tx_size_ = 0;
 };
