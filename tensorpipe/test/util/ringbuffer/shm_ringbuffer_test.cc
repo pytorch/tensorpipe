@@ -50,7 +50,7 @@ TEST(ShmRingBuffer, SameProducerConsumer) {
     // Producer loop. It all fits in buffer.
     int i = 0;
     while (i < 2000) {
-      ssize_t ret = prod.write(i);
+      ssize_t ret = prod.write(&i, sizeof(i));
       EXPECT_EQ(ret, sizeof(i));
       ++i;
     }
@@ -65,7 +65,7 @@ TEST(ShmRingBuffer, SameProducerConsumer) {
     int i = 0;
     while (i < 2000) {
       int value;
-      ssize_t ret = cons.copy(value);
+      ssize_t ret = cons.copy(sizeof(value), &value);
       EXPECT_EQ(ret, sizeof(value));
       EXPECT_EQ(value, i);
       ++i;
@@ -111,7 +111,7 @@ TEST(ShmRingBuffer, SingleProducer_SingleConsumer) {
 
       int i = 0;
       while (i < 2000) {
-        ssize_t ret = prod.write(i);
+        ssize_t ret = prod.write(&i, sizeof(i));
         if (ret == -ENOSPC) {
           std::this_thread::yield();
           continue;
@@ -150,7 +150,7 @@ TEST(ShmRingBuffer, SingleProducer_SingleConsumer) {
   int i = 0;
   while (i < 2000) {
     int value;
-    ssize_t ret = cons.copy(value);
+    ssize_t ret = cons.copy(sizeof(value), &value);
     if (ret == -ENODATA) {
       std::this_thread::yield();
       continue;
