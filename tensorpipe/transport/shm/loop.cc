@@ -50,7 +50,7 @@ void FunctionEventHandler::cancel() {
   }
 }
 
-void FunctionEventHandler::handleEvents(int events) {
+void FunctionEventHandler::handleEventsFromReactor(int events) {
   if (events & event_) {
     fn_(*this);
   }
@@ -94,7 +94,7 @@ Loop::~Loop() {
   TP_DCHECK(!thread_.joinable());
 }
 
-void Loop::defer(TDeferredFunction fn) {
+void Loop::deferToReactor(TDeferredFunction fn) {
   std::unique_lock<std::mutex> lock(deferredFunctionMutex_);
   deferredFunctionList_.push_back(std::move(fn));
   reactor_->trigger(deferredFunctionReactorToken_);
@@ -217,7 +217,7 @@ void Loop::handleEpollEventsFromReactor() {
         // Trigger callback. Note that the object is kept alive
         // through the shared_ptr that we acquired by locking the
         // weak_ptr in the handlers vector.
-        h->handleEvents(event.events);
+        h->handleEventsFromReactor(event.events);
         // Reset the handler shared_ptr before reacquiring the lock.
         // This may trigger destruction of the object.
         h.reset();

@@ -57,6 +57,10 @@ class Reactor final : public std::enable_shared_from_this<Reactor> {
   // Returns the file descriptors for the underlying ring buffer.
   std::tuple<int, int> fds() const;
 
+  inline bool inReactorThread() {
+    return std::this_thread::get_id() == thread_.get_id();
+  }
+
  private:
   Fd headerFd_;
   Fd dataFd_;

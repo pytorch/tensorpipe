@@ -56,7 +56,7 @@ address_t Listener::addr() const {
   return addr_.str();
 }
 
-void Listener::handleEvents(int events) {
+void Listener::handleEventsFromReactor(int events) {
   std::unique_lock<std::mutex> lock(mutex_);
   TP_ARG_CHECK_EQ(events, EPOLLIN);
   TP_DCHECK(!fns_.empty())

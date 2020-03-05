@@ -21,7 +21,7 @@ namespace {
 
 class Handler : public EventHandler {
  public:
-  void handleEvents(int events) override {
+  void handleEventsFromReactor(int events) override {
     std::unique_lock<std::mutex> lock(m_);
     events_.push_back(events);
     cv_.notify_all();
@@ -142,7 +142,7 @@ TEST(Loop, Defer) {
   auto loop = Loop::create();
   auto promise = std::make_shared<std::promise<void>>();
   auto future = promise->get_future();
-  loop->defer([promise]() { promise->set_value(); });
+  loop->deferToReactor([promise]() { promise->set_value(); });
   future.wait();
   ASSERT_TRUE(future.valid());
   loop->join();

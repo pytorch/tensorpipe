@@ -74,19 +74,19 @@ class Connection final : public transport::Connection,
       override;
 
   // Implementation of EventHandler.
-  void handleEvents(int events) override;
+  void handleEventsFromReactor(int events) override;
 
   // Handle events of type EPOLLIN.
-  void handleEventIn(std::unique_lock<std::mutex> lock);
+  void handleEventInFromReactor(std::unique_lock<std::mutex> lock);
 
   // Handle events of type EPOLLOUT.
-  void handleEventOut(std::unique_lock<std::mutex> lock);
+  void handleEventOutFromReactor(std::unique_lock<std::mutex> lock);
 
   // Handle events of type EPOLLERR.
-  void handleEventErr(std::unique_lock<std::mutex> lock);
+  void handleEventErrFromReactor(std::unique_lock<std::mutex> lock);
 
   // Handle events of type EPOLLHUP.
-  void handleEventHup(std::unique_lock<std::mutex> lock);
+  void handleEventHupFromReactor(std::unique_lock<std::mutex> lock);
 
   // Handle inbox being readable.
   //
@@ -94,7 +94,7 @@ class Connection final : public transport::Connection,
   // peer has written an entry into our inbox. It is called once per
   // message. Because it's called from another thread, we must always
   // take care to acquire the connection's lock here.
-  void handleInboxReadable();
+  void handleInboxReadableFromReactor();
 
   // Handle outbox being writable.
   //
@@ -102,7 +102,7 @@ class Connection final : public transport::Connection,
   // peer has read an entry from our outbox. It is called once per
   // message. Because it's called from another thread, we must always
   // take care to acquire the connection's lock here.
-  void handleOutboxWritable();
+  void handleOutboxWritableFromReactor();
 
  private:
   std::mutex mutex_;
@@ -228,19 +228,19 @@ class Connection final : public transport::Connection,
   void triggerProcessReadOperations();
 
   // Process pending read operations if in an operational state.
-  void processReadOperations(std::unique_lock<std::mutex> lock);
+  void processReadOperationsFromReactor(std::unique_lock<std::mutex> lock);
 
   // Defer execution of processWriteOperations to loop thread.
   void triggerProcessWriteOperations();
 
   // Process pending write operations if in an operational state.
-  void processWriteOperations(std::unique_lock<std::mutex> lock);
+  void processWriteOperationsFromReactor(std::unique_lock<std::mutex> lock);
 
   // Set error object while holding mutex.
-  void setErrorHoldingMutex(Error&&);
+  void setErrorHoldingMutexFromReactor(Error&&);
 
   // Fail with error while holding mutex.
-  void failHoldingMutex(Error&&);
+  void failHoldingMutexFromReactor(Error&&);
 
   // Close connection.
   void close();
