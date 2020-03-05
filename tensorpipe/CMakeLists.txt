@@ -53,6 +53,7 @@ target_link_libraries(tensorpipe PUBLIC tensorpipe_proto)
 target_link_libraries(tensorpipe PUBLIC uv)
 
 add_subdirectory(channel/basic)
+add_subdirectory(channel/intra_process)
 add_subdirectory(transport/shm)
 add_subdirectory(transport/uv)
 

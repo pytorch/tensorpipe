@@ -13,4 +13,5 @@ target_link_libraries(
   tensorpipe_basic
   tensorpipe_uv
   tensorpipe_shm
+  tensorpipe_intra_process
   )

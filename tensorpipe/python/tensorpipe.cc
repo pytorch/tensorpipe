@@ -15,6 +15,7 @@
 #include <pybind11/stl.h>
 
 #include <tensorpipe/channel/basic/basic.h>
+#include <tensorpipe/channel/intra_process/intra_process.h>
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/optional.h>
 #include <tensorpipe/core/context.h>
@@ -372,6 +373,10 @@ PYBIND11_MODULE(pytensorpipe, module) {
   channel_factory_class_<tensorpipe::channel::basic::BasicChannelFactory>
       basicChannel(module, "BasicChannel");
   basicChannel.def(py::init<>());
+  channel_factory_class_<
+      tensorpipe::channel::intra_process::IntraProcessChannelFactory>
+      intraProcessChannel(module, "IntraProcessChannel");
+  intraProcessChannel.def(py::init<>());
 
   context.def(
       "register_channel",
