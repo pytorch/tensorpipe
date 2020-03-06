@@ -105,7 +105,7 @@ class Consumer : public RingBufferWrapper {
       return -EINVAL;
     }
     // Single reader because we are in Tx, safe to read tail.
-    const uint64_t avail = this->header_.usedSizeWeak() - this->tx_size_;
+    const size_t avail = this->header_.usedSizeWeak() - this->tx_size_;
     return this->copyInTx(std::min(size, avail), buffer);
   }
 
