@@ -15,9 +15,15 @@ set(TENSORPIPE_SOURCES
   ${CMAKE_CURRENT_SOURCE_DIR}/core/pipe.cc
   ${CMAKE_CURRENT_SOURCE_DIR}/transport/connection.cc
   ${CMAKE_CURRENT_SOURCE_DIR}/transport/error.cc
-  ${CMAKE_CURRENT_SOURCE_DIR}/util/ringbuffer/shm.cc
-  ${CMAKE_CURRENT_SOURCE_DIR}/util/shm/segment.cc
   )
+
+if(LINUX)
+  set(TENSORPIPE_SOURCES
+    ${TENSORPIPE_SOURCES}
+    ${CMAKE_CURRENT_SOURCE_DIR}/util/ringbuffer/shm.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/util/shm/segment.cc
+  )
+endif()
 
 set(TENSORPIPE_HEADERS
   ${CMAKE_CURRENT_SOURCE_DIR}/channel/channel.h
@@ -53,8 +59,10 @@ target_include_directories(tensorpipe PUBLIC ${CMAKE_SOURCE_DIR})
 target_link_libraries(tensorpipe PUBLIC tensorpipe_proto)
 
 add_subdirectory(channel/basic)
-add_subdirectory(transport/shm)
 add_subdirectory(transport/uv)
+if(LINUX)
+  add_subdirectory(transport/shm)
+endif()
 
 if(BUILD_PYTHON_MODULE)
   add_subdirectory(python)
