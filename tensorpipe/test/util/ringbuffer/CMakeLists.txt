@@ -7,6 +7,9 @@
 add_tensorpipe_test(ringbuffer_test ringbuffer_test.cc)
 add_tensorpipe_test(protobuf_streams_test protobuf_streams_test.cc)
 target_link_libraries(protobuf_streams_test tensorpipe_proto)
-add_tensorpipe_test(shm_ringbuffer_test shm_ringbuffer_test.cc)
-# Needed to use socket.h to send fds across a UNIX domain socket.
-target_link_libraries(shm_ringbuffer_test tensorpipe_shm)
+
+if(LINUX)
+  add_tensorpipe_test(shm_ringbuffer_test shm_ringbuffer_test.cc)
+  # Needed to use socket.h to send fds across a UNIX domain socket.
+  target_link_libraries(shm_ringbuffer_test tensorpipe_shm)
+endif()
