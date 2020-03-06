@@ -8,9 +8,11 @@
 
 #include <tensorpipe/transport/uv/sockaddr.h>
 
-#include <cstring>
+#include <array>
 #include <sstream>
 #include <utility>
+
+#include <cstring>
 
 #include <uv.h>
 
