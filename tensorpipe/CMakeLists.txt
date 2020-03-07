@@ -25,34 +25,6 @@ if(LINUX)
   )
 endif()
 
-set(TENSORPIPE_HEADERS
-  ${CMAKE_CURRENT_SOURCE_DIR}/channel/channel.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/channel/helpers.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/common/address.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/common/callback.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/common/defs.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/common/error.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/common/error_macros.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/common/optional.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/common/queue.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/common/system.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/core/context.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/core/error.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/core/listener.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/core/message.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/core/pipe.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/transport/connection.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/transport/context.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/transport/error.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/transport/listener.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/util/ringbuffer/consumer.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/util/ringbuffer/producer.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/util/ringbuffer/protobuf_streams.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/util/ringbuffer/ringbuffer.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/util/ringbuffer/shm.h
-  ${CMAKE_CURRENT_SOURCE_DIR}/util/shm/segment.h
-  )
-
 add_subdirectory(proto)
 add_library(tensorpipe ${TENSORPIPE_SOURCES})
 target_include_directories(tensorpipe PUBLIC ${CMAKE_SOURCE_DIR})
