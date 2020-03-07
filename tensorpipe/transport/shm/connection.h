@@ -212,14 +212,14 @@ class Connection final : public transport::Connection,
   // Defer execution of processReadOperations to loop thread.
   void triggerProcessReadOperations();
 
-  // Process pending read operations if in an operational state.
-  void processReadOperationsFromReactor(std::unique_lock<std::mutex> lock);
+  // Process pending read operations if in an operational or error state.
+  void processReadOperationsFromReactor(std::unique_lock<std::mutex>& lock);
 
   // Defer execution of processWriteOperations to loop thread.
   void triggerProcessWriteOperations();
 
   // Process pending write operations if in an operational state.
-  void processWriteOperationsFromReactor(std::unique_lock<std::mutex> lock);
+  void processWriteOperationsFromReactor(std::unique_lock<std::mutex>& lock);
 
   // Set error object while holding mutex.
   void setErrorHoldingMutexFromReactor(Error&&);
