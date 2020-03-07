@@ -20,8 +20,6 @@
 #include <tensorpipe/util/ringbuffer/producer.h>
 #include <tensorpipe/util/ringbuffer/shm.h>
 
-#include <google/protobuf/io/zero_copy_stream.h>
-
 namespace tensorpipe {
 namespace transport {
 namespace shm {
@@ -62,6 +60,10 @@ class Connection final : public transport::Connection,
 
   // Implementation of transport::Connection.
   void read(read_callback_fn fn) override;
+
+  // Implementation of transport::Connection.
+  void read(google::protobuf::MessageLite& message, read_proto_callback_fn fn)
+      override;
 
   // Implementation of transport::Connection.
   void read(void* ptr, size_t length, read_callback_fn fn) override;
@@ -142,8 +144,9 @@ class Connection final : public transport::Connection,
     };
 
    public:
+    using read_fn = std::function<ssize_t(util::ringbuffer::Consumer&)>;
     explicit ReadOperation(void* ptr, size_t len, read_callback_fn fn);
-
+    explicit ReadOperation(read_fn reader, read_callback_fn fn);
     explicit ReadOperation(read_callback_fn fn);
 
     // Processes a pending read.
@@ -158,6 +161,7 @@ class Connection final : public transport::Connection,
    private:
     Mode mode_{READ_LENGTH};
     void* ptr_{nullptr};
+    read_fn reader_;
     std::unique_ptr<uint8_t[]> buf_;
     size_t len_{0};
     size_t bytesRead_{0};
@@ -197,25 +201,6 @@ class Connection final : public transport::Connection,
     size_t len_{0};
     size_t bytesWritten_{0};
     write_callback_fn fn_;
-  };
-
-  class RingBufferZeroCopyOutputStream
-      : public google::protobuf::io::ZeroCopyOutputStream {
-   public:
-    RingBufferZeroCopyOutputStream(
-        util::ringbuffer::Producer* buffer,
-        size_t payloadSize);
-
-    bool Next(void** data, int* size) override;
-
-    void BackUp(int /* unused */) override;
-
-    int64_t ByteCount() const override;
-
-   private:
-    util::ringbuffer::Producer* buffer_;
-    const size_t payloadSize_;
-    int64_t bytesCount_{0};
   };
 
   // Pending read operations.

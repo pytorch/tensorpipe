@@ -109,6 +109,27 @@ class Consumer : public RingBufferWrapper {
     return this->copyInTx(std::min(size, avail), buffer);
   }
 
+  // Return the number of bytes (up to size) available as a contiguous segment,
+  // as well as a pointer to the first byte.
+  [[nodiscard]] std::pair<ssize_t, const uint8_t*> readContiguousAtMostInTx(
+      const size_t size) noexcept {
+    if (unlikely(!inTx())) {
+      return {-EINVAL, nullptr};
+    }
+
+    const uint64_t head = this->header_.readHead();
+    // Single reader because we are in Tx, safe to read tail.
+    const uint64_t tail = this->header_.readTail();
+    const uint64_t avail = head - tail - this->tx_size_;
+    const uint64_t start = (this->tx_size_ + tail) & this->header_.kDataModMask;
+    const uint64_t end = std::min(
+        start + std::min(size, avail), this->header_.kDataPoolByteSize);
+
+    this->tx_size_ += end - start;
+
+    return {end - start, &this->data_[start]};
+  }
+
   //
   // High-level atomic operations.
   //

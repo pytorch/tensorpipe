@@ -41,6 +41,7 @@ set(TENSORPIPE_HEADERS
   ${CMAKE_CURRENT_SOURCE_DIR}/transport/listener.h
   ${CMAKE_CURRENT_SOURCE_DIR}/util/ringbuffer/consumer.h
   ${CMAKE_CURRENT_SOURCE_DIR}/util/ringbuffer/producer.h
+  ${CMAKE_CURRENT_SOURCE_DIR}/util/ringbuffer/protobuf_streams.h
   ${CMAKE_CURRENT_SOURCE_DIR}/util/ringbuffer/ringbuffer.h
   ${CMAKE_CURRENT_SOURCE_DIR}/util/ringbuffer/shm.h
   ${CMAKE_CURRENT_SOURCE_DIR}/util/shm/segment.h

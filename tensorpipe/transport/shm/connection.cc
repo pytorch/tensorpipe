@@ -16,6 +16,7 @@
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/error_macros.h>
 #include <tensorpipe/transport/error.h>
+#include <tensorpipe/util/ringbuffer/protobuf_streams.h>
 
 namespace tensorpipe {
 namespace transport {
@@ -81,6 +82,44 @@ void Connection::read(read_callback_fn fn) {
 }
 
 // Implementation of transport::Connection.
+void Connection::read(
+    google::protobuf::MessageLite& message,
+    read_proto_callback_fn fn) {
+  std::unique_lock<std::mutex> guard(mutex_);
+  readOperations_.emplace_back(
+      [&message](util::ringbuffer::Consumer& inbox) -> ssize_t {
+        uint32_t len;
+        {
+          const auto ret = inbox.copyInTx(sizeof(len), &len);
+          if (ret == -ENODATA) {
+            return -ENODATA;
+          }
+          TP_THROW_SYSTEM_IF(ret < 0, -ret);
+        }
+
+        if (len + sizeof(uint32_t) > kDefaultSize) {
+          return -EPERM;
+        }
+
+        util::ringbuffer::ZeroCopyInputStream is(&inbox, len);
+        if (!message.ParseFromZeroCopyStream(&is)) {
+          return -ENODATA;
+        }
+
+        TP_DCHECK_EQ(len, is.ByteCount());
+        return is.ByteCount();
+      },
+      [fn{std::move(fn)}](
+          const Error& error, const void* /* unused */, size_t /* unused */) {
+        fn(error);
+      });
+
+  // If there are pending read operations, make sure the event loop
+  // processes them, now that we have an additional callback.
+  triggerProcessReadOperations();
+}
+
+// Implementation of transport::Connection.
 void Connection::read(void* ptr, size_t length, read_callback_fn fn) {
   std::unique_lock<std::mutex> guard(mutex_);
   readOperations_.emplace_back(ptr, length, std::move(fn));
@@ -114,7 +153,7 @@ void Connection::write(
           return ret;
         }
 
-        RingBufferZeroCopyOutputStream os(&outbox, len);
+        util::ringbuffer::ZeroCopyOutputStream os(&outbox, len);
         if (!message.SerializeToZeroCopyStream(&os)) {
           return -ENOSPC;
         }
@@ -391,6 +430,9 @@ Connection::ReadOperation::ReadOperation(
     read_callback_fn fn)
     : ptr_(ptr), len_(len), fn_(std::move(fn)) {}
 
+Connection::ReadOperation::ReadOperation(read_fn reader, read_callback_fn fn)
+    : reader_(std::move(reader)), fn_(std::move(fn)) {}
+
 Connection::ReadOperation::ReadOperation(read_callback_fn fn)
     : fn_(std::move(fn)) {}
 
@@ -407,9 +449,8 @@ bool Connection::ReadOperation::handleRead(util::ringbuffer::Consumer& inbox) {
   }
 
   bool lengthRead = false;
-  if (mode_ == READ_LENGTH) {
-    uint32_t length;
-    ssize_t ret = inbox.copyInTx(sizeof(length), &length);
+  if (reader_) {
+    auto ret = reader_(inbox);
     if (ret == -ENODATA) {
       ret = inbox.cancelTx();
       TP_THROW_SYSTEM_IF(ret < 0, -ret);
@@ -417,33 +458,50 @@ bool Connection::ReadOperation::handleRead(util::ringbuffer::Consumer& inbox) {
     }
     TP_THROW_SYSTEM_IF(ret < 0, -ret);
 
-    if (ptr_ != nullptr) {
-      TP_DCHECK_EQ(length, len_);
-    } else {
-      len_ = length;
-      buf_ = std::make_unique<uint8_t[]>(len_);
-      ptr_ = buf_.get();
-    }
     mode_ = READ_PAYLOAD;
-    lengthRead = true;
-  }
-
-  {
-    const auto ret = inbox.copyAtMostInTx(
-        len_ - bytesRead_, reinterpret_cast<uint8_t*>(ptr_) + bytesRead_);
-    if (ret == -ENODATA) {
-      if (lengthRead) {
-        const auto ret = inbox.commitTx();
+    bytesRead_ = len_ = ret;
+  } else {
+    if (mode_ == READ_LENGTH) {
+      uint32_t length;
+      {
+        ssize_t ret;
+        ret = inbox.copyInTx(sizeof(length), &length);
+        if (ret == -ENODATA) {
+          ret = inbox.cancelTx();
+          TP_THROW_SYSTEM_IF(ret < 0, -ret);
+          return false;
+        }
         TP_THROW_SYSTEM_IF(ret < 0, -ret);
-        return true;
-      } else {
-        const auto ret = inbox.cancelTx();
-        TP_THROW_SYSTEM_IF(ret < 0, -ret);
-        return false;
       }
+
+      if (ptr_ != nullptr) {
+        TP_DCHECK_EQ(length, len_);
+      } else {
+        len_ = length;
+        buf_ = std::make_unique<uint8_t[]>(len_);
+        ptr_ = buf_.get();
+      }
+      mode_ = READ_PAYLOAD;
+      lengthRead = true;
     }
-    TP_THROW_SYSTEM_IF(ret < 0, -ret);
-    bytesRead_ += ret;
+
+    {
+      const auto ret = inbox.copyAtMostInTx(
+          len_ - bytesRead_, reinterpret_cast<uint8_t*>(ptr_) + bytesRead_);
+      if (ret == -ENODATA) {
+        if (lengthRead) {
+          const auto ret = inbox.commitTx();
+          TP_THROW_SYSTEM_IF(ret < 0, -ret);
+          return true;
+        } else {
+          const auto ret = inbox.cancelTx();
+          TP_THROW_SYSTEM_IF(ret < 0, -ret);
+          return false;
+        }
+      }
+      TP_THROW_SYSTEM_IF(ret < 0, -ret);
+      bytesRead_ += ret;
+    }
   }
 
   {
@@ -532,30 +590,6 @@ bool Connection::WriteOperation::handleWrite(
 
 void Connection::WriteOperation::handleError(const Error& error) {
   fn_(error);
-}
-
-Connection::RingBufferZeroCopyOutputStream::RingBufferZeroCopyOutputStream(
-    util::ringbuffer::Producer* buffer,
-    size_t payloadSize)
-    : buffer_(buffer), payloadSize_(payloadSize) {}
-
-bool Connection::RingBufferZeroCopyOutputStream::Next(void** data, int* size) {
-  std::tie(*size, *data) =
-      buffer_->reserveContiguousInTx(payloadSize_ - bytesCount_);
-  if (*size == -ENOSPC) {
-    return false;
-  }
-  TP_THROW_SYSTEM_IF(*size < 0, -*size);
-
-  bytesCount_ += *size;
-
-  return true;
-}
-
-void Connection::RingBufferZeroCopyOutputStream::BackUp(int /* unused */) {}
-
-int64_t Connection::RingBufferZeroCopyOutputStream::ByteCount() const {
-  return bytesCount_;
 }
 
 } // namespace shm

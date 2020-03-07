@@ -531,3 +531,117 @@ TEST(RingBuffer, ReadTxWrapping) {
     EXPECT_FALSE(c2.inTx());
   }
 }
+
+TEST(RingBuffer, readContiguousAtMostInTx) {
+  // 256 bytes buffer.
+  size_t size = 1u << 8u;
+
+  auto rb = makeRingBuffer(size);
+  // Make a producer.
+  Producer p{rb};
+  // Make a consumer.
+  Consumer c{rb};
+
+  EXPECT_EQ(rb->getHeader().usedSizeWeak(), 0);
+
+  uint16_t n = 0xACAC; // fits 128 times
+
+  {
+    for (int i = 0; i < 128; ++i) {
+      ssize_t ret = p.write(&n, sizeof(n));
+      EXPECT_EQ(ret, sizeof(n));
+    }
+
+    // It must be full by now.
+    EXPECT_EQ(rb->getHeader().usedSizeWeak(), 256);
+
+    uint8_t b = 0xEE;
+    ssize_t ret = p.write(&b, sizeof(b));
+    EXPECT_EQ(ret, -ENOSPC);
+  }
+
+  {
+    // Read the first 200 bytes at once.
+    ssize_t ret;
+    ret = c.startTx();
+    EXPECT_EQ(ret, 0);
+
+    const uint8_t* ptr;
+    std::tie(ret, ptr) = c.readContiguousAtMostInTx(200);
+    EXPECT_EQ(ret, 200);
+    for (int i = 0; i < 200; ++i) {
+      EXPECT_EQ(ptr[i], 0xAC);
+    }
+    ret = c.commitTx();
+    EXPECT_EQ(ret, 0);
+    EXPECT_EQ(rb->getHeader().usedSizeWeak(), 56);
+  }
+
+  {
+    for (int i = 0; i < 100; ++i) {
+      ssize_t ret = p.write(&n, sizeof(n));
+      EXPECT_EQ(ret, sizeof(n));
+    }
+
+    // It must be full again by now.
+    EXPECT_EQ(rb->getHeader().usedSizeWeak(), 256);
+  }
+
+  {
+    // Attempt reading the next 200 bytes, but only 56 available contiguously.
+    ssize_t ret;
+    ret = c.startTx();
+    EXPECT_EQ(ret, 0);
+
+    const uint8_t* ptr;
+    std::tie(ret, ptr) = c.readContiguousAtMostInTx(200);
+    EXPECT_EQ(ret, 56);
+    for (int i = 0; i < 56; ++i) {
+      EXPECT_EQ(ptr[i], 0xAC);
+    }
+    ret = c.commitTx();
+    EXPECT_EQ(ret, 0);
+    EXPECT_EQ(rb->getHeader().usedSizeWeak(), 200);
+  }
+
+  {
+    for (int i = 0; i < 28; ++i) {
+      ssize_t ret = p.write(&n, sizeof(n));
+      EXPECT_EQ(ret, sizeof(n));
+    }
+
+    // It must be full again by now.
+    EXPECT_EQ(rb->getHeader().usedSizeWeak(), 256);
+  }
+
+  {
+    // Reading the whole 256 bytes.
+    ssize_t ret;
+    ret = c.startTx();
+    EXPECT_EQ(ret, 0);
+
+    const uint8_t* ptr;
+    std::tie(ret, ptr) = c.readContiguousAtMostInTx(256);
+    EXPECT_EQ(ret, 256);
+    for (int i = 0; i < 256; ++i) {
+      EXPECT_EQ(ptr[i], 0xAC);
+    }
+    ret = c.commitTx();
+    EXPECT_EQ(ret, 0);
+    EXPECT_EQ(rb->getHeader().usedSizeWeak(), 0);
+  }
+
+  {
+    // Attempt reading from empty buffer.
+    ssize_t ret;
+    ret = c.startTx();
+    EXPECT_EQ(ret, 0);
+
+    const uint8_t* ptr;
+    std::tie(ret, ptr) = c.readContiguousAtMostInTx(200);
+    EXPECT_EQ(ret, 0);
+    ret = c.commitTx();
+    EXPECT_EQ(ret, 0);
+    EXPECT_EQ(rb->getHeader().usedSizeWeak(), 0);
+  }
+}
