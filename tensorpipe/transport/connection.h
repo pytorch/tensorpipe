@@ -38,11 +38,17 @@ class Connection {
 
   // Read and parse protobuf message.
   //
-  // This function may not be overridden by a subclass.
+  // This function may be overridden by a subclass.
+  //
+  // For example, the shm transport may be able to bypass reading into a
+  // temporary buffer and instead instead read directly from its peer's
+  // ring buffer. This saves an allocation and a memory copy.
   //
   using read_proto_callback_fn = std::function<void(const Error& error)>;
 
-  void read(google::protobuf::MessageLite& message, read_proto_callback_fn fn);
+  virtual void read(
+      google::protobuf::MessageLite& message,
+      read_proto_callback_fn fn);
 
   // Serialize and write protobuf message.
   //
