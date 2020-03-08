@@ -16,23 +16,6 @@
 #include <string>
 #include <system_error>
 
-// gettid was not part of glibc until glibc 2.30
-// ( see https://sourceware.org/bugzilla/show_bug.cgi?id=6399 )
-//
-// Define here if it's missing.
-
-#include <unistd.h>
-
-#ifndef gettid
-
-#include <sys/syscall.h>
-
-inline pid_t gettid() noexcept {
-  return static_cast<pid_t>(syscall(SYS_gettid));
-}
-
-#endif
-
 // Branch hint macros. C++20 will include them as part of language.
 #define likely(x) __builtin_expect(!!(x), 1)
 #define unlikely(x) __builtin_expect(!!(x), 0)
