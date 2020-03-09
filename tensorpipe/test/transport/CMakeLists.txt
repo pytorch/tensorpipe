@@ -11,6 +11,7 @@ add_library(
   context_test.cc
   listener_test.cc
   )
+target_link_libraries(tensorpipe_transport_test tensorpipe_proto)
 target_include_directories(
   tensorpipe_transport_test
   PUBLIC
