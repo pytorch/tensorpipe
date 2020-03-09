@@ -6,6 +6,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <array>
+
 #include <tensorpipe/proto/core.pb.h>
 #include <tensorpipe/util/ringbuffer/consumer.h>
 #include <tensorpipe/util/ringbuffer/producer.h>
