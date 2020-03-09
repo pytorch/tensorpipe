@@ -6,7 +6,6 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <tensorpipe/common/defs.h>
 #include <tensorpipe/transport/shm/socket.h>
 
 #include <gtest/gtest.h>

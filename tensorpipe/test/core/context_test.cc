@@ -7,7 +7,6 @@
  */
 
 #include <tensorpipe/channel/basic/basic.h>
-#include <tensorpipe/common/defs.h>
 #include <tensorpipe/core/context.h>
 #include <tensorpipe/core/listener.h>
 #include <tensorpipe/core/pipe.h>

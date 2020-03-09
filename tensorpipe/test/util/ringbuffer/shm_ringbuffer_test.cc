@@ -21,7 +21,6 @@
 
 #include <gtest/gtest.h>
 
-using namespace tensorpipe;
 using namespace tensorpipe::util::ringbuffer;
 using namespace tensorpipe::transport::shm;
 
