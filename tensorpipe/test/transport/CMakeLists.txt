@@ -4,30 +4,25 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-add_library(
-  tensorpipe_transport_test
-  OBJECT
+add_tensorpipe_test(tensorpipe_transport_test
   connection_test.cc
   context_test.cc
   listener_test.cc
+  uv/connection_test.cc
+  uv/loop_test.cc
+  uv/sockaddr_test.cc
+  uv/uv_test.cc
   )
-target_link_libraries(tensorpipe_transport_test tensorpipe_proto)
-target_include_directories(
-  tensorpipe_transport_test
-  PUBLIC
-  $<TARGET_PROPERTY:tensorpipe,INCLUDE_DIRECTORIES>
-  $<TARGET_PROPERTY:gtest_main,INCLUDE_DIRECTORIES>
-  )
+target_link_libraries(tensorpipe_transport_test tensorpipe_uv)
 
-function(add_tensorpipe_transport_test)
-  add_tensorpipe_test(${ARGV})
-  target_link_libraries(
-    "${ARGV0}"
-    $<TARGET_OBJECTS:tensorpipe_transport_test>
-    )
-endfunction()
-
-add_subdirectory(uv)
 if(LINUX)
-  add_subdirectory(shm)
+  target_sources(tensorpipe_transport_test
+    PRIVATE
+    shm/connection_test.cc
+    shm/loop_test.cc
+    shm/reactor_test.cc
+    shm/shm_test.cc
+    shm/sockaddr_test.cc
+    )
+  target_link_libraries(tensorpipe_transport_test tensorpipe_shm)
 endif()
