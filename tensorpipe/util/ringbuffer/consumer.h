@@ -120,8 +120,8 @@ class Consumer : public RingBufferWrapper {
     const uint64_t head = this->header_.readHead();
     // Single reader because we are in Tx, safe to read tail.
     const uint64_t tail = this->header_.readTail();
-    const uint64_t avail = head - tail - this->tx_size_;
     const uint64_t start = (this->tx_size_ + tail) & this->header_.kDataModMask;
+    const size_t avail = head - tail - this->tx_size_;
     const uint64_t end = std::min(
         start + std::min(size, avail), this->header_.kDataPoolByteSize);
 
