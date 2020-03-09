@@ -8,7 +8,7 @@ set(PYBIND11_CPP_STANDARD -std=c++14)
 pybind11_add_module(pytensorpipe tensorpipe.cc)
 target_link_libraries(
   pytensorpipe
-  PUBLIC
+  PRIVATE
   tensorpipe
   tensorpipe_basic
   tensorpipe_uv
