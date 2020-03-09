@@ -55,6 +55,10 @@ jobs:
     steps:
       - checkout
       - run:
+          name: Install homebrew packages
+          command: |
+            brew install cmake protobuf
+      - run:
           name: Initialize submodules
           command: |
             git submodule init
@@ -66,7 +70,7 @@ jobs:
             cd build
             cmake ../ \
               -DCMAKE_C_FLAGS="-Werror -Wno-deprecated-declarations" \
-              -DCMAKE_CXX_FLAGS="-Werror -Wno-deprecated-declarations" \
+              -DCMAKE_CXX_FLAGS="-Werror -Wno-deprecated-declarations"
             make -j
       - run:
           name: Test
