@@ -4,6 +4,9 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+# Defines `gtest_discover_tests()`.
+include(GoogleTest)
+
 add_library(tensorpipe_test OBJECT test.cc)
 
 function(add_tensorpipe_test)
@@ -14,6 +17,7 @@ function(add_tensorpipe_test)
     tensorpipe
     gtest_main
     )
+  gtest_discover_tests(${ARGV0})
 endfunction()
 
 add_subdirectory(channel)
