@@ -46,7 +46,9 @@ jobs:
             make
       - run:
           name: Test
-          command: make test
+          command: |
+            cd build
+            make test
   python:
     parameters:
       docker_image:
