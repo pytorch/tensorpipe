@@ -35,18 +35,18 @@ proto::Brochure getMessage() {
   const std::map<std::string, std::string> ta_map = {{"foo", "bar"},
                                                      {"foobar", "baz"}};
 
-  for (const auto& [k, v] : ta_map) {
+  for (const auto& e : ta_map) {
     proto::TransportAdvertisement ta;
-    ta.set_domain_descriptor(v);
-    (*message.mutable_transport_advertisement())[k] = ta;
+    ta.set_domain_descriptor(e.second);
+    (*message.mutable_transport_advertisement())[e.first] = ta;
   }
 
   const std::map<std::string, std::string> ca_map = {{"foo2", "bar2"},
                                                      {"foobar2", "baz2"}};
-  for (const auto& [k, v] : ca_map) {
+  for (const auto& e : ca_map) {
     proto::ChannelAdvertisement ca;
-    ca.set_domain_descriptor(v);
-    (*message.mutable_channel_advertisement())[k] = ca;
+    ca.set_domain_descriptor(e.second);
+    (*message.mutable_channel_advertisement())[e.first] = ca;
   }
 
   return message;
