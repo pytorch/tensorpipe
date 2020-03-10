@@ -128,21 +128,13 @@ void Connection::Impl::writeFromLoop(
   writeOperations_.emplace_back(ptr, length, std::move(fn));
   auto& writeOperation = writeOperations_.back();
 
-  // Populate uv_buf_t array that we'll write for this operation.
-  auto bufs = std::shared_ptr<uv_buf_t>(
-      new uv_buf_t[2], std::default_delete<uv_buf_t[]>());
-  uv_buf_t* bufs_ptr = bufs.get();
-  unsigned int bufs_len = 2;
-  bufs_ptr[0].base =
-      const_cast<char*>(reinterpret_cast<const char*>(&writeOperation.length));
-  bufs_ptr[0].len = sizeof(writeOperation.length);
-  bufs_ptr[1].base = const_cast<char*>(writeOperation.ptr);
-  bufs_ptr[1].len = writeOperation.length;
+  uv_buf_t* bufsPtr;
+  unsigned int bufsLen;
+  std::tie(bufsPtr, bufsLen) = writeOperation.getBufs();
 
-  handle_->writeFromLoop(
-      bufs_ptr, bufs_len, [this, bufs{std::move(bufs)}](int status) {
-        this->writeCallbackFromLoop(status);
-      });
+  handle_->writeFromLoop(bufsPtr, bufsLen, [this](int status) {
+    this->writeCallbackFromLoop(status);
+  });
 }
 
 void Connection::Impl::ReadOperation::allocFromLoop(uv_buf_t* buf) {
@@ -187,6 +179,17 @@ void Connection::Impl::ReadOperation::readFromLoop(
   } else {
     TP_THROW_ASSERT() << "invalid mode " << mode_;
   }
+}
+
+Connection::Impl::WriteOperation::WriteOperation(
+    const void* ptr,
+    size_t length,
+    write_callback_fn fn)
+    : ptr_(static_cast<const char*>(ptr)), length_(length), fn_(std::move(fn)) {
+  bufs_[0].base = const_cast<char*>(reinterpret_cast<const char*>(&length_));
+  bufs_[0].len = sizeof(length_);
+  bufs_[1].base = const_cast<char*>(ptr_);
+  bufs_[1].len = length_;
 }
 
 void Connection::Impl::allocCallbackFromLoop(uv_buf_t* buf) {

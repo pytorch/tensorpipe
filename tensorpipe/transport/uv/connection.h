@@ -154,13 +154,11 @@ class Connection : public transport::Connection,
     // must remain valid until the write callback has been called.
     class WriteOperation {
      public:
-      WriteOperation(const void* ptr, size_t length, write_callback_fn fn)
-          : ptr(static_cast<const char*>(ptr)),
-            length(length),
-            fn_(std::move(fn)) {}
+      WriteOperation(const void* ptr, size_t length, write_callback_fn fn);
 
-      const char* ptr;
-      const size_t length;
+      inline std::tuple<uv_buf_t*, unsigned int> getBufs() {
+        return std::make_tuple(bufs_.data(), bufs_.size());
+      }
 
       // Invoke user callback.
       inline void callbackFromLoop(const Error& error) {
@@ -168,6 +166,12 @@ class Connection : public transport::Connection,
       }
 
      private:
+      const char* ptr_;
+      const size_t length_;
+
+      // Buffers (structs with pointers and lengths) we pass to uv_write.
+      std::array<uv_buf_t, 2> bufs_;
+
       // User callback.
       write_callback_fn fn_;
     };
