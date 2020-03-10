@@ -100,6 +100,10 @@ class Loop final : public std::enable_shared_from_this<Loop> {
   // Companion function to uv__async_cb as member function
   // on the loop class.
   void runFunctionsFromLoop();
+
+  void closeAllHandlesFromLoop();
+
+  static void closeOneHandleFromLoop(uv_handle_t* handle, void* /* unused */);
 };
 
 } // namespace uv
