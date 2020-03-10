@@ -21,8 +21,13 @@ namespace uv {
 std::shared_ptr<Listener> Listener::create(
     std::shared_ptr<Loop> loop,
     const Sockaddr& addr) {
+  auto handle = TCPHandle::create(loop);
+  loop->deferToLoop([handle, addr]() {
+    handle->initFromLoop();
+    handle->bindFromLoop(addr);
+  });
   auto listener =
-      std::make_shared<Listener>(ConstructorToken(), std::move(loop), addr);
+      std::make_shared<Listener>(ConstructorToken(), loop, std::move(handle));
   listener->start();
   return listener;
 }
@@ -30,11 +35,8 @@ std::shared_ptr<Listener> Listener::create(
 Listener::Listener(
     ConstructorToken /* unused */,
     std::shared_ptr<Loop> loop,
-    const Sockaddr& addr)
-    : loop_(std::move(loop)) {
-  handle_ = loop_->createHandle<TCPHandle>();
-  handle_->bind(addr);
-}
+    std::shared_ptr<TCPHandle> handle)
+    : loop_(std::move(loop)), handle_(std::move(handle)) {}
 
 Listener::~Listener() {
   for (const auto& connection : connectionsWaitingForAccept_) {
@@ -86,10 +88,8 @@ void Listener::connectionCallbackFromLoop(int status) {
     return;
   }
 
-  auto connection = std::make_shared<TCPHandle>(loop_);
-  connection->leak();
-  // FIXME Calling a UV function directly is a temporary workaround.
-  uv_tcp_init(loop_->ptr(), connection->ptr());
+  auto connection = TCPHandle::create(loop_);
+  connection->initFromLoop();
   connectionsWaitingForAccept_.insert(connection);
   // Since a reference to the new TCPHandle is stored in a member field of the
   // listener, the TCPHandle will still be alive inside the following callback

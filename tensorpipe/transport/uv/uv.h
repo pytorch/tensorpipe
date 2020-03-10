@@ -32,12 +32,24 @@ namespace uv {
 // up and can be safely destructed (see `leak` and `unleak` functions).
 template <typename T, typename U>
 class BaseResource : public std::enable_shared_from_this<T> {
- public:
-  explicit BaseResource(std::shared_ptr<Loop> loop) : loop_(std::move(loop)) {}
+ protected:
+  // Use the passkey idiom to allow make_shared to call what should be a private
+  // constructor. See https://abseil.io/tips/134 for more information.
+  struct ConstructorToken {};
 
-  void leak() {
-    leak_ = this->shared_from_this();
+ public:
+  template <typename... Args>
+  static std::shared_ptr<T> create(std::shared_ptr<Loop> loop, Args&&... args) {
+    auto resource = std::make_shared<T>(
+        ConstructorToken(), std::move(loop), std::forward<Args>(args)...);
+    resource->leak();
+    return resource;
   }
+
+  explicit BaseResource(
+      ConstructorToken /* unused */,
+      std::shared_ptr<Loop> loop)
+      : loop_(std::move(loop)) {}
 
  protected:
   // Refer to the loop to keep it alive.
@@ -47,6 +59,10 @@ class BaseResource : public std::enable_shared_from_this<T> {
   // * the handle is closed, or...
   // * the request has completed.
   std::shared_ptr<T> leak_;
+
+  void leak() {
+    leak_ = this->shared_from_this();
+  }
 
   void unleak() {
     leak_.reset();
@@ -63,8 +79,12 @@ class BaseHandle : public BaseResource<T, U> {
   }
 
  public:
-  explicit BaseHandle(std::shared_ptr<Loop> loop)
-      : BaseResource<T, U>::BaseResource(std::move(loop)) {
+  explicit BaseHandle(
+      typename BaseResource<T, U>::ConstructorToken /* unused */,
+      std::shared_ptr<Loop> loop)
+      : BaseResource<T, U>::BaseResource(
+            typename BaseResource<T, U>::ConstructorToken(),
+            std::move(loop)) {
     handle_.data = this;
   }
 
@@ -91,8 +111,12 @@ class BaseHandle : public BaseResource<T, U> {
 template <typename T, typename U>
 class BaseRequest : public BaseResource<T, U> {
  public:
-  explicit BaseRequest(std::shared_ptr<Loop> loop)
-      : BaseResource<T, U>::BaseResource(std::move(loop)) {
+  explicit BaseRequest(
+      typename BaseResource<T, U>::ConstructorToken /* unused */,
+      std::shared_ptr<Loop> loop)
+      : BaseResource<T, U>::BaseResource(
+            typename BaseResource<T, U>::ConstructorToken(),
+            std::move(loop)) {
     request_.data = this;
   }
 
@@ -115,8 +139,13 @@ class WriteRequest final : public BaseRequest<WriteRequest, uv_write_t> {
  public:
   using TWriteCallback = std::function<void(int status)>;
 
-  WriteRequest(std::shared_ptr<Loop> loop, TWriteCallback fn)
-      : BaseRequest<WriteRequest, uv_write_t>(std::move(loop)),
+  WriteRequest(
+      ConstructorToken /* unused */,
+      std::shared_ptr<Loop> loop,
+      TWriteCallback fn)
+      : BaseRequest<WriteRequest, uv_write_t>(
+            ConstructorToken(),
+            std::move(loop)),
         fn_(std::move(fn)) {}
 
   uv_write_cb callback() {
@@ -225,8 +254,7 @@ class StreamHandle : public BaseHandle<T, U> {
       unsigned int nbufs,
       WriteRequest::TWriteCallback fn) {
     TP_DCHECK(this->loop_->inLoopThread());
-    auto request =
-        this->loop_->template createRequest<WriteRequest>(std::move(fn));
+    auto request = WriteRequest::create(this->loop_, std::move(fn));
     auto rv = uv_write(
         request->ptr(),
         reinterpret_cast<uv_stream_t*>(this->ptr()),
@@ -252,8 +280,13 @@ class ConnectRequest : public BaseRequest<ConnectRequest, uv_connect_t> {
  public:
   using TConnectCallback = std::function<void(int status)>;
 
-  ConnectRequest(std::shared_ptr<Loop> loop, TConnectCallback fn)
-      : BaseRequest<ConnectRequest, uv_connect_t>(std::move(loop)),
+  ConnectRequest(
+      BaseResource<ConnectRequest, uv_connect_t>::ConstructorToken /* unused */,
+      std::shared_ptr<Loop> loop,
+      TConnectCallback fn)
+      : BaseRequest<ConnectRequest, uv_connect_t>(
+            BaseResource<ConnectRequest, uv_connect_t>::ConstructorToken(),
+            std::move(loop)),
         fn_(std::move(fn)) {}
 
   uv_connect_cb callback() {
@@ -272,19 +305,21 @@ class TCPHandle : public StreamHandle<TCPHandle, uv_tcp_t> {
  public:
   using StreamHandle<TCPHandle, uv_tcp_t>::StreamHandle;
 
-  void init();
+  void initFromLoop();
 
   void noDelay(bool enable);
 
-  void bind(const Sockaddr& addr);
+  void bindFromLoop(const Sockaddr& addr);
 
   Sockaddr sockName();
 
   Sockaddr peerName();
 
-  void connect(const Sockaddr& addr);
+  void connectFromLoop(const Sockaddr& addr);
 
-  void connect(const Sockaddr& addr, ConnectRequest::TConnectCallback fn);
+  void connectFromLoop(
+      const Sockaddr& addr,
+      ConnectRequest::TConnectCallback fn);
 };
 
 } // namespace uv

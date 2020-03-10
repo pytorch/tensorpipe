@@ -78,23 +78,6 @@ class Loop final : public std::enable_shared_from_this<Loop> {
     return loop_.get();
   }
 
-  template <typename T, typename... Args>
-  std::shared_ptr<T> createHandle(Args&&... args) {
-    auto handle =
-        std::make_shared<T>(shared_from_this(), std::forward<Args>(args)...);
-    handle->leak();
-    handle->init();
-    return handle;
-  }
-
-  template <typename T, typename... Args>
-  std::shared_ptr<T> createRequest(Args&&... args) {
-    auto request =
-        std::make_shared<T>(shared_from_this(), std::forward<Args>(args)...);
-    request->leak();
-    return request;
-  }
-
  private:
   std::mutex mutex_;
   std::thread thread_;

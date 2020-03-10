@@ -31,7 +31,10 @@ class Listener : public transport::Listener,
   struct ConstructorToken {};
 
  public:
-  Listener(ConstructorToken, std::shared_ptr<Loop> loop, const Sockaddr& addr);
+  Listener(
+      ConstructorToken,
+      std::shared_ptr<Loop> loop,
+      std::shared_ptr<TCPHandle> handle);
 
   ~Listener() override;
 

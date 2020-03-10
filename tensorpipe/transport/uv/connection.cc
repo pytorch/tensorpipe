@@ -21,9 +21,15 @@ namespace uv {
 std::shared_ptr<Connection> Connection::create(
     std::shared_ptr<Loop> loop,
     const Sockaddr& addr) {
-  auto handle = loop->createHandle<TCPHandle>();
-  handle->connect(addr);
-  return create(std::move(loop), std::move(handle));
+  auto handle = TCPHandle::create(loop);
+  loop->deferToLoop([handle, addr]() {
+    handle->initFromLoop();
+    handle->connectFromLoop(addr);
+  });
+  auto conn = std::make_shared<Connection>(
+      ConstructorToken(), std::move(loop), std::move(handle));
+  conn->init();
+  return conn;
 }
 
 std::shared_ptr<Connection> Connection::create(
