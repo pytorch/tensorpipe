@@ -125,6 +125,10 @@ class Connection : public transport::Connection,
     read_callback_fn fn_;
   };
 
+  // Called from the event loop (deferred to it by the public methods).
+  void readFromLoop(read_callback_fn fn);
+  void readFromLoop(void* ptr, size_t length, read_callback_fn fn);
+
   // Called when libuv is about to read data from connection.
   void allocCallbackFromLoop(uv_buf_t* buf);
 
@@ -156,6 +160,9 @@ class Connection : public transport::Connection,
     // User callback.
     write_callback_fn fn_;
   };
+
+  // Called from the event loop (deferred to it by the public methods).
+  void writeFromLoop(const void* ptr, size_t length, write_callback_fn fn);
 
   // Called when libuv has written data to connection.
   void writeCallbackFromLoop(int status);

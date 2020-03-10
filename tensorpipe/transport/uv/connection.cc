@@ -51,39 +51,75 @@ Connection::~Connection() {
 }
 
 void Connection::init() {
-  handle_->armAllocCallback(runIfAlive(
-      *this,
-      std::function<void(Connection&, uv_buf_t*)>(
-          [](Connection& connection, uv_buf_t* buf) {
-            connection.allocCallbackFromLoop(buf);
-          })));
-  handle_->armReadCallback(runIfAlive(
-      *this,
-      std::function<void(Connection&, ssize_t, const uv_buf_t*)>(
-          [](Connection& connection, ssize_t nread, const uv_buf_t* buf) {
-            connection.readCallbackFromLoop(nread, buf);
-          })));
+  loop_->deferToLoop(runIfAlive(
+      *this, std::function<void(Connection&)>([](Connection& connection) {
+        connection.handle_->armAllocCallbackFromLoop(runIfAlive(
+            connection,
+            std::function<void(Connection&, uv_buf_t*)>(
+                [](Connection& connection, uv_buf_t* buf) {
+                  connection.allocCallbackFromLoop(buf);
+                })));
+        connection.handle_->armReadCallbackFromLoop(runIfAlive(
+            connection,
+            std::function<void(Connection&, ssize_t, const uv_buf_t*)>(
+                [](Connection& connection, ssize_t nread, const uv_buf_t* buf) {
+                  connection.readCallbackFromLoop(nread, buf);
+                })));
+      })));
 }
 
 void Connection::read(read_callback_fn fn) {
+  loop_->deferToLoop(runIfAlive(
+      *this,
+      std::function<void(Connection&)>(
+          [fn{std::move(fn)}](Connection& connection) mutable {
+            connection.readFromLoop(std::move(fn));
+          })));
+}
+
+void Connection::readFromLoop(read_callback_fn fn) {
+  TP_DCHECK(loop_->inLoopThread());
   std::unique_lock<std::mutex> lock(readOperationsMutex_);
   readOperations_.emplace_back(std::move(fn));
   // Start reading if this is the first read operation.
   if (readOperations_.size() == 1) {
-    handle_->readStart();
+    handle_->readStartFromLoop();
   }
 }
 
 void Connection::read(void* ptr, size_t length, read_callback_fn fn) {
+  loop_->deferToLoop(runIfAlive(
+      *this,
+      std::function<void(Connection&)>(
+          [ptr, length, fn{std::move(fn)}](Connection& connection) mutable {
+            connection.readFromLoop(ptr, length, std::move(fn));
+          })));
+}
+
+void Connection::readFromLoop(void* ptr, size_t length, read_callback_fn fn) {
+  TP_DCHECK(loop_->inLoopThread());
   std::unique_lock<std::mutex> lock(readOperationsMutex_);
   readOperations_.emplace_back(ptr, length, std::move(fn));
   // Start reading if this is the first read operation.
   if (readOperations_.size() == 1) {
-    handle_->readStart();
+    handle_->readStartFromLoop();
   }
 }
 
 void Connection::write(const void* ptr, size_t length, write_callback_fn fn) {
+  loop_->deferToLoop(runIfAlive(
+      *this,
+      std::function<void(Connection&)>(
+          [ptr, length, fn{std::move(fn)}](Connection& connection) mutable {
+            connection.writeFromLoop(ptr, length, std::move(fn));
+          })));
+}
+
+void Connection::writeFromLoop(
+    const void* ptr,
+    size_t length,
+    write_callback_fn fn) {
+  TP_DCHECK(loop_->inLoopThread());
   std::unique_lock<std::mutex> lock(writeOperationsMutex_);
   writeOperations_.emplace_back(ptr, length, std::move(fn));
   auto& writeOperation = writeOperations_.back();
@@ -101,7 +137,7 @@ void Connection::write(const void* ptr, size_t length, write_callback_fn fn) {
 
   // Capture a shared_ptr to this connection such that it cannot be
   // destructed until all write callbacks have fired.
-  handle_->write(
+  handle_->writeFromLoop(
       bufs_ptr,
       bufs_len,
       runIfAlive(
@@ -180,7 +216,7 @@ void Connection::readCallbackFromLoop(ssize_t nread, const uv_buf_t* buf) {
       // no longer receive allocation and read callbacks.
       readOperations_.pop_front();
       if (readOperations_.empty()) {
-        handle_->readStop();
+        handle_->readStopFromLoop();
       }
     }
     return;
@@ -200,7 +236,7 @@ void Connection::readCallbackFromLoop(ssize_t nread, const uv_buf_t* buf) {
     // no longer receive allocation and read callbacks.
     readOperations_.pop_front();
     if (readOperations_.empty()) {
-      handle_->readStop();
+      handle_->readStopFromLoop();
     }
   }
 }

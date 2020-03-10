@@ -199,56 +199,47 @@ class StreamHandle : public BaseHandle<T, U> {
             })));
   }
 
-  void armAllocCallback(TAllocCallback fn) {
+  void armAllocCallbackFromLoop(TAllocCallback fn) {
+    TP_DCHECK(this->loop_->inLoopThread());
     TP_THROW_ASSERT_IF(allocCallback_.has_value());
     allocCallback_ = std::move(fn);
   }
 
-  void armReadCallback(TReadCallback fn) {
+  void armReadCallbackFromLoop(TReadCallback fn) {
+    TP_DCHECK(this->loop_->inLoopThread());
     TP_THROW_ASSERT_IF(readCallback_.has_value());
     readCallback_ = std::move(fn);
   }
 
-  void readStart() {
+  void readStartFromLoop() {
+    TP_DCHECK(this->loop_->inLoopThread());
     TP_THROW_ASSERT_IF(!allocCallback_.has_value());
     TP_THROW_ASSERT_IF(!readCallback_.has_value());
-    this->loop_->deferToLoop(
-        runIfAlive(*this, std::function<void(T&)>([](T& handle) {
-          auto rv = uv_read_start(
-              reinterpret_cast<uv_stream_t*>(handle.ptr()),
-              handle.uv__alloc_cb,
-              handle.uv__read_cb);
-          TP_THROW_UV_IF(rv < 0, rv);
-        })));
+    auto rv = uv_read_start(
+        reinterpret_cast<uv_stream_t*>(this->ptr()), uv__alloc_cb, uv__read_cb);
+    TP_THROW_UV_IF(rv < 0, rv);
   }
 
-  void readStop() {
-    // We call uv_read_stop immediately because if we deferred it then more
-    // alloc or read callbacks might fire when the user didn't expect them.
-    this->loop_->runInLoopFromLoop([&]() {
-      auto rv = uv_read_stop(reinterpret_cast<uv_stream_t*>(this->ptr()));
-      TP_THROW_UV_IF(rv < 0, rv);
-    });
+  void readStopFromLoop() {
+    TP_DCHECK(this->loop_->inLoopThread());
+    auto rv = uv_read_stop(reinterpret_cast<uv_stream_t*>(this->ptr()));
+    TP_THROW_UV_IF(rv < 0, rv);
   }
 
-  void write(
+  void writeFromLoop(
       const uv_buf_t bufs[],
       unsigned int nbufs,
       WriteRequest::TWriteCallback fn) {
+    TP_DCHECK(this->loop_->inLoopThread());
     auto request =
         this->loop_->template createRequest<WriteRequest>(std::move(fn));
-    this->loop_->deferToLoop(runIfAlive(
-        *this,
-        std::function<void(T&)>(
-            [bufs, nbufs, request{std::move(request)}](T& handle) {
-              auto rv = uv_write(
-                  request->ptr(),
-                  reinterpret_cast<uv_stream_t*>(handle.ptr()),
-                  bufs,
-                  nbufs,
-                  request->callback());
-              TP_THROW_UV_IF(rv < 0, rv);
-            })));
+    auto rv = uv_write(
+        request->ptr(),
+        reinterpret_cast<uv_stream_t*>(this->ptr()),
+        bufs,
+        nbufs,
+        request->callback());
+    TP_THROW_UV_IF(rv < 0, rv);
   }
 
  protected:

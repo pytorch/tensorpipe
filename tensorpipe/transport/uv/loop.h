@@ -68,18 +68,6 @@ class Loop final : public std::enable_shared_from_this<Loop> {
     }
   }
 
-  // Use this for callbacks that need to run immediately (cannot be deferred)
-  // but be aware that you can only use this from within a callback that is
-  // already being executed on the loop.
-  template <typename F>
-  void runInLoopFromLoop(F&& fn) {
-    TP_THROW_ASSERT_IF(std::this_thread::get_id() != thread_.get_id())
-        << "Loop::runFromLoop was called from a thread other than the event "
-        << "loop, which means the callback cannot be run immediately because "
-        << "libuv isn't thread-safe (consider Loop::defer)";
-    fn();
-  }
-
   void deferToLoop(std::function<void()> fn);
 
   inline bool inLoopThread() {
