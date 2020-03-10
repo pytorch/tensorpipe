@@ -60,31 +60,21 @@ void Listener::Impl::closeCallbackFromLoop() {
 }
 
 void Listener::start() {
-  loop_->deferToLoop(
-      runIfAlive(*this, std::function<void(Listener&)>([](Listener& listener) {
-        listener.impl_->startFromLoop();
-      })));
+  loop_->deferToLoop([impl{impl_}]() { impl->startFromLoop(); });
 }
 
 void Listener::Impl::startFromLoop() {
   leak_ = shared_from_this();
   handle_->armCloseCallbackFromLoop(
-      runIfAlive(*this, std::function<void(Impl&)>([](Impl& impl) {
-        impl.closeCallbackFromLoop();
-      })));
-  handle_->listenFromLoop(runIfAlive(
-      *this, std::function<void(Impl&, int)>([](Impl& impl, int status) {
-        impl.connectionCallbackFromLoop(status);
-      })));
+      [this]() { this->closeCallbackFromLoop(); });
+  handle_->listenFromLoop(
+      [this](int status) { this->connectionCallbackFromLoop(status); });
 }
 
 void Listener::accept(accept_callback_fn fn) {
-  loop_->deferToLoop(runIfAlive(
-      *this,
-      std::function<void(Listener&)>(
-          [fn{std::move(fn)}](Listener& listener) mutable {
-            listener.impl_->acceptFromLoop(std::move(fn));
-          })));
+  loop_->deferToLoop([impl{impl_}, fn{std::move(fn)}]() mutable {
+    impl->acceptFromLoop(std::move(fn));
+  });
 }
 
 void Listener::Impl::acceptFromLoop(accept_callback_fn fn) {
@@ -120,16 +110,11 @@ void Listener::Impl::connectionCallbackFromLoop(int status) {
   // weak_ptr, which we're however sure we'll be able to lock.
   handle_->acceptFromLoop(
       connection,
-      runIfAlive(
-          *this,
-          std::function<void(Impl&, int)>(
-              [weakConnection{std::weak_ptr<TCPHandle>(connection)}](
-                  Impl& impl, int status) {
-                std::shared_ptr<TCPHandle> sameConnection =
-                    weakConnection.lock();
-                TP_DCHECK(sameConnection);
-                impl.acceptCallbackFromLoop(std::move(sameConnection), status);
-              })));
+      [this, weakConnection{std::weak_ptr<TCPHandle>(connection)}](int status) {
+        std::shared_ptr<TCPHandle> sameConnection = weakConnection.lock();
+        TP_DCHECK(sameConnection);
+        this->acceptCallbackFromLoop(std::move(sameConnection), status);
+      });
 }
 
 void Listener::Impl::acceptCallbackFromLoop(

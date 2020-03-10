@@ -58,9 +58,6 @@ Connection::~Connection() {
 
 void Connection::Impl::closeFromLoop() {
   TP_DCHECK(loop_->inLoopThread());
-  // No need to call readStop here because if we are in the destructor it
-  // means that the runIfAlive wrapper will prevent the alloc and read
-  // callbacks from firing.
   handle_->closeFromLoop();
 }
 
@@ -70,37 +67,24 @@ void Connection::Impl::closeCallbackFromLoop() {
 }
 
 void Connection::init() {
-  loop_->deferToLoop(runIfAlive(
-      *this, std::function<void(Connection&)>([](Connection& connection) {
-        connection.impl_->initFromLoop();
-      })));
+  loop_->deferToLoop([impl{impl_}]() { impl->initFromLoop(); });
 }
 
 void Connection::Impl::initFromLoop() {
   leak_ = shared_from_this();
   handle_->armCloseCallbackFromLoop(
-      runIfAlive(*this, std::function<void(Impl&)>([](Impl& impl) {
-        impl.closeCallbackFromLoop();
-      })));
-  handle_->armAllocCallbackFromLoop(runIfAlive(
-      *this,
-      std::function<void(Impl&, uv_buf_t*)>(
-          [](Impl& impl, uv_buf_t* buf) { impl.allocCallbackFromLoop(buf); })));
-  handle_->armReadCallbackFromLoop(runIfAlive(
-      *this,
-      std::function<void(Impl&, ssize_t, const uv_buf_t*)>(
-          [](Impl& impl, ssize_t nread, const uv_buf_t* buf) {
-            impl.readCallbackFromLoop(nread, buf);
-          })));
+      [this]() { this->closeCallbackFromLoop(); });
+  handle_->armAllocCallbackFromLoop(
+      [this](uv_buf_t* buf) { this->allocCallbackFromLoop(buf); });
+  handle_->armReadCallbackFromLoop([this](ssize_t nread, const uv_buf_t* buf) {
+    this->readCallbackFromLoop(nread, buf);
+  });
 }
 
 void Connection::read(read_callback_fn fn) {
-  loop_->deferToLoop(runIfAlive(
-      *this,
-      std::function<void(Connection&)>(
-          [fn{std::move(fn)}](Connection& connection) mutable {
-            connection.impl_->readFromLoop(std::move(fn));
-          })));
+  loop_->deferToLoop([impl{impl_}, fn{std::move(fn)}]() mutable {
+    impl->readFromLoop(std::move(fn));
+  });
 }
 
 void Connection::Impl::readFromLoop(read_callback_fn fn) {
@@ -114,12 +98,9 @@ void Connection::Impl::readFromLoop(read_callback_fn fn) {
 }
 
 void Connection::read(void* ptr, size_t length, read_callback_fn fn) {
-  loop_->deferToLoop(runIfAlive(
-      *this,
-      std::function<void(Connection&)>(
-          [ptr, length, fn{std::move(fn)}](Connection& connection) mutable {
-            connection.impl_->readFromLoop(ptr, length, std::move(fn));
-          })));
+  loop_->deferToLoop([impl{impl_}, ptr, length, fn{std::move(fn)}]() mutable {
+    impl->readFromLoop(ptr, length, std::move(fn));
+  });
 }
 
 void Connection::Impl::readFromLoop(
@@ -136,12 +117,9 @@ void Connection::Impl::readFromLoop(
 }
 
 void Connection::write(const void* ptr, size_t length, write_callback_fn fn) {
-  loop_->deferToLoop(runIfAlive(
-      *this,
-      std::function<void(Connection&)>(
-          [ptr, length, fn{std::move(fn)}](Connection& connection) mutable {
-            connection.impl_->writeFromLoop(ptr, length, std::move(fn));
-          })));
+  loop_->deferToLoop([impl{impl_}, ptr, length, fn{std::move(fn)}]() mutable {
+    impl->writeFromLoop(ptr, length, std::move(fn));
+  });
 }
 
 void Connection::Impl::writeFromLoop(
@@ -164,17 +142,10 @@ void Connection::Impl::writeFromLoop(
   bufs_ptr[1].base = const_cast<char*>(writeOperation.ptr);
   bufs_ptr[1].len = writeOperation.length;
 
-  // Capture a shared_ptr to this connection such that it cannot be
-  // destructed until all write callbacks have fired.
   handle_->writeFromLoop(
-      bufs_ptr,
-      bufs_len,
-      runIfAlive(
-          *this,
-          std::function<void(Impl&, int)>(
-              [bufs{std::move(bufs)}](Impl& impl, int status) {
-                impl.writeCallbackFromLoop(status);
-              })));
+      bufs_ptr, bufs_len, [this, bufs{std::move(bufs)}](int status) {
+        this->writeCallbackFromLoop(status);
+      });
 }
 
 void Connection::Impl::ReadOperation::allocFromLoop(uv_buf_t* buf) {
