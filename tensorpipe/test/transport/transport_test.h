@@ -28,7 +28,7 @@ class TransportTestHelper {
 
 class TransportTest : public ::testing::TestWithParam<TransportTestHelper*> {
  public:
-  void test_connection(
+  void testConnection(
       std::function<void(std::shared_ptr<tensorpipe::transport::Connection>)>
           listeningFn,
       std::function<void(std::shared_ptr<tensorpipe::transport::Connection>)>
@@ -62,5 +62,91 @@ class TransportTest : public ::testing::TestWithParam<TransportTestHelper*> {
     }
 
     ctx->join();
+  }
+
+  // Add to a closure to check the callback is called before being destroyed
+  class Bomb {
+   public:
+    Bomb() = default;
+
+    Bomb(const Bomb&) = delete;
+    Bomb(Bomb&& b) {
+      defused_ = b.defused_;
+      b.defused_ = false;
+    }
+
+    Bomb& operator=(const Bomb&) = delete;
+    Bomb& operator=(Bomb&&) = delete;
+
+    void defuse() {
+      defused_ = true;
+    }
+
+    ~Bomb() {
+      EXPECT_TRUE(defused_);
+    }
+
+   private:
+    bool defused_ = false;
+  };
+
+  std::shared_ptr<Bomb> armBomb() {
+    return std::make_shared<Bomb>();
+  }
+
+  void doRead(
+      std::shared_ptr<tensorpipe::transport::Connection> conn,
+      tensorpipe::transport::Connection::read_callback_fn fn) {
+    auto mutex = std::make_shared<std::mutex>();
+    std::scoped_lock<std::mutex> outerLock(*mutex);
+    // We acquire the same mutex while calling read and inside its callback so
+    // that we deadlock if the callback is invoked inline.
+    conn->read(
+        [fn{std::move(fn)}, mutex, bomb{armBomb()}](
+            const tensorpipe::Error& error, const void* ptr, size_t len) {
+          std::scoped_lock<std::mutex> innerLock(*mutex);
+          bomb->defuse();
+          fn(error, ptr, len);
+        });
+  }
+
+  void doRead(
+      std::shared_ptr<tensorpipe::transport::Connection> conn,
+      void* ptr,
+      size_t length,
+      tensorpipe::transport::Connection::read_callback_fn fn) {
+    auto mutex = std::make_shared<std::mutex>();
+    std::scoped_lock<std::mutex> outerLock(*mutex);
+    // We acquire the same mutex while calling read and inside its callback so
+    // that we deadlock if the callback is invoked inline.
+    conn->read(
+        ptr,
+        length,
+        [fn{std::move(fn)}, mutex, bomb{armBomb()}](
+            const tensorpipe::Error& error, const void* ptr, size_t len) {
+          std::scoped_lock<std::mutex> innerLock(*mutex);
+          bomb->defuse();
+          fn(error, ptr, len);
+        });
+  }
+
+  void doWrite(
+      std::shared_ptr<tensorpipe::transport::Connection> conn,
+      const void* ptr,
+      size_t length,
+      tensorpipe::transport::Connection::write_callback_fn fn) {
+    auto mutex = std::make_shared<std::mutex>();
+    // We acquire the same mutex while calling write and inside its callback so
+    // that we deadlock if the callback is invoked inline.
+    std::scoped_lock<std::mutex> outerLock(*mutex);
+    conn->write(
+        ptr,
+        length,
+        [fn{std::move(fn)}, mutex, bomb{armBomb()}](
+            const tensorpipe::Error& error) {
+          std::scoped_lock<std::mutex> innerLock(*mutex);
+          bomb->defuse();
+          fn(error);
+        });
   }
 };

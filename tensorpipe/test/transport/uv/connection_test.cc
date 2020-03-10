@@ -16,26 +16,35 @@ using namespace tensorpipe::transport;
 TEST_P(TransportTest, LargeWrite) {
   constexpr int kMsgSize = 16 * 1024 * 1024;
   std::string msg(kMsgSize, 0x42);
-  std::promise<void> readDoneProm;
+  std::promise<void> writeCompletedProm;
+  std::promise<void> readCompletedProm;
+  std::future<void> writeCompletedFuture = writeCompletedProm.get_future();
+  std::future<void> readCompletedFuture = readCompletedProm.get_future();
 
-  this->test_connection(
+  this->testConnection(
       [&](std::shared_ptr<Connection> conn) {
-        conn->write(msg.c_str(), msg.length(), [conn](const Error& error) {
-          ASSERT_FALSE(error) << error.what();
-        });
+        this->doWrite(
+            conn, msg.c_str(), msg.length(), [&, conn](const Error& error) {
+              ASSERT_FALSE(error) << error.what();
+              writeCompletedProm.set_value();
+            });
+        writeCompletedFuture.wait();
+        readCompletedFuture.wait();
       },
       [&](std::shared_ptr<Connection> conn) {
-        conn->read([&, conn](const Error& error, const void* data, size_t len) {
-          ASSERT_FALSE(error) << error.what();
-          ASSERT_EQ(len, msg.length());
-          const char* cdata = (const char*)data;
-          for (int i = 0; i < len; ++i) {
-            const char c = cdata[i];
-            ASSERT_EQ(c, msg[i])
-                << "Wrong value at position " << i << " of " << msg.length();
-          }
-          readDoneProm.set_value();
-        });
-        readDoneProm.get_future().get();
+        this->doRead(
+            conn, [&, conn](const Error& error, const void* data, size_t len) {
+              ASSERT_FALSE(error) << error.what();
+              ASSERT_EQ(len, msg.length());
+              const char* cdata = (const char*)data;
+              for (int i = 0; i < len; ++i) {
+                const char c = cdata[i];
+                ASSERT_EQ(c, msg[i]) << "Wrong value at position " << i
+                                     << " of " << msg.length();
+              }
+              readCompletedProm.set_value();
+            });
+        writeCompletedFuture.wait();
+        readCompletedFuture.wait();
       });
 }
