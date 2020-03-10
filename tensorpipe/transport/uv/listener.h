@@ -53,8 +53,6 @@ class Listener : public transport::Listener,
 
   void acceptFromLoop(accept_callback_fn fn);
 
-  Sockaddr sockaddr();
-
   std::shared_ptr<Loop> loop_;
   std::shared_ptr<TCPHandle> handle_;
   // Once an accept callback fires, it becomes disarmed and must be rearmed. Any

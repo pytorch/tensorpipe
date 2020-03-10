@@ -22,17 +22,14 @@ TEST(Loop, Create) {
   loop->join();
 }
 
-TEST(Loop, RunSynchronous) {
+TEST(Loop, Defer) {
   auto loop = Loop::create();
 
   {
-    std::thread::id self_thread = std::this_thread::get_id();
-    std::thread::id loop_thread = std::this_thread::get_id();
-    ASSERT_EQ(self_thread, loop_thread);
-
-    // Synchronously run function on event loop thread.
-    loop->runInLoop([&] { loop_thread = std::this_thread::get_id(); });
-    ASSERT_NE(self_thread, loop_thread);
+    // Defer function on event loop thread.
+    std::promise<std::thread::id> prom;
+    loop->deferToLoop([&] { prom.set_value(std::this_thread::get_id()); });
+    ASSERT_NE(std::this_thread::get_id(), prom.get_future().get());
   }
 
   loop->join();

@@ -59,10 +59,6 @@ void Listener::start() {
       })));
 }
 
-Sockaddr Listener::sockaddr() {
-  return handle_->sockName();
-}
-
 void Listener::accept(accept_callback_fn fn) {
   loop_->deferToLoop(runIfAlive(
       *this,
@@ -77,7 +73,10 @@ void Listener::acceptFromLoop(accept_callback_fn fn) {
 }
 
 address_t Listener::addr() const {
-  return handle_->sockName().str();
+  std::string addr;
+  loop_->runInLoop(
+      [this, &addr]() { addr = this->handle_->sockNameFromLoop().str(); });
+  return addr;
 }
 
 void Listener::connectionCallbackFromLoop(int status) {

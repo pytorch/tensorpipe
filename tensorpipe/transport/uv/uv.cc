@@ -22,39 +22,19 @@ void TCPHandle::initFromLoop() {
   uv_tcp_init(loop_->ptr(), this->ptr());
 }
 
-void TCPHandle::noDelay(bool enable) {
-  loop_->deferToLoop(runIfAlive(
-      *this, std::function<void(TCPHandle&)>([enable](TCPHandle& handle) {
-        auto rv = uv_tcp_nodelay(&handle.handle_, enable ? 1 : 0);
-        TP_THROW_UV_IF(rv < 0, rv);
-      })));
-}
-
 void TCPHandle::bindFromLoop(const Sockaddr& addr) {
   TP_DCHECK(this->loop_->inLoopThread());
   auto rv = uv_tcp_bind(ptr(), addr.addr(), 0);
   TP_THROW_UV_IF(rv < 0, rv);
 }
 
-Sockaddr TCPHandle::sockName() {
+Sockaddr TCPHandle::sockNameFromLoop() {
+  TP_DCHECK(this->loop_->inLoopThread());
   struct sockaddr_storage addr;
   int addrlen = sizeof(addr);
-  loop_->runInLoop([&] {
-    auto rv = uv_tcp_getsockname(
-        &handle_, reinterpret_cast<struct sockaddr*>(&addr), &addrlen);
-    TP_THROW_UV_IF(rv < 0, rv);
-  });
-  return Sockaddr(addr, addrlen);
-}
-
-Sockaddr TCPHandle::peerName() {
-  struct sockaddr_storage addr;
-  int addrlen = sizeof(addr);
-  loop_->runInLoop([&] {
-    auto rv = uv_tcp_getpeername(
-        &handle_, reinterpret_cast<struct sockaddr*>(&addr), &addrlen);
-    TP_THROW_UV_IF(rv < 0, rv);
-  });
+  auto rv = uv_tcp_getsockname(
+      ptr(), reinterpret_cast<struct sockaddr*>(&addr), &addrlen);
+  TP_THROW_UV_IF(rv < 0, rv);
   return Sockaddr(addr, addrlen);
 }
 
