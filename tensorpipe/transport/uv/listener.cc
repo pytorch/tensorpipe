@@ -36,26 +36,36 @@ Listener::Listener(
     ConstructorToken /* unused */,
     std::shared_ptr<Loop> loop,
     std::shared_ptr<TCPHandle> handle)
+    : loop_(std::move(loop)),
+      impl_(std::make_shared<Impl>(loop_, std::move(handle))) {}
+
+Listener::Impl::Impl(
+    std::shared_ptr<Loop> loop,
+    std::shared_ptr<TCPHandle> handle)
     : loop_(std::move(loop)), handle_(std::move(handle)) {}
 
 Listener::~Listener() {
+  impl_->close();
+}
+
+void Listener::Impl::close() {
   for (const auto& connection : connectionsWaitingForAccept_) {
     connection->close();
   }
-  if (handle_) {
-    handle_->close();
-  }
+  handle_->close();
 }
 
 void Listener::start() {
   loop_->deferToLoop(
       runIfAlive(*this, std::function<void(Listener&)>([](Listener& listener) {
-        listener.handle_->listenFromLoop(runIfAlive(
-            listener,
-            std::function<void(Listener&, int)>(
-                [](Listener& listener, int status) {
-                  listener.connectionCallbackFromLoop(status);
-                })));
+        listener.impl_->startFromLoop();
+      })));
+}
+
+void Listener::Impl::startFromLoop() {
+  handle_->listenFromLoop(runIfAlive(
+      *this, std::function<void(Impl&, int)>([](Impl& impl, int status) {
+        impl.connectionCallbackFromLoop(status);
       })));
 }
 
@@ -64,22 +74,25 @@ void Listener::accept(accept_callback_fn fn) {
       *this,
       std::function<void(Listener&)>(
           [fn{std::move(fn)}](Listener& listener) mutable {
-            listener.acceptFromLoop(std::move(fn));
+            listener.impl_->acceptFromLoop(std::move(fn));
           })));
 }
 
-void Listener::acceptFromLoop(accept_callback_fn fn) {
+void Listener::Impl::acceptFromLoop(accept_callback_fn fn) {
   callback_.arm(std::move(fn));
 }
 
 address_t Listener::addr() const {
   std::string addr;
-  loop_->runInLoop(
-      [this, &addr]() { addr = this->handle_->sockNameFromLoop().str(); });
+  loop_->runInLoop([this, &addr]() { addr = this->impl_->addrFromLoop(); });
   return addr;
 }
 
-void Listener::connectionCallbackFromLoop(int status) {
+address_t Listener::Impl::addrFromLoop() const {
+  return handle_->sockNameFromLoop().str();
+}
+
+void Listener::Impl::connectionCallbackFromLoop(int status) {
   TP_DCHECK(loop_->inLoopThread());
   if (status != 0) {
     callback_.trigger(
@@ -100,18 +113,17 @@ void Listener::connectionCallbackFromLoop(int status) {
       connection,
       runIfAlive(
           *this,
-          std::function<void(Listener&, int)>(
+          std::function<void(Impl&, int)>(
               [weakConnection{std::weak_ptr<TCPHandle>(connection)}](
-                  Listener& listener, int status) {
+                  Impl& impl, int status) {
                 std::shared_ptr<TCPHandle> sameConnection =
                     weakConnection.lock();
                 TP_DCHECK(sameConnection);
-                listener.acceptCallbackFromLoop(
-                    std::move(sameConnection), status);
+                impl.acceptCallbackFromLoop(std::move(sameConnection), status);
               })));
 }
 
-void Listener::acceptCallbackFromLoop(
+void Listener::Impl::acceptCallbackFromLoop(
     std::shared_ptr<TCPHandle> connection,
     int status) {
   TP_DCHECK(loop_->inLoopThread());
