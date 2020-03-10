@@ -55,13 +55,13 @@ void Connection::init() {
       *this,
       std::function<void(Connection&, uv_buf_t*)>(
           [](Connection& connection, uv_buf_t* buf) {
-            connection.allocCallback(buf);
+            connection.allocCallbackFromLoop(buf);
           })));
   handle_->armReadCallback(runIfAlive(
       *this,
       std::function<void(Connection&, ssize_t, const uv_buf_t*)>(
           [](Connection& connection, ssize_t nread, const uv_buf_t* buf) {
-            connection.readCallback(nread, buf);
+            connection.readCallbackFromLoop(nread, buf);
           })));
 }
 
@@ -108,11 +108,11 @@ void Connection::write(const void* ptr, size_t length, write_callback_fn fn) {
           *this,
           std::function<void(Connection&, int)>(
               [bufs{std::move(bufs)}](Connection& connection, int status) {
-                connection.writeCallback(status);
+                connection.writeCallbackFromLoop(status);
               })));
 }
 
-void Connection::ReadOperation::alloc(uv_buf_t* buf) {
+void Connection::ReadOperation::allocFromLoop(uv_buf_t* buf) {
   if (mode_ == READ_LENGTH) {
     TP_DCHECK_LT(bytesRead_, sizeof(readLength_));
     buf->base = reinterpret_cast<char*>(&readLength_) + bytesRead_;
@@ -127,7 +127,9 @@ void Connection::ReadOperation::alloc(uv_buf_t* buf) {
   }
 }
 
-void Connection::ReadOperation::read(ssize_t nread, const uv_buf_t* buf) {
+void Connection::ReadOperation::readFromLoop(
+    ssize_t nread,
+    const uv_buf_t* buf) {
   TP_DCHECK_GE(nread, 0);
   bytesRead_ += nread;
   if (mode_ == READ_LENGTH) {
@@ -154,13 +156,15 @@ void Connection::ReadOperation::read(ssize_t nread, const uv_buf_t* buf) {
   }
 }
 
-void Connection::allocCallback(uv_buf_t* buf) {
+void Connection::allocCallbackFromLoop(uv_buf_t* buf) {
+  TP_DCHECK(loop_->inLoopThread());
   std::unique_lock<std::mutex> lock(readOperationsMutex_);
   TP_THROW_ASSERT_IF(readOperations_.empty());
-  readOperations_.front().alloc(buf);
+  readOperations_.front().allocFromLoop(buf);
 }
 
-void Connection::readCallback(ssize_t nread, const uv_buf_t* buf) {
+void Connection::readCallbackFromLoop(ssize_t nread, const uv_buf_t* buf) {
+  TP_DCHECK(loop_->inLoopThread());
   std::unique_lock<std::mutex> lock(readOperationsMutex_);
   if (nread < 0) {
     error_ = TP_CREATE_ERROR(UVError, nread);
@@ -169,7 +173,7 @@ void Connection::readCallback(ssize_t nread, const uv_buf_t* buf) {
       // Execute callback without holding the operations lock.
       // The callback could issue another read.
       lock.unlock();
-      readOperation.callback(error_);
+      readOperation.callbackFromLoop(error_);
       lock.lock();
       // Remove the completed operation.
       // If this was the final pending operation, this instance should
@@ -184,12 +188,12 @@ void Connection::readCallback(ssize_t nread, const uv_buf_t* buf) {
 
   TP_THROW_ASSERT_IF(readOperations_.empty());
   auto& readOperation = readOperations_.front();
-  readOperation.read(nread, buf);
-  if (readOperation.complete()) {
+  readOperation.readFromLoop(nread, buf);
+  if (readOperation.completeFromLoop()) {
     // Execute callback without holding the operations lock.
     // The callback could issue another read.
     lock.unlock();
-    readOperation.callback(Error::kSuccess);
+    readOperation.callbackFromLoop(Error::kSuccess);
     lock.lock();
     // Remove the completed operation.
     // If this was the final pending operation, this instance should
@@ -201,7 +205,8 @@ void Connection::readCallback(ssize_t nread, const uv_buf_t* buf) {
   }
 }
 
-void Connection::writeCallback(int status) {
+void Connection::writeCallbackFromLoop(int status) {
+  TP_DCHECK(loop_->inLoopThread());
   std::unique_lock<std::mutex> lock(writeOperationsMutex_);
   TP_DCHECK(!writeOperations_.empty());
 
@@ -213,9 +218,9 @@ void Connection::writeCallback(int status) {
   // The callback could issue another write.
   lock.unlock();
   if (status == 0) {
-    writeOperation.callback(Error::kSuccess);
+    writeOperation.callbackFromLoop(Error::kSuccess);
   } else {
-    writeOperation.callback(TP_CREATE_ERROR(UVError, status));
+    writeOperation.callbackFromLoop(TP_CREATE_ERROR(UVError, status));
   }
 }
 

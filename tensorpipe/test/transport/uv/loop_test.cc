@@ -31,7 +31,7 @@ TEST(Loop, RunSynchronous) {
     ASSERT_EQ(self_thread, loop_thread);
 
     // Synchronously run function on event loop thread.
-    loop->run([&] { loop_thread = std::this_thread::get_id(); });
+    loop->runInLoop([&] { loop_thread = std::this_thread::get_id(); });
     ASSERT_NE(self_thread, loop_thread);
   }
 

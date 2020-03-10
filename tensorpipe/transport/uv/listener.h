@@ -71,12 +71,14 @@ class Listener : public transport::Listener,
   // This function is called by the event loop if the listening socket can
   // accept a new connection. Status is 0 in case of success, < 0
   // otherwise. See `uv_connection_cb` for more information.
-  void connectionCallback(int status);
+  void connectionCallbackFromLoop(int status);
 
   // This function is called by the event loop when the connection has been
   // accepted on the listening socket. Status is 0 in case of success, < 0
   // otherwise.
-  void acceptCallback(std::shared_ptr<TCPHandle> connection, int status);
+  void acceptCallbackFromLoop(
+      std::shared_ptr<TCPHandle> connection,
+      int status);
 };
 
 } // namespace uv

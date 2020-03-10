@@ -49,7 +49,7 @@ void Listener::start() {
   handle_->listen(runIfAlive(
       *this,
       std::function<void(Listener&, int)>([](Listener& listener, int status) {
-        listener.connectionCallback(status);
+        listener.connectionCallbackFromLoop(status);
       })));
 }
 
@@ -65,7 +65,8 @@ address_t Listener::addr() const {
   return handle_->sockName().str();
 }
 
-void Listener::connectionCallback(int status) {
+void Listener::connectionCallbackFromLoop(int status) {
+  TP_DCHECK(loop_->inLoopThread());
   if (status != 0) {
     callback_.trigger(
         TP_CREATE_ERROR(UVError, status), std::shared_ptr<Connection>());
@@ -90,13 +91,15 @@ void Listener::connectionCallback(int status) {
                 std::shared_ptr<TCPHandle> sameConnection =
                     weakConnection.lock();
                 TP_DCHECK(sameConnection);
-                listener.acceptCallback(std::move(sameConnection), status);
+                listener.acceptCallbackFromLoop(
+                    std::move(sameConnection), status);
               })));
 }
 
-void Listener::acceptCallback(
+void Listener::acceptCallbackFromLoop(
     std::shared_ptr<TCPHandle> connection,
     int status) {
+  TP_DCHECK(loop_->inLoopThread());
   connectionsWaitingForAccept_.erase(connection);
   if (status != 0) {
     connection->close();

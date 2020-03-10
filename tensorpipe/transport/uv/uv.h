@@ -75,10 +75,12 @@ class BaseHandle : public BaseResource<T, U> {
   }
 
   virtual void close() {
-    this->loop_->defer(runIfAlive(*this, std::function<void(T&)>([](T& handle) {
-      uv_close(
-          reinterpret_cast<uv_handle_t*>(&handle.handle_), handle.uv__close_cb);
-    })));
+    this->loop_->deferToLoop(
+        runIfAlive(*this, std::function<void(T&)>([](T& handle) {
+          uv_close(
+              reinterpret_cast<uv_handle_t*>(&handle.handle_),
+              handle.uv__close_cb);
+        })));
   }
 
  protected:
@@ -173,18 +175,19 @@ class StreamHandle : public BaseHandle<T, U> {
     TP_THROW_ASSERT_IF(connectionCallback_.has_value());
     connectionCallback_ = std::move(connectionCallback);
 
-    this->loop_->defer(runIfAlive(*this, std::function<void(T&)>([](T& handle) {
-      auto rv = uv_listen(
-          reinterpret_cast<uv_stream_t*>(handle.ptr()),
-          kBacklog,
-          handle.uv__connection_cb);
-      TP_THROW_UV_IF(rv < 0, rv);
-    })));
+    this->loop_->deferToLoop(
+        runIfAlive(*this, std::function<void(T&)>([](T& handle) {
+          auto rv = uv_listen(
+              reinterpret_cast<uv_stream_t*>(handle.ptr()),
+              kBacklog,
+              handle.uv__connection_cb);
+          TP_THROW_UV_IF(rv < 0, rv);
+        })));
   }
 
   template <typename V>
   void accept(std::shared_ptr<V> other, TAcceptCallback acceptCallback) {
-    this->loop_->defer(runIfAlive(
+    this->loop_->deferToLoop(runIfAlive(
         *this,
         std::function<void(T&)>(
             [otherPtr{other->ptr()},
@@ -209,19 +212,20 @@ class StreamHandle : public BaseHandle<T, U> {
   void readStart() {
     TP_THROW_ASSERT_IF(!allocCallback_.has_value());
     TP_THROW_ASSERT_IF(!readCallback_.has_value());
-    this->loop_->defer(runIfAlive(*this, std::function<void(T&)>([](T& handle) {
-      auto rv = uv_read_start(
-          reinterpret_cast<uv_stream_t*>(handle.ptr()),
-          handle.uv__alloc_cb,
-          handle.uv__read_cb);
-      TP_THROW_UV_IF(rv < 0, rv);
-    })));
+    this->loop_->deferToLoop(
+        runIfAlive(*this, std::function<void(T&)>([](T& handle) {
+          auto rv = uv_read_start(
+              reinterpret_cast<uv_stream_t*>(handle.ptr()),
+              handle.uv__alloc_cb,
+              handle.uv__read_cb);
+          TP_THROW_UV_IF(rv < 0, rv);
+        })));
   }
 
   void readStop() {
     // We call uv_read_stop immediately because if we deferred it then more
     // alloc or read callbacks might fire when the user didn't expect them.
-    this->loop_->runFromLoop([&]() {
+    this->loop_->runInLoopFromLoop([&]() {
       auto rv = uv_read_stop(reinterpret_cast<uv_stream_t*>(this->ptr()));
       TP_THROW_UV_IF(rv < 0, rv);
     });
@@ -233,7 +237,7 @@ class StreamHandle : public BaseHandle<T, U> {
       WriteRequest::TWriteCallback fn) {
     auto request =
         this->loop_->template createRequest<WriteRequest>(std::move(fn));
-    this->loop_->defer(runIfAlive(
+    this->loop_->deferToLoop(runIfAlive(
         *this,
         std::function<void(T&)>(
             [bufs, nbufs, request{std::move(request)}](T& handle) {

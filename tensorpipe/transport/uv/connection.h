@@ -87,18 +87,18 @@ class Connection : public transport::Connection,
           fn_(std::move(fn)) {}
 
     // Called when libuv is about to read data from connection.
-    void alloc(uv_buf_t* buf);
+    void allocFromLoop(uv_buf_t* buf);
 
     // Called when libuv has read data from connection.
-    void read(ssize_t nread, const uv_buf_t* buf);
+    void readFromLoop(ssize_t nread, const uv_buf_t* buf);
 
     // Returns if this read operation is complete.
-    inline bool complete() const {
+    inline bool completeFromLoop() const {
       return mode_ == COMPLETE;
     }
 
     // Invoke user callback.
-    inline void callback(const Error& error) {
+    inline void callbackFromLoop(const Error& error) {
       fn_(error, ptr_, readLength_);
     }
 
@@ -124,10 +124,10 @@ class Connection : public transport::Connection,
   };
 
   // Called when libuv is about to read data from connection.
-  void allocCallback(uv_buf_t* buf);
+  void allocCallbackFromLoop(uv_buf_t* buf);
 
   // Called when libuv has read data from connection.
-  void readCallback(ssize_t nread, const uv_buf_t* buf);
+  void readCallbackFromLoop(ssize_t nread, const uv_buf_t* buf);
 
   // The write operation captures all state associated with writing a
   // fixed length chunk of data from the underlying connection. The
@@ -146,7 +146,7 @@ class Connection : public transport::Connection,
     const size_t length;
 
     // Invoke user callback.
-    inline void callback(const Error& error) {
+    inline void callbackFromLoop(const Error& error) {
       fn_(error);
     }
 
@@ -156,7 +156,7 @@ class Connection : public transport::Connection,
   };
 
   // Called when libuv has written data to connection.
-  void writeCallback(int status);
+  void writeCallbackFromLoop(int status);
 
   // Note: the containers below must never invalidate references.
   std::mutex readOperationsMutex_;

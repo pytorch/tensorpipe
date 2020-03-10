@@ -17,14 +17,14 @@ namespace transport {
 namespace uv {
 
 void TCPHandle::init() {
-  loop_->defer(
+  loop_->deferToLoop(
       runIfAlive(*this, std::function<void(TCPHandle&)>([](TCPHandle& handle) {
         uv_tcp_init(handle.loop_->ptr(), &handle.handle_);
       })));
 }
 
 void TCPHandle::noDelay(bool enable) {
-  loop_->defer(runIfAlive(
+  loop_->deferToLoop(runIfAlive(
       *this, std::function<void(TCPHandle&)>([enable](TCPHandle& handle) {
         auto rv = uv_tcp_nodelay(&handle.handle_, enable ? 1 : 0);
         TP_THROW_UV_IF(rv < 0, rv);
@@ -32,7 +32,7 @@ void TCPHandle::noDelay(bool enable) {
 }
 
 void TCPHandle::bind(const Sockaddr& addr) {
-  loop_->defer(runIfAlive(
+  loop_->deferToLoop(runIfAlive(
       *this, std::function<void(TCPHandle&)>([addr](TCPHandle& handle) {
         auto rv = uv_tcp_bind(&handle.handle_, addr.addr(), 0);
         TP_THROW_UV_IF(rv < 0, rv);
@@ -42,7 +42,7 @@ void TCPHandle::bind(const Sockaddr& addr) {
 Sockaddr TCPHandle::sockName() {
   struct sockaddr_storage addr;
   int addrlen = sizeof(addr);
-  loop_->run([&] {
+  loop_->runInLoop([&] {
     auto rv = uv_tcp_getsockname(
         &handle_, reinterpret_cast<struct sockaddr*>(&addr), &addrlen);
     TP_THROW_UV_IF(rv < 0, rv);
@@ -53,7 +53,7 @@ Sockaddr TCPHandle::sockName() {
 Sockaddr TCPHandle::peerName() {
   struct sockaddr_storage addr;
   int addrlen = sizeof(addr);
-  loop_->run([&] {
+  loop_->runInLoop([&] {
     auto rv = uv_tcp_getpeername(
         &handle_, reinterpret_cast<struct sockaddr*>(&addr), &addrlen);
     TP_THROW_UV_IF(rv < 0, rv);
@@ -69,7 +69,7 @@ void TCPHandle::connect(
     const Sockaddr& addr,
     ConnectRequest::TConnectCallback fn) {
   auto request = loop_->createRequest<ConnectRequest>(std::move(fn));
-  loop_->defer(runIfAlive(
+  loop_->deferToLoop(runIfAlive(
       *this,
       std::function<void(TCPHandle&)>([addr, request{std::move(request)}](
                                           TCPHandle& handle) {

@@ -39,7 +39,7 @@ Loop::~Loop() noexcept {
 }
 
 void Loop::join() {
-  defer(runIfAlive(*this, std::function<void(Loop&)>([](Loop& loop) {
+  deferToLoop(runIfAlive(*this, std::function<void(Loop&)>([](Loop& loop) {
     uv_unref(reinterpret_cast<uv_handle_t*>(loop.async_.get()));
   })));
 
@@ -50,7 +50,7 @@ void Loop::join() {
   TP_DCHECK(fns_.empty());
 }
 
-void Loop::defer(std::function<void()> fn) {
+void Loop::deferToLoop(std::function<void()> fn) {
   std::unique_lock<std::mutex> lock(mutex_);
   fns_.push_back(std::move(fn));
   wakeup();
@@ -87,10 +87,10 @@ void Loop::loop() {
 
 void Loop::uv__async_cb(uv_async_t* handle) {
   auto& loop = *reinterpret_cast<Loop*>(handle->data);
-  loop.runFunctions();
+  loop.runFunctionsFromLoop();
 }
 
-void Loop::runFunctions() {
+void Loop::runFunctionsFromLoop() {
   decltype(fns_) fns;
 
   {
