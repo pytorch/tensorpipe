@@ -98,13 +98,13 @@ class TransportTest : public ::testing::TestWithParam<TransportTestHelper*> {
       std::shared_ptr<tensorpipe::transport::Connection> conn,
       tensorpipe::transport::Connection::read_callback_fn fn) {
     auto mutex = std::make_shared<std::mutex>();
-    std::scoped_lock<std::mutex> outerLock(*mutex);
+    std::lock_guard<std::mutex> outerLock(*mutex);
     // We acquire the same mutex while calling read and inside its callback so
     // that we deadlock if the callback is invoked inline.
     conn->read(
         [fn{std::move(fn)}, mutex, bomb{armBomb()}](
             const tensorpipe::Error& error, const void* ptr, size_t len) {
-          std::scoped_lock<std::mutex> innerLock(*mutex);
+          std::lock_guard<std::mutex> innerLock(*mutex);
           bomb->defuse();
           fn(error, ptr, len);
         });
@@ -116,7 +116,7 @@ class TransportTest : public ::testing::TestWithParam<TransportTestHelper*> {
       size_t length,
       tensorpipe::transport::Connection::read_callback_fn fn) {
     auto mutex = std::make_shared<std::mutex>();
-    std::scoped_lock<std::mutex> outerLock(*mutex);
+    std::lock_guard<std::mutex> outerLock(*mutex);
     // We acquire the same mutex while calling read and inside its callback so
     // that we deadlock if the callback is invoked inline.
     conn->read(
@@ -124,7 +124,7 @@ class TransportTest : public ::testing::TestWithParam<TransportTestHelper*> {
         length,
         [fn{std::move(fn)}, mutex, bomb{armBomb()}](
             const tensorpipe::Error& error, const void* ptr, size_t len) {
-          std::scoped_lock<std::mutex> innerLock(*mutex);
+          std::lock_guard<std::mutex> innerLock(*mutex);
           bomb->defuse();
           fn(error, ptr, len);
         });
@@ -138,13 +138,13 @@ class TransportTest : public ::testing::TestWithParam<TransportTestHelper*> {
     auto mutex = std::make_shared<std::mutex>();
     // We acquire the same mutex while calling write and inside its callback so
     // that we deadlock if the callback is invoked inline.
-    std::scoped_lock<std::mutex> outerLock(*mutex);
+    std::lock_guard<std::mutex> outerLock(*mutex);
     conn->write(
         ptr,
         length,
         [fn{std::move(fn)}, mutex, bomb{armBomb()}](
             const tensorpipe::Error& error) {
-          std::scoped_lock<std::mutex> innerLock(*mutex);
+          std::lock_guard<std::mutex> innerLock(*mutex);
           bomb->defuse();
           fn(error);
         });
