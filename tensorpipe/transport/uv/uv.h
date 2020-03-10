@@ -75,10 +75,15 @@ template <typename T, typename U>
 class BaseHandle : public BaseResource<T, U> {
   static void uv__close_cb(uv_handle_t* handle) {
     T& ref = *reinterpret_cast<T*>(handle->data);
+    if (ref.closeCallback_.has_value()) {
+      ref.closeCallback_.value()();
+    }
     ref.unleak();
   }
 
  public:
+  using TCloseCallback = std::function<void()>;
+
   explicit BaseHandle(
       typename BaseResource<T, U>::ConstructorToken /* unused */,
       std::shared_ptr<Loop> loop)
@@ -94,7 +99,13 @@ class BaseHandle : public BaseResource<T, U> {
     return &handle_;
   }
 
-  virtual void close() {
+  void armCloseCallbackFromLoop(TCloseCallback fn) {
+    TP_DCHECK(this->loop_->inLoopThread());
+    TP_THROW_ASSERT_IF(closeCallback_.has_value());
+    closeCallback_ = std::move(fn);
+  }
+
+  void close() {
     this->loop_->deferToLoop(
         runIfAlive(*this, std::function<void(T&)>([](T& handle) {
           uv_close(
@@ -106,6 +117,8 @@ class BaseHandle : public BaseResource<T, U> {
  protected:
   // Underlying libuv handle.
   U handle_;
+
+  optional<TCloseCallback> closeCallback_;
 };
 
 template <typename T, typename U>
