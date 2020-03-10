@@ -45,33 +45,42 @@ Connection::Connection(
     ConstructorToken /* unused */,
     std::shared_ptr<Loop> loop,
     std::shared_ptr<TCPHandle> handle)
+    : loop_(loop), impl_(std::make_shared<Impl>(loop, std::move(handle))) {}
+
+Connection::Impl::Impl(
+    std::shared_ptr<Loop> loop,
+    std::shared_ptr<TCPHandle> handle)
     : loop_(std::move(loop)), handle_(std::move(handle)) {}
 
 Connection::~Connection() {
-  if (handle_) {
-    // No need to call readStop here because if we are in the destructor it
-    // means that the runIfAlive wrapper will prevent the alloc and read
-    // callbacks from firing.
-    handle_->close();
-  }
+  impl_->close();
+}
+
+void Connection::Impl::close() {
+  // No need to call readStop here because if we are in the destructor it
+  // means that the runIfAlive wrapper will prevent the alloc and read
+  // callbacks from firing.
+  handle_->close();
 }
 
 void Connection::init() {
   loop_->deferToLoop(runIfAlive(
       *this, std::function<void(Connection&)>([](Connection& connection) {
-        connection.handle_->armAllocCallbackFromLoop(runIfAlive(
-            connection,
-            std::function<void(Connection&, uv_buf_t*)>(
-                [](Connection& connection, uv_buf_t* buf) {
-                  connection.allocCallbackFromLoop(buf);
-                })));
-        connection.handle_->armReadCallbackFromLoop(runIfAlive(
-            connection,
-            std::function<void(Connection&, ssize_t, const uv_buf_t*)>(
-                [](Connection& connection, ssize_t nread, const uv_buf_t* buf) {
-                  connection.readCallbackFromLoop(nread, buf);
-                })));
+        connection.impl_->initFromLoop();
       })));
+}
+
+void Connection::Impl::initFromLoop() {
+  handle_->armAllocCallbackFromLoop(runIfAlive(
+      *this,
+      std::function<void(Impl&, uv_buf_t*)>(
+          [](Impl& impl, uv_buf_t* buf) { impl.allocCallbackFromLoop(buf); })));
+  handle_->armReadCallbackFromLoop(runIfAlive(
+      *this,
+      std::function<void(Impl&, ssize_t, const uv_buf_t*)>(
+          [](Impl& impl, ssize_t nread, const uv_buf_t* buf) {
+            impl.readCallbackFromLoop(nread, buf);
+          })));
 }
 
 void Connection::read(read_callback_fn fn) {
@@ -79,11 +88,11 @@ void Connection::read(read_callback_fn fn) {
       *this,
       std::function<void(Connection&)>(
           [fn{std::move(fn)}](Connection& connection) mutable {
-            connection.readFromLoop(std::move(fn));
+            connection.impl_->readFromLoop(std::move(fn));
           })));
 }
 
-void Connection::readFromLoop(read_callback_fn fn) {
+void Connection::Impl::readFromLoop(read_callback_fn fn) {
   TP_DCHECK(loop_->inLoopThread());
   std::unique_lock<std::mutex> lock(readOperationsMutex_);
   readOperations_.emplace_back(std::move(fn));
@@ -98,11 +107,14 @@ void Connection::read(void* ptr, size_t length, read_callback_fn fn) {
       *this,
       std::function<void(Connection&)>(
           [ptr, length, fn{std::move(fn)}](Connection& connection) mutable {
-            connection.readFromLoop(ptr, length, std::move(fn));
+            connection.impl_->readFromLoop(ptr, length, std::move(fn));
           })));
 }
 
-void Connection::readFromLoop(void* ptr, size_t length, read_callback_fn fn) {
+void Connection::Impl::readFromLoop(
+    void* ptr,
+    size_t length,
+    read_callback_fn fn) {
   TP_DCHECK(loop_->inLoopThread());
   std::unique_lock<std::mutex> lock(readOperationsMutex_);
   readOperations_.emplace_back(ptr, length, std::move(fn));
@@ -117,11 +129,11 @@ void Connection::write(const void* ptr, size_t length, write_callback_fn fn) {
       *this,
       std::function<void(Connection&)>(
           [ptr, length, fn{std::move(fn)}](Connection& connection) mutable {
-            connection.writeFromLoop(ptr, length, std::move(fn));
+            connection.impl_->writeFromLoop(ptr, length, std::move(fn));
           })));
 }
 
-void Connection::writeFromLoop(
+void Connection::Impl::writeFromLoop(
     const void* ptr,
     size_t length,
     write_callback_fn fn) {
@@ -148,13 +160,13 @@ void Connection::writeFromLoop(
       bufs_len,
       runIfAlive(
           *this,
-          std::function<void(Connection&, int)>(
-              [bufs{std::move(bufs)}](Connection& connection, int status) {
-                connection.writeCallbackFromLoop(status);
+          std::function<void(Impl&, int)>(
+              [bufs{std::move(bufs)}](Impl& impl, int status) {
+                impl.writeCallbackFromLoop(status);
               })));
 }
 
-void Connection::ReadOperation::allocFromLoop(uv_buf_t* buf) {
+void Connection::Impl::ReadOperation::allocFromLoop(uv_buf_t* buf) {
   if (mode_ == READ_LENGTH) {
     TP_DCHECK_LT(bytesRead_, sizeof(readLength_));
     buf->base = reinterpret_cast<char*>(&readLength_) + bytesRead_;
@@ -169,7 +181,7 @@ void Connection::ReadOperation::allocFromLoop(uv_buf_t* buf) {
   }
 }
 
-void Connection::ReadOperation::readFromLoop(
+void Connection::Impl::ReadOperation::readFromLoop(
     ssize_t nread,
     const uv_buf_t* buf) {
   TP_DCHECK_GE(nread, 0);
@@ -198,14 +210,16 @@ void Connection::ReadOperation::readFromLoop(
   }
 }
 
-void Connection::allocCallbackFromLoop(uv_buf_t* buf) {
+void Connection::Impl::allocCallbackFromLoop(uv_buf_t* buf) {
   TP_DCHECK(loop_->inLoopThread());
   std::unique_lock<std::mutex> lock(readOperationsMutex_);
   TP_THROW_ASSERT_IF(readOperations_.empty());
   readOperations_.front().allocFromLoop(buf);
 }
 
-void Connection::readCallbackFromLoop(ssize_t nread, const uv_buf_t* buf) {
+void Connection::Impl::readCallbackFromLoop(
+    ssize_t nread,
+    const uv_buf_t* buf) {
   TP_DCHECK(loop_->inLoopThread());
   std::unique_lock<std::mutex> lock(readOperationsMutex_);
   if (nread < 0) {
@@ -247,7 +261,7 @@ void Connection::readCallbackFromLoop(ssize_t nread, const uv_buf_t* buf) {
   }
 }
 
-void Connection::writeCallbackFromLoop(int status) {
+void Connection::Impl::writeCallbackFromLoop(int status) {
   TP_DCHECK(loop_->inLoopThread());
   std::unique_lock<std::mutex> lock(writeOperationsMutex_);
   TP_DCHECK(!writeOperations_.empty());
