@@ -178,10 +178,7 @@ class Connection : public transport::Connection,
     // Called when libuv has written data to connection.
     void writeCallbackFromLoop(int status);
 
-    // Note: the containers below must never invalidate references.
-    std::mutex readOperationsMutex_;
     std::deque<ReadOperation> readOperations_;
-    std::mutex writeOperationsMutex_;
     std::deque<WriteOperation> writeOperations_;
 
     // By having the instance store a shared_ptr to itself we create a reference

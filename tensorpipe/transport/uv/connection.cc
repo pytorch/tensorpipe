@@ -89,7 +89,6 @@ void Connection::read(read_callback_fn fn) {
 
 void Connection::Impl::readFromLoop(read_callback_fn fn) {
   TP_DCHECK(loop_->inLoopThread());
-  std::unique_lock<std::mutex> lock(readOperationsMutex_);
   readOperations_.emplace_back(std::move(fn));
   // Start reading if this is the first read operation.
   if (readOperations_.size() == 1) {
@@ -108,7 +107,6 @@ void Connection::Impl::readFromLoop(
     size_t length,
     read_callback_fn fn) {
   TP_DCHECK(loop_->inLoopThread());
-  std::unique_lock<std::mutex> lock(readOperationsMutex_);
   readOperations_.emplace_back(ptr, length, std::move(fn));
   // Start reading if this is the first read operation.
   if (readOperations_.size() == 1) {
@@ -127,7 +125,6 @@ void Connection::Impl::writeFromLoop(
     size_t length,
     write_callback_fn fn) {
   TP_DCHECK(loop_->inLoopThread());
-  std::unique_lock<std::mutex> lock(writeOperationsMutex_);
   writeOperations_.emplace_back(ptr, length, std::move(fn));
   auto& writeOperation = writeOperations_.back();
 
@@ -194,7 +191,6 @@ void Connection::Impl::ReadOperation::readFromLoop(
 
 void Connection::Impl::allocCallbackFromLoop(uv_buf_t* buf) {
   TP_DCHECK(loop_->inLoopThread());
-  std::unique_lock<std::mutex> lock(readOperationsMutex_);
   TP_THROW_ASSERT_IF(readOperations_.empty());
   readOperations_.front().allocFromLoop(buf);
 }
@@ -203,16 +199,11 @@ void Connection::Impl::readCallbackFromLoop(
     ssize_t nread,
     const uv_buf_t* buf) {
   TP_DCHECK(loop_->inLoopThread());
-  std::unique_lock<std::mutex> lock(readOperationsMutex_);
   if (nread < 0) {
     error_ = TP_CREATE_ERROR(UVError, nread);
     while (!readOperations_.empty()) {
       auto& readOperation = readOperations_.front();
-      // Execute callback without holding the operations lock.
-      // The callback could issue another read.
-      lock.unlock();
       readOperation.callbackFromLoop(error_);
-      lock.lock();
       // Remove the completed operation.
       // If this was the final pending operation, this instance should
       // no longer receive allocation and read callbacks.
@@ -228,11 +219,7 @@ void Connection::Impl::readCallbackFromLoop(
   auto& readOperation = readOperations_.front();
   readOperation.readFromLoop(nread, buf);
   if (readOperation.completeFromLoop()) {
-    // Execute callback without holding the operations lock.
-    // The callback could issue another read.
-    lock.unlock();
     readOperation.callbackFromLoop(Error::kSuccess);
-    lock.lock();
     // Remove the completed operation.
     // If this was the final pending operation, this instance should
     // no longer receive allocation and read callbacks.
@@ -245,16 +232,12 @@ void Connection::Impl::readCallbackFromLoop(
 
 void Connection::Impl::writeCallbackFromLoop(int status) {
   TP_DCHECK(loop_->inLoopThread());
-  std::unique_lock<std::mutex> lock(writeOperationsMutex_);
   TP_DCHECK(!writeOperations_.empty());
 
   // Move write operation to the stack.
   auto writeOperation = std::move(writeOperations_.front());
   writeOperations_.pop_front();
 
-  // Execute callback without holding the operations lock.
-  // The callback could issue another write.
-  lock.unlock();
   if (status == 0) {
     writeOperation.callbackFromLoop(Error::kSuccess);
   } else {
