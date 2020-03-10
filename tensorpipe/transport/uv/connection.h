@@ -20,6 +20,7 @@ namespace tensorpipe {
 namespace transport {
 namespace uv {
 
+class Context;
 class Listener;
 class TCPHandle;
 
@@ -30,9 +31,24 @@ class Connection : public transport::Connection,
   struct ConstructorToken {};
 
  public:
+  Connection(
+      ConstructorToken,
+      std::shared_ptr<Loop> loop,
+      std::shared_ptr<TCPHandle> handle);
+
+  ~Connection() override;
+
   using transport::Connection::read_callback_fn;
+
+  void read(read_callback_fn fn) override;
+
+  void read(void* ptr, size_t length, read_callback_fn fn) override;
+
   using transport::Connection::write_callback_fn;
 
+  void write(const void* ptr, size_t length, write_callback_fn fn) override;
+
+ private:
   // Create a connection that connects to the specified address.
   static std::shared_ptr<Connection> create(
       std::shared_ptr<Loop> loop,
@@ -43,26 +59,12 @@ class Connection : public transport::Connection,
       std::shared_ptr<Loop> loop,
       std::shared_ptr<TCPHandle> handle);
 
-  Connection(
-      ConstructorToken,
-      std::shared_ptr<Loop> loop,
-      std::shared_ptr<TCPHandle> handle);
+  // Called to initialize member fields that need `shared_from_this`.
+  void init();
 
-  ~Connection() override;
-
-  void read(read_callback_fn fn) override;
-
-  void read(void* ptr, size_t length, read_callback_fn fn) override;
-
-  void write(const void* ptr, size_t length, write_callback_fn fn) override;
-
- protected:
   std::shared_ptr<Loop> loop_;
   std::shared_ptr<TCPHandle> handle_;
   Error error_{Error::kSuccess};
-
-  // Called to initialize member fields that need `shared_from_this`.
-  void init();
 
   // The read operation captures all state associated with reading a
   // fixed length chunk of data from the underlying connection. All
@@ -164,6 +166,7 @@ class Connection : public transport::Connection,
   std::mutex writeOperationsMutex_;
   std::deque<WriteOperation> writeOperations_;
 
+  friend class Context;
   friend class Listener;
 };
 

@@ -21,6 +21,7 @@ namespace tensorpipe {
 namespace transport {
 namespace uv {
 
+class Context;
 class TCPHandle;
 
 class Listener : public transport::Listener,
@@ -30,27 +31,25 @@ class Listener : public transport::Listener,
   struct ConstructorToken {};
 
  public:
-  using transport::Listener::accept_callback_fn;
-
-  static std::shared_ptr<Listener> create(
-      std::shared_ptr<Loop> loop,
-      const Sockaddr& addr);
-
   Listener(ConstructorToken, std::shared_ptr<Loop> loop, const Sockaddr& addr);
 
   ~Listener() override;
 
- private:
-  void start();
-
- public:
-  Sockaddr sockaddr();
+  using transport::Listener::accept_callback_fn;
 
   void accept(accept_callback_fn fn) override;
 
   address_t addr() const override;
 
- protected:
+ private:
+  static std::shared_ptr<Listener> create(
+      std::shared_ptr<Loop> loop,
+      const Sockaddr& addr);
+
+  void start();
+
+  Sockaddr sockaddr();
+
   std::shared_ptr<Loop> loop_;
   std::shared_ptr<TCPHandle> handle_;
   // Once an accept callback fires, it becomes disarmed and must be rearmed. Any
@@ -79,6 +78,8 @@ class Listener : public transport::Listener,
   void acceptCallbackFromLoop(
       std::shared_ptr<TCPHandle> connection,
       int status);
+
+  friend class Context;
 };
 
 } // namespace uv
