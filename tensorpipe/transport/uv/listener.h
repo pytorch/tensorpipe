@@ -52,7 +52,7 @@ class Listener : public transport::Listener,
 
  protected:
   std::shared_ptr<Loop> loop_;
-  std::shared_ptr<TCPHandle> listener_;
+  std::shared_ptr<TCPHandle> handle_;
   // Once an accept callback fires, it becomes disarmed and must be rearmed. Any
   // firings that occur while the callback is disarmed are stashed and triggered
   // as soon as it's rearmed. With libuv we don't have the ability to disable

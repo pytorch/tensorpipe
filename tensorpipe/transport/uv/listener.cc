@@ -32,21 +32,21 @@ Listener::Listener(
     std::shared_ptr<Loop> loop,
     const Sockaddr& addr)
     : loop_(std::move(loop)) {
-  listener_ = loop_->createHandle<TCPHandle>();
-  listener_->bind(addr);
+  handle_ = loop_->createHandle<TCPHandle>();
+  handle_->bind(addr);
 }
 
 Listener::~Listener() {
   for (const auto& connection : connectionsWaitingForAccept_) {
     connection->close();
   }
-  if (listener_) {
-    listener_->close();
+  if (handle_) {
+    handle_->close();
   }
 }
 
 void Listener::start() {
-  listener_->listen(runIfAlive(
+  handle_->listen(runIfAlive(
       *this,
       std::function<void(Listener&, int)>([](Listener& listener, int status) {
         listener.connectionCallback(status);
@@ -54,7 +54,7 @@ void Listener::start() {
 }
 
 Sockaddr Listener::sockaddr() {
-  return listener_->sockName();
+  return handle_->sockName();
 }
 
 void Listener::accept(accept_callback_fn fn) {
@@ -62,7 +62,7 @@ void Listener::accept(accept_callback_fn fn) {
 }
 
 address_t Listener::addr() const {
-  return listener_->sockName().str();
+  return handle_->sockName().str();
 }
 
 void Listener::connectionCallback(int status) {
@@ -80,7 +80,7 @@ void Listener::connectionCallback(int status) {
   // captured a shared_ptr, then the TCPHandle would be kept alive by the
   // callback even if the listener got destroyed. To avoid that we capture a
   // weak_ptr, which we're however sure we'll be able to lock.
-  listener_->accept(
+  handle_->accept(
       connection,
       runIfAlive(
           *this,
