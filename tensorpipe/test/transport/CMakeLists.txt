@@ -17,6 +17,8 @@ target_include_directories(
   $<TARGET_PROPERTY:tensorpipe,INCLUDE_DIRECTORIES>
   $<TARGET_PROPERTY:gtest_main,INCLUDE_DIRECTORIES>
   )
+# Build this after having generated the .pb.h files needed by some tests.
+add_dependencies(tensorpipe_transport_test tensorpipe_proto)
 
 function(add_tensorpipe_transport_test)
   add_tensorpipe_test(${ARGV})
