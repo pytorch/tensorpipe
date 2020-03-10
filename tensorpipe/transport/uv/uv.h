@@ -105,13 +105,8 @@ class BaseHandle : public BaseResource<T, U> {
     closeCallback_ = std::move(fn);
   }
 
-  void close() {
-    this->loop_->deferToLoop(
-        runIfAlive(*this, std::function<void(T&)>([](T& handle) {
-          uv_close(
-              reinterpret_cast<uv_handle_t*>(&handle.handle_),
-              handle.uv__close_cb);
-        })));
+  void closeFromLoop() {
+    uv_close(reinterpret_cast<uv_handle_t*>(ptr()), uv__close_cb);
   }
 
  protected:

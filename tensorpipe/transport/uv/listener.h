@@ -57,7 +57,9 @@ class Listener : public transport::Listener,
 
     void startFromLoop();
 
-    void close();
+    void closeFromLoop();
+
+    void closeCallbackFromLoop();
 
     void acceptFromLoop(accept_callback_fn fn);
 
@@ -91,6 +93,11 @@ class Listener : public transport::Listener,
     void acceptCallbackFromLoop(
         std::shared_ptr<TCPHandle> connection,
         int status);
+
+    // By having the instance store a shared_ptr to itself we create a reference
+    // cycle which will "leak" the instance. This allows us to detach its
+    // lifetime from the connection and sync it with the TCPHandle's life cycle.
+    std::shared_ptr<Impl> leak_;
   };
 
   std::shared_ptr<Loop> loop_;

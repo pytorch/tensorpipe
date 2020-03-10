@@ -45,14 +45,18 @@ Listener::Impl::Impl(
     : loop_(std::move(loop)), handle_(std::move(handle)) {}
 
 Listener::~Listener() {
-  impl_->close();
+  loop_->deferToLoop([impl{impl_}]() { impl->closeFromLoop(); });
 }
 
-void Listener::Impl::close() {
+void Listener::Impl::closeFromLoop() {
   for (const auto& connection : connectionsWaitingForAccept_) {
-    connection->close();
+    connection->closeFromLoop();
   }
-  handle_->close();
+  handle_->closeFromLoop();
+}
+
+void Listener::Impl::closeCallbackFromLoop() {
+  leak_.reset();
 }
 
 void Listener::start() {
@@ -63,6 +67,11 @@ void Listener::start() {
 }
 
 void Listener::Impl::startFromLoop() {
+  leak_ = shared_from_this();
+  handle_->armCloseCallbackFromLoop(
+      runIfAlive(*this, std::function<void(Impl&)>([](Impl& impl) {
+        impl.closeCallbackFromLoop();
+      })));
   handle_->listenFromLoop(runIfAlive(
       *this, std::function<void(Impl&, int)>([](Impl& impl, int status) {
         impl.connectionCallbackFromLoop(status);
@@ -129,7 +138,7 @@ void Listener::Impl::acceptCallbackFromLoop(
   TP_DCHECK(loop_->inLoopThread());
   connectionsWaitingForAccept_.erase(connection);
   if (status != 0) {
-    connection->close();
+    connection->closeFromLoop();
     callback_.trigger(
         TP_CREATE_ERROR(UVError, status), std::shared_ptr<Connection>());
     return;

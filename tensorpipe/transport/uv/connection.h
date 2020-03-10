@@ -69,7 +69,9 @@ class Connection : public transport::Connection,
     // Called to initialize member fields that need `shared_from_this`.
     void initFromLoop();
 
-    void close();
+    void closeFromLoop();
+
+    void closeCallbackFromLoop();
 
     std::shared_ptr<Loop> loop_;
     std::shared_ptr<TCPHandle> handle_;
@@ -181,6 +183,11 @@ class Connection : public transport::Connection,
     std::deque<ReadOperation> readOperations_;
     std::mutex writeOperationsMutex_;
     std::deque<WriteOperation> writeOperations_;
+
+    // By having the instance store a shared_ptr to itself we create a reference
+    // cycle which will "leak" the instance. This allows us to detach its
+    // lifetime from the connection and sync it with the TCPHandle's life cycle.
+    std::shared_ptr<Impl> leak_;
   };
 
   std::shared_ptr<Loop> loop_;

@@ -53,14 +53,20 @@ Connection::Impl::Impl(
     : loop_(std::move(loop)), handle_(std::move(handle)) {}
 
 Connection::~Connection() {
-  impl_->close();
+  loop_->deferToLoop([impl{impl_}]() { impl->closeFromLoop(); });
 }
 
-void Connection::Impl::close() {
+void Connection::Impl::closeFromLoop() {
+  TP_DCHECK(loop_->inLoopThread());
   // No need to call readStop here because if we are in the destructor it
   // means that the runIfAlive wrapper will prevent the alloc and read
   // callbacks from firing.
-  handle_->close();
+  handle_->closeFromLoop();
+}
+
+void Connection::Impl::closeCallbackFromLoop() {
+  TP_DCHECK(loop_->inLoopThread());
+  leak_.reset();
 }
 
 void Connection::init() {
@@ -71,6 +77,11 @@ void Connection::init() {
 }
 
 void Connection::Impl::initFromLoop() {
+  leak_ = shared_from_this();
+  handle_->armCloseCallbackFromLoop(
+      runIfAlive(*this, std::function<void(Impl&)>([](Impl& impl) {
+        impl.closeCallbackFromLoop();
+      })));
   handle_->armAllocCallbackFromLoop(runIfAlive(
       *this,
       std::function<void(Impl&, uv_buf_t*)>(
