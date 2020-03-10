@@ -63,6 +63,16 @@ void Connection::Impl::closeFromLoop() {
 
 void Connection::Impl::closeCallbackFromLoop() {
   TP_DCHECK(loop_->inLoopThread());
+  if (!error_) {
+    error_ = TP_CREATE_ERROR(UVError, UV_ECANCELED);
+  }
+  while (!readOperations_.empty()) {
+    auto& readOperation = readOperations_.front();
+    readOperation.callbackFromLoop(error_);
+    // Remove the completed operation.
+    readOperations_.pop_front();
+  }
+  TP_DCHECK(writeOperations_.empty());
   leak_.reset();
 }
 
@@ -89,7 +99,14 @@ void Connection::read(read_callback_fn fn) {
 
 void Connection::Impl::readFromLoop(read_callback_fn fn) {
   TP_DCHECK(loop_->inLoopThread());
+
+  if (error_) {
+    fn(error_, nullptr, 0);
+    return;
+  }
+
   readOperations_.emplace_back(std::move(fn));
+
   // Start reading if this is the first read operation.
   if (readOperations_.size() == 1) {
     handle_->readStartFromLoop();
@@ -107,7 +124,14 @@ void Connection::Impl::readFromLoop(
     size_t length,
     read_callback_fn fn) {
   TP_DCHECK(loop_->inLoopThread());
+
+  if (error_) {
+    fn(error_, ptr, length);
+    return;
+  }
+
   readOperations_.emplace_back(ptr, length, std::move(fn));
+
   // Start reading if this is the first read operation.
   if (readOperations_.size() == 1) {
     handle_->readStartFromLoop();
@@ -125,13 +149,18 @@ void Connection::Impl::writeFromLoop(
     size_t length,
     write_callback_fn fn) {
   TP_DCHECK(loop_->inLoopThread());
-  writeOperations_.emplace_back(ptr, length, std::move(fn));
-  auto& writeOperation = writeOperations_.back();
 
+  if (error_) {
+    fn(error_);
+    return;
+  }
+
+  writeOperations_.emplace_back(ptr, length, std::move(fn));
+
+  auto& writeOperation = writeOperations_.back();
   uv_buf_t* bufsPtr;
   unsigned int bufsLen;
   std::tie(bufsPtr, bufsLen) = writeOperation.getBufs();
-
   handle_->writeFromLoop(bufsPtr, bufsLen, [this](int status) {
     this->writeCallbackFromLoop(status);
   });
@@ -203,17 +232,9 @@ void Connection::Impl::readCallbackFromLoop(
     const uv_buf_t* buf) {
   TP_DCHECK(loop_->inLoopThread());
   if (nread < 0) {
-    error_ = TP_CREATE_ERROR(UVError, nread);
-    while (!readOperations_.empty()) {
-      auto& readOperation = readOperations_.front();
-      readOperation.callbackFromLoop(error_);
-      // Remove the completed operation.
-      // If this was the final pending operation, this instance should
-      // no longer receive allocation and read callbacks.
-      readOperations_.pop_front();
-      if (readOperations_.empty()) {
-        handle_->readStopFromLoop();
-      }
+    if (!error_) {
+      error_ = TP_CREATE_ERROR(UVError, nread);
+      closeFromLoop();
     }
     return;
   }
@@ -222,7 +243,7 @@ void Connection::Impl::readCallbackFromLoop(
   auto& readOperation = readOperations_.front();
   readOperation.readFromLoop(nread, buf);
   if (readOperation.completeFromLoop()) {
-    readOperation.callbackFromLoop(Error::kSuccess);
+    readOperation.callbackFromLoop(error_);
     // Remove the completed operation.
     // If this was the final pending operation, this instance should
     // no longer receive allocation and read callbacks.
@@ -237,15 +258,14 @@ void Connection::Impl::writeCallbackFromLoop(int status) {
   TP_DCHECK(loop_->inLoopThread());
   TP_DCHECK(!writeOperations_.empty());
 
-  // Move write operation to the stack.
-  auto writeOperation = std::move(writeOperations_.front());
-  writeOperations_.pop_front();
-
-  if (status == 0) {
-    writeOperation.callbackFromLoop(Error::kSuccess);
-  } else {
-    writeOperation.callbackFromLoop(TP_CREATE_ERROR(UVError, status));
+  if (status < 0 && !error_) {
+    error_ = TP_CREATE_ERROR(UVError, status);
+    closeFromLoop();
   }
+
+  auto& writeOperation = writeOperations_.front();
+  writeOperation.callbackFromLoop(error_);
+  writeOperations_.pop_front();
 }
 
 } // namespace uv
