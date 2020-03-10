@@ -35,6 +35,10 @@ class BaseResource : public std::enable_shared_from_this<T> {
  public:
   explicit BaseResource(std::shared_ptr<Loop> loop) : loop_(std::move(loop)) {}
 
+  void leak() {
+    leak_ = this->shared_from_this();
+  }
+
  protected:
   // Refer to the loop to keep it alive.
   std::shared_ptr<Loop> loop_;
@@ -43,10 +47,6 @@ class BaseResource : public std::enable_shared_from_this<T> {
   // * the handle is closed, or...
   // * the request has completed.
   std::shared_ptr<T> leak_;
-
-  void leak() {
-    leak_ = this->shared_from_this();
-  }
 
   void unleak() {
     leak_.reset();
@@ -171,32 +171,26 @@ class StreamHandle : public BaseHandle<T, U> {
 
   // TODO Split this into a armConnectionCallback, a listenStart and a
   // listenStop method, to propagate the backpressure to the clients.
-  void listen(TConnectionCallback connectionCallback) {
+  void listenFromLoop(TConnectionCallback connectionCallback) {
+    TP_DCHECK(this->loop_->inLoopThread());
     TP_THROW_ASSERT_IF(connectionCallback_.has_value());
     connectionCallback_ = std::move(connectionCallback);
-
-    this->loop_->deferToLoop(
-        runIfAlive(*this, std::function<void(T&)>([](T& handle) {
-          auto rv = uv_listen(
-              reinterpret_cast<uv_stream_t*>(handle.ptr()),
-              kBacklog,
-              handle.uv__connection_cb);
-          TP_THROW_UV_IF(rv < 0, rv);
-        })));
+    auto rv = uv_listen(
+        reinterpret_cast<uv_stream_t*>(this->ptr()),
+        kBacklog,
+        uv__connection_cb);
+    TP_THROW_UV_IF(rv < 0, rv);
   }
 
   template <typename V>
-  void accept(std::shared_ptr<V> other, TAcceptCallback acceptCallback) {
-    this->loop_->deferToLoop(runIfAlive(
-        *this,
-        std::function<void(T&)>(
-            [otherPtr{other->ptr()},
-             acceptCallback{std::move(acceptCallback)}](T& handle) mutable {
-              auto status = uv_accept(
-                  reinterpret_cast<uv_stream_t*>(handle.ptr()),
-                  reinterpret_cast<uv_stream_t*>(otherPtr));
-              acceptCallback(status);
-            })));
+  void acceptFromLoop(
+      std::shared_ptr<V> other,
+      TAcceptCallback acceptCallback) {
+    TP_DCHECK(this->loop_->inLoopThread());
+    auto status = uv_accept(
+        reinterpret_cast<uv_stream_t*>(this->ptr()),
+        reinterpret_cast<uv_stream_t*>(other->ptr()));
+    acceptCallback(status);
   }
 
   void armAllocCallbackFromLoop(TAllocCallback fn) {

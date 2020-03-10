@@ -48,6 +48,8 @@ class Listener : public transport::Listener,
 
   void start();
 
+  void acceptFromLoop(accept_callback_fn fn);
+
   Sockaddr sockaddr();
 
   std::shared_ptr<Loop> loop_;

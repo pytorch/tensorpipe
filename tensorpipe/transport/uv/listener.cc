@@ -46,10 +46,14 @@ Listener::~Listener() {
 }
 
 void Listener::start() {
-  handle_->listen(runIfAlive(
-      *this,
-      std::function<void(Listener&, int)>([](Listener& listener, int status) {
-        listener.connectionCallbackFromLoop(status);
+  loop_->deferToLoop(
+      runIfAlive(*this, std::function<void(Listener&)>([](Listener& listener) {
+        listener.handle_->listenFromLoop(runIfAlive(
+            listener,
+            std::function<void(Listener&, int)>(
+                [](Listener& listener, int status) {
+                  listener.connectionCallbackFromLoop(status);
+                })));
       })));
 }
 
@@ -58,6 +62,15 @@ Sockaddr Listener::sockaddr() {
 }
 
 void Listener::accept(accept_callback_fn fn) {
+  loop_->deferToLoop(runIfAlive(
+      *this,
+      std::function<void(Listener&)>(
+          [fn{std::move(fn)}](Listener& listener) mutable {
+            listener.acceptFromLoop(std::move(fn));
+          })));
+}
+
+void Listener::acceptFromLoop(accept_callback_fn fn) {
   callback_.arm(std::move(fn));
 }
 
@@ -73,7 +86,10 @@ void Listener::connectionCallbackFromLoop(int status) {
     return;
   }
 
-  auto connection = loop_->createHandle<TCPHandle>();
+  auto connection = std::make_shared<TCPHandle>(loop_);
+  connection->leak();
+  // FIXME Calling a UV function directly is a temporary workaround.
+  uv_tcp_init(loop_->ptr(), connection->ptr());
   connectionsWaitingForAccept_.insert(connection);
   // Since a reference to the new TCPHandle is stored in a member field of the
   // listener, the TCPHandle will still be alive inside the following callback
@@ -81,7 +97,7 @@ void Listener::connectionCallbackFromLoop(int status) {
   // captured a shared_ptr, then the TCPHandle would be kept alive by the
   // callback even if the listener got destroyed. To avoid that we capture a
   // weak_ptr, which we're however sure we'll be able to lock.
-  handle_->accept(
+  handle_->acceptFromLoop(
       connection,
       runIfAlive(
           *this,
