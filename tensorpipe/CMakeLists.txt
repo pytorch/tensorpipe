@@ -18,8 +18,7 @@ set(TENSORPIPE_SOURCES
   )
 
 if(TP_ENABLE_SHM)
-  set(TENSORPIPE_SOURCES
-    ${TENSORPIPE_SOURCES}
+  list(APPEND TENSORPIPE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/util/ringbuffer/shm.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/util/shm/segment.cc
   )

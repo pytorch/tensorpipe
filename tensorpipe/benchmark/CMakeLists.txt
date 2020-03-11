@@ -21,6 +21,4 @@ target_link_libraries(
 if(TP_ENABLE_SHM)
   target_link_libraries(benchmark_transport tensorpipe_shm)
   target_link_libraries(benchmark_pipe tensorpipe_shm)
-  target_compile_definitions(benchmark_transport PRIVATE TP_ENABLE_SHM)
-  target_compile_definitions(benchmark_pipe PRIVATE TP_ENABLE_SHM)
 endif()
