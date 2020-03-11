@@ -43,7 +43,7 @@ jobs:
               -DCMAKE_C_COMPILER=<< parameters.c_compiler >> \
               -DCMAKE_CXX_COMPILER=<< parameters.cxx_compiler >> \
               << parameters.cmake_args >>
-            make
+            make -j
       - run:
           name: Test
           command: |
