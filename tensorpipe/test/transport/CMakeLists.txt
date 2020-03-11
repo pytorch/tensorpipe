@@ -29,6 +29,6 @@ function(add_tensorpipe_transport_test)
 endfunction()
 
 add_subdirectory(uv)
-if(LINUX)
+if(TP_ENABLE_SHM)
   add_subdirectory(shm)
 endif()

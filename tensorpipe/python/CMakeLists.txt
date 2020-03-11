@@ -14,6 +14,7 @@ target_link_libraries(
   tensorpipe_uv
   )
 
-if(LINUX)
+if(TP_ENABLE_SHM)
   target_link_libraries(pytensorpipe PRIVATE tensorpipe_shm)
+  target_compile_definitions(pytensorpipe PRIVATE TP_ENABLE_SHM)
 endif()

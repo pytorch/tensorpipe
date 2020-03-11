@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 # TODO: Re-enable this once it does not rely on shm which is Linux only.
-if(LINUX)
+if(TP_ENABLE_SHM)
   add_tensorpipe_test(core_context_test context_test.cc)
   target_link_libraries(
     core_context_test

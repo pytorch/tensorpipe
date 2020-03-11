@@ -10,6 +10,8 @@ cmake_minimum_required(VERSION 3.10 FATAL_ERROR)
 project(tensorpipe C CXX)
 set(CMAKE_CXX_STANDARD 14)
 
+option(TP_ENABLE_SHM "Enable shm transport" $<BOOL:LINUX>)
+
 # Use CMAKE_<LANG>_COMPILER_LAUNCHER if available.
 find_program(SCCACHE_EXECUTABLE sccache)
 mark_as_advanced(SCCACHE_EXECUTABLE)

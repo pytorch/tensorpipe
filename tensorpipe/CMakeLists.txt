@@ -17,7 +17,7 @@ set(TENSORPIPE_SOURCES
   ${CMAKE_CURRENT_SOURCE_DIR}/transport/error.cc
   )
 
-if(LINUX)
+if(TP_ENABLE_SHM)
   set(TENSORPIPE_SOURCES
     ${TENSORPIPE_SOURCES}
     ${CMAKE_CURRENT_SOURCE_DIR}/util/ringbuffer/shm.cc
@@ -60,7 +60,7 @@ target_link_libraries(tensorpipe PUBLIC tensorpipe_proto)
 
 add_subdirectory(channel/basic)
 add_subdirectory(transport/uv)
-if(LINUX)
+if(TP_ENABLE_SHM)
   add_subdirectory(transport/shm)
 endif()
 
