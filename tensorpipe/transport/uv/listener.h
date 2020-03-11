@@ -80,19 +80,10 @@ class Listener : public transport::Listener,
         std::shared_ptr<Connection>>
         callback_;
 
-    std::unordered_set<std::shared_ptr<TCPHandle>> connectionsWaitingForAccept_;
-
     // This function is called by the event loop if the listening socket can
     // accept a new connection. Status is 0 in case of success, < 0
     // otherwise. See `uv_connection_cb` for more information.
     void connectionCallbackFromLoop(int status);
-
-    // This function is called by the event loop when the connection has been
-    // accepted on the listening socket. Status is 0 in case of success, < 0
-    // otherwise.
-    void acceptCallbackFromLoop(
-        std::shared_ptr<TCPHandle> connection,
-        int status);
 
     // By having the instance store a shared_ptr to itself we create a reference
     // cycle which will "leak" the instance. This allows us to detach its

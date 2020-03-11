@@ -222,14 +222,12 @@ class StreamHandle : public BaseHandle<T, U> {
   }
 
   template <typename V>
-  void acceptFromLoop(
-      std::shared_ptr<V> other,
-      TAcceptCallback acceptCallback) {
+  void acceptFromLoop(std::shared_ptr<V> other) {
     TP_DCHECK(this->loop_->inLoopThread());
-    auto status = uv_accept(
+    auto rv = uv_accept(
         reinterpret_cast<uv_stream_t*>(this->ptr()),
         reinterpret_cast<uv_stream_t*>(other->ptr()));
-    acceptCallback(status);
+    TP_THROW_UV_IF(rv < 0, rv);
   }
 
   void armAllocCallbackFromLoop(TAllocCallback fn) {
