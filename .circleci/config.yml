@@ -48,7 +48,7 @@ jobs:
           name: Test
           command: |
             cd build
-            make test
+            CTEST_OUTPUT_ON_FAILURE=1 make test
   python:
     parameters:
       docker_image:
