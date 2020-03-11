@@ -225,7 +225,7 @@ class Connection final : public transport::Connection,
   void setErrorHoldingMutexFromReactor(Error&&);
 
   // Fail with error while holding mutex.
-  void failHoldingMutexFromReactor(Error&&);
+  void failHoldingMutexFromReactor(Error&&, std::unique_lock<std::mutex>& lock);
 
   // Close connection.
   void close();

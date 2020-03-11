@@ -214,7 +214,7 @@ void Connection::handleEventInFromReactor(std::unique_lock<std::mutex> lock) {
         outboxHeaderFd,
         outboxDataFd);
     if (err) {
-      failHoldingMutexFromReactor(std::move(err));
+      failHoldingMutexFromReactor(std::move(err), lock);
       return;
     }
 
@@ -268,7 +268,7 @@ void Connection::handleEventOutFromReactor(std::unique_lock<std::mutex> lock) {
         inboxHeaderFd_,
         inboxDataFd_);
     if (err) {
-      failHoldingMutexFromReactor(std::move(err));
+      failHoldingMutexFromReactor(std::move(err), lock);
       return;
     }
 
@@ -402,17 +402,23 @@ void Connection::setErrorHoldingMutexFromReactor(Error&& error) {
   error_ = error;
 }
 
-void Connection::failHoldingMutexFromReactor(Error&& error) {
+void Connection::failHoldingMutexFromReactor(
+    Error&& error,
+    std::unique_lock<std::mutex>& lock) {
   TP_DCHECK(loop_->inReactorThread());
   setErrorHoldingMutexFromReactor(std::move(error));
   while (!readOperations_.empty()) {
     auto& readOperation = readOperations_.front();
+    lock.unlock();
     readOperation.handleError(error_);
+    lock.lock();
     readOperations_.pop_front();
   }
   while (!writeOperations_.empty()) {
     auto& writeOperation = writeOperations_.front();
+    lock.unlock();
     writeOperation.handleError(error_);
+    lock.lock();
     writeOperations_.pop_front();
   }
 }
