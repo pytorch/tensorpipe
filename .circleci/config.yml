@@ -49,6 +49,34 @@ jobs:
           command: |
             cd build
             CTEST_OUTPUT_ON_FAILURE=1 make test
+  build_osx:
+    macos:
+      xcode: 11.3.1
+    steps:
+      - checkout
+      - run:
+          name: Install homebrew packages
+          command: |
+            brew install cmake protobuf
+      - run:
+          name: Initialize submodules
+          command: |
+            git submodule init
+            git submodule update --remote
+      - run:
+          name: Build
+          command: |
+            mkdir build
+            cd build
+            cmake ../ \
+              -DCMAKE_C_FLAGS="-Werror -Wno-deprecated-declarations" \
+              -DCMAKE_CXX_FLAGS="-Werror -Wno-deprecated-declarations"
+            make -j
+      - run:
+          name: Test
+          command: |
+            cd build
+            CTEST_OUTPUT_ON_FAILURE=1 make test
   python:
     parameters:
       docker_image:
@@ -140,6 +168,8 @@ workflows:
           c_compiler: gcc-7
           cxx_compiler: g++-7
           cmake_args: -DSANITIZE=thread
+      - build_osx:
+          name: OSX
       - python:
           name: python
           docker_image: ubuntu:18.04

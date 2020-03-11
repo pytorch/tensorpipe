@@ -8,6 +8,8 @@
 
 #include <tensorpipe/test/transport/transport_test.h>
 
+#include <array>
+
 #include <tensorpipe/proto/core.pb.h>
 
 using namespace tensorpipe;

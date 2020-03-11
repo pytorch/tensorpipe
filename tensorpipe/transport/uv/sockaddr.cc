@@ -8,6 +8,7 @@
 
 #include <tensorpipe/transport/uv/sockaddr.h>
 
+#include <array>
 #include <cstring>
 #include <sstream>
 #include <utility>

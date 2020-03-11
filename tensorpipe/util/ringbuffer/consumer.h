@@ -105,7 +105,7 @@ class Consumer : public RingBufferWrapper {
       return -EINVAL;
     }
     // Single reader because we are in Tx, safe to read tail.
-    const uint64_t avail = this->header_.usedSizeWeak() - this->tx_size_;
+    const size_t avail = this->header_.usedSizeWeak() - this->tx_size_;
     return this->copyInTx(std::min(size, avail), buffer);
   }
 
@@ -120,8 +120,8 @@ class Consumer : public RingBufferWrapper {
     const uint64_t head = this->header_.readHead();
     // Single reader because we are in Tx, safe to read tail.
     const uint64_t tail = this->header_.readTail();
-    const uint64_t avail = head - tail - this->tx_size_;
     const uint64_t start = (this->tx_size_ + tail) & this->header_.kDataModMask;
+    const size_t avail = head - tail - this->tx_size_;
     const uint64_t end = std::min(
         start + std::min(size, avail), this->header_.kDataPoolByteSize);
 
