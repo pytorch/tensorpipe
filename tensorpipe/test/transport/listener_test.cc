@@ -90,10 +90,13 @@ TEST_P(TransportTest, Listener_IncomingConnectionsAreQueued) {
     auto listener = context->listen(addr);
     int numAccepts = 0;
     std::promise<void> donePromise;
-    for (int i = 0; i < 10; i += 1) {
-      context->connect(listener->addr());
+    // Avoid connections to be destroyed before being established.
+    std::vector<std::shared_ptr<Connection>> conns;
+    for (int i = 0; i < 10; ++i) {
+      auto c = context->connect(listener->addr());
+      conns.push_back(std::move(c));
     }
-    for (int i = 0; i < 10; i += 1) {
+    for (int i = 0; i < 10; ++i) {
       listener->accept([&, i](const Error& error, std::shared_ptr<Connection>) {
         if (error) {
           donePromise.set_exception(
