@@ -12,5 +12,8 @@ target_link_libraries(
   tensorpipe
   tensorpipe_basic
   tensorpipe_uv
-  tensorpipe_shm
   )
+
+if(TP_ENABLE_SHM)
+  target_link_libraries(pytensorpipe PRIVATE tensorpipe_shm)
+endif()
