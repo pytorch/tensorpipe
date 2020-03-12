@@ -37,11 +37,11 @@ void Context::join() {
 }
 
 std::shared_ptr<transport::Connection> Context::connect(address_t addr) {
-  return Connection::create(loop_, Sockaddr::createInetSockAddr(addr));
+  return Connection::create_(loop_, Sockaddr::createInetSockAddr(addr));
 }
 
 std::shared_ptr<transport::Listener> Context::listen(address_t addr) {
-  return Listener::create(loop_, Sockaddr::createInetSockAddr(addr));
+  return Listener::create_(loop_, Sockaddr::createInetSockAddr(addr));
 }
 
 const std::string& Context::domainDescriptor() const {

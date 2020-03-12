@@ -45,51 +45,21 @@ class Listener : public transport::Listener,
   address_t addr() const override;
 
  private:
-  static std::shared_ptr<Listener> create(
+  // Create a listener that listens on the specified address.
+  static std::shared_ptr<Listener> create_(
       std::shared_ptr<Loop> loop,
       const Sockaddr& addr);
 
-  void start();
+  // Called to initialize member fields that need `shared_from_this`.
+  void init_();
 
-  class Impl : public std::enable_shared_from_this<Impl> {
-   public:
-    Impl(std::shared_ptr<Loop>, std::shared_ptr<TCPHandle>);
-
-    void startFromLoop();
-
-    void closeFromLoop();
-
-    void closeCallbackFromLoop();
-
-    void acceptFromLoop(accept_callback_fn fn);
-
-    std::string addrFromLoop() const;
-
-    std::shared_ptr<Loop> loop_;
-    std::shared_ptr<TCPHandle> handle_;
-    // Once an accept callback fires, it becomes disarmed and must be rearmed.
-    // Any firings that occur while the callback is disarmed are stashed and
-    // triggered as soon as it's rearmed. With libuv we don't have the ability
-    // to disable the lower-level callback when the user callback is disarmed.
-    // So we'll keep getting notified of new connections even if we don't know
-    // what to do with them and don't want them. Thus we must store them
-    // somewhere. This is what RearmableCallback is for.
-    RearmableCallbackWithOwnLock<
-        accept_callback_fn,
-        const Error&,
-        std::shared_ptr<Connection>>
-        callback_;
-
-    // This function is called by the event loop if the listening socket can
-    // accept a new connection. Status is 0 in case of success, < 0
-    // otherwise. See `uv_connection_cb` for more information.
-    void connectionCallbackFromLoop(int status);
-
-    // By having the instance store a shared_ptr to itself we create a reference
-    // cycle which will "leak" the instance. This allows us to detach its
-    // lifetime from the connection and sync it with the TCPHandle's life cycle.
-    std::shared_ptr<Impl> leak_;
-  };
+  // All the logic resides in an "implementation" class. The lifetime of these
+  // objects is detached from the lifetime of the listener, and is instead
+  // attached to the lifetime of the underlying libuv handle. Any operation on
+  // these implementation objects must be performed from within the libuv event
+  // loop thread, thus all the listeners's operations do is schedule the
+  // equivalent call on the implementation by deferring to the loop.
+  class Impl;
 
   std::shared_ptr<Loop> loop_;
   std::shared_ptr<Impl> impl_;
