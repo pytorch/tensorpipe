@@ -6,3 +6,4 @@
 
 add_library(tensorpipe_intra_process intra_process.cc)
 target_link_libraries(tensorpipe_intra_process tensorpipe)
+target_compile_definitions(tensorpipe_intra_process INTERFACE TP_ENABLE_INTRAP)
