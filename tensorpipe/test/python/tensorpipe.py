@@ -16,7 +16,6 @@ class TestTensorpipe(unittest.TestCase):
         context = tp.Context()
         context.register_transport(0, "tcp", tp.UvTransport())
         context.register_channel(0, "basic", tp.BasicChannel())
-        context.register_channel(-1, "intra_process", tp.IntraProcessChannel())
 
         # We must keep a reference to it, or it will be destroyed early.
         server_pipe = None

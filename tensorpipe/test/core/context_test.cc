@@ -7,7 +7,6 @@
  */
 
 #include <tensorpipe/channel/basic/basic.h>
-#include <tensorpipe/channel/intra_process/intra_process.h>
 #include <tensorpipe/core/context.h>
 #include <tensorpipe/core/listener.h>
 #include <tensorpipe/core/pipe.h>
@@ -124,8 +123,6 @@ TEST(Context, ClientPingSerial) {
       0, "basic", std::make_shared<channel::basic::BasicChannelFactory>());
   context->registerChannelFactory(
       -1,
-      "intra_process",
-      std::make_shared<channel::intra_process::IntraProcessChannelFactory>());
 
   auto listener =
       Listener::create(context, {createUniqueShmAddr(), "uv://127.0.0.1"});
@@ -205,8 +202,6 @@ TEST(Context, ClientPingInline) {
       0, "basic", std::make_shared<channel::basic::BasicChannelFactory>());
   context->registerChannelFactory(
       -1,
-      "intra_process",
-      std::make_shared<channel::intra_process::IntraProcessChannelFactory>());
 
   auto listener =
       Listener::create(context, {createUniqueShmAddr(), "uv://127.0.0.1"});
@@ -281,8 +276,6 @@ TEST(Context, ServerPingPongTwice) {
       0, "basic", std::make_shared<channel::basic::BasicChannelFactory>());
   context->registerChannelFactory(
       -1,
-      "intra_process",
-      std::make_shared<channel::intra_process::IntraProcessChannelFactory>());
 
   auto listener =
       Listener::create(context, {createUniqueShmAddr(), "uv://127.0.0.1"});
