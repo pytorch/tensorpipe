@@ -22,7 +22,6 @@ class CMakeBuild(build_ext):
     def build_extension(self, ext):
         if not os.path.exists(self.build_temp):
             os.makedirs(self.build_temp)
-        print(self.build_temp)
 
         source_path = Path(__file__).parent.resolve()
         output_path = Path(self.get_ext_fullpath(ext.name)).parent.resolve()
