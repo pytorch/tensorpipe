@@ -6,12 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <tensorpipe/channel/basic/basic.h>
-#include <tensorpipe/core/context.h>
-#include <tensorpipe/core/listener.h>
-#include <tensorpipe/core/pipe.h>
-#include <tensorpipe/transport/shm/context.h>
-#include <tensorpipe/transport/uv/context.h>
+#include <tensorpipe/tensorpipe.h>
 
 #include <cstring>
 #include <exception>
@@ -104,6 +99,17 @@ std::string createUniqueShmAddr() {
   return ss.str();
 }
 
+std::vector<std::string> genUrls() {
+  std::vector<std::string> res;
+
+#ifdef TP_ENABLE_SHM
+  res.push_back(createUniqueShmAddr());
+#endif // TP_ENABLE_SHM
+  res.push_back("uv://127.0.0.1");
+
+  return res;
+}
+
 } // namespace
 
 TEST(Context, ClientPingSerial) {
@@ -117,13 +123,14 @@ TEST(Context, ClientPingSerial) {
 
   context->registerTransport(
       0, "uv", std::make_shared<transport::uv::Context>());
+#ifdef TP_ENABLE_SHM
   context->registerTransport(
       -1, "shm", std::make_shared<transport::shm::Context>());
+#endif // TP_ENABLE_SHM
   context->registerChannelFactory(
       0, "basic", std::make_shared<channel::basic::BasicChannelFactory>());
 
-  auto listener =
-      Listener::create(context, {createUniqueShmAddr(), "uv://127.0.0.1"});
+  auto listener = Listener::create(context, genUrls());
 
   auto clientPipe = Pipe::create(context, listener->url("uv"));
 
@@ -194,13 +201,14 @@ TEST(Context, ClientPingInline) {
 
   context->registerTransport(
       0, "uv", std::make_shared<transport::uv::Context>());
+#ifdef TP_ENABLE_SHM
   context->registerTransport(
       -1, "shm", std::make_shared<transport::shm::Context>());
+#endif // TP_ENABLE_SHM
   context->registerChannelFactory(
       0, "basic", std::make_shared<channel::basic::BasicChannelFactory>());
 
-  auto listener =
-      Listener::create(context, {createUniqueShmAddr(), "uv://127.0.0.1"});
+  auto listener = Listener::create(context, genUrls());
 
   std::shared_ptr<Pipe> serverPipe;
   listener->accept([&serverPipe, &donePromise, &buffers](
@@ -266,13 +274,14 @@ TEST(Context, ServerPingPongTwice) {
 
   context->registerTransport(
       0, "uv", std::make_shared<transport::uv::Context>());
+#ifdef TP_ENABLE_SHM
   context->registerTransport(
       -1, "shm", std::make_shared<transport::shm::Context>());
+#endif // TP_ENABLE_SHM
   context->registerChannelFactory(
       0, "basic", std::make_shared<channel::basic::BasicChannelFactory>());
 
-  auto listener =
-      Listener::create(context, {createUniqueShmAddr(), "uv://127.0.0.1"});
+  auto listener = Listener::create(context, genUrls());
 
   std::shared_ptr<Pipe> serverPipe;
   int numPingsGoneThrough = 0;

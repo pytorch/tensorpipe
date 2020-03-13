@@ -4,14 +4,13 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# TODO: Re-enable this once it does not rely on shm which is Linux only.
-if(TP_ENABLE_SHM)
-  add_tensorpipe_test(core_context_test context_test.cc)
-  target_link_libraries(
-    core_context_test
-    tensorpipe
-    tensorpipe_shm
-    tensorpipe_uv
-    tensorpipe_basic
+add_tensorpipe_test(core_context_test context_test.cc)
+target_link_libraries(
+  core_context_test
+  tensorpipe
+  tensorpipe_uv
+  tensorpipe_basic
   )
+if(TP_ENABLE_SHM)
+  target_link_libraries(core_context_test tensorpipe_shm)
 endif()
