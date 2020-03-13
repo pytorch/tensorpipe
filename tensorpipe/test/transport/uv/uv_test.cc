@@ -10,6 +10,10 @@
 
 #include <tensorpipe/test/transport/transport_test.h>
 
+namespace {
+
 UVTransportTestHelper helper;
+
+} // namespace
 
 INSTANTIATE_TEST_CASE_P(Uv, TransportTest, ::testing::Values(&helper));

@@ -8,15 +8,10 @@
 
 #include <tensorpipe/benchmark/measurements.h>
 #include <tensorpipe/benchmark/options.h>
-#include <tensorpipe/common/defs.h>
-#ifdef TP_ENABLE_SHM
-#include <tensorpipe/transport/shm/context.h>
-#endif // TP_ENABLE_SHM
-#include <tensorpipe/transport/uv/context.h>
+#include <tensorpipe/tensorpipe.h>
 
 using namespace tensorpipe;
 using namespace tensorpipe::benchmark;
-using namespace tensorpipe::transport;
 
 struct Data {
   std::unique_ptr<uint8_t[]> expected;
@@ -58,7 +53,7 @@ static std::unique_ptr<uint8_t[]> createData(const int chunkBytes) {
 }
 
 static void serverPongPingNonBlock(
-    std::shared_ptr<Connection> conn,
+    std::shared_ptr<transport::Connection> conn,
     int& ioNum,
     std::promise<void>& doneProm,
     Data& data,
@@ -98,26 +93,31 @@ static void runServer(const Options& options) {
   Measurements measurements;
   measurements.reserve(options.ioNum);
 
-  std::shared_ptr<Context> context;
+  std::shared_ptr<transport::Context> context;
 #ifdef TP_ENABLE_SHM
   if (options.transport == "shm") {
-    context = std::make_shared<shm::Context>();
-  } else
+    context = std::make_shared<transport::shm::Context>();
+  }
 #endif // TP_ENABLE_SHM
-      if (options.transport == "uv") {
-    context = std::make_shared<uv::Context>();
-  } else {
+#ifdef TP_ENABLE_UV
+  if (options.transport == "uv") {
+    context = std::make_shared<transport::uv::Context>();
+  }
+#endif // TP_ENABLE_UV
+
+  if (context == nullptr) {
     // Should never be here
     abort();
   }
 
-  std::promise<std::shared_ptr<Connection>> connProm;
-  std::shared_ptr<Listener> listener = context->listen(addr);
-  listener->accept([&](const Error& error, std::shared_ptr<Connection> conn) {
-    TP_THROW_ASSERT_IF(error) << error.what();
-    connProm.set_value(std::move(conn));
-  });
-  std::shared_ptr<Connection> conn = connProm.get_future().get();
+  std::promise<std::shared_ptr<transport::Connection>> connProm;
+  std::shared_ptr<transport::Listener> listener = context->listen(addr);
+  listener->accept(
+      [&](const Error& error, std::shared_ptr<transport::Connection> conn) {
+        TP_THROW_ASSERT_IF(error) << error.what();
+        connProm.set_value(std::move(conn));
+      });
+  std::shared_ptr<transport::Connection> conn = connProm.get_future().get();
 
   std::promise<void> doneProm;
   serverPongPingNonBlock(std::move(conn), ioNum, doneProm, data, measurements);
@@ -127,7 +127,7 @@ static void runServer(const Options& options) {
 }
 
 static void clientPingPongNonBlock(
-    std::shared_ptr<Connection> conn,
+    std::shared_ptr<transport::Connection> conn,
     int& ioNum,
     std::promise<void>& doneProm,
     Data& data,
@@ -169,19 +169,22 @@ static void runClient(const Options& options) {
   Measurements measurements;
   measurements.reserve(options.ioNum);
 
-  std::shared_ptr<Context> context;
+  std::shared_ptr<transport::Context> context;
 #ifdef TP_ENABLE_SHM
   if (options.transport == "shm") {
-    context = std::make_shared<shm::Context>();
-  } else
+    context = std::make_shared<transport::shm::Context>();
+  }
 #endif // TP_ENABLE_SHM
-      if (options.transport == "uv") {
-    context = std::make_shared<uv::Context>();
-  } else {
+#ifdef TP_ENABLE_UV
+  if (options.transport == "uv") {
+    context = std::make_shared<transport::uv::Context>();
+  }
+#endif // TP_ENABLE_UV
+  if (context == nullptr) {
     // Should never be here
     abort();
   }
-  std::shared_ptr<Connection> conn = context->connect(addr);
+  std::shared_ptr<transport::Connection> conn = context->connect(addr);
 
   std::promise<void> doneProm;
   clientPingPongNonBlock(std::move(conn), ioNum, doneProm, data, measurements);

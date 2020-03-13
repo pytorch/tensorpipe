@@ -19,6 +19,7 @@
 #include <tensorpipe/common/optional.h>
 #include <tensorpipe/common/queue.h>
 #include <tensorpipe/common/system.h>
+#include <tensorpipe/config.h>
 #include <tensorpipe/core/context.h>
 #include <tensorpipe/core/error.h>
 #include <tensorpipe/core/listener.h>

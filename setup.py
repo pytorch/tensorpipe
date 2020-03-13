@@ -36,7 +36,7 @@ class CMakeBuild(build_ext):
             "-DCMAKE_C_COMPILER=clang-6.0",
             "-DCMAKE_CXX_COMPILER=clang++-6.0",
             "-DCMAKE_POSITION_INDEPENDENT_CODE=true",
-            "-DBUILD_PYTHON_MODULE=true",
+            "-DTP_BUILD_PYTHON=ON",
         ]
         make_cmd = ["make", "-j", "pytensorpipe"]
 

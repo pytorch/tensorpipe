@@ -121,8 +121,10 @@ TEST(Context, ClientPingSerial) {
 
   auto context = Context::create();
 
+#ifdef TP_ENABLE_UV
   context->registerTransport(
       0, "uv", std::make_shared<transport::uv::Context>());
+#endif // TP_ENABLE_UV
 #ifdef TP_ENABLE_SHM
   context->registerTransport(
       -1, "shm", std::make_shared<transport::shm::Context>());
@@ -199,8 +201,10 @@ TEST(Context, ClientPingInline) {
 
   auto context = Context::create();
 
+#ifdef TP_ENABLE_UV
   context->registerTransport(
       0, "uv", std::make_shared<transport::uv::Context>());
+#endif // TP_ENABLE_UV
 #ifdef TP_ENABLE_SHM
   context->registerTransport(
       -1, "shm", std::make_shared<transport::shm::Context>());
@@ -272,8 +276,10 @@ TEST(Context, ServerPingPongTwice) {
 
   auto context = Context::create();
 
+#ifdef TP_ENABLE_UV
   context->registerTransport(
       0, "uv", std::make_shared<transport::uv::Context>());
+#endif // TP_ENABLE_UV
 #ifdef TP_ENABLE_SHM
   context->registerTransport(
       -1, "shm", std::make_shared<transport::shm::Context>());

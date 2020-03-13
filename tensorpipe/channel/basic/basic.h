@@ -10,10 +10,10 @@
 
 #include <list>
 
+#include <tensorpipe/channel/basic/basic.pb.h>
 #include <tensorpipe/channel/channel.h>
 #include <tensorpipe/common/callback.h>
 #include <tensorpipe/common/error.h>
-#include <tensorpipe/proto/channel/basic.pb.h>
 
 namespace tensorpipe {
 namespace channel {

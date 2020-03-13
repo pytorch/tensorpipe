@@ -10,7 +10,7 @@
 
 #include <array>
 
-#include <tensorpipe/proto/core.pb.h>
+#include <tensorpipe/core/core.pb.h>
 
 using namespace tensorpipe;
 using namespace tensorpipe::transport;

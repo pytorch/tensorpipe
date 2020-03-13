@@ -6,12 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <tensorpipe/test/channel/basic/basic_test.h>
+#pragma once
 
-namespace {
-
-BasicChannelTestHelper helper;
-
-} // namespace
-
-INSTANTIATE_TEST_CASE_P(Basic, ChannelTest, ::testing::Values(&helper));
+#cmakedefine TP_ENABLE_SHM
+#cmakedefine TP_ENABLE_UV

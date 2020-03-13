@@ -22,6 +22,10 @@ std::string createUniqueShmAddr() {
   return ss.str();
 }
 
+namespace {
+
 SHMTransportTestHelper helper;
+
+} // namespace
 
 INSTANTIATE_TEST_CASE_P(Shm, TransportTest, ::testing::Values(&helper));

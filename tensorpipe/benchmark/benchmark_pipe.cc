@@ -8,14 +8,7 @@
 
 #include <tensorpipe/benchmark/measurements.h>
 #include <tensorpipe/benchmark/options.h>
-#include <tensorpipe/common/defs.h>
-#include <tensorpipe/core/context.h>
-#include <tensorpipe/core/listener.h>
-#include <tensorpipe/core/pipe.h>
-#ifdef TP_ENABLE_SHM
-#include <tensorpipe/transport/shm/context.h>
-#endif // TP_ENABLE_SHM
-#include <tensorpipe/transport/uv/context.h>
+#include <tensorpipe/tensorpipe.h>
 
 using namespace tensorpipe;
 using namespace tensorpipe::benchmark;

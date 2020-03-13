@@ -14,9 +14,9 @@
 #include <tensorpipe/common/callback.h>
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/error_macros.h>
+#include <tensorpipe/core/core.pb.h>
 #include <tensorpipe/core/error.h>
 #include <tensorpipe/core/listener.h>
-#include <tensorpipe/proto/core.pb.h>
 
 namespace tensorpipe {
 

@@ -16,8 +16,8 @@
 #include <tensorpipe/common/error.h>
 #include <tensorpipe/common/optional.h>
 #include <tensorpipe/core/context.h>
+#include <tensorpipe/core/core.pb.h>
 #include <tensorpipe/core/message.h>
-#include <tensorpipe/proto/core.pb.h>
 #include <tensorpipe/transport/connection.h>
 
 namespace tensorpipe {

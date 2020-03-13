@@ -10,7 +10,11 @@ cmake_minimum_required(VERSION 3.10 FATAL_ERROR)
 project(tensorpipe C CXX)
 set(CMAKE_CXX_STANDARD 14)
 
+list(APPEND CMAKE_PREFIX_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
+
+option(TP_BUILD_PYTHON "Build python module" OFF)
 option(TP_ENABLE_SHM "Enable shm transport" $<BOOL:LINUX>)
+option(TP_ENABLE_UV "Enable uv transport" ON)
 
 # Use CMAKE_<LANG>_COMPILER_LAUNCHER if available.
 find_program(SCCACHE_EXECUTABLE sccache)
@@ -47,8 +51,10 @@ add_subdirectory(third_party/backward-cpp EXCLUDE_FROM_ALL)
 if(BUILD_TESTING)
   add_subdirectory(third_party/googletest EXCLUDE_FROM_ALL)
 endif()
-add_subdirectory(third_party/libuv EXCLUDE_FROM_ALL)
-if(BUILD_PYTHON_MODULE)
+if(TP_ENABLE_UV)
+  add_subdirectory(third_party/libuv EXCLUDE_FROM_ALL)
+endif()
+if(TP_BUILD_PYTHON)
   add_subdirectory(third_party/pybind11 EXCLUDE_FROM_ALL)
 endif()
 
