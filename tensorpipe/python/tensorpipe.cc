@@ -22,7 +22,9 @@
 #include <tensorpipe/core/listener.h>
 #include <tensorpipe/core/message.h>
 #include <tensorpipe/core/pipe.h>
+#ifdef TP_ENABLE_SHM
 #include <tensorpipe/transport/shm/context.h>
+#endif // TP_ENABLE_SHM
 #include <tensorpipe/transport/uv/context.h>
 
 namespace py = pybind11;
@@ -356,9 +358,12 @@ PYBIND11_MODULE(pytensorpipe, module) {
   transport_class_<tensorpipe::transport::uv::Context> uvTransport(
       module, "UvTransport");
   uvTransport.def(py::init<>());
+
+#ifdef TP_ENABLE_SHM
   transport_class_<tensorpipe::transport::shm::Context> shmTransport(
       module, "ShmTransport");
   shmTransport.def(py::init<>());
+#endif // TP_ENABLE_SHM
 
   context.def(
       "register_transport",

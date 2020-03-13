@@ -21,36 +21,26 @@
 
 #include <gtest/gtest.h>
 
-using namespace tensorpipe;
 using namespace tensorpipe::util::ringbuffer;
 using namespace tensorpipe::transport::shm;
-
-struct MockExtraData {
-  int dummy_data;
-};
-
-using TRingBuffer = RingBuffer<MockExtraData>;
-using TProducer = Producer<MockExtraData>;
-using TConsumer = Consumer<MockExtraData>;
 
 // Same process produces and consumes share memory through different mappings.
 TEST(ShmRingBuffer, SameProducerConsumer) {
   // This must stay alive for the file descriptors to remain open.
-  std::shared_ptr<TRingBuffer> producer_rb;
+  std::shared_ptr<RingBuffer> producer_rb;
   int header_fd = -1;
   int data_fd = -1;
   {
     // Producer part.
     // Buffer large enough to fit all data and persistent
     // (needs to be unlinked up manually).
-    std::tie(header_fd, data_fd, producer_rb) =
-        shm::create<TRingBuffer>(256 * 1024);
-    TProducer prod{producer_rb};
+    std::tie(header_fd, data_fd, producer_rb) = shm::create(256 * 1024);
+    Producer prod{producer_rb};
 
     // Producer loop. It all fits in buffer.
     int i = 0;
     while (i < 2000) {
-      ssize_t ret = prod.write(i);
+      ssize_t ret = prod.write(&i, sizeof(i));
       EXPECT_EQ(ret, sizeof(i));
       ++i;
     }
@@ -59,13 +49,13 @@ TEST(ShmRingBuffer, SameProducerConsumer) {
   {
     // Consumer part.
     // Map file again (to a different address) and consume it.
-    auto rb = shm::load<TRingBuffer>(header_fd, data_fd);
-    TConsumer cons{rb};
+    auto rb = shm::load(header_fd, data_fd);
+    Consumer cons{rb};
 
     int i = 0;
     while (i < 2000) {
       int value;
-      ssize_t ret = cons.copy(value);
+      ssize_t ret = cons.copy(sizeof(value), &value);
       EXPECT_EQ(ret, sizeof(value));
       EXPECT_EQ(value, i);
       ++i;
@@ -98,9 +88,9 @@ TEST(ShmRingBuffer, SingleProducer_SingleConsumer) {
     {
       int header_fd;
       int data_fd;
-      std::shared_ptr<TRingBuffer> rb;
-      std::tie(header_fd, data_fd, rb) = shm::create<TRingBuffer>(1024);
-      TProducer prod{rb};
+      std::shared_ptr<RingBuffer> rb;
+      std::tie(header_fd, data_fd, rb) = shm::create(1024);
+      Producer prod{rb};
 
       {
         auto err = sendFdsToSocket(sock_fds[0], header_fd, data_fd);
@@ -111,7 +101,7 @@ TEST(ShmRingBuffer, SingleProducer_SingleConsumer) {
 
       int i = 0;
       while (i < 2000) {
-        ssize_t ret = prod.write(i);
+        ssize_t ret = prod.write(&i, sizeof(i));
         if (ret == -ENOSPC) {
           std::this_thread::yield();
           continue;
@@ -144,13 +134,13 @@ TEST(ShmRingBuffer, SingleProducer_SingleConsumer) {
       TP_THROW_ASSERT() << err.what();
     }
   }
-  auto rb = shm::load<TRingBuffer>(header_fd, data_fd);
-  TConsumer cons{rb};
+  auto rb = shm::load(header_fd, data_fd);
+  Consumer cons{rb};
 
   int i = 0;
   while (i < 2000) {
     int value;
-    ssize_t ret = cons.copy(value);
+    ssize_t ret = cons.copy(sizeof(value), &value);
     if (ret == -ENODATA) {
       std::this_thread::yield();
       continue;

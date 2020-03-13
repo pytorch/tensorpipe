@@ -8,7 +8,6 @@ add_executable(benchmark_transport benchmark_transport.cc options.cc)
 target_link_libraries(
   benchmark_transport
   tensorpipe
-  tensorpipe_shm
   tensorpipe_uv
   )
 
@@ -16,6 +15,10 @@ add_executable(benchmark_pipe benchmark_pipe.cc options.cc)
 target_link_libraries(
   benchmark_pipe
   tensorpipe
-  tensorpipe_shm
   tensorpipe_uv
   )
+
+if(TP_ENABLE_SHM)
+  target_link_libraries(benchmark_transport tensorpipe_shm)
+  target_link_libraries(benchmark_pipe tensorpipe_shm)
+endif()

@@ -42,7 +42,7 @@ class Loop final : public std::enable_shared_from_this<Loop> {
 
   // Prefer using defer over run, when you don't need to wait for the result.
   template <typename F>
-  void run(F&& fn) {
+  void runInLoop(F&& fn) {
     // When called from the event loop thread itself (e.g., from a callback),
     // deferring would cause a deadlock because the given callable can only be
     // run when the loop is allowed to proceed. On the other hand, it means it
@@ -56,7 +56,7 @@ class Loop final : public std::enable_shared_from_this<Loop> {
       // we use it from a std::function which must be copyable.
       auto promise = std::make_shared<std::promise<void>>();
       auto future = promise->get_future();
-      defer([promise, fn{std::forward<F>(fn)}]() {
+      deferToLoop([promise, fn{std::forward<F>(fn)}]() {
         try {
           fn();
           promise->set_value();
@@ -68,39 +68,14 @@ class Loop final : public std::enable_shared_from_this<Loop> {
     }
   }
 
-  // Use this for callbacks that need to run immediately (cannot be deferred)
-  // but be aware that you can only use this from within a callback that is
-  // already being executed on the loop.
-  template <typename F>
-  void runFromLoop(F&& fn) {
-    TP_THROW_ASSERT_IF(std::this_thread::get_id() != thread_.get_id())
-        << "Loop::runFromLoop was called from a thread other than the event "
-        << "loop, which means the callback cannot be run immediately because "
-        << "libuv isn't thread-safe (consider Loop::defer)";
-    fn();
-  }
+  void deferToLoop(std::function<void()> fn);
 
-  void defer(std::function<void()> fn);
+  inline bool inLoopThread() {
+    return std::this_thread::get_id() == thread_.get_id();
+  }
 
   uv_loop_t* ptr() {
     return loop_.get();
-  }
-
-  template <typename T, typename... Args>
-  std::shared_ptr<T> createHandle(Args&&... args) {
-    auto handle =
-        std::make_shared<T>(shared_from_this(), std::forward<Args>(args)...);
-    handle->leak();
-    handle->init();
-    return handle;
-  }
-
-  template <typename T, typename... Args>
-  std::shared_ptr<T> createRequest(Args&&... args) {
-    auto request =
-        std::make_shared<T>(shared_from_this(), std::forward<Args>(args)...);
-    request->leak();
-    return request;
   }
 
  private:
@@ -124,7 +99,11 @@ class Loop final : public std::enable_shared_from_this<Loop> {
 
   // Companion function to uv__async_cb as member function
   // on the loop class.
-  void runFunctions();
+  void runFunctionsFromLoop();
+
+  void closeAllHandlesFromLoop();
+
+  static void closeOneHandleFromLoop(uv_handle_t* handle, void* /* unused */);
 };
 
 } // namespace uv

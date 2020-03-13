@@ -4,10 +4,13 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-cmake_minimum_required(VERSION 3.1 FATAL_ERROR)
+# CMake 3.10 is the version available in Ubuntu 18.04.
+cmake_minimum_required(VERSION 3.10 FATAL_ERROR)
 
 project(tensorpipe C CXX)
 set(CMAKE_CXX_STANDARD 14)
+
+option(TP_ENABLE_SHM "Enable shm transport" $<BOOL:LINUX>)
 
 # Use CMAKE_<LANG>_COMPILER_LAUNCHER if available.
 find_program(SCCACHE_EXECUTABLE sccache)
@@ -36,9 +39,14 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   endif()
 endif()
 
+# CTest must be included in the top level to enable `make test` target.
+include(CTest)
+
 # Make dependencies available (but don't build by default)
 add_subdirectory(third_party/backward-cpp EXCLUDE_FROM_ALL)
-add_subdirectory(third_party/googletest EXCLUDE_FROM_ALL)
+if(BUILD_TESTING)
+  add_subdirectory(third_party/googletest EXCLUDE_FROM_ALL)
+endif()
 add_subdirectory(third_party/libuv EXCLUDE_FROM_ALL)
 if(BUILD_PYTHON_MODULE)
   add_subdirectory(third_party/pybind11 EXCLUDE_FROM_ALL)

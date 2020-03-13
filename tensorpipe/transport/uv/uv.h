@@ -32,8 +32,24 @@ namespace uv {
 // up and can be safely destructed (see `leak` and `unleak` functions).
 template <typename T, typename U>
 class BaseResource : public std::enable_shared_from_this<T> {
+ protected:
+  // Use the passkey idiom to allow make_shared to call what should be a private
+  // constructor. See https://abseil.io/tips/134 for more information.
+  struct ConstructorToken {};
+
  public:
-  explicit BaseResource(std::shared_ptr<Loop> loop) : loop_(std::move(loop)) {}
+  template <typename... Args>
+  static std::shared_ptr<T> create(std::shared_ptr<Loop> loop, Args&&... args) {
+    auto resource = std::make_shared<T>(
+        ConstructorToken(), std::move(loop), std::forward<Args>(args)...);
+    resource->leak();
+    return resource;
+  }
+
+  explicit BaseResource(
+      ConstructorToken /* unused */,
+      std::shared_ptr<Loop> loop)
+      : loop_(std::move(loop)) {}
 
  protected:
   // Refer to the loop to keep it alive.
@@ -59,12 +75,21 @@ template <typename T, typename U>
 class BaseHandle : public BaseResource<T, U> {
   static void uv__close_cb(uv_handle_t* handle) {
     T& ref = *reinterpret_cast<T*>(handle->data);
+    if (ref.closeCallback_.has_value()) {
+      ref.closeCallback_.value()();
+    }
     ref.unleak();
   }
 
  public:
-  explicit BaseHandle(std::shared_ptr<Loop> loop)
-      : BaseResource<T, U>::BaseResource(std::move(loop)) {
+  using TCloseCallback = std::function<void()>;
+
+  explicit BaseHandle(
+      typename BaseResource<T, U>::ConstructorToken /* unused */,
+      std::shared_ptr<Loop> loop)
+      : BaseResource<T, U>::BaseResource(
+            typename BaseResource<T, U>::ConstructorToken(),
+            std::move(loop)) {
     handle_.data = this;
   }
 
@@ -74,23 +99,34 @@ class BaseHandle : public BaseResource<T, U> {
     return &handle_;
   }
 
-  virtual void close() {
-    this->loop_->defer(runIfAlive(*this, std::function<void(T&)>([](T& handle) {
-      uv_close(
-          reinterpret_cast<uv_handle_t*>(&handle.handle_), handle.uv__close_cb);
-    })));
+  void armCloseCallbackFromLoop(TCloseCallback fn) {
+    TP_DCHECK(this->loop_->inLoopThread());
+    TP_THROW_ASSERT_IF(closeCallback_.has_value());
+    closeCallback_ = std::move(fn);
+  }
+
+  void closeFromLoop() {
+    if (!uv_is_closing(reinterpret_cast<uv_handle_t*>(ptr()))) {
+      uv_close(reinterpret_cast<uv_handle_t*>(ptr()), uv__close_cb);
+    }
   }
 
  protected:
   // Underlying libuv handle.
   U handle_;
+
+  optional<TCloseCallback> closeCallback_;
 };
 
 template <typename T, typename U>
 class BaseRequest : public BaseResource<T, U> {
  public:
-  explicit BaseRequest(std::shared_ptr<Loop> loop)
-      : BaseResource<T, U>::BaseResource(std::move(loop)) {
+  explicit BaseRequest(
+      typename BaseResource<T, U>::ConstructorToken /* unused */,
+      std::shared_ptr<Loop> loop)
+      : BaseResource<T, U>::BaseResource(
+            typename BaseResource<T, U>::ConstructorToken(),
+            std::move(loop)) {
     request_.data = this;
   }
 
@@ -113,8 +149,13 @@ class WriteRequest final : public BaseRequest<WriteRequest, uv_write_t> {
  public:
   using TWriteCallback = std::function<void(int status)>;
 
-  WriteRequest(std::shared_ptr<Loop> loop, TWriteCallback fn)
-      : BaseRequest<WriteRequest, uv_write_t>(std::move(loop)),
+  WriteRequest(
+      ConstructorToken /* unused */,
+      std::shared_ptr<Loop> loop,
+      TWriteCallback fn)
+      : BaseRequest<WriteRequest, uv_write_t>(
+            ConstructorToken(),
+            std::move(loop)),
         fn_(std::move(fn)) {}
 
   uv_write_cb callback() {
@@ -169,82 +210,66 @@ class StreamHandle : public BaseHandle<T, U> {
 
   // TODO Split this into a armConnectionCallback, a listenStart and a
   // listenStop method, to propagate the backpressure to the clients.
-  void listen(TConnectionCallback connectionCallback) {
+  void listenFromLoop(TConnectionCallback connectionCallback) {
+    TP_DCHECK(this->loop_->inLoopThread());
     TP_THROW_ASSERT_IF(connectionCallback_.has_value());
     connectionCallback_ = std::move(connectionCallback);
-
-    this->loop_->defer(runIfAlive(*this, std::function<void(T&)>([](T& handle) {
-      auto rv = uv_listen(
-          reinterpret_cast<uv_stream_t*>(handle.ptr()),
-          kBacklog,
-          handle.uv__connection_cb);
-      TP_THROW_UV_IF(rv < 0, rv);
-    })));
+    auto rv = uv_listen(
+        reinterpret_cast<uv_stream_t*>(this->ptr()),
+        kBacklog,
+        uv__connection_cb);
+    TP_THROW_UV_IF(rv < 0, rv);
   }
 
   template <typename V>
-  void accept(std::shared_ptr<V> other, TAcceptCallback acceptCallback) {
-    this->loop_->defer(runIfAlive(
-        *this,
-        std::function<void(T&)>(
-            [otherPtr{other->ptr()},
-             acceptCallback{std::move(acceptCallback)}](T& handle) mutable {
-              auto status = uv_accept(
-                  reinterpret_cast<uv_stream_t*>(handle.ptr()),
-                  reinterpret_cast<uv_stream_t*>(otherPtr));
-              acceptCallback(status);
-            })));
+  void acceptFromLoop(std::shared_ptr<V> other) {
+    TP_DCHECK(this->loop_->inLoopThread());
+    auto rv = uv_accept(
+        reinterpret_cast<uv_stream_t*>(this->ptr()),
+        reinterpret_cast<uv_stream_t*>(other->ptr()));
+    TP_THROW_UV_IF(rv < 0, rv);
   }
 
-  void armAllocCallback(TAllocCallback fn) {
+  void armAllocCallbackFromLoop(TAllocCallback fn) {
+    TP_DCHECK(this->loop_->inLoopThread());
     TP_THROW_ASSERT_IF(allocCallback_.has_value());
     allocCallback_ = std::move(fn);
   }
 
-  void armReadCallback(TReadCallback fn) {
+  void armReadCallbackFromLoop(TReadCallback fn) {
+    TP_DCHECK(this->loop_->inLoopThread());
     TP_THROW_ASSERT_IF(readCallback_.has_value());
     readCallback_ = std::move(fn);
   }
 
-  void readStart() {
+  void readStartFromLoop() {
+    TP_DCHECK(this->loop_->inLoopThread());
     TP_THROW_ASSERT_IF(!allocCallback_.has_value());
     TP_THROW_ASSERT_IF(!readCallback_.has_value());
-    this->loop_->defer(runIfAlive(*this, std::function<void(T&)>([](T& handle) {
-      auto rv = uv_read_start(
-          reinterpret_cast<uv_stream_t*>(handle.ptr()),
-          handle.uv__alloc_cb,
-          handle.uv__read_cb);
-      TP_THROW_UV_IF(rv < 0, rv);
-    })));
+    auto rv = uv_read_start(
+        reinterpret_cast<uv_stream_t*>(this->ptr()), uv__alloc_cb, uv__read_cb);
+    TP_THROW_UV_IF(rv < 0, rv);
   }
 
-  void readStop() {
-    // We call uv_read_stop immediately because if we deferred it then more
-    // alloc or read callbacks might fire when the user didn't expect them.
-    this->loop_->runFromLoop([&]() {
-      auto rv = uv_read_stop(reinterpret_cast<uv_stream_t*>(this->ptr()));
-      TP_THROW_UV_IF(rv < 0, rv);
-    });
+  void readStopFromLoop() {
+    TP_DCHECK(this->loop_->inLoopThread());
+    auto rv = uv_read_stop(reinterpret_cast<uv_stream_t*>(this->ptr()));
+    TP_THROW_UV_IF(rv < 0, rv);
   }
 
-  void write(
+  void writeFromLoop(
       const uv_buf_t bufs[],
       unsigned int nbufs,
       WriteRequest::TWriteCallback fn) {
-    auto request =
-        this->loop_->template createRequest<WriteRequest>(std::move(fn));
-    this->loop_->defer(runIfAlive(
-        *this,
-        std::function<void(T&)>(
-            [bufs, nbufs, request{std::move(request)}](T& handle) {
-              auto rv = uv_write(
-                  request->ptr(),
-                  reinterpret_cast<uv_stream_t*>(handle.ptr()),
-                  bufs,
-                  nbufs,
-                  request->callback());
-              TP_THROW_UV_IF(rv < 0, rv);
-            })));
+    TP_DCHECK(this->loop_->inLoopThread());
+    auto request = WriteRequest::create(this->loop_, std::move(fn));
+    auto rv = uv_write(
+        request->ptr(),
+        reinterpret_cast<uv_stream_t*>(this->ptr()),
+        bufs,
+        nbufs,
+        request->callback());
+    TP_THROW_UV_IF(rv < 0, rv);
   }
 
  protected:
@@ -263,8 +288,13 @@ class ConnectRequest : public BaseRequest<ConnectRequest, uv_connect_t> {
  public:
   using TConnectCallback = std::function<void(int status)>;
 
-  ConnectRequest(std::shared_ptr<Loop> loop, TConnectCallback fn)
-      : BaseRequest<ConnectRequest, uv_connect_t>(std::move(loop)),
+  ConnectRequest(
+      BaseResource<ConnectRequest, uv_connect_t>::ConstructorToken /* unused */,
+      std::shared_ptr<Loop> loop,
+      TConnectCallback fn)
+      : BaseRequest<ConnectRequest, uv_connect_t>(
+            BaseResource<ConnectRequest, uv_connect_t>::ConstructorToken(),
+            std::move(loop)),
         fn_(std::move(fn)) {}
 
   uv_connect_cb callback() {
@@ -283,19 +313,17 @@ class TCPHandle : public StreamHandle<TCPHandle, uv_tcp_t> {
  public:
   using StreamHandle<TCPHandle, uv_tcp_t>::StreamHandle;
 
-  void init();
+  void initFromLoop();
 
-  void noDelay(bool enable);
+  void bindFromLoop(const Sockaddr& addr);
 
-  void bind(const Sockaddr& addr);
+  Sockaddr sockNameFromLoop();
 
-  Sockaddr sockName();
+  void connectFromLoop(const Sockaddr& addr);
 
-  Sockaddr peerName();
-
-  void connect(const Sockaddr& addr);
-
-  void connect(const Sockaddr& addr, ConnectRequest::TConnectCallback fn);
+  void connectFromLoop(
+      const Sockaddr& addr,
+      ConnectRequest::TConnectCallback fn);
 };
 
 } // namespace uv

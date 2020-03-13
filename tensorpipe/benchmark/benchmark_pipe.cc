@@ -12,7 +12,9 @@
 #include <tensorpipe/core/context.h>
 #include <tensorpipe/core/listener.h>
 #include <tensorpipe/core/pipe.h>
+#ifdef TP_ENABLE_SHM
 #include <tensorpipe/transport/shm/context.h>
+#endif // TP_ENABLE_SHM
 #include <tensorpipe/transport/uv/context.h>
 
 using namespace tensorpipe;
@@ -104,10 +106,13 @@ static void runServer(const Options& options) {
   measurements.reserve(options.ioNum);
 
   std::shared_ptr<Context> context = Context::create();
+#ifdef TP_ENABLE_SHM
   if (options.transport == "shm") {
     context->registerTransport(
         0, "shm", std::make_shared<transport::shm::Context>());
-  } else if (options.transport == "uv") {
+  } else
+#endif // TP_ENABLE_SHM
+      if (options.transport == "uv") {
     context->registerTransport(
         0, "uv", std::make_shared<transport::uv::Context>());
   } else {
@@ -183,10 +188,13 @@ static void runClient(const Options& options) {
   measurements.reserve(options.ioNum);
 
   std::shared_ptr<Context> context = Context::create();
+#ifdef TP_ENABLE_SHM
   if (options.transport == "shm") {
     context->registerTransport(
         0, "shm", std::make_shared<transport::shm::Context>());
-  } else if (options.transport == "uv") {
+  } else
+#endif // TP_ENABLE_SHM
+      if (options.transport == "uv") {
     context->registerTransport(
         0, "uv", std::make_shared<transport::uv::Context>());
   } else {

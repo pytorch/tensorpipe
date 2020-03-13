@@ -20,8 +20,6 @@
 #include <tensorpipe/util/ringbuffer/producer.h>
 #include <tensorpipe/util/ringbuffer/shm.h>
 
-#include <google/protobuf/io/zero_copy_stream.h>
-
 namespace tensorpipe {
 namespace transport {
 namespace shm {
@@ -29,15 +27,6 @@ namespace shm {
 class Connection final : public transport::Connection,
                          public std::enable_shared_from_this<Connection>,
                          public EventHandler {
-  // Extra data stored in ringbuffer header.
-  struct RingBufferExtraData {
-    // Nothing yet.
-  };
-
-  using TRingBuffer = util::ringbuffer::RingBuffer<RingBufferExtraData>;
-  using TProducer = util::ringbuffer::Producer<RingBufferExtraData>;
-  using TConsumer = util::ringbuffer::Consumer<RingBufferExtraData>;
-
   // Use the passkey idiom to allow make_shared to call what should be a private
   // constructor. See https://abseil.io/tips/134 for more information.
   struct ConstructorToken {};
@@ -73,6 +62,10 @@ class Connection final : public transport::Connection,
   void read(read_callback_fn fn) override;
 
   // Implementation of transport::Connection.
+  void read(google::protobuf::MessageLite& message, read_proto_callback_fn fn)
+      override;
+
+  // Implementation of transport::Connection.
   void read(void* ptr, size_t length, read_callback_fn fn) override;
 
   // Implementation of transport::Connection
@@ -83,19 +76,19 @@ class Connection final : public transport::Connection,
       override;
 
   // Implementation of EventHandler.
-  void handleEvents(int events) override;
+  void handleEventsFromReactor(int events) override;
 
   // Handle events of type EPOLLIN.
-  void handleEventIn(std::unique_lock<std::mutex> lock);
+  void handleEventInFromReactor(std::unique_lock<std::mutex> lock);
 
   // Handle events of type EPOLLOUT.
-  void handleEventOut(std::unique_lock<std::mutex> lock);
+  void handleEventOutFromReactor(std::unique_lock<std::mutex> lock);
 
   // Handle events of type EPOLLERR.
-  void handleEventErr(std::unique_lock<std::mutex> lock);
+  void handleEventErrFromReactor(std::unique_lock<std::mutex> lock);
 
   // Handle events of type EPOLLHUP.
-  void handleEventHup(std::unique_lock<std::mutex> lock);
+  void handleEventHupFromReactor(std::unique_lock<std::mutex> lock);
 
   // Handle inbox being readable.
   //
@@ -103,7 +96,7 @@ class Connection final : public transport::Connection,
   // peer has written an entry into our inbox. It is called once per
   // message. Because it's called from another thread, we must always
   // take care to acquire the connection's lock here.
-  void handleInboxReadable();
+  void handleInboxReadableFromReactor();
 
   // Handle outbox being writable.
   //
@@ -111,7 +104,7 @@ class Connection final : public transport::Connection,
   // peer has read an entry from our outbox. It is called once per
   // message. Because it's called from another thread, we must always
   // take care to acquire the connection's lock here.
-  void handleOutboxWritable();
+  void handleOutboxWritableFromReactor();
 
  private:
   std::mutex mutex_;
@@ -124,11 +117,11 @@ class Connection final : public transport::Connection,
   // Inbox.
   int inboxHeaderFd_;
   int inboxDataFd_;
-  optional<TConsumer> inbox_;
+  optional<util::ringbuffer::Consumer> inbox_;
   optional<Reactor::TToken> inboxReactorToken_;
 
   // Outbox.
-  optional<TProducer> outbox_;
+  optional<util::ringbuffer::Producer> outbox_;
   optional<Reactor::TToken> outboxReactorToken_;
 
   // Peer trigger/tokens.
@@ -151,12 +144,13 @@ class Connection final : public transport::Connection,
     };
 
    public:
+    using read_fn = std::function<ssize_t(util::ringbuffer::Consumer&)>;
     explicit ReadOperation(void* ptr, size_t len, read_callback_fn fn);
-
+    explicit ReadOperation(read_fn reader, read_callback_fn fn);
     explicit ReadOperation(read_callback_fn fn);
 
     // Processes a pending read.
-    bool handleRead(TConsumer& consumer);
+    bool handleRead(util::ringbuffer::Consumer& consumer);
 
     bool completed() const {
       return (mode_ == READ_PAYLOAD && bytesRead_ == len_);
@@ -167,6 +161,7 @@ class Connection final : public transport::Connection,
    private:
     Mode mode_{READ_LENGTH};
     void* ptr_{nullptr};
+    read_fn reader_;
     std::unique_ptr<uint8_t[]> buf_;
     size_t len_{0};
     size_t bytesRead_{0};
@@ -187,11 +182,11 @@ class Connection final : public transport::Connection,
     };
 
    public:
-    using write_fn = std::function<ssize_t(TProducer&)>;
+    using write_fn = std::function<ssize_t(util::ringbuffer::Producer&)>;
     WriteOperation(const void* ptr, size_t len, write_callback_fn fn);
     WriteOperation(write_fn writer, write_callback_fn fn);
 
-    bool handleWrite(TProducer& producer);
+    bool handleWrite(util::ringbuffer::Producer& producer);
 
     bool completed() const {
       return (mode_ == WRITE_PAYLOAD && bytesWritten_ == len_);
@@ -208,23 +203,6 @@ class Connection final : public transport::Connection,
     write_callback_fn fn_;
   };
 
-  class RingBufferZeroCopyOutputStream
-      : public google::protobuf::io::ZeroCopyOutputStream {
-   public:
-    RingBufferZeroCopyOutputStream(TProducer* buffer, size_t payloadSize);
-
-    bool Next(void** data, int* size) override;
-
-    void BackUp(int /* unused */) override;
-
-    int64_t ByteCount() const override;
-
-   private:
-    TProducer* buffer_;
-    const size_t payloadSize_;
-    int64_t bytesCount_{0};
-  };
-
   // Pending read operations.
   std::deque<ReadOperation> readOperations_;
 
@@ -234,20 +212,20 @@ class Connection final : public transport::Connection,
   // Defer execution of processReadOperations to loop thread.
   void triggerProcessReadOperations();
 
-  // Process pending read operations if in an operational state.
-  void processReadOperations(std::unique_lock<std::mutex> lock);
+  // Process pending read operations if in an operational or error state.
+  void processReadOperationsFromReactor(std::unique_lock<std::mutex>& lock);
 
   // Defer execution of processWriteOperations to loop thread.
   void triggerProcessWriteOperations();
 
   // Process pending write operations if in an operational state.
-  void processWriteOperations(std::unique_lock<std::mutex> lock);
+  void processWriteOperationsFromReactor(std::unique_lock<std::mutex>& lock);
 
   // Set error object while holding mutex.
-  void setErrorHoldingMutex(Error&&);
+  void setErrorHoldingMutexFromReactor(Error&&);
 
   // Fail with error while holding mutex.
-  void failHoldingMutex(Error&&);
+  void failHoldingMutexFromReactor(Error&&, std::unique_lock<std::mutex>& lock);
 
   // Close connection.
   void close();

@@ -18,94 +18,137 @@ namespace tensorpipe {
 namespace transport {
 namespace uv {
 
-std::shared_ptr<Listener> Listener::create(
+class Listener::Impl : public std::enable_shared_from_this<Listener::Impl> {
+ public:
+  Impl(std::shared_ptr<Loop>, std::shared_ptr<TCPHandle>);
+
+  // Called to initialize member fields that need `shared_from_this`.
+  void initFromLoop();
+
+  // Called to queue a callback to be called when a connection comes in.
+  void acceptFromLoop(accept_callback_fn fn);
+
+  // Called to obtain the listener's address.
+  std::string addrFromLoop() const;
+
+  // Called to shut down the connection and its resources.
+  void closeFromLoop();
+
+ private:
+  // This function is called by the event loop if the listening socket can
+  // accept a new connection. Status is 0 in case of success, < 0
+  // otherwise. See `uv_connection_cb` for more information.
+  void connectionCallbackFromLoop_(int status);
+
+  // Called when libuv has closed the handle.
+  void closeCallbackFromLoop_();
+
+  std::shared_ptr<Loop> loop_;
+  std::shared_ptr<TCPHandle> handle_;
+  // TODO Add proper error handling.
+
+  // Once an accept callback fires, it becomes disarmed and must be rearmed.
+  // Any firings that occur while the callback is disarmed are stashed and
+  // triggered as soon as it's rearmed. With libuv we don't have the ability
+  // to disable the lower-level callback when the user callback is disarmed.
+  // So we'll keep getting notified of new connections even if we don't know
+  // what to do with them and don't want them. Thus we must store them
+  // somewhere. This is what RearmableCallback is for.
+  RearmableCallbackWithOwnLock<
+      accept_callback_fn,
+      const Error&,
+      std::shared_ptr<Connection>>
+      callback_;
+
+  // By having the instance store a shared_ptr to itself we create a reference
+  // cycle which will "leak" the instance. This allows us to detach its
+  // lifetime from the connection and sync it with the TCPHandle's life cycle.
+  std::shared_ptr<Impl> leak_;
+};
+
+Listener::Impl::Impl(
+    std::shared_ptr<Loop> loop,
+    std::shared_ptr<TCPHandle> handle)
+    : loop_(std::move(loop)), handle_(std::move(handle)) {}
+
+void Listener::Impl::initFromLoop() {
+  leak_ = shared_from_this();
+  handle_->armCloseCallbackFromLoop(
+      [this]() { this->closeCallbackFromLoop_(); });
+  handle_->listenFromLoop(
+      [this](int status) { this->connectionCallbackFromLoop_(status); });
+}
+
+void Listener::Impl::acceptFromLoop(accept_callback_fn fn) {
+  callback_.arm(std::move(fn));
+}
+
+std::string Listener::Impl::addrFromLoop() const {
+  return handle_->sockNameFromLoop().str();
+}
+
+void Listener::Impl::closeFromLoop() {
+  handle_->closeFromLoop();
+}
+
+void Listener::Impl::connectionCallbackFromLoop_(int status) {
+  TP_DCHECK(loop_->inLoopThread());
+  if (status != 0) {
+    callback_.trigger(
+        TP_CREATE_ERROR(UVError, status), std::shared_ptr<Connection>());
+    return;
+  }
+
+  auto connection = TCPHandle::create(loop_);
+  connection->initFromLoop();
+  handle_->acceptFromLoop(connection);
+  callback_.trigger(
+      Error::kSuccess, Connection::create_(loop_, std::move(connection)));
+}
+
+void Listener::Impl::closeCallbackFromLoop_() {
+  leak_.reset();
+}
+
+std::shared_ptr<Listener> Listener::create_(
     std::shared_ptr<Loop> loop,
     const Sockaddr& addr) {
+  auto handle = TCPHandle::create(loop);
+  loop->deferToLoop([handle, addr]() {
+    handle->initFromLoop();
+    handle->bindFromLoop(addr);
+  });
   auto listener =
-      std::make_shared<Listener>(ConstructorToken(), std::move(loop), addr);
-  listener->start();
+      std::make_shared<Listener>(ConstructorToken(), loop, std::move(handle));
+  listener->init_();
   return listener;
 }
 
 Listener::Listener(
     ConstructorToken /* unused */,
     std::shared_ptr<Loop> loop,
-    const Sockaddr& addr)
-    : loop_(std::move(loop)) {
-  listener_ = loop_->createHandle<TCPHandle>();
-  listener_->bind(addr);
-}
+    std::shared_ptr<TCPHandle> handle)
+    : loop_(std::move(loop)),
+      impl_(std::make_shared<Impl>(loop_, std::move(handle))) {}
 
-Listener::~Listener() {
-  for (const auto& connection : connectionsWaitingForAccept_) {
-    connection->close();
-  }
-  if (listener_) {
-    listener_->close();
-  }
-}
-
-void Listener::start() {
-  listener_->listen(runIfAlive(
-      *this,
-      std::function<void(Listener&, int)>([](Listener& listener, int status) {
-        listener.connectionCallback(status);
-      })));
-}
-
-Sockaddr Listener::sockaddr() {
-  return listener_->sockName();
+void Listener::init_() {
+  loop_->deferToLoop([impl{impl_}]() { impl->initFromLoop(); });
 }
 
 void Listener::accept(accept_callback_fn fn) {
-  callback_.arm(std::move(fn));
+  loop_->deferToLoop([impl{impl_}, fn{std::move(fn)}]() mutable {
+    impl->acceptFromLoop(std::move(fn));
+  });
 }
 
 address_t Listener::addr() const {
-  return listener_->sockName().str();
+  std::string addr;
+  loop_->runInLoop([this, &addr]() { addr = this->impl_->addrFromLoop(); });
+  return addr;
 }
 
-void Listener::connectionCallback(int status) {
-  if (status != 0) {
-    callback_.trigger(
-        TP_CREATE_ERROR(UVError, status), std::shared_ptr<Connection>());
-    return;
-  }
-
-  auto connection = loop_->createHandle<TCPHandle>();
-  connectionsWaitingForAccept_.insert(connection);
-  // Since a reference to the new TCPHandle is stored in a member field of the
-  // listener, the TCPHandle will still be alive inside the following callback
-  // (because runIfAlice ensures that the listener is alive). However, if we
-  // captured a shared_ptr, then the TCPHandle would be kept alive by the
-  // callback even if the listener got destroyed. To avoid that we capture a
-  // weak_ptr, which we're however sure we'll be able to lock.
-  listener_->accept(
-      connection,
-      runIfAlive(
-          *this,
-          std::function<void(Listener&, int)>(
-              [weakConnection{std::weak_ptr<TCPHandle>(connection)}](
-                  Listener& listener, int status) {
-                std::shared_ptr<TCPHandle> sameConnection =
-                    weakConnection.lock();
-                TP_DCHECK(sameConnection);
-                listener.acceptCallback(std::move(sameConnection), status);
-              })));
-}
-
-void Listener::acceptCallback(
-    std::shared_ptr<TCPHandle> connection,
-    int status) {
-  connectionsWaitingForAccept_.erase(connection);
-  if (status != 0) {
-    connection->close();
-    callback_.trigger(
-        TP_CREATE_ERROR(UVError, status), std::shared_ptr<Connection>());
-    return;
-  }
-  callback_.trigger(
-      Error::kSuccess, Connection::create(loop_, std::move(connection)));
+Listener::~Listener() {
+  loop_->deferToLoop([impl{impl_}]() { impl->closeFromLoop(); });
 }
 
 } // namespace uv

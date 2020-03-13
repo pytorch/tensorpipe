@@ -8,6 +8,8 @@
 
 #include <tensorpipe/test/transport/transport_test.h>
 
+#include <array>
+
 #include <tensorpipe/proto/core.pb.h>
 
 using namespace tensorpipe;
@@ -16,39 +18,62 @@ using namespace tensorpipe::transport;
 TEST_P(TransportTest, Connection_Initialization) {
   constexpr size_t numBytes = 13;
   std::array<char, numBytes> garbage;
+  std::promise<void> writeCompletedProm;
+  std::promise<void> readCompletedProm;
+  std::future<void> writeCompletedFuture = writeCompletedProm.get_future();
+  std::future<void> readCompletedFuture = readCompletedProm.get_future();
 
-  this->test_connection(
+  this->testConnection(
       [&](std::shared_ptr<Connection> conn) {
-        conn->read(
+        this->doRead(
+            conn,
             [&, conn](
                 const Error& error, const void* /* unused */, size_t len) {
               ASSERT_FALSE(error) << error.what();
               ASSERT_EQ(len, garbage.size());
+              readCompletedProm.set_value();
             });
+        writeCompletedFuture.wait();
+        readCompletedFuture.wait();
       },
       [&](std::shared_ptr<Connection> conn) {
-        conn->write(
-            garbage.data(), garbage.size(), [&, conn](const Error& error) {
+        this->doWrite(
+            conn,
+            garbage.data(),
+            garbage.size(),
+            [&, conn](const Error& error) {
               ASSERT_FALSE(error) << error.what();
+              writeCompletedProm.set_value();
             });
+        writeCompletedFuture.wait();
+        readCompletedFuture.wait();
       });
 }
 
 TEST_P(TransportTest, Connection_InitializationError) {
-  this->test_connection(
+  std::promise<void> readCompletedProm;
+
+  this->testConnection(
       [&](std::shared_ptr<Connection> /* unused */) {
         // Closes connection
       },
       [&](std::shared_ptr<Connection> conn) {
-        conn->read([conn](
-                       const Error& error,
-                       const void* /* unused */,
-                       size_t /* unused */) { ASSERT_TRUE(error); });
+        this->doRead(
+            conn,
+            [&, conn](
+                const Error& error,
+                const void* /* unused */,
+                size_t /* unused */) {
+              ASSERT_TRUE(error);
+              readCompletedProm.set_value();
+            });
+        readCompletedProm.get_future().wait();
       });
 }
 
-TEST_P(TransportTest, Connection_DestroyConnectionFromCallback) {
-  this->test_connection(
+// Disabled because no one really knows what this test was meant to check.
+TEST_P(TransportTest, DISABLED_Connection_DestroyConnectionFromCallback) {
+  this->testConnection(
       [&](std::shared_ptr<Connection> /* unused */) {
         // Closes connection
       },
@@ -59,34 +84,46 @@ TEST_P(TransportTest, Connection_DestroyConnectionFromCallback) {
         // the only instance we have from the callback itself. This
         // tests that the transport keeps the connection alive as long
         // as it's executing a callback.
-        conn->read([conn](
-                       const Error& /* unused */,
-                       const void* /* unused */,
-                       size_t /* unused */) mutable {
-          // Destroy connection from within callback.
-          EXPECT_GT(conn.use_count(), 1);
-          conn.reset();
-        });
+        this->doRead(
+            conn,
+            [conn](
+                const Error& /* unused */,
+                const void* /* unused */,
+                size_t /* unused */) mutable {
+              // Destroy connection from within callback.
+              EXPECT_GT(conn.use_count(), 1);
+              conn.reset();
+            });
       });
 }
 
 TEST_P(TransportTest, Connection_ProtobufWrite) {
   constexpr size_t kSize = 0x42;
+  std::promise<void> writeCompletedProm;
+  std::promise<void> readCompletedProm;
+  std::future<void> writeCompletedFuture = writeCompletedProm.get_future();
+  std::future<void> readCompletedFuture = readCompletedProm.get_future();
 
-  this->test_connection(
+  this->testConnection(
       [&](std::shared_ptr<Connection> conn) {
         auto message = std::make_shared<tensorpipe::proto::MessageDescriptor>();
         conn->read(*message, [&, conn, message](const Error& error) {
           ASSERT_FALSE(error) << error.what();
           ASSERT_EQ(message->size_in_bytes(), kSize);
+          readCompletedProm.set_value();
         });
+        writeCompletedFuture.wait();
+        readCompletedFuture.wait();
       },
       [&](std::shared_ptr<Connection> conn) {
         auto message = std::make_shared<tensorpipe::proto::MessageDescriptor>();
         message->set_size_in_bytes(kSize);
-        conn->write(*message, [conn, message](const Error& error) {
+        conn->write(*message, [&, conn, message](const Error& error) {
           ASSERT_FALSE(error) << error.what();
+          writeCompletedProm.set_value();
         });
+        writeCompletedFuture.wait();
+        readCompletedFuture.wait();
       });
 }
 
@@ -98,23 +135,35 @@ TEST_P(TransportTest, Connection_QueueWritesBeforeReads) {
   for (int i = 0; i < numMsg; i++) {
     msg[i] = std::string(kMsgSize, static_cast<char>(i));
   }
-  std::promise<void> writeDoneProm;
-  std::promise<void> readDoneProm;
+  std::promise<void> writeScheduledProm;
+  std::promise<void> writeCompletedProm;
+  std::promise<void> readCompletedProm;
+  std::future<void> writeCompletedFuture = writeCompletedProm.get_future();
+  std::future<void> readCompletedFuture = readCompletedProm.get_future();
 
-  this->test_connection(
+  this->testConnection(
       [&](std::shared_ptr<Connection> conn) {
         for (int i = 0; i < numMsg; i++) {
-          conn->write(
-              msg[i].c_str(), msg[i].length(), [conn](const Error& error) {
+          this->doWrite(
+              conn,
+              msg[i].c_str(),
+              msg[i].length(),
+              [&, conn, i](const Error& error) {
                 ASSERT_FALSE(error) << error.what();
+                if (i == numMsg - 1) {
+                  writeCompletedProm.set_value();
+                }
               });
         }
-        writeDoneProm.set_value();
+        writeScheduledProm.set_value();
+        writeCompletedFuture.wait();
+        readCompletedFuture.wait();
       },
       [&](std::shared_ptr<Connection> conn) {
-        writeDoneProm.get_future().get();
+        writeScheduledProm.get_future().get();
         for (int i = 0; i < numMsg; i++) {
-          conn->read(
+          this->doRead(
+              conn,
               [&, conn, i](const Error& error, const void* data, size_t len) {
                 ASSERT_FALSE(error) << error.what();
                 ASSERT_EQ(len, msg[i].length());
@@ -125,10 +174,11 @@ TEST_P(TransportTest, Connection_QueueWritesBeforeReads) {
                                           << " of " << msg[i].length();
                 }
                 if (i == numMsg - 1) {
-                  readDoneProm.set_value();
+                  readCompletedProm.set_value();
                 }
               });
         }
-        readDoneProm.get_future().get();
+        writeCompletedFuture.wait();
+        readCompletedFuture.wait();
       });
 }

@@ -21,6 +21,7 @@ namespace tensorpipe {
 namespace transport {
 namespace uv {
 
+class Context;
 class TCPHandle;
 
 class Listener : public transport::Listener,
@@ -30,53 +31,40 @@ class Listener : public transport::Listener,
   struct ConstructorToken {};
 
  public:
-  using transport::Listener::accept_callback_fn;
-
-  static std::shared_ptr<Listener> create(
+  Listener(
+      ConstructorToken,
       std::shared_ptr<Loop> loop,
-      const Sockaddr& addr);
-
-  Listener(ConstructorToken, std::shared_ptr<Loop> loop, const Sockaddr& addr);
+      std::shared_ptr<TCPHandle> handle);
 
   ~Listener() override;
 
- private:
-  void start();
-
- public:
-  Sockaddr sockaddr();
+  using transport::Listener::accept_callback_fn;
 
   void accept(accept_callback_fn fn) override;
 
   address_t addr() const override;
 
- protected:
+ private:
+  // Create a listener that listens on the specified address.
+  static std::shared_ptr<Listener> create_(
+      std::shared_ptr<Loop> loop,
+      const Sockaddr& addr);
+
+  // Called to initialize member fields that need `shared_from_this`.
+  void init_();
+
+  // All the logic resides in an "implementation" class. The lifetime of these
+  // objects is detached from the lifetime of the listener, and is instead
+  // attached to the lifetime of the underlying libuv handle. Any operation on
+  // these implementation objects must be performed from within the libuv event
+  // loop thread, thus all the listeners's operations do is schedule the
+  // equivalent call on the implementation by deferring to the loop.
+  class Impl;
+
   std::shared_ptr<Loop> loop_;
-  std::shared_ptr<TCPHandle> listener_;
-  // Once an accept callback fires, it becomes disarmed and must be rearmed. Any
-  // firings that occur while the callback is disarmed are stashed and triggered
-  // as soon as it's rearmed. With libuv we don't have the ability to disable
-  // the lower-level callback when the user callback is disarmed. So we'll keep
-  // getting notified of new connections even if we don't know what to do with
-  // them and don't want them. Thus we must store them somewhere. This is what
-  // RearmableCallback is for.
-  RearmableCallbackWithOwnLock<
-      accept_callback_fn,
-      const Error&,
-      std::shared_ptr<Connection>>
-      callback_;
+  std::shared_ptr<Impl> impl_;
 
-  std::unordered_set<std::shared_ptr<TCPHandle>> connectionsWaitingForAccept_;
-
-  // This function is called by the event loop if the listening socket can
-  // accept a new connection. Status is 0 in case of success, < 0
-  // otherwise. See `uv_connection_cb` for more information.
-  void connectionCallback(int status);
-
-  // This function is called by the event loop when the connection has been
-  // accepted on the listening socket. Status is 0 in case of success, < 0
-  // otherwise.
-  void acceptCallback(std::shared_ptr<TCPHandle> connection, int status);
+  friend class Context;
 };
 
 } // namespace uv

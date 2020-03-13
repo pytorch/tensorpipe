@@ -16,9 +16,9 @@ namespace shm {
 
 namespace {
 
-void writeToken(TReactorProducer& producer, Reactor::TToken token) {
+void writeToken(util::ringbuffer::Producer& producer, Reactor::TToken token) {
   for (;;) {
-    auto rv = producer.write(token);
+    auto rv = producer.write(&token, sizeof(token));
     if (rv == -EAGAIN) {
       std::this_thread::yield();
       continue;
@@ -33,9 +33,8 @@ void writeToken(TReactorProducer& producer, Reactor::TToken token) {
 Reactor::Reactor() {
   int headerFd;
   int dataFd;
-  std::shared_ptr<TReactorRingBuffer> rb;
-  std::tie(headerFd, dataFd, rb) =
-      util::ringbuffer::shm::create<TReactorRingBuffer>(kSize);
+  std::shared_ptr<util::ringbuffer::RingBuffer> rb;
+  std::tie(headerFd, dataFd, rb) = util::ringbuffer::shm::create(kSize);
   headerFd_ = Fd(headerFd);
   dataFd_ = Fd(dataFd);
   consumer_.emplace(rb);
@@ -90,7 +89,7 @@ std::tuple<int, int> Reactor::fds() const {
 void Reactor::run() {
   while (!done_.load()) {
     uint32_t token;
-    auto ret = consumer_->copy(token);
+    auto ret = consumer_->copy(sizeof(token), &token);
     if (ret == -ENODATA) {
       std::this_thread::yield();
       continue;
@@ -113,7 +112,7 @@ void Reactor::run() {
 }
 
 Reactor::Trigger::Trigger(Fd&& headerFd, Fd&& dataFd)
-    : producer_(util::ringbuffer::shm::load<TReactorRingBuffer>(
+    : producer_(util::ringbuffer::shm::load(
           // The header and data segment objects take over ownership
           // of file descriptors. Release them to avoid double close.
           headerFd.release(),

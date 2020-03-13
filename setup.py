@@ -36,10 +36,10 @@ class CMakeBuild(build_ext):
             f"-DCMAKE_BUILD_TYPE={build_type}",
             "-DCMAKE_C_COMPILER=clang-6.0",
             "-DCMAKE_CXX_COMPILER=clang++-6.0",
-            "-DBUILD_SHARED_LIBS=true",
+            "-DCMAKE_POSITION_INDEPENDENT_CODE=true",
             "-DBUILD_PYTHON_MODULE=true",
         ]
-        make_cmd = ["make"]
+        make_cmd = ["make", "-j", "pytensorpipe"]
 
         subprocess.check_call(cmake_cmd, cwd=self.build_temp)
         subprocess.check_call(make_cmd, cwd=self.build_temp)

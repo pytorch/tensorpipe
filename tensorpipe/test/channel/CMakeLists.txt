@@ -9,8 +9,11 @@ target_include_directories(
   tensorpipe_channel_test
   PUBLIC
   $<TARGET_PROPERTY:tensorpipe,INCLUDE_DIRECTORIES>
+  $<TARGET_PROPERTY:uv_a,INCLUDE_DIRECTORIES>
   $<TARGET_PROPERTY:gtest_main,INCLUDE_DIRECTORIES>
   )
+# Build this after having generated the .pb.h files needed by some tests.
+add_dependencies(tensorpipe_channel_test tensorpipe_proto)
 
 function(add_tensorpipe_channel_test)
   add_tensorpipe_test(${ARGV})

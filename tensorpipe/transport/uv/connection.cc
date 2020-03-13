@@ -18,101 +18,68 @@ namespace tensorpipe {
 namespace transport {
 namespace uv {
 
-std::shared_ptr<Connection> Connection::create(
-    std::shared_ptr<Loop> loop,
-    const Sockaddr& addr) {
-  auto handle = loop->createHandle<TCPHandle>();
-  handle->connect(addr);
-  return create(std::move(loop), std::move(handle));
-}
+namespace {
 
-std::shared_ptr<Connection> Connection::create(
-    std::shared_ptr<Loop> loop,
-    std::shared_ptr<TCPHandle> handle) {
-  auto conn = std::make_shared<Connection>(
-      ConstructorToken(), std::move(loop), std::move(handle));
-  conn->init();
-  return conn;
-}
+// The read operation captures all state associated with reading a
+// fixed length chunk of data from the underlying connection. All
+// reads are required to include a word-sized header containing the
+// number of bytes in the operation. This makes it possible for the
+// read side of the connection to either 1) not know how many bytes
+// to expected, and dynamically allocate, or 2) know how many bytes
+// to expect, and preallocate the destination memory.
+class ReadOperation {
+  enum Mode {
+    READ_LENGTH,
+    READ_PAYLOAD,
+    COMPLETE,
+  };
 
-Connection::Connection(
-    ConstructorToken /* unused */,
-    std::shared_ptr<Loop> loop,
-    std::shared_ptr<TCPHandle> handle)
-    : loop_(std::move(loop)), handle_(std::move(handle)) {}
+ public:
+  using read_callback_fn = Connection::read_callback_fn;
 
-Connection::~Connection() {
-  if (handle_) {
-    // No need to call readStop here because if we are in the destructor it
-    // means that the runIfAlive wrapper will prevent the alloc and read
-    // callbacks from firing.
-    handle_->close();
-  }
-}
+  explicit ReadOperation(read_callback_fn fn);
 
-void Connection::init() {
-  handle_->armAllocCallback(runIfAlive(
-      *this,
-      std::function<void(Connection&, uv_buf_t*)>(
-          [](Connection& connection, uv_buf_t* buf) {
-            connection.allocCallback(buf);
-          })));
-  handle_->armReadCallback(runIfAlive(
-      *this,
-      std::function<void(Connection&, ssize_t, const uv_buf_t*)>(
-          [](Connection& connection, ssize_t nread, const uv_buf_t* buf) {
-            connection.readCallback(nread, buf);
-          })));
-}
+  ReadOperation(void* ptr, size_t length, read_callback_fn fn);
 
-void Connection::read(read_callback_fn fn) {
-  std::unique_lock<std::mutex> lock(readOperationsMutex_);
-  readOperations_.emplace_back(std::move(fn));
-  // Start reading if this is the first read operation.
-  if (readOperations_.size() == 1) {
-    handle_->readStart();
-  }
-}
+  // Called when libuv is about to read data from connection.
+  void allocFromLoop(uv_buf_t* buf);
 
-void Connection::read(void* ptr, size_t length, read_callback_fn fn) {
-  std::unique_lock<std::mutex> lock(readOperationsMutex_);
-  readOperations_.emplace_back(ptr, length, std::move(fn));
-  // Start reading if this is the first read operation.
-  if (readOperations_.size() == 1) {
-    handle_->readStart();
-  }
-}
+  // Called when libuv has read data from connection.
+  void readFromLoop(ssize_t nread, const uv_buf_t* buf);
 
-void Connection::write(const void* ptr, size_t length, write_callback_fn fn) {
-  std::unique_lock<std::mutex> lock(writeOperationsMutex_);
-  writeOperations_.emplace_back(ptr, length, std::move(fn));
-  auto& writeOperation = writeOperations_.back();
+  // Returns if this read operation is complete.
+  inline bool completeFromLoop() const;
 
-  // Populate uv_buf_t array that we'll write for this operation.
-  auto bufs = std::shared_ptr<uv_buf_t>(
-      new uv_buf_t[2], std::default_delete<uv_buf_t[]>());
-  uv_buf_t* bufs_ptr = bufs.get();
-  unsigned int bufs_len = 2;
-  bufs_ptr[0].base =
-      const_cast<char*>(reinterpret_cast<const char*>(&writeOperation.length));
-  bufs_ptr[0].len = sizeof(writeOperation.length);
-  bufs_ptr[1].base = const_cast<char*>(writeOperation.ptr);
-  bufs_ptr[1].len = writeOperation.length;
+  // Invoke user callback.
+  inline void callbackFromLoop(const Error& error);
 
-  // Capture a shared_ptr to this connection such that it cannot be
-  // destructed until all write callbacks have fired.
-  handle_->write(
-      bufs_ptr,
-      bufs_len,
-      runIfAlive(
-          *this,
-          std::function<void(Connection&, int)>(
-              [bufs{std::move(bufs)}](Connection& connection, int status) {
-                connection.writeCallback(status);
-              })));
-}
+ private:
+  Mode mode_{READ_LENGTH};
+  char* ptr_{nullptr};
 
-void Connection::ReadOperation::alloc(uv_buf_t* buf) {
+  // Number of bytes as specified by the user (if applicable).
+  optional<size_t> givenLength_;
+
+  // Number of bytes to expect as read from the connection.
+  size_t readLength_{0};
+
+  // Number of bytes read from the connection.
+  // This is reset to 0 when we advance from READ_LENGTH to READ_PAYLOAD.
+  size_t bytesRead_{0};
+
+  // Holds temporary allocation if no length was specified.
+  std::unique_ptr<char[]> buffer_{nullptr};
+
+  // User callback.
+  read_callback_fn fn_;
+};
+
+ReadOperation::ReadOperation(read_callback_fn fn) : fn_(std::move(fn)) {}
+
+ReadOperation::ReadOperation(void* ptr, size_t length, read_callback_fn fn)
+    : ptr_(static_cast<char*>(ptr)), givenLength_(length), fn_(std::move(fn)) {}
+
+void ReadOperation::allocFromLoop(uv_buf_t* buf) {
   if (mode_ == READ_LENGTH) {
     TP_DCHECK_LT(bytesRead_, sizeof(readLength_));
     buf->base = reinterpret_cast<char*>(&readLength_) + bytesRead_;
@@ -127,7 +94,7 @@ void Connection::ReadOperation::alloc(uv_buf_t* buf) {
   }
 }
 
-void Connection::ReadOperation::read(ssize_t nread, const uv_buf_t* buf) {
+void ReadOperation::readFromLoop(ssize_t nread, const uv_buf_t* buf) {
   TP_DCHECK_GE(nread, 0);
   bytesRead_ += nread;
   if (mode_ == READ_LENGTH) {
@@ -154,69 +121,299 @@ void Connection::ReadOperation::read(ssize_t nread, const uv_buf_t* buf) {
   }
 }
 
-void Connection::allocCallback(uv_buf_t* buf) {
-  std::unique_lock<std::mutex> lock(readOperationsMutex_);
-  TP_THROW_ASSERT_IF(readOperations_.empty());
-  readOperations_.front().alloc(buf);
+bool ReadOperation::completeFromLoop() const {
+  return mode_ == COMPLETE;
 }
 
-void Connection::readCallback(ssize_t nread, const uv_buf_t* buf) {
-  std::unique_lock<std::mutex> lock(readOperationsMutex_);
+void ReadOperation::callbackFromLoop(const Error& error) {
+  fn_(error, ptr_, readLength_);
+}
+
+// The write operation captures all state associated with writing a
+// fixed length chunk of data from the underlying connection. The
+// write includes a word-sized header containing the length of the
+// write. This header is a member field on this class and therefore
+// the instance must be kept alive and the reference to the instance
+// must remain valid until the write callback has been called.
+class WriteOperation {
+ public:
+  using write_callback_fn = Connection::write_callback_fn;
+
+  WriteOperation(const void* ptr, size_t length, write_callback_fn fn);
+
+  inline std::tuple<uv_buf_t*, unsigned int> getBufs();
+
+  // Invoke user callback.
+  inline void callbackFromLoop(const Error& error);
+
+ private:
+  const char* ptr_;
+  const size_t length_;
+
+  // Buffers (structs with pointers and lengths) we pass to uv_write.
+  std::array<uv_buf_t, 2> bufs_;
+
+  // User callback.
+  write_callback_fn fn_;
+};
+
+WriteOperation::WriteOperation(
+    const void* ptr,
+    size_t length,
+    write_callback_fn fn)
+    : ptr_(static_cast<const char*>(ptr)), length_(length), fn_(std::move(fn)) {
+  bufs_[0].base = const_cast<char*>(reinterpret_cast<const char*>(&length_));
+  bufs_[0].len = sizeof(length_);
+  bufs_[1].base = const_cast<char*>(ptr_);
+  bufs_[1].len = length_;
+}
+
+std::tuple<uv_buf_t*, unsigned int> WriteOperation::getBufs() {
+  return std::make_tuple(bufs_.data(), bufs_.size());
+}
+
+void WriteOperation::callbackFromLoop(const Error& error) {
+  fn_(error);
+}
+
+} // namespace
+
+class Connection::Impl : public std::enable_shared_from_this<Connection::Impl> {
+ public:
+  Impl(std::shared_ptr<Loop>, std::shared_ptr<TCPHandle>);
+
+  // Called to initialize member fields that need `shared_from_this`.
+  void initFromLoop();
+
+  // Called to queue a read operation.
+  void readFromLoop(read_callback_fn fn);
+  void readFromLoop(void* ptr, size_t length, read_callback_fn fn);
+
+  // Called to perform a write operation.
+  void writeFromLoop(const void* ptr, size_t length, write_callback_fn fn);
+
+  // Called to shut down the connection and its resources.
+  void closeFromLoop();
+
+ private:
+  // Called when libuv is about to read data from connection.
+  void allocCallbackFromLoop_(uv_buf_t* buf);
+
+  // Called when libuv has read data from connection.
+  void readCallbackFromLoop_(ssize_t nread, const uv_buf_t* buf);
+
+  // Called when libuv has written data to connection.
+  void writeCallbackFromLoop_(int status);
+
+  // Called when libuv has closed the handle.
+  void closeCallbackFromLoop_();
+
+  std::shared_ptr<Loop> loop_;
+  std::shared_ptr<TCPHandle> handle_;
+  Error error_{Error::kSuccess};
+
+  std::deque<ReadOperation> readOperations_;
+  std::deque<WriteOperation> writeOperations_;
+
+  // By having the instance store a shared_ptr to itself we create a reference
+  // cycle which will "leak" the instance. This allows us to detach its
+  // lifetime from the connection and sync it with the TCPHandle's life cycle.
+  std::shared_ptr<Impl> leak_;
+};
+
+Connection::Impl::Impl(
+    std::shared_ptr<Loop> loop,
+    std::shared_ptr<TCPHandle> handle)
+    : loop_(std::move(loop)), handle_(std::move(handle)) {}
+
+void Connection::Impl::initFromLoop() {
+  leak_ = shared_from_this();
+  handle_->armCloseCallbackFromLoop(
+      [this]() { this->closeCallbackFromLoop_(); });
+  handle_->armAllocCallbackFromLoop(
+      [this](uv_buf_t* buf) { this->allocCallbackFromLoop_(buf); });
+  handle_->armReadCallbackFromLoop([this](ssize_t nread, const uv_buf_t* buf) {
+    this->readCallbackFromLoop_(nread, buf);
+  });
+}
+
+void Connection::Impl::readFromLoop(read_callback_fn fn) {
+  TP_DCHECK(loop_->inLoopThread());
+
+  if (error_) {
+    fn(error_, nullptr, 0);
+    return;
+  }
+
+  readOperations_.emplace_back(std::move(fn));
+
+  // Start reading if this is the first read operation.
+  if (readOperations_.size() == 1) {
+    handle_->readStartFromLoop();
+  }
+}
+
+void Connection::Impl::readFromLoop(
+    void* ptr,
+    size_t length,
+    read_callback_fn fn) {
+  TP_DCHECK(loop_->inLoopThread());
+
+  if (error_) {
+    fn(error_, ptr, length);
+    return;
+  }
+
+  readOperations_.emplace_back(ptr, length, std::move(fn));
+
+  // Start reading if this is the first read operation.
+  if (readOperations_.size() == 1) {
+    handle_->readStartFromLoop();
+  }
+}
+
+void Connection::Impl::writeFromLoop(
+    const void* ptr,
+    size_t length,
+    write_callback_fn fn) {
+  TP_DCHECK(loop_->inLoopThread());
+
+  if (error_) {
+    fn(error_);
+    return;
+  }
+
+  writeOperations_.emplace_back(ptr, length, std::move(fn));
+
+  auto& writeOperation = writeOperations_.back();
+  uv_buf_t* bufsPtr;
+  unsigned int bufsLen;
+  std::tie(bufsPtr, bufsLen) = writeOperation.getBufs();
+  handle_->writeFromLoop(bufsPtr, bufsLen, [this](int status) {
+    this->writeCallbackFromLoop_(status);
+  });
+}
+
+void Connection::Impl::closeFromLoop() {
+  TP_DCHECK(loop_->inLoopThread());
+  handle_->closeFromLoop();
+}
+
+void Connection::Impl::allocCallbackFromLoop_(uv_buf_t* buf) {
+  TP_DCHECK(loop_->inLoopThread());
+  TP_THROW_ASSERT_IF(readOperations_.empty());
+  readOperations_.front().allocFromLoop(buf);
+}
+
+void Connection::Impl::readCallbackFromLoop_(
+    ssize_t nread,
+    const uv_buf_t* buf) {
+  TP_DCHECK(loop_->inLoopThread());
   if (nread < 0) {
-    error_ = TP_CREATE_ERROR(UVError, nread);
-    while (!readOperations_.empty()) {
-      auto& readOperation = readOperations_.front();
-      // Execute callback without holding the operations lock.
-      // The callback could issue another read.
-      lock.unlock();
-      readOperation.callback(error_);
-      lock.lock();
-      // Remove the completed operation.
-      // If this was the final pending operation, this instance should
-      // no longer receive allocation and read callbacks.
-      readOperations_.pop_front();
-      if (readOperations_.empty()) {
-        handle_->readStop();
-      }
+    if (!error_) {
+      error_ = TP_CREATE_ERROR(UVError, nread);
+      closeFromLoop();
     }
     return;
   }
 
   TP_THROW_ASSERT_IF(readOperations_.empty());
   auto& readOperation = readOperations_.front();
-  readOperation.read(nread, buf);
-  if (readOperation.complete()) {
-    // Execute callback without holding the operations lock.
-    // The callback could issue another read.
-    lock.unlock();
-    readOperation.callback(Error::kSuccess);
-    lock.lock();
+  readOperation.readFromLoop(nread, buf);
+  if (readOperation.completeFromLoop()) {
+    readOperation.callbackFromLoop(error_);
     // Remove the completed operation.
     // If this was the final pending operation, this instance should
     // no longer receive allocation and read callbacks.
     readOperations_.pop_front();
     if (readOperations_.empty()) {
-      handle_->readStop();
+      handle_->readStopFromLoop();
     }
   }
 }
 
-void Connection::writeCallback(int status) {
-  std::unique_lock<std::mutex> lock(writeOperationsMutex_);
+void Connection::Impl::writeCallbackFromLoop_(int status) {
+  TP_DCHECK(loop_->inLoopThread());
   TP_DCHECK(!writeOperations_.empty());
 
-  // Move write operation to the stack.
-  auto writeOperation = std::move(writeOperations_.front());
-  writeOperations_.pop_front();
-
-  // Execute callback without holding the operations lock.
-  // The callback could issue another write.
-  lock.unlock();
-  if (status == 0) {
-    writeOperation.callback(Error::kSuccess);
-  } else {
-    writeOperation.callback(TP_CREATE_ERROR(UVError, status));
+  if (status < 0 && !error_) {
+    error_ = TP_CREATE_ERROR(UVError, status);
+    closeFromLoop();
   }
+
+  auto& writeOperation = writeOperations_.front();
+  writeOperation.callbackFromLoop(error_);
+  writeOperations_.pop_front();
+}
+
+void Connection::Impl::closeCallbackFromLoop_() {
+  TP_DCHECK(loop_->inLoopThread());
+  if (!error_) {
+    error_ = TP_CREATE_ERROR(UVError, UV_ECANCELED);
+  }
+  while (!readOperations_.empty()) {
+    auto& readOperation = readOperations_.front();
+    readOperation.callbackFromLoop(error_);
+    // Remove the completed operation.
+    readOperations_.pop_front();
+  }
+  TP_DCHECK(writeOperations_.empty());
+  leak_.reset();
+}
+
+std::shared_ptr<Connection> Connection::create_(
+    std::shared_ptr<Loop> loop,
+    const Sockaddr& addr) {
+  auto handle = TCPHandle::create(loop);
+  loop->deferToLoop([handle, addr]() {
+    handle->initFromLoop();
+    handle->connectFromLoop(addr);
+  });
+  auto conn = std::make_shared<Connection>(
+      ConstructorToken(), std::move(loop), std::move(handle));
+  conn->init_();
+  return conn;
+}
+
+std::shared_ptr<Connection> Connection::create_(
+    std::shared_ptr<Loop> loop,
+    std::shared_ptr<TCPHandle> handle) {
+  auto conn = std::make_shared<Connection>(
+      ConstructorToken(), std::move(loop), std::move(handle));
+  conn->init_();
+  return conn;
+}
+
+Connection::Connection(
+    ConstructorToken /* unused */,
+    std::shared_ptr<Loop> loop,
+    std::shared_ptr<TCPHandle> handle)
+    : loop_(loop), impl_(std::make_shared<Impl>(loop, std::move(handle))) {}
+
+void Connection::init_() {
+  loop_->deferToLoop([impl{impl_}]() { impl->initFromLoop(); });
+}
+
+void Connection::read(read_callback_fn fn) {
+  loop_->deferToLoop([impl{impl_}, fn{std::move(fn)}]() mutable {
+    impl->readFromLoop(std::move(fn));
+  });
+}
+
+void Connection::read(void* ptr, size_t length, read_callback_fn fn) {
+  loop_->deferToLoop([impl{impl_}, ptr, length, fn{std::move(fn)}]() mutable {
+    impl->readFromLoop(ptr, length, std::move(fn));
+  });
+}
+
+void Connection::write(const void* ptr, size_t length, write_callback_fn fn) {
+  loop_->deferToLoop([impl{impl_}, ptr, length, fn{std::move(fn)}]() mutable {
+    impl->writeFromLoop(ptr, length, std::move(fn));
+  });
+}
+
+Connection::~Connection() {
+  loop_->deferToLoop([impl{impl_}]() { impl->closeFromLoop(); });
 }
 
 } // namespace uv

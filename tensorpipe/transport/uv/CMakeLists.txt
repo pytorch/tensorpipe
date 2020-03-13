@@ -5,4 +5,4 @@
 # LICENSE file in the root directory of this source tree.
 
 add_library(tensorpipe_uv connection.cc context.cc error.cc listener.cc loop.cc sockaddr.cc uv.cc)
-target_link_libraries(tensorpipe_uv tensorpipe uv)
+target_link_libraries(tensorpipe_uv tensorpipe uv_a)

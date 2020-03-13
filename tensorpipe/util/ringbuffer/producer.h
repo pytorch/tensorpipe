@@ -19,14 +19,10 @@ namespace ringbuffer {
 ///
 /// Provides method to write into ringbuffer.
 ///
-template <class THeaderExtraData>
-class Producer : public RingBufferWrapper<THeaderExtraData> {
+class Producer : public RingBufferWrapper {
  public:
-  // Declare TExtraData in class namespace.
-  using TExtraData = THeaderExtraData;
-
   // Use base class constructor.
-  using RingBufferWrapper<THeaderExtraData>::RingBufferWrapper;
+  using RingBufferWrapper::RingBufferWrapper;
 
   Producer(const Producer&) = delete;
   Producer(Producer&&) = delete;
@@ -51,58 +47,6 @@ class Producer : public RingBufferWrapper<THeaderExtraData> {
     this->inTx_ = true;
     TP_DCHECK_EQ(this->tx_size_, 0);
     return 0;
-  }
-
-  [[nodiscard]] ssize_t writeInTx(size_t size, const void* data) noexcept {
-    if (unlikely(!inTx())) {
-      return -EINVAL;
-    }
-    return this->copyToRingBuffer_(static_cast<const uint8_t*>(data), size);
-  }
-
-  [[nodiscard]] ssize_t writeAtMostInTx(
-      size_t size,
-      const void* data) noexcept {
-    if (unlikely(!inTx())) {
-      return -EINVAL;
-    }
-
-    const auto space = this->header_.freeSizeWeak() - this->tx_size_;
-    if (space == 0) {
-      return -ENOSPC;
-    }
-    return this->writeInTx(std::min(size, space), data);
-  }
-
-  template <class T>
-  [[nodiscard]] ssize_t writeInTx(const T& d) noexcept {
-    return writeInTx(sizeof(T), &d);
-  }
-
-  template <class TSize>
-  [[nodiscard]] ssize_t writeInTxWithSize(
-      TSize length,
-      const void* data) noexcept {
-    static_assert(std::is_integral<TSize>::value, "!");
-
-    if (unlikely(!inTx())) {
-      return -EINVAL;
-    }
-
-    // Copy length.
-    auto plen = reinterpret_cast<const uint8_t*>(&length);
-    auto s = this->copyToRingBuffer_(plen, sizeof(TSize));
-    if (0 > s) {
-      return s;
-    }
-
-    // Copy data.
-    auto ptr = static_cast<const uint8_t*>(data);
-    auto sdata = this->copyToRingBuffer_(ptr, length);
-    if (0 > sdata) {
-      return sdata;
-    }
-    return s + sdata;
   }
 
   [[nodiscard]] ssize_t commitTx() noexcept {
@@ -130,30 +74,7 @@ class Producer : public RingBufferWrapper<THeaderExtraData> {
     return 0;
   }
 
-  // Write a chunk with a size prefix of type TSize.
-  template <class TSize>
-  [[nodiscard]] ssize_t writeInTxSizedChunk(const std::string& str) noexcept {
-    static_assert(std::is_integral<TSize>::value, "!");
-    if (unlikely(!inTx())) {
-      return -EINVAL;
-    }
-    if (unlikely(str.size() > std::numeric_limits<TSize>::max())) {
-      return -EINVAL;
-    }
-    auto byte_size = static_cast<TSize>(str.size());
-    return this->writeInTxWithSize(byte_size, str.data());
-  }
-
-  //
-  // High-level atomic operations.
-  //
-  template <class T>
-  [[nodiscard]] ssize_t write(const T& t) noexcept {
-    static_assert(std::is_trivial<T>::value, "!");
-    static_assert(std::is_standard_layout<T>::value, "!");
-    return write(&t, sizeof(T));
-  }
-
+  // TODO: Pass size first.
   [[nodiscard]] ssize_t write(const void* d, size_t size) noexcept {
     {
       auto ret = startTx();
@@ -172,26 +93,30 @@ class Producer : public RingBufferWrapper<THeaderExtraData> {
     return static_cast<ssize_t>(size);
   }
 
-  // Write a chunk with a size prefix of type TSize.
-  template <class TSize>
-  [[nodiscard]] ssize_t writeSizedChunk(const std::string& str) noexcept {
-    {
-      auto ret = startTx();
-      if (0 > ret) {
-        return ret;
-      }
+  [[nodiscard]] ssize_t writeInTx(size_t size, const void* data) noexcept {
+    if (unlikely(!inTx())) {
+      return -EINVAL;
     }
-    auto s = this->writeInTxSizedChunk<TSize>(str);
-    if (0 > s) {
-      auto r = cancelTx();
-      TP_DCHECK_EQ(r, 0);
-      return s;
+    return this->copyToRingBuffer_(static_cast<const uint8_t*>(data), size);
+  }
+
+  [[nodiscard]] ssize_t writeAtMostInTx(
+      size_t size,
+      const void* data) noexcept {
+    if (unlikely(!inTx())) {
+      return -EINVAL;
     }
-    {
-      auto ret = commitTx();
-      TP_DCHECK_EQ(ret, 0);
+
+    const auto space = this->header_.freeSizeWeak() - this->tx_size_;
+    if (space == 0) {
+      return -ENOSPC;
     }
-    return s;
+    return this->writeInTx(std::min(size, space), data);
+  }
+
+  template <class T>
+  [[nodiscard]] ssize_t writeInTx(const T& d) noexcept {
+    return writeInTx(sizeof(T), &d);
   }
 
   [[nodiscard]] std::pair<ssize_t, void*> reserveContiguousInTx(
