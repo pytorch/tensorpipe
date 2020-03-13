@@ -126,8 +126,7 @@ TEST(Context, ClientPingSerial) {
   context->registerChannelFactory(
       -1,
       "intra_process",
-      std::make_shared<
-          channel::intra_process::IntraProcessChannelFactory>());
+      std::make_shared<channel::intra_process::IntraProcessChannelFactory>());
 
   auto listener =
       Listener::create(context, {createUniqueShmAddr(), "uv://127.0.0.1"});
@@ -208,8 +207,7 @@ TEST(Context, ClientPingInline) {
   context->registerChannelFactory(
       -1,
       "intra_process",
-      std::make_shared<
-          channel::intra_process::IntraProcessChannelFactory>());
+      std::make_shared<channel::intra_process::IntraProcessChannelFactory>());
 
   auto listener =
       Listener::create(context, {createUniqueShmAddr(), "uv://127.0.0.1"});
@@ -285,8 +283,7 @@ TEST(Context, ServerPingPongTwice) {
   context->registerChannelFactory(
       -1,
       "intra_process",
-      std::make_shared<
-          channel::intra_process::IntraProcessChannelFactory>());
+      std::make_shared<channel::intra_process::IntraProcessChannelFactory>());
 
   auto listener =
       Listener::create(context, {createUniqueShmAddr(), "uv://127.0.0.1"});
