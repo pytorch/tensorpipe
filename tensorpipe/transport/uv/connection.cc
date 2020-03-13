@@ -365,7 +365,7 @@ std::shared_ptr<Connection> Connection::create_(
     std::shared_ptr<Loop> loop,
     const Sockaddr& addr) {
   auto handle = TCPHandle::create(loop);
-  loop->deferToLoop([handle, addr]() {
+  loop->runInLoop([handle, addr]() {
     handle->initFromLoop();
     handle->connectFromLoop(addr);
   });
@@ -391,7 +391,7 @@ Connection::Connection(
     : loop_(loop), impl_(std::make_shared<Impl>(loop, std::move(handle))) {}
 
 void Connection::init_() {
-  loop_->deferToLoop([impl{impl_}]() { impl->initFromLoop(); });
+  loop_->runInLoop([impl{impl_}]() { impl->initFromLoop(); });
 }
 
 void Connection::read(read_callback_fn fn) {
