@@ -59,25 +59,38 @@ static void validateOptions(Options options, const char* argv0) {
 
 struct Options parseOptions(int argc, char** argv) {
   struct Options options;
+  int opt;
+  int flag = -1;
+
+  enum Flags : int {
+    MODE,
+    TRANSPORT,
+    ADDRESS,
+    IO_NUM,
+    CHUNK_BYTES,
+    HELP,
+  };
 
   static struct option long_options[] = {
-      {"mode", required_argument, nullptr, 'm'},
-      {"transport", required_argument, nullptr, 't'},
-      {"address", required_argument, nullptr, 'a'},
-      {"io-num", required_argument, nullptr, 'n'},
-      {"chunk-bytes", optional_argument, nullptr, 'c'},
-      {"help", no_argument, nullptr, 'h'},
-      {0, 0, 0, 0}};
+      {"mode", required_argument, &flag, MODE},
+      {"transport", required_argument, &flag, TRANSPORT},
+      {"address", required_argument, &flag, ADDRESS},
+      {"io-num", required_argument, &flag, IO_NUM},
+      {"chunk-bytes", required_argument, &flag, CHUNK_BYTES},
+      {"help", no_argument, &flag, HELP},
+      {nullptr, 0, nullptr, 0}};
 
-  int opt;
   while (1) {
-    int option_index = 0;
-    opt = getopt_long(argc, argv, "m:t:a:n:c:", long_options, &option_index);
+    opt = getopt_long(argc, argv, "m:t:a:n:c:", long_options, nullptr);
     if (opt == -1) {
       break;
     }
-    switch (opt) {
-      case 'm':
+    if (opt != 0) {
+      usage(EXIT_FAILURE, argv[0]);
+      break;
+    }
+    switch (flag) {
+      case MODE:
         options.mode = std::string(optarg, strlen(optarg));
         if (options.mode != "listen" && options.mode != "connect") {
           fprintf(stderr, "Error:\n");
@@ -85,7 +98,7 @@ struct Options parseOptions(int argc, char** argv) {
           exit(EXIT_FAILURE);
         }
         break;
-      case 't':
+      case TRANSPORT:
         options.transport = std::string(optarg, strlen(optarg));
         if (options.transport != "shm" && options.transport != "uv") {
           fprintf(stderr, "Error:\n");
@@ -93,17 +106,16 @@ struct Options parseOptions(int argc, char** argv) {
           exit(EXIT_FAILURE);
         }
         break;
-      case 'a':
+      case ADDRESS:
         options.address = std::string(optarg, strlen(optarg));
         break;
-      case 'n':
+      case IO_NUM:
         options.ioNum = atoi(optarg);
         break;
-      case 'c':
+      case CHUNK_BYTES:
         options.chunkBytes = atoi(optarg);
         break;
-      case 'h':
-        // help
+      case HELP:
         usage(EXIT_SUCCESS, argv[0]);
         break;
       default:
