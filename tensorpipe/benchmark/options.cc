@@ -25,11 +25,11 @@ static void usage(int status, const char* argv0) {
   fprintf(stderr, "Usage: %s [OPTIONS]\n", argv0);
 #define X(x) fputs(x "\n", stderr);
   X("");
-  X("-m, --mode=MODE                    Running mode [listen|connect]");
-  X("-t, --transport=TRANSPORT          Transport backend [shm|uv]");
-  X("-a, --address=ADDRESS              Address to listen or connect to");
-  X("-n, --io-num=NUM                   Number of write/read pairs to perform");
-  X("-c, --chunk-bytes=SIZE [Optional]  Chunk bytes of each write/read pair");
+  X("--mode=MODE                    Running mode [listen|connect]");
+  X("--transport=TRANSPORT          Transport backend [shm|uv]");
+  X("--address=ADDRESS              Address to listen or connect to");
+  X("--io-num=NUM                   Number of write/read pairs to perform");
+  X("--chunk-bytes=SIZE [Optional]  Chunk bytes of each write/read pair");
 
   exit(status);
 }
@@ -81,7 +81,7 @@ struct Options parseOptions(int argc, char** argv) {
       {nullptr, 0, nullptr, 0}};
 
   while (1) {
-    opt = getopt_long(argc, argv, "m:t:a:n:c:", long_options, nullptr);
+    opt = getopt_long(argc, argv, "", long_options, nullptr);
     if (opt == -1) {
       break;
     }
