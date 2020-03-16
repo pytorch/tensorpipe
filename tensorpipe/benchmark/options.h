@@ -16,9 +16,12 @@ namespace benchmark {
 struct Options {
   std::string mode; // server or client
   std::string transport; // shm or uv
+  std::string channel; // basic
   std::string address; // address for listen or connect
-  int ioNum{0}; // number of write/read pairs
-  size_t chunkBytes{8};
+  int numRoundTrips{0}; // number of write/read pairs
+  size_t payloadSize{0};
+  size_t tensorSize{0};
+  size_t metadataSize{0};
 };
 
 struct Options parseOptions(int argc, char** argv);

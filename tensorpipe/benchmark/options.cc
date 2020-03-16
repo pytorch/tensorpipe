@@ -25,11 +25,14 @@ static void usage(int status, const char* argv0) {
   fprintf(stderr, "Usage: %s [OPTIONS]\n", argv0);
 #define X(x) fputs(x "\n", stderr);
   X("");
-  X("--mode=MODE                    Running mode [listen|connect]");
-  X("--transport=TRANSPORT          Transport backend [shm|uv]");
-  X("--address=ADDRESS              Address to listen or connect to");
-  X("--io-num=NUM                   Number of write/read pairs to perform");
-  X("--chunk-bytes=SIZE [Optional]  Chunk bytes of each write/read pair");
+  X("--mode=MODE                     Running mode [listen|connect]");
+  X("--transport=TRANSPORT           Transport backend [shm|uv]");
+  X("--channel=CHANNEL               Channel backend [basic]");
+  X("--address=ADDRESS               Address to listen or connect to");
+  X("--num-round-trips=NUM           Number of write/read pairs to perform");
+  X("--payload-size=SIZE [optional]  Size of payload of each write/read pair");
+  X("--tensor-size=SIZE [optional]   Size of tensor of each write/read pair");
+  X("--metadata-size=SIZE [optional] Size of metadata of each write/read pair");
 
   exit(status);
 }
@@ -48,7 +51,7 @@ static void validateOptions(Options options, const char* argv0) {
     fprintf(stderr, "Missing argument: --address must be set\n");
     status = EXIT_FAILURE;
   }
-  if (options.ioNum <= 0) {
+  if (options.numRoundTrips <= 0) {
     fprintf(stderr, "Missing argument: --io-num must be set\n");
     status = EXIT_FAILURE;
   }
@@ -65,18 +68,24 @@ struct Options parseOptions(int argc, char** argv) {
   enum Flags : int {
     MODE,
     TRANSPORT,
+    CHANNEL,
     ADDRESS,
-    IO_NUM,
-    CHUNK_BYTES,
+    NUM_ROUND_TRIPS,
+    PAYLOAD_SIZE,
+    TENSOR_SIZE,
+    METADATA_SIZE,
     HELP,
   };
 
   static struct option long_options[] = {
       {"mode", required_argument, &flag, MODE},
       {"transport", required_argument, &flag, TRANSPORT},
+      {"channel", required_argument, &flag, CHANNEL},
       {"address", required_argument, &flag, ADDRESS},
-      {"io-num", required_argument, &flag, IO_NUM},
-      {"chunk-bytes", required_argument, &flag, CHUNK_BYTES},
+      {"num-round-trips", required_argument, &flag, NUM_ROUND_TRIPS},
+      {"payload-size", required_argument, &flag, PAYLOAD_SIZE},
+      {"tensor-size", required_argument, &flag, TENSOR_SIZE},
+      {"metadata-size", required_argument, &flag, METADATA_SIZE},
       {"help", no_argument, &flag, HELP},
       {nullptr, 0, nullptr, 0}};
 
@@ -100,20 +109,24 @@ struct Options parseOptions(int argc, char** argv) {
         break;
       case TRANSPORT:
         options.transport = std::string(optarg, strlen(optarg));
-        if (options.transport != "shm" && options.transport != "uv") {
-          fprintf(stderr, "Error:\n");
-          fprintf(stderr, "  --transport must be [shm|uv]\n");
-          exit(EXIT_FAILURE);
-        }
+        break;
+      case CHANNEL:
+        options.channel = std::string(optarg, strlen(optarg));
         break;
       case ADDRESS:
         options.address = std::string(optarg, strlen(optarg));
         break;
-      case IO_NUM:
-        options.ioNum = atoi(optarg);
+      case NUM_ROUND_TRIPS:
+        options.numRoundTrips = atoi(optarg);
         break;
-      case CHUNK_BYTES:
-        options.chunkBytes = atoi(optarg);
+      case PAYLOAD_SIZE:
+        options.payloadSize = atoi(optarg);
+        break;
+      case TENSOR_SIZE:
+        options.tensorSize = atoi(optarg);
+        break;
+      case METADATA_SIZE:
+        options.metadataSize = atoi(optarg);
         break;
       case HELP:
         usage(EXIT_SUCCESS, argv[0]);

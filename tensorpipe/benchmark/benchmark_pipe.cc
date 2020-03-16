@@ -8,6 +8,7 @@
 
 #include <tensorpipe/benchmark/measurements.h>
 #include <tensorpipe/benchmark/options.h>
+#include <tensorpipe/channel/basic/basic.h>
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/core/context.h>
 #include <tensorpipe/core/listener.h>
@@ -23,9 +24,13 @@ using namespace tensorpipe::benchmark;
 Measurements measurements;
 
 struct Data {
-  std::unique_ptr<uint8_t[]> expected;
-  std::unique_ptr<uint8_t[]> temporary;
-  size_t len;
+  std::unique_ptr<uint8_t[]> expectedPayload;
+  std::unique_ptr<uint8_t[]> temporaryPayload;
+  size_t payloadSize;
+  std::unique_ptr<uint8_t[]> expectedTensor;
+  std::unique_ptr<uint8_t[]> temporaryTensor;
+  size_t tensorSize;
+  std::string expectedMetadata;
 };
 
 static void printMeasurements(Measurements& measurements, size_t dataLen) {
@@ -52,10 +57,10 @@ static void printMeasurements(Measurements& measurements, size_t dataLen) {
       measurements.percentile(0.95).count() / 1000.0);
 }
 
-static std::unique_ptr<uint8_t[]> createData(const int chunkBytes) {
-  auto data = std::make_unique<uint8_t[]>(chunkBytes);
+static std::unique_ptr<uint8_t[]> createData(const int size) {
+  auto data = std::make_unique<uint8_t[]>(size);
   // Generate fixed data for validation between peers
-  for (int i = 0; i < chunkBytes; i++) {
+  for (int i = 0; i < size; i++) {
     data[i] = (i >> 8) ^ (i & 0xff);
   }
   return data;
@@ -63,30 +68,51 @@ static std::unique_ptr<uint8_t[]> createData(const int chunkBytes) {
 
 static void serverPongPingNonBlock(
     std::shared_ptr<Pipe> pipe,
-    int& ioNum,
+    int& numRoundTrips,
     std::promise<void>& doneProm,
     Data& data,
     Measurements& measurements) {
-  pipe->readDescriptor([pipe, &ioNum, &doneProm, &data, &measurements](
+  pipe->readDescriptor([pipe, &numRoundTrips, &doneProm, &data, &measurements](
                            const Error& error, Message&& message) {
     TP_THROW_ASSERT_IF(error) << error.what();
-    TP_DCHECK_EQ(message.length, data.len);
-    message.data = data.temporary.get();
+    TP_DCHECK_EQ(message.length, data.payloadSize);
+    message.data = data.temporaryPayload.get();
+    TP_DCHECK_EQ(message.metadata, data.expectedMetadata);
+    if (data.tensorSize > 0) {
+      TP_DCHECK_EQ(message.tensors.size(), 1);
+      TP_DCHECK_EQ(message.tensors[0].length, data.tensorSize);
+      message.tensors[0].data = data.temporaryTensor.get();
+    } else {
+      TP_DCHECK_EQ(message.tensors.size(), 0);
+    }
     pipe->read(
         std::move(message),
-        [pipe, &ioNum, &doneProm, &data, &measurements](
+        [pipe, &numRoundTrips, &doneProm, &data, &measurements](
             const Error& error, Message&& message) {
           TP_THROW_ASSERT_IF(error) << error.what();
-          int cmp = memcmp(message.data, data.expected.get(), message.length);
-          TP_DCHECK_EQ(cmp, 0);
+          TP_DCHECK_EQ(
+              memcmp(message.data, data.expectedPayload.get(), message.length),
+              0);
+          if (data.tensorSize > 0) {
+            TP_DCHECK_EQ(message.tensors.size(), 1);
+            TP_DCHECK_EQ(message.tensors[0].length, data.tensorSize);
+            TP_DCHECK_EQ(
+                memcmp(
+                    message.tensors[0].data,
+                    data.expectedTensor.get(),
+                    message.tensors[0].length),
+                0);
+          } else {
+            TP_DCHECK_EQ(message.tensors.size(), 0);
+          }
           pipe->write(
               std::move(message),
-              [pipe, &ioNum, &doneProm, &data, &measurements](
+              [pipe, &numRoundTrips, &doneProm, &data, &measurements](
                   const Error& error, Message&& message) {
                 TP_THROW_ASSERT_IF(error) << error.what();
-                if (--ioNum > 0) {
+                if (--numRoundTrips > 0) {
                   serverPongPingNonBlock(
-                      pipe, ioNum, doneProm, data, measurements);
+                      pipe, numRoundTrips, doneProm, data, measurements);
                 } else {
                   doneProm.set_value();
                 }
@@ -98,12 +124,18 @@ static void serverPongPingNonBlock(
 // Start with receiving ping
 static void runServer(const Options& options) {
   std::string addr = options.address;
-  int ioNum = options.ioNum;
-  Data data = {createData(options.chunkBytes),
-               std::make_unique<uint8_t[]>(options.chunkBytes),
-               options.chunkBytes};
+  int numRoundTrips = options.numRoundTrips;
+  Data data = {
+      createData(options.payloadSize),
+      std::make_unique<uint8_t[]>(options.payloadSize),
+      options.payloadSize,
+      createData(options.tensorSize),
+      std::make_unique<uint8_t[]>(options.tensorSize),
+      options.tensorSize,
+      std::string(options.metadataSize, 0x42),
+  };
   Measurements measurements;
-  measurements.reserve(options.ioNum);
+  measurements.reserve(options.numRoundTrips);
 
   std::shared_ptr<Context> context = Context::create();
 #ifdef TP_ENABLE_SHM
@@ -117,7 +149,14 @@ static void runServer(const Options& options) {
         0, "uv", std::make_shared<transport::uv::Context>());
   } else {
     // Should never be here
-    abort();
+    TP_THROW_ASSERT() << "unknown transport: " << options.transport;
+  }
+  if (options.channel == "basic") {
+    context->registerChannelFactory(
+        0, "basic", std::make_shared<channel::basic::BasicChannelFactory>());
+  } else {
+    // Should never be here
+    TP_THROW_ASSERT() << "unknown channel: " << options.channel;
   }
 
   std::promise<std::shared_ptr<Pipe>> pipeProm;
@@ -129,7 +168,8 @@ static void runServer(const Options& options) {
   std::shared_ptr<Pipe> pipe = pipeProm.get_future().get();
 
   std::promise<void> doneProm;
-  serverPongPingNonBlock(std::move(pipe), ioNum, doneProm, data, measurements);
+  serverPongPingNonBlock(
+      std::move(pipe), numRoundTrips, doneProm, data, measurements);
 
   doneProm.get_future().get();
   listener.reset();
@@ -138,54 +178,88 @@ static void runServer(const Options& options) {
 
 static void clientPingPongNonBlock(
     std::shared_ptr<Pipe> pipe,
-    int& ioNum,
+    int& numRoundTrips,
     std::promise<void>& doneProm,
     Data& data,
     Measurements& measurements) {
   measurements.markStart();
   Message message;
-  message.data = data.expected.get();
-  message.length = data.len;
+  message.data = data.expectedPayload.get();
+  message.length = data.payloadSize;
+  message.metadata = data.expectedMetadata;
+  if (data.tensorSize > 0) {
+    Message::Tensor tensor;
+    tensor.data = data.expectedTensor.get();
+    tensor.length = data.tensorSize;
+    message.tensors.push_back(std::move(tensor));
+  } else {
+    TP_DCHECK_EQ(message.tensors.size(), 0);
+  }
   pipe->write(
       std::move(message),
-      [pipe, &ioNum, &doneProm, &data, &measurements](
+      [pipe, &numRoundTrips, &doneProm, &data, &measurements](
           const Error& error, Message&& message) {
         TP_THROW_ASSERT_IF(error) << error.what();
-        pipe->readDescriptor([pipe, &ioNum, &doneProm, &data, &measurements](
-                                 const Error& error, Message&& message) {
-          TP_THROW_ASSERT_IF(error) << error.what();
-          TP_DCHECK_EQ(message.length, data.len);
-          message.data = data.temporary.get();
-          pipe->read(
-              std::move(message),
-              [pipe, &ioNum, &doneProm, &data, &measurements](
-                  const Error& error, Message&& message) {
-                measurements.markStop();
-                TP_THROW_ASSERT_IF(error) << error.what();
-                int cmp =
-                    memcmp(message.data, data.expected.get(), message.length);
-                TP_DCHECK_EQ(cmp, 0);
-                if (--ioNum > 0) {
-                  clientPingPongNonBlock(
-                      pipe, ioNum, doneProm, data, measurements);
-                } else {
-                  printMeasurements(measurements, data.len);
-                  doneProm.set_value();
-                }
-              });
-        });
+        pipe->readDescriptor(
+            [pipe, &numRoundTrips, &doneProm, &data, &measurements](
+                const Error& error, Message&& message) {
+              TP_THROW_ASSERT_IF(error) << error.what();
+              TP_DCHECK_EQ(message.length, data.payloadSize);
+              message.data = data.temporaryPayload.get();
+              TP_DCHECK_EQ(message.metadata, data.expectedMetadata);
+              if (data.tensorSize > 0) {
+                TP_DCHECK_EQ(message.tensors.size(), 1);
+                TP_DCHECK_EQ(message.tensors[0].length, data.tensorSize);
+                message.tensors[0].data = data.temporaryTensor.get();
+              } else {
+                TP_DCHECK_EQ(message.tensors.size(), 0);
+              }
+              pipe->read(
+                  std::move(message),
+                  [pipe, &numRoundTrips, &doneProm, &data, &measurements](
+                      const Error& error, Message&& message) {
+                    measurements.markStop();
+                    TP_THROW_ASSERT_IF(error) << error.what();
+                    TP_DCHECK_EQ(
+                        memcmp(
+                            message.data,
+                            data.expectedPayload.get(),
+                            message.length),
+                        0);
+                    TP_DCHECK_EQ(message.tensors.size(), 1);
+                    TP_DCHECK_EQ(
+                        memcmp(
+                            message.tensors[0].data,
+                            data.expectedTensor.get(),
+                            message.tensors[0].length),
+                        0);
+                    if (--numRoundTrips > 0) {
+                      clientPingPongNonBlock(
+                          pipe, numRoundTrips, doneProm, data, measurements);
+                    } else {
+                      printMeasurements(measurements, data.payloadSize);
+                      doneProm.set_value();
+                    }
+                  });
+            });
       });
 }
 
 // Start with sending ping
 static void runClient(const Options& options) {
   std::string addr = options.address;
-  int ioNum = options.ioNum;
-  Data data = {createData(options.chunkBytes),
-               std::make_unique<uint8_t[]>(options.chunkBytes),
-               options.chunkBytes};
+  int numRoundTrips = options.numRoundTrips;
+  Data data = {
+      createData(options.payloadSize),
+      std::make_unique<uint8_t[]>(options.payloadSize),
+      options.payloadSize,
+      createData(options.tensorSize),
+      std::make_unique<uint8_t[]>(options.tensorSize),
+      options.tensorSize,
+      std::string(options.metadataSize, 0x42),
+  };
   Measurements measurements;
-  measurements.reserve(options.ioNum);
+  measurements.reserve(options.numRoundTrips);
 
   std::shared_ptr<Context> context = Context::create();
 #ifdef TP_ENABLE_SHM
@@ -199,12 +273,21 @@ static void runClient(const Options& options) {
         0, "uv", std::make_shared<transport::uv::Context>());
   } else {
     // Should never be here
-    abort();
+    TP_THROW_ASSERT() << "unknown transport: " << options.transport;
   }
+  if (options.channel == "basic") {
+    context->registerChannelFactory(
+        0, "basic", std::make_shared<channel::basic::BasicChannelFactory>());
+  } else {
+    // Should never be here
+    TP_THROW_ASSERT() << "unknown channel: " << options.channel;
+  }
+
   std::shared_ptr<Pipe> pipe = Pipe::create(context, addr);
 
   std::promise<void> doneProm;
-  clientPingPongNonBlock(std::move(pipe), ioNum, doneProm, data, measurements);
+  clientPingPongNonBlock(
+      std::move(pipe), numRoundTrips, doneProm, data, measurements);
 
   doneProm.get_future().get();
   context->join();
@@ -214,9 +297,12 @@ int main(int argc, char** argv) {
   struct Options x = parseOptions(argc, argv);
   std::cout << "mode = " << x.mode << "\n";
   std::cout << "transport = " << x.transport << "\n";
+  std::cout << "channel = " << x.channel << "\n";
   std::cout << "address = " << x.address << "\n";
-  std::cout << "io_num = " << x.ioNum << "\n";
-  std::cout << "chunk_bytes = " << x.chunkBytes << "\n";
+  std::cout << "num_round_trips = " << x.numRoundTrips << "\n";
+  std::cout << "payload_size = " << x.payloadSize << "\n";
+  std::cout << "tensor_size = " << x.tensorSize << "\n";
+  std::cout << "metadata_size = " << x.metadataSize << "\n";
 
   if (x.mode == "listen") {
     runServer(x);
@@ -224,7 +310,7 @@ int main(int argc, char** argv) {
     runClient(x);
   } else {
     // Should never be here
-    abort();
+    TP_THROW_ASSERT() << "unknown mode: " << x.mode;
   }
 
   return 0;

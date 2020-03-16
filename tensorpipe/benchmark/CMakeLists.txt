@@ -8,6 +8,7 @@ add_executable(benchmark_transport benchmark_transport.cc options.cc)
 target_link_libraries(
   benchmark_transport
   tensorpipe
+  tensorpipe_basic
   tensorpipe_uv
   )
 
@@ -15,6 +16,7 @@ add_executable(benchmark_pipe benchmark_pipe.cc options.cc)
 target_link_libraries(
   benchmark_pipe
   tensorpipe
+  tensorpipe_basic
   tensorpipe_uv
   )
 
