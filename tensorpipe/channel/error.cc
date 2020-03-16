@@ -6,13 +6,13 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <tensorpipe/transport/error.h>
+#include <tensorpipe/channel/error.h>
 
 #include <cstring>
 #include <sstream>
 
 namespace tensorpipe {
-namespace transport {
+namespace channel {
 
 std::string SystemError::what() const {
   std::ostringstream ss;
@@ -38,5 +38,5 @@ std::string EOFError::what() const {
   return "eof";
 }
 
-} // namespace transport
+} // namespace channel
 } // namespace tensorpipe

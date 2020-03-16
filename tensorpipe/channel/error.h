@@ -13,7 +13,7 @@
 #include <tensorpipe/common/error.h>
 
 namespace tensorpipe {
-namespace transport {
+namespace channel {
 
 class SystemError final : public BaseError {
  public:
@@ -58,5 +58,5 @@ class EOFError final : public BaseError {
   std::string what() const override;
 };
 
-} // namespace transport
+} // namespace channel
 } // namespace tensorpipe

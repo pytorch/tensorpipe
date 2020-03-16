@@ -6,6 +6,7 @@
 
 set(TENSORPIPE_SOURCES
   ${CMAKE_CURRENT_SOURCE_DIR}/channel/channel.cc
+  ${CMAKE_CURRENT_SOURCE_DIR}/channel/error.cc
   ${CMAKE_CURRENT_SOURCE_DIR}/common/address.cc
   ${CMAKE_CURRENT_SOURCE_DIR}/common/error.cc
   ${CMAKE_CURRENT_SOURCE_DIR}/common/system.cc
