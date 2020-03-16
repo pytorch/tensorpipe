@@ -25,3 +25,6 @@ function(add_tensorpipe_channel_test)
 endfunction()
 
 add_subdirectory(basic)
+if(TP_ENABLE_CMA)
+  add_subdirectory(cma)
+endif()

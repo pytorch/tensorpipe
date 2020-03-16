@@ -129,6 +129,8 @@ TEST(Context, ClientPingSerial) {
 #endif // TP_ENABLE_SHM
   context->registerChannelFactory(
       0, "basic", std::make_shared<channel::basic::BasicChannelFactory>());
+  context->registerChannelFactory(
+      -1, "cma", channel::cma::CmaChannelFactory::create());
 
   auto listener = Listener::create(context, genUrls());
 
@@ -207,6 +209,8 @@ TEST(Context, ClientPingInline) {
 #endif // TP_ENABLE_SHM
   context->registerChannelFactory(
       0, "basic", std::make_shared<channel::basic::BasicChannelFactory>());
+  context->registerChannelFactory(
+      -1, "cma", channel::cma::CmaChannelFactory::create());
 
   auto listener = Listener::create(context, genUrls());
 
@@ -280,6 +284,8 @@ TEST(Context, ServerPingPongTwice) {
 #endif // TP_ENABLE_SHM
   context->registerChannelFactory(
       0, "basic", std::make_shared<channel::basic::BasicChannelFactory>());
+  context->registerChannelFactory(
+      -1, "cma", channel::cma::CmaChannelFactory::create());
 
   auto listener = Listener::create(context, genUrls());
 

@@ -15,7 +15,13 @@ class TestTensorpipe(unittest.TestCase):
     def test_read_write(self):
         context = tp.Context()
         context.register_transport(0, "tcp", tp.UvTransport())
+        shm_transport = getattr(tp, "ShmTransport", None)
+        if shm_transport is not None:
+            context.register_transport(-1, "shm", shm_transport())
         context.register_channel(0, "basic", tp.BasicChannel())
+        cma_channel = getattr(tp, "CmaChannel", None)
+        if cma_channel is not None:
+            context.register_channel(-1, "shm", cma_channel())
 
         # We must keep a reference to it, or it will be destroyed early.
         server_pipe = None

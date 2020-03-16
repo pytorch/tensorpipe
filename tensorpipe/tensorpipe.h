@@ -34,3 +34,7 @@
 #ifdef TP_ENABLE_SHM
 #include <tensorpipe/transport/shm/context.h>
 #endif // TP_ENABLE_SHM
+
+#ifdef TP_ENABLE_CMA
+#include <tensorpipe/channel/cma/cma.h>
+#endif // TP_ENABLE_CMA

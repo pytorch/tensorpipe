@@ -15,6 +15,9 @@
 #include <pybind11/stl.h>
 
 #include <tensorpipe/channel/basic/basic.h>
+#ifdef TP_ENABLE_CMA
+#include <tensorpipe/channel/cma/cma.h>
+#endif // TP_ENABLE_CMA
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/optional.h>
 #include <tensorpipe/core/context.h>
@@ -377,6 +380,13 @@ PYBIND11_MODULE(pytensorpipe, module) {
   channel_factory_class_<tensorpipe::channel::basic::BasicChannelFactory>
       basicChannel(module, "BasicChannel");
   basicChannel.def(py::init<>());
+
+#ifdef TP_ENABLE_CMA
+  channel_factory_class_<tensorpipe::channel::cma::CmaChannelFactory>
+      processVmReadvChannel(module, "CmaChannel");
+  processVmReadvChannel.def(
+      py::init(&tensorpipe::channel::cma::CmaChannelFactory::create));
+#endif // TP_ENABLE_CMA
 
   context.def(
       "register_channel",

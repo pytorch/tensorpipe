@@ -11,6 +11,7 @@ project(tensorpipe C CXX)
 set(CMAKE_CXX_STANDARD 14)
 
 option(TP_ENABLE_SHM "Enable shm transport" $<BOOL:LINUX>)
+option(TP_ENABLE_CMA "Enable cma channel" $<BOOL:LINUX>)
 
 # Use CMAKE_<LANG>_COMPILER_LAUNCHER if available.
 find_program(SCCACHE_EXECUTABLE sccache)

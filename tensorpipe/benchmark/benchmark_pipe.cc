@@ -9,6 +9,9 @@
 #include <tensorpipe/benchmark/measurements.h>
 #include <tensorpipe/benchmark/options.h>
 #include <tensorpipe/channel/basic/basic.h>
+#ifdef TP_ENABLE_CMA
+#include <tensorpipe/channel/cma/cma.h>
+#endif // TP_ENABLE_CMA
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/core/context.h>
 #include <tensorpipe/core/listener.h>
@@ -154,7 +157,14 @@ static void runServer(const Options& options) {
   if (options.channel == "basic") {
     context->registerChannelFactory(
         0, "basic", std::make_shared<channel::basic::BasicChannelFactory>());
-  } else {
+  } else
+#ifdef TP_ENABLE_CMA
+      if (options.channel == "cma") {
+    context->registerChannelFactory(
+        0, "cma", channel::cma::CmaChannelFactory::create());
+  } else
+#endif // TP_ENABLE_CMA
+  {
     // Should never be here
     TP_THROW_ASSERT() << "unknown channel: " << options.channel;
   }
@@ -278,7 +288,14 @@ static void runClient(const Options& options) {
   if (options.channel == "basic") {
     context->registerChannelFactory(
         0, "basic", std::make_shared<channel::basic::BasicChannelFactory>());
-  } else {
+  } else
+#ifdef TP_ENABLE_CMA
+      if (options.channel == "cma") {
+    context->registerChannelFactory(
+        0, "cma", channel::cma::CmaChannelFactory::create());
+  } else
+#endif // TP_ENABLE_CMA
+  {
     // Should never be here
     TP_THROW_ASSERT() << "unknown channel: " << options.channel;
   }
