@@ -8,6 +8,7 @@
 
 #pragma once
 
+#include <limits>
 #include <list>
 #include <mutex>
 
@@ -32,7 +33,7 @@ class CmaChannelFactory
  public:
   static std::shared_ptr<CmaChannelFactory> create();
 
-  explicit CmaChannelFactory(ConstructorToken);
+  explicit CmaChannelFactory(ConstructorToken, int queueCapacity = INT_MAX);
 
   ~CmaChannelFactory() override;
 

@@ -62,9 +62,12 @@ std::shared_ptr<CmaChannelFactory> CmaChannelFactory::create() {
   return factory;
 }
 
-CmaChannelFactory::CmaChannelFactory(ConstructorToken /* unused */)
+CmaChannelFactory::CmaChannelFactory(
+    ConstructorToken /* unused */,
+    int queueCapacity)
     : ChannelFactory(kChannelName),
-      domainDescriptor_(generateDomainDescriptor()) {}
+      domainDescriptor_(generateDomainDescriptor()),
+      requests_(queueCapacity) {}
 
 void CmaChannelFactory::init_() {
   std::unique_lock<std::mutex> lock(mutex_);
