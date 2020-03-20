@@ -73,7 +73,11 @@ Pipe::Pipe(
       channelSendCallbackWrapper_(*this) {}
 
 void Pipe::start_() {
-  std::unique_lock<std::mutex> lock(mutex_);
+  deferToLoop_([this](TLock lock) { startFromLoop_(lock); });
+}
+
+void Pipe::startFromLoop_(TLock lock) {
+  TP_DCHECK(lock.owns_lock() && lock.mutex() == &mutex_);
   if (state_ == CLIENT_ABOUT_TO_SEND_HELLO_AND_BROCHURE) {
     auto pbPacketOut = std::make_shared<proto::Packet>();
     // This makes the packet contain a SpontaneousConnection message.
@@ -129,7 +133,12 @@ void Pipe::start_() {
 }
 
 Pipe::~Pipe() {
-  std::unique_lock<std::mutex> lock(mutex_);
+  deferToLoop_([this](TLock lock) { closeFromLoop_(lock); });
+}
+
+void Pipe::closeFromLoop_(TLock lock) {
+  TP_DCHECK(lock.owns_lock() && lock.mutex() == &mutex_);
+
   // TODO Make a RAII wrapper so that this isn't necessary.
   if (registrationId_.has_value()) {
     listener_->unregisterConnectionRequest_(registrationId_.value());
@@ -143,12 +152,43 @@ Pipe::~Pipe() {
   handleError_(lock);
 }
 
+void Pipe::deferToLoop_(std::function<void(TLock)> fn) {
+  // If the current thread is already holding the lock (i.e., it's already in
+  // this function somewhere higher up in the stack) then this check won't race
+  // and we will detect it correctly. If this is not the case, then this check
+  // may race with another thread, but that's nothing to worry about because in
+  // either case the outcome will be negative.
+  if (currentLoop_ == std::this_thread::get_id()) {
+    pendingTasks_.push_back(std::move(fn));
+    return;
+  }
+
+  std::unique_lock<std::mutex> lock(mutex_);
+  currentLoop_ = std::this_thread::get_id();
+
+  fn(lock);
+
+  while (!pendingTasks_.empty()) {
+    pendingTasks_.front()(lock);
+    pendingTasks_.pop_front();
+  }
+
+  // FIXME Use some RAII pattern to make sure this is reset in case of exception
+  currentLoop_ = std::thread::id();
+}
+
 //
 // Entry points for user code
 //
 
 void Pipe::readDescriptor(read_descriptor_callback_fn fn) {
-  std::unique_lock<std::mutex> lock(mutex_);
+  deferToLoop_([this, fn{std::move(fn)}](TLock lock) mutable {
+    readDescriptorFromLoop_(std::move(fn), lock);
+  });
+}
+
+void Pipe::readDescriptorFromLoop_(read_descriptor_callback_fn fn, TLock lock) {
+  TP_DCHECK(lock.owns_lock() && lock.mutex() == &mutex_);
 
   int64_t sequenceNumber = nextMessageBeingRead_++;
 
@@ -174,7 +214,18 @@ void Pipe::readDescriptor(read_descriptor_callback_fn fn) {
 }
 
 void Pipe::read(Message message, read_callback_fn fn) {
-  std::unique_lock<std::mutex> lock(mutex_);
+  // Messages aren't copyable and thus if a lambda captures them it cannot be
+  // wrapped in a std::function. Therefore we wrap Messages in shared_ptrs.
+  auto sharedMessage = std::make_shared<Message>(std::move(message));
+  deferToLoop_([this,
+                sharedMessage{std::move(sharedMessage)},
+                fn{std::move(fn)}](TLock lock) mutable {
+    readFromLoop_(std::move(*sharedMessage), std::move(fn), lock);
+  });
+}
+
+void Pipe::readFromLoop_(Message message, read_callback_fn fn, TLock lock) {
+  TP_DCHECK(lock.owns_lock() && lock.mutex() == &mutex_);
 
   // This is such a bad logical error on the user's side that it doesn't deserve
   // to pass through the channel for "expected errors" (i.e., the callback).
@@ -248,7 +299,18 @@ void Pipe::read(Message message, read_callback_fn fn) {
 }
 
 void Pipe::write(Message message, write_callback_fn fn) {
-  std::unique_lock<std::mutex> lock(mutex_);
+  // Messages aren't copyable and thus if a lambda captures them it cannot be
+  // wrapped in a std::function. Therefore we wrap Messages in shared_ptrs.
+  auto sharedMessage = std::make_shared<Message>(std::move(message));
+  deferToLoop_([this,
+                sharedMessage{std::move(sharedMessage)},
+                fn{std::move(fn)}](TLock lock) mutable {
+    writeFromLoop_(std::move(*sharedMessage), std::move(fn), lock);
+  });
+}
+
+void Pipe::writeFromLoop_(Message message, write_callback_fn fn, TLock lock) {
+  TP_DCHECK(lock.owns_lock() && lock.mutex() == &mutex_);
 
   int64_t sequenceNumber = nextMessageBeingWritten_++;
 

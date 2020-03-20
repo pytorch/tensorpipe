@@ -95,6 +95,21 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
   std::mutex mutex_;
   using TLock = std::unique_lock<std::mutex>&;
 
+  std::atomic<std::thread::id> currentLoop_{std::thread::id()};
+  std::deque<std::function<void(TLock)>> pendingTasks_;
+
+  void deferToLoop_(std::function<void(TLock)> fn);
+
+  void startFromLoop_(TLock);
+
+  void readDescriptorFromLoop_(read_descriptor_callback_fn, TLock);
+
+  void readFromLoop_(Message, read_callback_fn, TLock);
+
+  void writeFromLoop_(Message, write_callback_fn, TLock);
+
+  void closeFromLoop_(TLock);
+
   enum State {
     INITIALIZING,
     CLIENT_ABOUT_TO_SEND_HELLO_AND_BROCHURE,
@@ -187,13 +202,16 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
   // Helpers to prepare callbacks from transports and listener
   //
 
-  CallbackWrapper<Pipe, const void*, size_t> readCallbackWrapper_;
-  CallbackWrapper<Pipe> readPacketCallbackWrapper_;
-  CallbackWrapper<Pipe> writeCallbackWrapper_;
-  CallbackWrapper<Pipe, std::string, std::shared_ptr<transport::Connection>>
+  DeferringCallbackWrapper<Pipe, const void*, size_t> readCallbackWrapper_;
+  DeferringCallbackWrapper<Pipe> readPacketCallbackWrapper_;
+  DeferringCallbackWrapper<Pipe> writeCallbackWrapper_;
+  DeferringCallbackWrapper<
+      Pipe,
+      std::string,
+      std::shared_ptr<transport::Connection>>
       connectionRequestCallbackWrapper_;
-  CallbackWrapper<Pipe> channelRecvCallbackWrapper_;
-  CallbackWrapper<Pipe> channelSendCallbackWrapper_;
+  DeferringCallbackWrapper<Pipe> channelRecvCallbackWrapper_;
+  DeferringCallbackWrapper<Pipe> channelSendCallbackWrapper_;
 
   //
   // Helpers to schedule our callbacks into user code
@@ -253,7 +271,7 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
   friend class Context;
   friend class Listener;
   template <typename T, typename... Args>
-  friend class CallbackWrapper;
+  friend class DeferringCallbackWrapper;
 };
 
 } // namespace tensorpipe

@@ -221,4 +221,81 @@ class CallbackWrapper {
   }
 };
 
+// This class has been copied from the above one, to convert it to the new
+// approach we're adopting in the pipe. If this approach proves successful we'll
+// adopt it everywhere and merge this class back into the original one.
+template <typename T, typename... Args>
+class DeferringCallbackWrapper {
+ public:
+  using TLock = std::unique_lock<std::mutex>&;
+  using TCallback = std::function<void(const Error&, Args...)>;
+  using TBoundCallback = std::function<void(T&, Args..., TLock)>;
+
+  DeferringCallbackWrapper(std::enable_shared_from_this<T>& subject)
+      : subject_(subject){};
+
+  TCallback operator()(TBoundCallback fn) {
+    return runIfAlive(
+        subject_,
+        std::function<void(T&, const Error&, Args...)>(
+            [this, fn{std::move(fn)}](
+                T& subject, const Error& error, Args... args) mutable {
+              this->entryPoint_(
+                  subject, std::move(fn), error, std::move(args)...);
+            }));
+  }
+
+ private:
+  std::enable_shared_from_this<T>& subject_;
+
+  void entryPoint_(
+      T& subject,
+      TBoundCallback fn,
+      const Error& error,
+      Args... args) {
+    // FIXME We're copying the args here...
+    subject.deferToLoop_([this, &subject, fn{std::move(fn)}, error, args...](
+                             TLock lock) mutable {
+      entryPointFromLoop_(
+          subject, std::move(fn), error, std::move(args)..., lock);
+    });
+  }
+
+  void entryPointFromLoop_(
+      T& subject,
+      TBoundCallback fn,
+      const Error& error,
+      Args... args,
+      TLock lock) {
+    TP_DCHECK(lock.owns_lock() && lock.mutex() == &subject.mutex_);
+
+    if (processError_(subject, error, lock)) {
+      return;
+    }
+    if (fn) {
+      fn(subject, std::move(args)..., lock);
+    }
+  }
+
+  bool processError_(T& subject, const Error& error, TLock lock) {
+    TP_DCHECK(lock.owns_lock() && lock.mutex() == &subject.mutex_);
+
+    // Nothing to do if we already were in an error state or if there is no
+    // error.
+    if (subject.error_) {
+      return true;
+    }
+    if (!error) {
+      return false;
+    }
+
+    // Otherwise enter the error state and do the cleanup.
+    subject.error_ = error;
+
+    subject.handleError_(lock);
+
+    return true;
+  }
+};
+
 } // namespace tensorpipe
