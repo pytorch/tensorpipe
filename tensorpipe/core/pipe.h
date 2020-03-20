@@ -85,30 +85,23 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
   void write(Message, write_callback_fn);
 
  private:
-  // Each time a thread starts running some of the pipe's code, we acquire this
-  // mutex. There are two "entry points" where control is handed to the pipe:
-  // the public user-facing functions, and the callbacks (which we always wrap
-  // with wrapFooCallback_, which first calls fooEntryPoint_, which is where the
-  // mutex is acquired). Some internal methods may however want to temporarily
-  // release the lock, so we give all of them a reference to the lock that has
-  // been acquired at the entry point.
   std::mutex mutex_;
-  using TLock = std::unique_lock<std::mutex>&;
-
   std::atomic<std::thread::id> currentLoop_{std::thread::id()};
-  std::deque<std::function<void(TLock)>> pendingTasks_;
+  std::deque<std::function<void()>> pendingTasks_;
 
-  void deferToLoop_(std::function<void(TLock)> fn);
+  void deferToLoop_(std::function<void()> fn);
 
-  void startFromLoop_(TLock);
+  void startFromLoop_();
 
-  void readDescriptorFromLoop_(read_descriptor_callback_fn, TLock);
+  void readDescriptorFromLoop_(read_descriptor_callback_fn);
 
-  void readFromLoop_(Message, read_callback_fn, TLock);
+  void readFromLoop_(Message, read_callback_fn);
 
-  void writeFromLoop_(Message, write_callback_fn, TLock);
+  void writeFromLoop_(Message, write_callback_fn);
 
-  void closeFromLoop_(TLock);
+  bool inLoop_();
+
+  void closeFromLoop_();
 
   enum State {
     INITIALIZING,
@@ -178,17 +171,14 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
   int64_t nextMessageBeingRead_{0};
   std::deque<MessageBeingExpected> messagesBeingExpected_;
   int64_t nextReadDescriptorCallbackToCall_{0};
-  std::condition_variable readDescriptorCallbackCalled_;
   std::deque<MessageBeingAllocated> messagesBeingAllocated_;
   std::deque<MessageBeingRead> messagesBeingRead_;
   int64_t nextReadCallbackToCall_{0};
-  std::condition_variable readCallbackCalled_;
 
   int64_t nextMessageBeingWritten_{0};
   std::deque<MessageBeingQueued> messagesBeingQueued_;
   std::deque<MessageBeingWritten> messagesBeingWritten_;
   int64_t nextWriteCallbackToCall_{0};
-  std::condition_variable writeCallbackCalled_;
 
   Error error_;
 
@@ -221,52 +211,43 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
       int64_t,
       read_descriptor_callback_fn&&,
       const Error&,
-      Message,
-      TLock);
-  void triggerReadCallback_(
-      int64_t,
-      read_callback_fn&&,
-      const Error&,
-      Message,
-      TLock);
+      Message);
+  void triggerReadCallback_(int64_t, read_callback_fn&&, const Error&, Message);
   void triggerWriteCallback_(
       int64_t,
       write_callback_fn&&,
       const Error&,
-      Message,
-      TLock);
+      Message);
 
   //
   // Error handling
   //
 
-  void handleError_(TLock);
+  void handleError_();
 
   //
   // Everything else
   //
 
-  void doWritesAccumulatedWhileWaitingForPipeToBeEstablished_(TLock);
-  void writeWhenEstablished_(int64_t, Message, write_callback_fn, TLock);
-  void onReadWhileServerWaitingForBrochure_(const proto::Packet&, TLock);
-  void onReadWhileClientWaitingForBrochureAnswer_(const proto::Packet&, TLock);
+  void doWritesAccumulatedWhileWaitingForPipeToBeEstablished_();
+  void writeWhenEstablished_(int64_t, Message, write_callback_fn);
+  void onReadWhileServerWaitingForBrochure_(const proto::Packet&);
+  void onReadWhileClientWaitingForBrochureAnswer_(const proto::Packet&);
   void onAcceptWhileServerWaitingForConnection_(
       std::string,
-      std::shared_ptr<transport::Connection>,
-      TLock);
+      std::shared_ptr<transport::Connection>);
   void onAcceptWhileServerWaitingForChannel_(
       std::string,
       std::string,
-      std::shared_ptr<transport::Connection>,
-      TLock);
-  void onReadOfMessageDescriptor_(const proto::Packet&, TLock);
-  void onReadOfMessageData_(int64_t, TLock);
-  void onRecvOfTensorData_(int64_t, TLock);
-  void onWriteOfMessageData_(int64_t, TLock);
-  void onSendOfTensorData_(int64_t, TLock);
+      std::shared_ptr<transport::Connection>);
+  void onReadOfMessageDescriptor_(const proto::Packet&);
+  void onReadOfMessageData_(int64_t);
+  void onRecvOfTensorData_(int64_t);
+  void onWriteOfMessageData_(int64_t);
+  void onSendOfTensorData_(int64_t);
 
-  void checkForMessagesDoneReading_(TLock);
-  void checkForMessagesDoneWriting_(TLock);
+  void checkForMessagesDoneReading_();
+  void checkForMessagesDoneWriting_();
 
   friend class Context;
   friend class Listener;

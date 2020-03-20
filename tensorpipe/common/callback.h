@@ -227,9 +227,8 @@ class CallbackWrapper {
 template <typename T, typename... Args>
 class DeferringCallbackWrapper {
  public:
-  using TLock = std::unique_lock<std::mutex>&;
   using TCallback = std::function<void(const Error&, Args...)>;
-  using TBoundCallback = std::function<void(T&, Args..., TLock)>;
+  using TBoundCallback = std::function<void(T&, Args...)>;
 
   DeferringCallbackWrapper(std::enable_shared_from_this<T>& subject)
       : subject_(subject){};
@@ -254,31 +253,30 @@ class DeferringCallbackWrapper {
       const Error& error,
       Args... args) {
     // FIXME We're copying the args here...
-    subject.deferToLoop_([this, &subject, fn{std::move(fn)}, error, args...](
-                             TLock lock) mutable {
-      entryPointFromLoop_(
-          subject, std::move(fn), error, std::move(args)..., lock);
-    });
+    subject.deferToLoop_(
+        [this, &subject, fn{std::move(fn)}, error, args...]() mutable {
+          entryPointFromLoop_(
+              subject, std::move(fn), error, std::move(args)...);
+        });
   }
 
   void entryPointFromLoop_(
       T& subject,
       TBoundCallback fn,
       const Error& error,
-      Args... args,
-      TLock lock) {
-    TP_DCHECK(lock.owns_lock() && lock.mutex() == &subject.mutex_);
+      Args... args) {
+    TP_DCHECK(subject.inLoop_());
 
-    if (processError_(subject, error, lock)) {
+    if (processError_(subject, error)) {
       return;
     }
     if (fn) {
-      fn(subject, std::move(args)..., lock);
+      fn(subject, std::move(args)...);
     }
   }
 
-  bool processError_(T& subject, const Error& error, TLock lock) {
-    TP_DCHECK(lock.owns_lock() && lock.mutex() == &subject.mutex_);
+  bool processError_(T& subject, const Error& error) {
+    TP_DCHECK(subject.inLoop_());
 
     // Nothing to do if we already were in an error state or if there is no
     // error.
@@ -292,7 +290,7 @@ class DeferringCallbackWrapper {
     // Otherwise enter the error state and do the cleanup.
     subject.error_ = error;
 
-    subject.handleError_(lock);
+    subject.handleError_();
 
     return true;
   }
