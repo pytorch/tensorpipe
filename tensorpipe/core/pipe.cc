@@ -343,9 +343,7 @@ void Pipe::triggerReadDescriptorCallback_(
   readDescriptorCallbackCalled_.wait(lock, [&]() {
     return nextReadDescriptorCallbackToCall_ == sequenceNumber;
   });
-  lock.unlock();
   fn(error, std::move(message));
-  lock.lock();
   nextReadDescriptorCallbackToCall_++;
   readDescriptorCallbackCalled_.notify_all();
 }
@@ -359,9 +357,7 @@ void Pipe::triggerReadCallback_(
   TP_DCHECK(lock.owns_lock() && lock.mutex() == &mutex_);
   readCallbackCalled_.wait(
       lock, [&]() { return nextReadCallbackToCall_ == sequenceNumber; });
-  lock.unlock();
   fn(error, std::move(message));
-  lock.lock();
   nextReadCallbackToCall_++;
   readCallbackCalled_.notify_all();
 }
@@ -375,9 +371,7 @@ void Pipe::triggerWriteCallback_(
   TP_DCHECK(lock.owns_lock() && lock.mutex() == &mutex_);
   writeCallbackCalled_.wait(
       lock, [&]() { return nextWriteCallbackToCall_ == sequenceNumber; });
-  lock.unlock();
   fn(error, std::move(message));
-  lock.lock();
   nextWriteCallbackToCall_++;
   writeCallbackCalled_.notify_all();
 }
