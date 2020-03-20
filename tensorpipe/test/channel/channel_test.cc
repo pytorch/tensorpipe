@@ -121,6 +121,72 @@ TEST_P(ChannelTest, ServerToClient) {
   factory2->join();
 }
 
+TEST_P(ChannelTest, SendMultipleTensors) {
+  std::shared_ptr<ChannelFactory> factory1 = GetParam()->makeFactory();
+  std::shared_ptr<ChannelFactory> factory2 = GetParam()->makeFactory();
+  constexpr auto dataSize = 256 * 1024; // 256KB
+  Queue<Channel::TDescriptor> descriptorQueue;
+  constexpr int numTensors = 100;
+
+  testConnectionPair(
+      [&](std::shared_ptr<transport::Connection> conn) {
+        auto channel = factory1->createChannel(
+            std::move(conn), Channel::Endpoint::kListen);
+
+        // Initialize with sequential values.
+        std::vector<uint8_t> data(dataSize);
+        std::iota(data.begin(), data.end(), 0);
+
+        // Error futures
+        std::vector<std::future<Error>> futures;
+
+        // Perform send and wait for completion.
+        for (int i = 0; i < numTensors; i++) {
+          Channel::TDescriptor descriptor;
+          std::future<Error> future;
+          std::tie(descriptor, future) =
+              sendWithFuture(channel, data.data(), data.size());
+          descriptorQueue.push(std::move(descriptor));
+          futures.push_back(std::move(future));
+        }
+        for (auto& future : futures) {
+          ASSERT_FALSE(future.get());
+        }
+      },
+      [&](std::shared_ptr<transport::Connection> conn) {
+        auto channel = factory2->createChannel(
+            std::move(conn), Channel::Endpoint::kConnect);
+
+        // Initialize with zeroes.
+        std::vector<std::vector<uint8_t>> dataVec(
+            numTensors, std::vector<uint8_t>(dataSize, 0));
+
+        // Error futures
+        std::vector<std::future<Error>> futures;
+
+        // Perform recv and wait for completion.
+        for (int i = 0; i < numTensors; i++) {
+          std::future<Error> future = recvWithFuture(
+              channel, descriptorQueue.pop(), dataVec[i].data(), dataSize);
+          futures.push_back(std::move(future));
+        }
+        for (auto& future : futures) {
+          ASSERT_FALSE(future.get());
+        }
+
+        // Validate contents of vector.
+        for (auto& data : dataVec) {
+          for (int i = 0; i < data.size(); i++) {
+            uint8_t value = i;
+            EXPECT_EQ(data[i], value);
+          }
+        }
+      });
+
+  factory1->join();
+  factory2->join();
+}
+
 TEST_P(ChannelTest, FactoryIsNotJoined) {
   std::shared_ptr<ChannelFactory> factory = GetParam()->makeFactory();
 
