@@ -21,7 +21,7 @@ class TestTensorpipe(unittest.TestCase):
         context.register_channel(0, "basic", tp.BasicChannel())
         cma_channel = getattr(tp, "CmaChannel", None)
         if cma_channel is not None:
-            context.register_channel(-1, "shm", cma_channel())
+            context.register_channel(-1, "cma", cma_channel())
 
         # We must keep a reference to it, or it will be destroyed early.
         server_pipe = None
