@@ -42,6 +42,7 @@ jobs:
               -DCMAKE_CXX_FLAGS="-Werror -Wno-deprecated-declarations" \
               -DCMAKE_C_COMPILER=<< parameters.c_compiler >> \
               -DCMAKE_CXX_COMPILER=<< parameters.cxx_compiler >> \
+              -DTP_ENABLE_CMA=OFF \
               << parameters.cmake_args >>
             make -j
       - run:
