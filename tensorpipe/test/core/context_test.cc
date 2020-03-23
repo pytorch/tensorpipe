@@ -199,7 +199,8 @@ TEST(Context, ClientPingSerial) {
 
 TEST(Context, ClientPingInline) {
   std::vector<std::unique_ptr<uint8_t[]>> buffers;
-  std::promise<void> donePromise;
+  std::promise<void> writeCompletedProm;
+  std::promise<void> readCompletedProm;
 
   auto context = Context::create();
 
@@ -219,19 +220,19 @@ TEST(Context, ClientPingInline) {
   auto listener = Listener::create(context, genUrls());
 
   std::shared_ptr<Pipe> serverPipe;
-  listener->accept([&serverPipe, &donePromise, &buffers](
+  listener->accept([&serverPipe, &readCompletedProm, &buffers](
                        const Error& error, std::shared_ptr<Pipe> pipe) {
     if (error) {
       ADD_FAILURE() << error.what();
-      donePromise.set_value();
+      readCompletedProm.set_value();
       return;
     }
     serverPipe = std::move(pipe);
-    serverPipe->readDescriptor([&serverPipe, &donePromise, &buffers](
+    serverPipe->readDescriptor([&serverPipe, &readCompletedProm, &buffers](
                                    const Error& error, Message message) {
       if (error) {
         ADD_FAILURE() << error.what();
-        donePromise.set_value();
+        readCompletedProm.set_value();
         return;
       }
       auto messageData = std::make_unique<uint8_t[]>(message.length);
@@ -244,15 +245,15 @@ TEST(Context, ClientPingInline) {
       }
       serverPipe->read(
           std::move(message),
-          [&donePromise, &buffers](
+          [&readCompletedProm, &buffers](
               const Error& error, Message message) mutable {
             if (error) {
               ADD_FAILURE() << error.what();
-              donePromise.set_value();
+              readCompletedProm.set_value();
               return;
             }
             EXPECT_TRUE(messagesAreEqual(message, makeMessage()));
-            donePromise.set_value();
+            readCompletedProm.set_value();
           });
     });
   });
@@ -261,12 +262,14 @@ TEST(Context, ClientPingInline) {
   clientPipe->write(makeMessage(), [&](const Error& error, Message message) {
     if (error) {
       ADD_FAILURE() << error.what();
-      donePromise.set_value();
+      writeCompletedProm.set_value();
       return;
     }
+    writeCompletedProm.set_value();
   });
 
-  donePromise.get_future().get();
+  readCompletedProm.get_future().get();
+  writeCompletedProm.get_future().get();
 
   serverPipe.reset();
   listener.reset();
@@ -276,7 +279,8 @@ TEST(Context, ClientPingInline) {
 
 TEST(Context, ServerPingPongTwice) {
   std::vector<std::unique_ptr<uint8_t[]>> buffers;
-  std::promise<void> donePromise;
+  std::promise<void> pingCompletedProm;
+  std::promise<void> pongCompletedProm;
 
   auto context = Context::create();
 
@@ -297,70 +301,78 @@ TEST(Context, ServerPingPongTwice) {
 
   std::shared_ptr<Pipe> serverPipe;
   int numPingsGoneThrough = 0;
-  listener->accept([&serverPipe, &donePromise, &buffers, &numPingsGoneThrough](
+  listener->accept([&serverPipe,
+                    &pingCompletedProm,
+                    &buffers,
+                    &numPingsGoneThrough](
                        const Error& error, std::shared_ptr<Pipe> pipe) {
     if (error) {
       ADD_FAILURE() << error.what();
-      donePromise.set_value();
+      pingCompletedProm.set_value();
       return;
     }
     serverPipe = std::move(pipe);
     for (int i = 0; i < 2; i++) {
       serverPipe->write(
           makeMessage(),
-          [&serverPipe, &donePromise, &buffers, &numPingsGoneThrough, i](
+          [&serverPipe, &pingCompletedProm, &buffers, &numPingsGoneThrough, i](
               const Error& error, Message message) {
             if (error) {
               ADD_FAILURE() << error.what();
-              donePromise.set_value();
+              pingCompletedProm.set_value();
               return;
             }
-            serverPipe->readDescriptor(
-                [&serverPipe, &donePromise, &buffers, &numPingsGoneThrough, i](
-                    const Error& error, Message message) {
-                  if (error) {
-                    ADD_FAILURE() << error.what();
-                    donePromise.set_value();
-                    return;
-                  }
-                  auto messageData =
-                      std::make_unique<uint8_t[]>(message.length);
-                  message.data = messageData.get();
-                  buffers.push_back(std::move(messageData));
-                  for (auto& tensor : message.tensors) {
-                    auto tensorData =
-                        std::make_unique<uint8_t[]>(tensor.length);
-                    tensor.data = tensorData.get();
-                    buffers.push_back(std::move(tensorData));
-                  }
-                  serverPipe->read(
-                      std::move(message),
-                      [&donePromise, &buffers, &numPingsGoneThrough, i](
-                          const Error& error, Message message) {
-                        if (error) {
-                          ADD_FAILURE() << error.what();
-                          donePromise.set_value();
-                          return;
-                        }
-                        EXPECT_TRUE(messagesAreEqual(message, makeMessage()));
-                        EXPECT_EQ(numPingsGoneThrough, i);
-                        numPingsGoneThrough++;
-                        if (numPingsGoneThrough == 2) {
-                          donePromise.set_value();
-                        }
-                      });
-                });
+            serverPipe->readDescriptor([&serverPipe,
+                                        &pingCompletedProm,
+                                        &buffers,
+                                        &numPingsGoneThrough,
+                                        i](const Error& error,
+                                           Message message) {
+              if (error) {
+                ADD_FAILURE() << error.what();
+                pingCompletedProm.set_value();
+                return;
+              }
+              auto messageData = std::make_unique<uint8_t[]>(message.length);
+              message.data = messageData.get();
+              buffers.push_back(std::move(messageData));
+              for (auto& tensor : message.tensors) {
+                auto tensorData = std::make_unique<uint8_t[]>(tensor.length);
+                tensor.data = tensorData.get();
+                buffers.push_back(std::move(tensorData));
+              }
+              serverPipe->read(
+                  std::move(message),
+                  [&pingCompletedProm, &buffers, &numPingsGoneThrough, i](
+                      const Error& error, Message message) {
+                    if (error) {
+                      ADD_FAILURE() << error.what();
+                      pingCompletedProm.set_value();
+                      return;
+                    }
+                    EXPECT_TRUE(messagesAreEqual(message, makeMessage()));
+                    EXPECT_EQ(numPingsGoneThrough, i);
+                    numPingsGoneThrough++;
+                    if (numPingsGoneThrough == 2) {
+                      pingCompletedProm.set_value();
+                    }
+                  });
+            });
           });
     }
   });
 
   auto clientPipe = Pipe::create(context, listener->url("uv"));
+  int numPongsGoneThrough = 0;
   for (int i = 0; i < 2; i++) {
-    clientPipe->readDescriptor([&clientPipe, &donePromise, &buffers](
-                                   const Error& error, Message message) {
+    clientPipe->readDescriptor([&clientPipe,
+                                &pongCompletedProm,
+                                &buffers,
+                                &numPongsGoneThrough,
+                                i](const Error& error, Message message) {
       if (error) {
         ADD_FAILURE() << error.what();
-        donePromise.set_value();
+        pongCompletedProm.set_value();
         return;
       }
       auto messageData = std::make_unique<uint8_t[]>(message.length);
@@ -373,27 +385,34 @@ TEST(Context, ServerPingPongTwice) {
       }
       clientPipe->read(
           std::move(message),
-          [&clientPipe, &donePromise, &buffers](
+          [&clientPipe, &pongCompletedProm, &buffers, &numPongsGoneThrough, i](
               const Error& error, Message message) mutable {
             if (error) {
               ADD_FAILURE() << error.what();
-              donePromise.set_value();
+              pongCompletedProm.set_value();
               return;
             }
             clientPipe->write(
                 std::move(message),
-                [&donePromise, &buffers](const Error& error, Message message) {
+                [&pongCompletedProm, &buffers, &numPongsGoneThrough, i](
+                    const Error& error, Message message) {
                   if (error) {
                     ADD_FAILURE() << error.what();
-                    donePromise.set_value();
+                    pongCompletedProm.set_value();
                     return;
+                  }
+                  EXPECT_EQ(numPongsGoneThrough, i);
+                  numPongsGoneThrough++;
+                  if (numPongsGoneThrough == 2) {
+                    pongCompletedProm.set_value();
                   }
                 });
           });
     });
   }
 
-  donePromise.get_future().get();
+  pingCompletedProm.get_future().get();
+  pongCompletedProm.get_future().get();
 
   serverPipe.reset();
   listener.reset();
