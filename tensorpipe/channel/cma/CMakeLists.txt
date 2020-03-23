@@ -6,4 +6,3 @@
 
 add_library(tensorpipe_cma cma.cc)
 target_link_libraries(tensorpipe_cma tensorpipe)
-target_compile_definitions(tensorpipe_cma INTERFACE TP_ENABLE_CMA)

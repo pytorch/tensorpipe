@@ -8,6 +8,8 @@
 
 #pragma once
 
+#include <tensorpipe/config.h>
+
 #include <tensorpipe/channel/basic/basic.h>
 #include <tensorpipe/channel/channel.h>
 #include <tensorpipe/channel/helpers.h>
