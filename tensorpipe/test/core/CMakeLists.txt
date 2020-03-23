@@ -14,3 +14,6 @@ target_link_libraries(
 if(TP_ENABLE_SHM)
   target_link_libraries(core_context_test tensorpipe_shm)
 endif()
+if(TP_ENABLE_CMA)
+  target_link_libraries(core_context_test tensorpipe_cma)
+endif()
