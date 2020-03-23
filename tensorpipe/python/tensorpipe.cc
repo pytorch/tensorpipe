@@ -272,7 +272,7 @@ PYBIND11_MODULE(pytensorpipe, module) {
       [](std::shared_ptr<tensorpipe::Listener> listener, py::object callback) {
         listener->accept([callback{std::move(callback)}](
                              const tensorpipe::Error& error,
-                             std::shared_ptr<tensorpipe::Pipe> pipe) {
+                             std::shared_ptr<tensorpipe::Pipe> pipe) mutable {
           if (error) {
             TP_LOG_ERROR() << error.what();
             return;
@@ -284,26 +284,36 @@ PYBIND11_MODULE(pytensorpipe, module) {
           } catch (const py::error_already_set& err) {
             TP_LOG_ERROR() << "Callback raised exception: " << err.what();
           }
+          // Leaving the scope will decrease the refcount of callback which
+          // may cause it to get destructed, which might segfault since we
+          // won't be holding the GIL anymore. So we reset callback now,
+          // while we're still holding the GIL.
+          callback = py::object();
         });
       });
 
   pipe.def(
       "read_descriptor",
       [](std::shared_ptr<tensorpipe::Pipe> pipe, py::object callback) {
-        pipe->readDescriptor(
-            [callback{std::move(callback)}](
-                const tensorpipe::Error& error, tensorpipe::Message message) {
-              if (error) {
-                TP_LOG_ERROR() << error.what();
-                return;
-              }
-              py::gil_scoped_acquire acquire;
-              try {
-                callback(prepareToAllocate(std::move(message)));
-              } catch (const py::error_already_set& err) {
-                TP_LOG_ERROR() << "Callback raised exception: " << err.what();
-              }
-            });
+        pipe->readDescriptor([callback{std::move(callback)}](
+                                 const tensorpipe::Error& error,
+                                 tensorpipe::Message message) mutable {
+          if (error) {
+            TP_LOG_ERROR() << error.what();
+            return;
+          }
+          py::gil_scoped_acquire acquire;
+          try {
+            callback(prepareToAllocate(std::move(message)));
+          } catch (const py::error_already_set& err) {
+            TP_LOG_ERROR() << "Callback raised exception: " << err.what();
+          }
+          // Leaving the scope will decrease the refcount of callback which
+          // may cause it to get destructed, which might segfault since we
+          // won't be holding the GIL anymore. So we reset callback now,
+          // while we're still holding the GIL.
+          callback = py::object();
+        });
       });
 
   pipe.def(
@@ -315,7 +325,8 @@ PYBIND11_MODULE(pytensorpipe, module) {
         pipe->read(
             std::move(tpMessage),
             [callback{std::move(callback)}](
-                const tensorpipe::Error& error, tensorpipe::Message tpMessage) {
+                const tensorpipe::Error& error,
+                tensorpipe::Message tpMessage) mutable {
               if (error) {
                 TP_LOG_ERROR() << error.what();
                 return;
@@ -326,6 +337,11 @@ PYBIND11_MODULE(pytensorpipe, module) {
               } catch (const py::error_already_set& err) {
                 TP_LOG_ERROR() << "Callback raised exception: " << err.what();
               }
+              // Leaving the scope will decrease the refcount of callback which
+              // may cause it to get destructed, which might segfault since we
+              // won't be holding the GIL anymore. So we reset callback now,
+              // while we're still holding the GIL.
+              callback = py::object();
             });
       });
 
@@ -338,7 +354,8 @@ PYBIND11_MODULE(pytensorpipe, module) {
         pipe->write(
             std::move(tpMessage),
             [callback{std::move(callback)}](
-                const tensorpipe::Error& error, tensorpipe::Message tpMessage) {
+                const tensorpipe::Error& error,
+                tensorpipe::Message tpMessage) mutable {
               if (error) {
                 TP_LOG_ERROR() << error.what();
                 return;
@@ -349,6 +366,11 @@ PYBIND11_MODULE(pytensorpipe, module) {
               } catch (const py::error_already_set& err) {
                 TP_LOG_ERROR() << "Callback raised exception: " << err.what();
               }
+              // Leaving the scope will decrease the refcount of callback which
+              // may cause it to get destructed, which might segfault since we
+              // won't be holding the GIL anymore. So we reset callback now,
+              // while we're still holding the GIL.
+              callback = py::object();
             });
       });
 
