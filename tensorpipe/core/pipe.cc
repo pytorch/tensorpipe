@@ -244,14 +244,13 @@ void Pipe::Impl::readDescriptorFromLoop_(read_descriptor_callback_fn fn) {
 
   int64_t sequenceNumber = nextMessageBeingRead_++;
 
-  if (error_) {
-    triggerReadDescriptorCallback_(
-        sequenceNumber, std::move(fn), error_, Message());
-    return;
-  }
-
   messagesBeingExpected_.push_back(
       MessageBeingExpected{sequenceNumber, std::move(fn)});
+
+  if (error_) {
+    triggerReadyCallbacks_();
+    return;
+  }
 
   if (messagesBeingExpected_.size() == 1 && state_ == ESTABLISHED &&
       connectionState_ == NEXT_UP_IS_DESCRIPTOR) {
@@ -290,19 +289,30 @@ void Pipe::Impl::readFromLoop_(Message message, read_callback_fn fn) {
       std::move(messagesBeingAllocated_.front())};
   messagesBeingAllocated_.pop_front();
 
+  // Other sanity checks that must pass unless the user really messed up.
+  TP_DCHECK_GE(messageBeingAllocated.length, 0);
+  TP_THROW_ASSERT_IF(message.length != messageBeingAllocated.length);
+  size_t numTensors = message.tensors.size();
+  TP_THROW_ASSERT_IF(numTensors != messageBeingAllocated.tensors.size());
+  for (size_t tensorIdx = 0; tensorIdx < numTensors; tensorIdx++) {
+    Message::Tensor& tensor = message.tensors[tensorIdx];
+    MessageBeingAllocated::Tensor& tensorBeingAllocated =
+        messageBeingAllocated.tensors[tensorIdx];
+    TP_DCHECK_GE(tensorBeingAllocated.length, 0);
+    TP_THROW_ASSERT_IF(tensor.length != tensorBeingAllocated.length);
+  }
+
   int64_t sequenceNumber = messageBeingAllocated.sequenceNumber;
 
   if (error_) {
-    triggerReadCallback_(
-        sequenceNumber, std::move(fn), error_, std::move(message));
+    MessageBeingRead messageBeingRead{
+        sequenceNumber, std::move(message), std::move(fn)};
+    messageBeingRead.numTensorDataStillBeingReceived = numTensors;
+    messagesBeingRead_.push_back(std::move(messageBeingRead));
+    triggerReadyCallbacks_();
     return;
   }
 
-  MessageBeingRead messageBeingRead;
-
-  messageBeingRead.sequenceNumber = sequenceNumber;
-  TP_DCHECK_GE(messageBeingAllocated.length, 0);
-  TP_THROW_ASSERT_IF(message.length != messageBeingAllocated.length);
   TP_DCHECK_EQ(connectionState_, NEXT_UP_IS_DATA);
   connection_->read(
       message.data,
@@ -314,14 +324,10 @@ void Pipe::Impl::readFromLoop_(Message message, read_callback_fn fn) {
           }));
   connectionState_ = NEXT_UP_IS_DESCRIPTOR;
 
-  size_t numTensors = message.tensors.size();
-  TP_THROW_ASSERT_IF(numTensors != messageBeingAllocated.tensors.size());
   for (size_t tensorIdx = 0; tensorIdx < numTensors; tensorIdx++) {
     Message::Tensor& tensor = message.tensors[tensorIdx];
     MessageBeingAllocated::Tensor& tensorBeingAllocated =
         messageBeingAllocated.tensors[tensorIdx];
-    TP_DCHECK_GE(tensorBeingAllocated.length, 0);
-    TP_THROW_ASSERT_IF(tensor.length != tensorBeingAllocated.length);
     std::shared_ptr<channel::Channel> channel =
         channels_.at(tensorBeingAllocated.channelName);
     channel->recv(
@@ -331,13 +337,7 @@ void Pipe::Impl::readFromLoop_(Message message, read_callback_fn fn) {
         channelRecvCallbackWrapper_([sequenceNumber](Impl& impl) {
           impl.onRecvOfTensorData_(sequenceNumber);
         }));
-    messageBeingRead.numTensorDataStillBeingReceived++;
   }
-
-  messageBeingRead.message = std::move(message);
-  messageBeingRead.callback = std::move(fn);
-
-  messagesBeingRead_.push_back(std::move(messageBeingRead));
 
   TP_DCHECK_EQ(connectionState_, NEXT_UP_IS_DESCRIPTOR);
   if (!messagesBeingExpected_.empty()) {
@@ -348,6 +348,11 @@ void Pipe::Impl::readFromLoop_(Message message, read_callback_fn fn) {
         }));
     connectionState_ = NEXT_UP_IS_DATA;
   }
+
+  MessageBeingRead messageBeingRead{
+      sequenceNumber, std::move(message), std::move(fn)};
+  messageBeingRead.numTensorDataStillBeingReceived = numTensors;
+  messagesBeingRead_.push_back(std::move(messageBeingRead));
 }
 
 void Pipe::write(Message message, write_callback_fn fn) {
@@ -370,14 +375,13 @@ void Pipe::Impl::writeFromLoop_(Message message, write_callback_fn fn) {
 
   int64_t sequenceNumber = nextMessageBeingWritten_++;
 
-  if (error_) {
-    triggerWriteCallback_(
-        sequenceNumber, std::move(fn), error_, std::move(message));
-    return;
-  }
-
   messagesBeingWritten_.push_back(
       MessageBeingWritten{sequenceNumber, std::move(message), std::move(fn)});
+
+  if (error_) {
+    triggerReadyCallbacks_();
+    return;
+  }
 
   if (state_ == ESTABLISHED) {
     writeWhenEstablished_(messagesBeingWritten_.back());
