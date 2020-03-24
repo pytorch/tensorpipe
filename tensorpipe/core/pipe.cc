@@ -376,11 +376,11 @@ void Pipe::Impl::writeFromLoop_(Message message, write_callback_fn fn) {
     return;
   }
 
+  messagesBeingWritten_.push_back(
+      MessageBeingWritten{sequenceNumber, std::move(message), std::move(fn)});
+
   if (state_ == ESTABLISHED) {
-    writeWhenEstablished_(sequenceNumber, std::move(message), std::move(fn));
-  } else {
-    messagesBeingQueued_.push_back(
-        MessageBeingQueued{sequenceNumber, std::move(message), std::move(fn)});
+    writeWhenEstablished_(messagesBeingWritten_.back());
   }
 }
 
@@ -464,18 +464,6 @@ void Pipe::Impl::triggerReadyCallbacks_() {
         continue;
       }
     }
-    if (!messagesBeingQueued_.empty()) {
-      if (error_) {
-        MessageBeingQueued mVal = std::move(messagesBeingQueued_.front());
-        messagesBeingQueued_.pop_front();
-        triggerWriteCallback_(
-            mVal.sequenceNumber,
-            std::move(mVal.callback),
-            error_,
-            std::move(mVal.message));
-        continue;
-      }
-    }
     break;
   }
 }
@@ -496,31 +484,27 @@ void Pipe::Impl::handleError_() {
 void Pipe::Impl::doWritesAccumulatedWhileWaitingForPipeToBeEstablished_() {
   TP_DCHECK(inLoop_());
   TP_DCHECK_EQ(state_, ESTABLISHED);
-  while (!messagesBeingQueued_.empty()) {
-    MessageBeingQueued m = std::move(messagesBeingQueued_.front());
-    messagesBeingQueued_.pop_front();
-    writeWhenEstablished_(
-        m.sequenceNumber, std::move(m.message), std::move(m.callback));
+  for (auto& m : messagesBeingWritten_) {
+    if (m.hasBeenWritten) {
+      break;
+    }
+    writeWhenEstablished_(m);
   }
 }
 
 void Pipe::Impl::writeWhenEstablished_(
-    int64_t sequenceNumber,
-    Message message,
-    write_callback_fn fn) {
+    MessageBeingWritten& messageBeingWritten) {
   TP_DCHECK(inLoop_());
   TP_DCHECK_EQ(state_, ESTABLISHED);
 
-  MessageBeingWritten messageBeingWritten;
   auto pbPacketOut = std::make_shared<proto::Packet>();
   proto::MessageDescriptor* pbMessageDescriptor =
       pbPacketOut->mutable_message_descriptor();
 
-  messageBeingWritten.sequenceNumber = sequenceNumber;
-  pbMessageDescriptor->set_size_in_bytes(message.length);
-  pbMessageDescriptor->set_metadata(message.metadata);
+  pbMessageDescriptor->set_size_in_bytes(messageBeingWritten.message.length);
+  pbMessageDescriptor->set_metadata(messageBeingWritten.message.metadata);
 
-  for (const auto& tensor : message.tensors) {
+  for (const auto& tensor : messageBeingWritten.message.tensors) {
     proto::MessageDescriptor::TensorDescriptor* pbTensorDescriptor =
         pbMessageDescriptor->add_tensor_descriptors();
     pbTensorDescriptor->set_device_type(proto::DeviceType::DEVICE_TYPE_CPU);
@@ -541,9 +525,10 @@ void Pipe::Impl::writeWhenEstablished_(
       std::vector<uint8_t> descriptor = channel.send(
           tensor.data,
           tensor.length,
-          channelSendCallbackWrapper_([sequenceNumber](Impl& impl) {
-            impl.onSendOfTensorData_(sequenceNumber);
-          }));
+          channelSendCallbackWrapper_(
+              [sequenceNumber{messageBeingWritten.sequenceNumber}](Impl& impl) {
+                impl.onSendOfTensorData_(sequenceNumber);
+              }));
       messageBeingWritten.numTensorDataStillBeingSent++;
       pbTensorDescriptor->set_channel_name(name);
       // FIXME This makes a copy
@@ -561,16 +546,14 @@ void Pipe::Impl::writeWhenEstablished_(
       writePacketCallbackWrapper_([pbPacketOut](Impl& /* unused */) {}));
 
   connection_->write(
-      message.data,
-      message.length,
-      writeCallbackWrapper_([sequenceNumber](Impl& impl) {
-        impl.onWriteOfMessageData_(sequenceNumber);
-      }));
+      messageBeingWritten.message.data,
+      messageBeingWritten.message.length,
+      writeCallbackWrapper_(
+          [sequenceNumber{messageBeingWritten.sequenceNumber}](Impl& impl) {
+            impl.onWriteOfMessageData_(sequenceNumber);
+          }));
 
-  messageBeingWritten.message = std::move(message);
-  messageBeingWritten.callback = std::move(fn);
-
-  messagesBeingWritten_.push_back(std::move(messageBeingWritten));
+  messageBeingWritten.hasBeenWritten = true;
 }
 
 void Pipe::Impl::onReadWhileServerWaitingForBrochure_(

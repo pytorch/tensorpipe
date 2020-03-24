@@ -187,16 +187,11 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
       int64_t numTensorDataStillBeingReceived{0};
     };
 
-    struct MessageBeingQueued {
-      int64_t sequenceNumber{-1};
-      Message message;
-      write_callback_fn callback;
-    };
-
     struct MessageBeingWritten {
       int64_t sequenceNumber{-1};
       Message message;
       write_callback_fn callback;
+      bool hasBeenWritten{false};
       bool dataStillBeingWritten{true};
       int64_t numTensorDataStillBeingSent{0};
     };
@@ -209,7 +204,6 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
     int64_t nextReadCallbackToCall_{0};
 
     int64_t nextMessageBeingWritten_{0};
-    std::deque<MessageBeingQueued> messagesBeingQueued_;
     std::deque<MessageBeingWritten> messagesBeingWritten_;
     int64_t nextWriteCallbackToCall_{0};
 
@@ -271,7 +265,7 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
     //
 
     void doWritesAccumulatedWhileWaitingForPipeToBeEstablished_();
-    void writeWhenEstablished_(int64_t, Message, write_callback_fn);
+    void writeWhenEstablished_(MessageBeingWritten&);
     void onReadWhileServerWaitingForBrochure_(const proto::Packet&);
     void onReadWhileClientWaitingForBrochureAnswer_(const proto::Packet&);
     void onAcceptWhileServerWaitingForConnection_(
