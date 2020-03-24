@@ -451,13 +451,13 @@ Connection::ReadOperation::ReadOperation(
     void* ptr,
     size_t len,
     read_callback_fn fn)
-    : ptr_(ptr), len_(len), fn_(std::move(fn)) {}
+    : ptr_(ptr), len_(len), fn_(std::move(fn)), ptrProvided_(true) {}
 
 Connection::ReadOperation::ReadOperation(read_fn reader, read_callback_fn fn)
-    : reader_(std::move(reader)), fn_(std::move(fn)) {}
+    : reader_(std::move(reader)), fn_(std::move(fn)), ptrProvided_(false) {}
 
 Connection::ReadOperation::ReadOperation(read_callback_fn fn)
-    : fn_(std::move(fn)) {}
+    : fn_(std::move(fn)), ptrProvided_(false) {}
 
 bool Connection::ReadOperation::handleRead(util::ringbuffer::Consumer& inbox) {
   // Start read transaction.
@@ -497,7 +497,7 @@ bool Connection::ReadOperation::handleRead(util::ringbuffer::Consumer& inbox) {
         TP_THROW_SYSTEM_IF(ret < 0, -ret);
       }
 
-      if (ptr_ != nullptr) {
+      if (ptrProvided_) {
         TP_DCHECK_EQ(length, len_);
       } else {
         len_ = length;
@@ -508,7 +508,8 @@ bool Connection::ReadOperation::handleRead(util::ringbuffer::Consumer& inbox) {
       lengthRead = true;
     }
 
-    {
+    // If reading empty buffer, skip payload read.
+    if (len_ > 0) {
       const auto ret = inbox.copyAtMostInTx(
           len_ - bytesRead_, reinterpret_cast<uint8_t*>(ptr_) + bytesRead_);
       if (ret == -ENODATA) {
@@ -582,7 +583,10 @@ bool Connection::WriteOperation::handleWrite(
         mode_ = WRITE_PAYLOAD;
       }
     }
-    if (mode_ == WRITE_PAYLOAD) {
+
+    // If writing empty buffer, skip payload write because ptr_
+    // could be nullptr.
+    if (mode_ == WRITE_PAYLOAD && len_ > 0) {
       ret = outbox.writeAtMostInTx(
           len_ - bytesWritten_,
           static_cast<const uint8_t*>(ptr_) + bytesWritten_);

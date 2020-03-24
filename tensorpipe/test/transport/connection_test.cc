@@ -182,3 +182,78 @@ TEST_P(TransportTest, Connection_QueueWritesBeforeReads) {
         readCompletedFuture.wait();
       });
 }
+
+// TODO: Enable this test when uv transport could handle
+TEST_P(TransportTest, DISABLED_Connection_EmptyBuffer) {
+  constexpr size_t numBytes = 13;
+  std::array<char, numBytes> garbage;
+  std::promise<void> writeCompletedProm;
+  std::promise<void> readCompletedProm;
+  std::future<void> writeCompletedFuture = writeCompletedProm.get_future();
+  std::future<void> readCompletedFuture = readCompletedProm.get_future();
+  int ioNum = 100;
+
+  this->testConnection(
+      [&](std::shared_ptr<Connection> conn) {
+        std::atomic<int> n(ioNum);
+        for (int i = 0; i < ioNum; i++) {
+          if (i % 2 == 0) {
+            // Empty buffer
+            this->doRead(
+                conn,
+                nullptr,
+                0,
+                [&, conn](const Error& error, const void* ptr, size_t len) {
+                  ASSERT_FALSE(error) << error.what();
+                  ASSERT_EQ(len, 0);
+                  ASSERT_EQ(ptr, nullptr);
+                  if (--n == 0) {
+                    readCompletedProm.set_value();
+                  }
+                });
+          } else {
+            // Garbage buffer
+            this->doRead(
+                conn,
+                [&, conn](
+                    const Error& error, const void* /* unused */, size_t len) {
+                  ASSERT_FALSE(error) << error.what();
+                  ASSERT_EQ(len, garbage.size());
+                  if (--n == 0) {
+                    readCompletedProm.set_value();
+                  }
+                });
+          }
+        }
+        writeCompletedFuture.wait();
+        readCompletedFuture.wait();
+      },
+      [&](std::shared_ptr<Connection> conn) {
+        std::atomic<int> n = ioNum;
+        for (int i = 0; i < ioNum; i++) {
+          if ((i & 1) == 0) {
+            // Empty buffer
+            this->doWrite(conn, nullptr, 0, [&, conn](const Error& error) {
+              ASSERT_FALSE(error) << error.what();
+              if (--n == 0) {
+                writeCompletedProm.set_value();
+              }
+            });
+          } else {
+            // Garbage buffer
+            this->doWrite(
+                conn,
+                garbage.data(),
+                garbage.size(),
+                [&, conn](const Error& error) {
+                  ASSERT_FALSE(error) << error.what();
+                  if (--n == 0) {
+                    writeCompletedProm.set_value();
+                  }
+                });
+          }
+        }
+        writeCompletedFuture.wait();
+        readCompletedFuture.wait();
+      });
+}

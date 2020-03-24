@@ -166,6 +166,7 @@ class Connection final : public transport::Connection,
     size_t len_{0};
     size_t bytesRead_{0};
     read_callback_fn fn_;
+    const bool ptrProvided_;
   };
 
   // Writes happen only if the user supplied a memory pointer, the
