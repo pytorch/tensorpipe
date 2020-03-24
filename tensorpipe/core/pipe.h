@@ -183,7 +183,7 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
       int64_t sequenceNumber{-1};
       Message message;
       read_callback_fn callback;
-      bool dataStillBeingRead{true};
+      bool dataStillBeingRead{false};
       int64_t numTensorDataStillBeingReceived{0};
     };
 
@@ -192,7 +192,7 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
       Message message;
       write_callback_fn callback;
       bool hasBeenWritten{false};
-      bool dataStillBeingWritten{true};
+      bool dataStillBeingWritten{false};
       int64_t numTensorDataStillBeingSent{0};
     };
 

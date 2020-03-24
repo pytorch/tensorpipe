@@ -304,10 +304,10 @@ void Pipe::Impl::readFromLoop_(Message message, read_callback_fn fn) {
 
   int64_t sequenceNumber = messageBeingAllocated.sequenceNumber;
 
+  MessageBeingRead messageBeingRead{
+      sequenceNumber, std::move(message), std::move(fn)};
+
   if (error_) {
-    MessageBeingRead messageBeingRead{
-        sequenceNumber, std::move(message), std::move(fn)};
-    messageBeingRead.numTensorDataStillBeingReceived = numTensors;
     messagesBeingRead_.push_back(std::move(messageBeingRead));
     triggerReadyCallbacks_();
     return;
@@ -315,17 +315,18 @@ void Pipe::Impl::readFromLoop_(Message message, read_callback_fn fn) {
 
   TP_DCHECK_EQ(connectionState_, NEXT_UP_IS_DATA);
   connection_->read(
-      message.data,
-      message.length,
+      messageBeingRead.message.data,
+      messageBeingRead.message.length,
       readCallbackWrapper_(
           [sequenceNumber](
               Impl& impl, const void* /* unused */, size_t /* unused */) {
             impl.onReadOfMessageData_(sequenceNumber);
           }));
   connectionState_ = NEXT_UP_IS_DESCRIPTOR;
+  messageBeingRead.dataStillBeingRead = true;
 
   for (size_t tensorIdx = 0; tensorIdx < numTensors; tensorIdx++) {
-    Message::Tensor& tensor = message.tensors[tensorIdx];
+    Message::Tensor& tensor = messageBeingRead.message.tensors[tensorIdx];
     MessageBeingAllocated::Tensor& tensorBeingAllocated =
         messageBeingAllocated.tensors[tensorIdx];
     std::shared_ptr<channel::Channel> channel =
@@ -337,6 +338,7 @@ void Pipe::Impl::readFromLoop_(Message message, read_callback_fn fn) {
         channelRecvCallbackWrapper_([sequenceNumber](Impl& impl) {
           impl.onRecvOfTensorData_(sequenceNumber);
         }));
+    ++messageBeingRead.numTensorDataStillBeingReceived;
   }
 
   TP_DCHECK_EQ(connectionState_, NEXT_UP_IS_DESCRIPTOR);
@@ -349,9 +351,6 @@ void Pipe::Impl::readFromLoop_(Message message, read_callback_fn fn) {
     connectionState_ = NEXT_UP_IS_DATA;
   }
 
-  MessageBeingRead messageBeingRead{
-      sequenceNumber, std::move(message), std::move(fn)};
-  messageBeingRead.numTensorDataStillBeingReceived = numTensors;
   messagesBeingRead_.push_back(std::move(messageBeingRead));
 }
 
@@ -440,9 +439,11 @@ void Pipe::Impl::triggerReadyCallbacks_() {
     }
     if (!messagesBeingRead_.empty()) {
       MessageBeingRead& mRef = messagesBeingRead_.front();
-      if (error_ ||
-          (!mRef.dataStillBeingRead &&
-           mRef.numTensorDataStillBeingReceived == 0)) {
+      // We don't check for error, because even in case of error we still must
+      // wait for all transport/channel callbacks to return to be sure that no
+      // other thread is working on the data.
+      if (!mRef.dataStillBeingRead &&
+          mRef.numTensorDataStillBeingReceived == 0) {
         MessageBeingRead mVal = std::move(messagesBeingRead_.front());
         messagesBeingRead_.pop_front();
         triggerReadCallback_(
@@ -455,8 +456,12 @@ void Pipe::Impl::triggerReadyCallbacks_() {
     }
     if (!messagesBeingWritten_.empty()) {
       MessageBeingWritten& mRef = messagesBeingWritten_.front();
-      if (error_ ||
-          (!mRef.dataStillBeingWritten &&
+      // If the message has already been written we don't check for error,
+      // because even in case of error we still must wait for all transport/
+      // channel callbacks to return to be sure that no other thread is working
+      // on the data.
+      if ((!mRef.hasBeenWritten && error_) ||
+          (mRef.hasBeenWritten && !mRef.dataStillBeingWritten &&
            mRef.numTensorDataStillBeingSent == 0)) {
         MessageBeingWritten mVal = std::move(messagesBeingWritten_.front());
         messagesBeingWritten_.pop_front();
@@ -533,7 +538,7 @@ void Pipe::Impl::writeWhenEstablished_(
               [sequenceNumber{messageBeingWritten.sequenceNumber}](Impl& impl) {
                 impl.onSendOfTensorData_(sequenceNumber);
               }));
-      messageBeingWritten.numTensorDataStillBeingSent++;
+      ++messageBeingWritten.numTensorDataStillBeingSent;
       pbTensorDescriptor->set_channel_name(name);
       // FIXME This makes a copy
       pbTensorDescriptor->set_channel_descriptor(
@@ -556,6 +561,7 @@ void Pipe::Impl::writeWhenEstablished_(
           [sequenceNumber{messageBeingWritten.sequenceNumber}](Impl& impl) {
             impl.onWriteOfMessageData_(sequenceNumber);
           }));
+  messageBeingWritten.dataStillBeingWritten = true;
 
   messageBeingWritten.hasBeenWritten = true;
 }
