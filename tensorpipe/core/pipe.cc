@@ -94,6 +94,7 @@ Pipe::Impl::Impl(
       writeCallbackWrapper_(*this),
       writePacketCallbackWrapper_(*this),
       connectionRequestCallbackWrapper_(*this),
+      channelDescriptorCallbackWrapper_(*this),
       channelRecvCallbackWrapper_(*this),
       channelSendCallbackWrapper_(*this) {}
 
@@ -113,6 +114,7 @@ Pipe::Impl::Impl(
       writeCallbackWrapper_(*this),
       writePacketCallbackWrapper_(*this),
       connectionRequestCallbackWrapper_(*this),
+      channelDescriptorCallbackWrapper_(*this),
       channelRecvCallbackWrapper_(*this),
       channelSendCallbackWrapper_(*this) {}
 
@@ -332,7 +334,7 @@ void Pipe::Impl::readFromLoop_(Message message, read_callback_fn fn) {
     std::shared_ptr<channel::Channel> channel =
         channels_.at(tensorBeingAllocated.channelName);
     channel->recv(
-        std::move(tensorBeingAllocated.channelDescriptor),
+        std::move(tensorBeingAllocated.descriptor),
         tensor.data,
         tensor.length,
         channelRecvCallbackWrapper_([sequenceNumber](Impl& impl) {
@@ -383,7 +385,7 @@ void Pipe::Impl::writeFromLoop_(Message message, write_callback_fn fn) {
   }
 
   if (state_ == ESTABLISHED) {
-    writeWhenEstablished_(messagesBeingWritten_.back());
+    sendTensorsOfMessage_(messagesBeingWritten_.back());
   }
 }
 
@@ -460,9 +462,20 @@ void Pipe::Impl::triggerReadyCallbacks_() {
       // because even in case of error we still must wait for all transport/
       // channel callbacks to return to be sure that no other thread is working
       // on the data.
-      if ((!mRef.hasBeenWritten && error_) ||
-          (mRef.hasBeenWritten && !mRef.dataStillBeingWritten &&
-           mRef.numTensorDataStillBeingSent == 0)) {
+      bool doneWritingData =
+          mRef.startedWritingData && !mRef.dataStillBeingWritten;
+      bool blockedWritingData =
+          mRef.startedWritingData && mRef.dataStillBeingWritten;
+      bool doneSendingTensors = mRef.startedSendingTensors &&
+          mRef.numTensorDescriptorsStillBeingCollected +
+                  mRef.numTensorDataStillBeingSent ==
+              0;
+      bool blockedWritingTensors = mRef.startedSendingTensors &&
+          mRef.numTensorDescriptorsStillBeingCollected +
+                  mRef.numTensorDataStillBeingSent >
+              0;
+      if ((error_ && !blockedWritingData && !blockedWritingTensors) ||
+          (doneWritingData && doneSendingTensors)) {
         MessageBeingWritten mVal = std::move(messagesBeingWritten_.front());
         messagesBeingWritten_.pop_front();
         triggerWriteCallback_(
@@ -494,32 +507,29 @@ void Pipe::Impl::doWritesAccumulatedWhileWaitingForPipeToBeEstablished_() {
   TP_DCHECK(inLoop_());
   TP_DCHECK_EQ(state_, ESTABLISHED);
   for (auto& m : messagesBeingWritten_) {
-    if (m.hasBeenWritten) {
+    if (m.startedSendingTensors) {
       break;
     }
-    writeWhenEstablished_(m);
+    sendTensorsOfMessage_(m);
   }
 }
 
-void Pipe::Impl::writeWhenEstablished_(
+void Pipe::Impl::sendTensorsOfMessage_(
     MessageBeingWritten& messageBeingWritten) {
   TP_DCHECK(inLoop_());
   TP_DCHECK_EQ(state_, ESTABLISHED);
+  TP_DCHECK(!messageBeingWritten.startedSendingTensors);
+  messageBeingWritten.startedSendingTensors = true;
 
-  auto pbPacketOut = std::make_shared<proto::Packet>();
-  proto::MessageDescriptor* pbMessageDescriptor =
-      pbPacketOut->mutable_message_descriptor();
+  if (messageBeingWritten.message.tensors.size() == 0) {
+    writeMessage_(messageBeingWritten);
+    return;
+  }
 
-  pbMessageDescriptor->set_size_in_bytes(messageBeingWritten.message.length);
-  pbMessageDescriptor->set_metadata(messageBeingWritten.message.metadata);
-
-  for (const auto& tensor : messageBeingWritten.message.tensors) {
-    proto::MessageDescriptor::TensorDescriptor* pbTensorDescriptor =
-        pbMessageDescriptor->add_tensor_descriptors();
-    pbTensorDescriptor->set_device_type(proto::DeviceType::DEVICE_TYPE_CPU);
-    pbTensorDescriptor->set_size_in_bytes(tensor.length);
-    pbTensorDescriptor->set_metadata(tensor.metadata);
-
+  for (int tensorIdx = 0;
+       tensorIdx < messageBeingWritten.message.tensors.size();
+       ++tensorIdx) {
+    const auto& tensor = messageBeingWritten.message.tensors[tensorIdx];
     bool foundAChannel = false;
     for (const auto& channelFactoryIter :
          context_->channelFactoriesByPriority_) {
@@ -531,23 +541,59 @@ void Pipe::Impl::writeWhenEstablished_(
       }
       channel::Channel& channel = *(channelIter->second);
 
-      std::vector<uint8_t> descriptor = channel.send(
+      channel.send(
           tensor.data,
           tensor.length,
+          channelDescriptorCallbackWrapper_(
+              [sequenceNumber{messageBeingWritten.sequenceNumber}, tensorIdx](
+                  Impl& impl, channel::Channel::TDescriptor descriptor) {
+                impl.onDescriptorOfTensor_(
+                    sequenceNumber, tensorIdx, std::move(descriptor));
+              }),
           channelSendCallbackWrapper_(
               [sequenceNumber{messageBeingWritten.sequenceNumber}](Impl& impl) {
                 impl.onSendOfTensorData_(sequenceNumber);
               }));
+      messageBeingWritten.tensors.push_back(MessageBeingWritten::Tensor{name});
+      ++messageBeingWritten.numTensorDescriptorsStillBeingCollected;
       ++messageBeingWritten.numTensorDataStillBeingSent;
-      pbTensorDescriptor->set_channel_name(name);
-      // FIXME This makes a copy
-      pbTensorDescriptor->set_channel_descriptor(
-          descriptor.data(), descriptor.size());
 
       foundAChannel = true;
       break;
     }
     TP_THROW_ASSERT_IF(!foundAChannel);
+  }
+}
+
+void Pipe::Impl::writeMessage_(MessageBeingWritten& messageBeingWritten) {
+  TP_DCHECK(inLoop_());
+  TP_DCHECK_EQ(state_, ESTABLISHED);
+  TP_DCHECK(!messageBeingWritten.startedWritingData);
+  messageBeingWritten.startedWritingData = true;
+
+  auto pbPacketOut = std::make_shared<proto::Packet>();
+  proto::MessageDescriptor* pbMessageDescriptor =
+      pbPacketOut->mutable_message_descriptor();
+
+  pbMessageDescriptor->set_size_in_bytes(messageBeingWritten.message.length);
+  pbMessageDescriptor->set_metadata(messageBeingWritten.message.metadata);
+
+  TP_DCHECK_EQ(
+      messageBeingWritten.message.tensors.size(),
+      messageBeingWritten.tensors.size());
+  for (int tensorIdx = 0; tensorIdx < messageBeingWritten.tensors.size();
+       ++tensorIdx) {
+    const auto& tensor = messageBeingWritten.message.tensors[tensorIdx];
+    const auto& otherTensor = messageBeingWritten.tensors[tensorIdx];
+    proto::MessageDescriptor::TensorDescriptor* pbTensorDescriptor =
+        pbMessageDescriptor->add_tensor_descriptors();
+    pbTensorDescriptor->set_device_type(proto::DeviceType::DEVICE_TYPE_CPU);
+    pbTensorDescriptor->set_size_in_bytes(tensor.length);
+    pbTensorDescriptor->set_metadata(tensor.metadata);
+    pbTensorDescriptor->set_channel_name(otherTensor.channelName);
+    // FIXME This makes a copy
+    pbTensorDescriptor->set_channel_descriptor(
+        otherTensor.descriptor.data(), otherTensor.descriptor.size());
   }
 
   connection_->write(
@@ -562,8 +608,6 @@ void Pipe::Impl::writeWhenEstablished_(
             impl.onWriteOfMessageData_(sequenceNumber);
           }));
   messageBeingWritten.dataStillBeingWritten = true;
-
-  messageBeingWritten.hasBeenWritten = true;
 }
 
 void Pipe::Impl::onReadWhileServerWaitingForBrochure_(
@@ -848,7 +892,7 @@ void Pipe::Impl::onReadOfMessageDescriptor_(const proto::Packet& pbPacketIn) {
     tensorBeingAllocated.length = tensor.length;
     tensor.metadata = pbTensorDescriptor.metadata();
     tensorBeingAllocated.channelName = pbTensorDescriptor.channel_name();
-    tensorBeingAllocated.channelDescriptor = std::vector<uint8_t>(
+    tensorBeingAllocated.descriptor = std::vector<uint8_t>(
         pbTensorDescriptor.channel_descriptor().data(),
         pbTensorDescriptor.channel_descriptor().data() +
             pbTensorDescriptor.channel_descriptor().size());
@@ -863,6 +907,26 @@ void Pipe::Impl::onReadOfMessageDescriptor_(const proto::Packet& pbPacketIn) {
       std::move(messageBeingExpected.callback),
       Error::kSuccess,
       std::move(message));
+}
+
+void Pipe::Impl::onDescriptorOfTensor_(
+    int64_t sequenceNumber,
+    int64_t tensorIdx,
+    channel::Channel::TDescriptor descriptor) {
+  TP_DCHECK(inLoop_());
+  auto iter = std::find_if(
+      messagesBeingWritten_.begin(),
+      messagesBeingWritten_.end(),
+      [&](const auto& m) { return m.sequenceNumber == sequenceNumber; });
+  TP_DCHECK(iter != messagesBeingWritten_.end());
+  MessageBeingWritten& messageBeingWritten = *iter;
+  TP_DCHECK(messageBeingWritten.startedSendingTensors);
+  TP_DCHECK_LT(tensorIdx, messageBeingWritten.tensors.size());
+  messageBeingWritten.tensors[tensorIdx].descriptor = std::move(descriptor);
+  --messageBeingWritten.numTensorDescriptorsStillBeingCollected;
+  if (messageBeingWritten.numTensorDescriptorsStillBeingCollected == 0) {
+    writeMessage_(messageBeingWritten);
+  }
 }
 
 void Pipe::Impl::onReadOfMessageData_(int64_t sequenceNumber) {

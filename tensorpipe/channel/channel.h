@@ -49,6 +49,7 @@ namespace channel {
 class Channel {
  public:
   using TDescriptor = std::vector<uint8_t>;
+  using TDescriptorCallback = std::function<void(const Error&, TDescriptor)>;
   using TSendCallback = std::function<void(const Error&)>;
   using TRecvCallback = std::function<void(const Error&)>;
 
@@ -57,9 +58,10 @@ class Channel {
   virtual ~Channel();
 
   // Send memory region to peer.
-  virtual TDescriptor send(
+  virtual void send(
       const void* ptr,
       size_t length,
+      TDescriptorCallback descriptorCallback,
       TSendCallback callback) = 0;
 
   // Receive memory region from peer.

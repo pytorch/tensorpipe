@@ -174,7 +174,7 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
       struct Tensor {
         ssize_t length{-1};
         std::string channelName;
-        std::vector<uint8_t> channelDescriptor;
+        channel::Channel::TDescriptor descriptor;
       };
       std::vector<Tensor> tensors;
     };
@@ -191,9 +191,16 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
       int64_t sequenceNumber{-1};
       Message message;
       write_callback_fn callback;
-      bool hasBeenWritten{false};
+      bool startedWritingData{false};
+      bool startedSendingTensors{false};
       bool dataStillBeingWritten{false};
+      int64_t numTensorDescriptorsStillBeingCollected{0};
       int64_t numTensorDataStillBeingSent{0};
+      struct Tensor {
+        std::string channelName;
+        channel::Channel::TDescriptor descriptor;
+      };
+      std::vector<Tensor> tensors;
     };
 
     int64_t nextMessageBeingRead_{0};
@@ -229,6 +236,8 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
         std::string,
         std::shared_ptr<transport::Connection>>
         connectionRequestCallbackWrapper_;
+    DeferringTolerantCallbackWrapper<Impl, channel::Channel::TDescriptor>
+        channelDescriptorCallbackWrapper_;
     DeferringTolerantCallbackWrapper<Impl> channelRecvCallbackWrapper_;
     DeferringTolerantCallbackWrapper<Impl> channelSendCallbackWrapper_;
 
@@ -265,7 +274,8 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
     //
 
     void doWritesAccumulatedWhileWaitingForPipeToBeEstablished_();
-    void writeWhenEstablished_(MessageBeingWritten&);
+    void sendTensorsOfMessage_(MessageBeingWritten&);
+    void writeMessage_(MessageBeingWritten&);
     void onReadWhileServerWaitingForBrochure_(const proto::Packet&);
     void onReadWhileClientWaitingForBrochureAnswer_(const proto::Packet&);
     void onAcceptWhileServerWaitingForConnection_(
@@ -276,6 +286,7 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
         std::string,
         std::shared_ptr<transport::Connection>);
     void onReadOfMessageDescriptor_(const proto::Packet&);
+    void onDescriptorOfTensor_(int64_t, int64_t, channel::Channel::TDescriptor);
     void onReadOfMessageData_(int64_t);
     void onRecvOfTensorData_(int64_t);
     void onWriteOfMessageData_(int64_t);

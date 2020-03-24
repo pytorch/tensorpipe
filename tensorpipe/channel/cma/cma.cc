@@ -163,9 +163,10 @@ void CmaChannel::init_() {
   readPacket_();
 }
 
-CmaChannel::TDescriptor CmaChannel::send(
+void CmaChannel::send(
     const void* ptr,
     size_t length,
+    TDescriptorCallback descriptorCallback,
     TSendCallback callback) {
   TP_THROW_ASSERT_IF(factory_->joined_);
   if (error_) {
@@ -185,7 +186,7 @@ CmaChannel::TDescriptor CmaChannel::send(
     sendOperations_.emplace_back(SendOperation{id, std::move(callback)});
   }
 
-  return saveDescriptor(pbDescriptor);
+  descriptorCallback(Error::kSuccess, saveDescriptor(pbDescriptor));
 }
 
 // Receive memory region from peer.

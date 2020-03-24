@@ -45,10 +45,14 @@ TEST_P(ChannelTest, ClientToServer) {
         std::iota(data.begin(), data.end(), 0);
 
         // Perform send and wait for completion.
-        Channel::TDescriptor descriptor;
+        std::future<std::tuple<Error, Channel::TDescriptor>> descriptorFuture;
         std::future<Error> future;
-        std::tie(descriptor, future) =
+        std::tie(descriptorFuture, future) =
             sendWithFuture(channel, data.data(), data.size());
+        Error error;
+        Channel::TDescriptor descriptor;
+        std::tie(error, descriptor) = descriptorFuture.get();
+        ASSERT_FALSE(error);
         descriptorQueue.push(std::move(descriptor));
         ASSERT_FALSE(future.get());
       },
@@ -109,10 +113,14 @@ TEST_P(ChannelTest, ServerToClient) {
         std::iota(data.begin(), data.end(), 0);
 
         // Perform send and wait for completion.
-        Channel::TDescriptor descriptor;
+        std::future<std::tuple<Error, Channel::TDescriptor>> descriptorFuture;
         std::future<Error> future;
-        std::tie(descriptor, future) =
+        std::tie(descriptorFuture, future) =
             sendWithFuture(channel, data.data(), data.size());
+        Error error;
+        Channel::TDescriptor descriptor;
+        std::tie(error, descriptor) = descriptorFuture.get();
+        ASSERT_FALSE(error);
         descriptorQueue.push(std::move(descriptor));
         ASSERT_FALSE(future.get());
       });
@@ -142,10 +150,14 @@ TEST_P(ChannelTest, SendMultipleTensors) {
 
         // Perform send and wait for completion.
         for (int i = 0; i < numTensors; i++) {
-          Channel::TDescriptor descriptor;
+          std::future<std::tuple<Error, Channel::TDescriptor>> descriptorFuture;
           std::future<Error> future;
-          std::tie(descriptor, future) =
+          std::tie(descriptorFuture, future) =
               sendWithFuture(channel, data.data(), data.size());
+          Error error;
+          Channel::TDescriptor descriptor;
+          std::tie(error, descriptor) = descriptorFuture.get();
+          ASSERT_FALSE(error);
           descriptorQueue.push(std::move(descriptor));
           futures.push_back(std::move(future));
         }
@@ -221,15 +233,27 @@ TEST_P(ChannelTest, CallbacksAreDeferred) {
         std::iota(data.begin(), data.end(), 0);
 
         // Perform send and wait for completion.
+        std::promise<std::tuple<Error, Channel::TDescriptor>> descriptorPromise;
         std::promise<Error> promise;
         std::mutex mutex;
         std::unique_lock<std::mutex> callerLock(mutex);
-        Channel::TDescriptor descriptor = channel->send(
-            data.data(), data.size(), [&promise, &mutex](const Error& error) {
+        channel->send(
+            data.data(),
+            data.size(),
+            [&descriptorPromise](
+                const Error& error, Channel::TDescriptor descriptor) {
+              descriptorPromise.set_value(
+                  std::make_tuple(error, std::move(descriptor)));
+            },
+            [&promise, &mutex](const Error& error) {
               std::unique_lock<std::mutex> calleeLock(mutex);
               promise.set_value(error);
             });
         callerLock.unlock();
+        Error error;
+        Channel::TDescriptor descriptor;
+        std::tie(error, descriptor) = descriptorPromise.get_future().get();
+        ASSERT_FALSE(error);
         descriptorQueue.push(std::move(descriptor));
         ASSERT_FALSE(promise.get_future().get());
       },

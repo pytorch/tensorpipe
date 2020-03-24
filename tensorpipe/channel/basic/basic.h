@@ -47,8 +47,11 @@ class BasicChannel : public Channel,
       std::shared_ptr<transport::Connection> connection);
 
   // Send memory region to peer.
-  TDescriptor send(const void* ptr, size_t length, TSendCallback callback)
-      override;
+  void send(
+      const void* ptr,
+      size_t length,
+      TDescriptorCallback descriptorCallback,
+      TSendCallback callback) override;
 
   // Receive memory region from peer.
   void recv(

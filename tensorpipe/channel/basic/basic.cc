@@ -48,9 +48,10 @@ BasicChannel::BasicChannel(
   // itself isn't usable when the constructor is still being executed.
 }
 
-BasicChannel::TDescriptor BasicChannel::send(
+void BasicChannel::send(
     const void* ptr,
     size_t length,
+    TDescriptorCallback descriptorCallback,
     TSendCallback callback) {
   proto::Descriptor pbDescriptor;
 
@@ -62,7 +63,7 @@ BasicChannel::TDescriptor BasicChannel::send(
         SendOperation{id, ptr, length, std::move(callback)});
   }
 
-  return saveDescriptor(pbDescriptor);
+  descriptorCallback(Error::kSuccess, saveDescriptor(pbDescriptor));
 }
 
 // Receive memory region from peer.
