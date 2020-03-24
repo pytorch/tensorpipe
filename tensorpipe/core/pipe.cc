@@ -421,36 +421,72 @@ void Pipe::Impl::triggerWriteCallback_(
   nextWriteCallbackToCall_++;
 }
 
+void Pipe::Impl::triggerReadyCallbacks_() {
+  TP_DCHECK(inLoop_());
+
+  while (true) {
+    if (!messagesBeingExpected_.empty()) {
+      if (error_) {
+        MessageBeingExpected mVal = std::move(messagesBeingExpected_.front());
+        messagesBeingExpected_.pop_front();
+        triggerReadDescriptorCallback_(
+            mVal.sequenceNumber, std::move(mVal.callback), error_, Message());
+        continue;
+      }
+    }
+    if (!messagesBeingRead_.empty()) {
+      MessageBeingRead& mRef = messagesBeingRead_.front();
+      if (error_ ||
+          (!mRef.dataStillBeingRead &&
+           mRef.numTensorDataStillBeingReceived == 0)) {
+        MessageBeingRead mVal = std::move(messagesBeingRead_.front());
+        messagesBeingRead_.pop_front();
+        triggerReadCallback_(
+            mVal.sequenceNumber,
+            std::move(mVal.callback),
+            error_,
+            std::move(mVal.message));
+        continue;
+      }
+    }
+    if (!messagesBeingWritten_.empty()) {
+      MessageBeingWritten& mRef = messagesBeingWritten_.front();
+      if (error_ ||
+          (!mRef.dataStillBeingWritten &&
+           mRef.numTensorDataStillBeingSent == 0)) {
+        MessageBeingWritten mVal = std::move(messagesBeingWritten_.front());
+        messagesBeingWritten_.pop_front();
+        triggerWriteCallback_(
+            mVal.sequenceNumber,
+            std::move(mVal.callback),
+            error_,
+            std::move(mVal.message));
+        continue;
+      }
+    }
+    if (!messagesBeingQueued_.empty()) {
+      if (error_) {
+        MessageBeingQueued mVal = std::move(messagesBeingQueued_.front());
+        messagesBeingQueued_.pop_front();
+        triggerWriteCallback_(
+            mVal.sequenceNumber,
+            std::move(mVal.callback),
+            error_,
+            std::move(mVal.message));
+        continue;
+      }
+    }
+    break;
+  }
+}
+
 //
 // Error handling
 //
 
 void Pipe::Impl::handleError_() {
   TP_DCHECK(inLoop_());
-  while (!messagesBeingExpected_.empty()) {
-    MessageBeingExpected m = std::move(messagesBeingExpected_.front());
-    messagesBeingExpected_.pop_front();
-    triggerReadDescriptorCallback_(
-        m.sequenceNumber, std::move(m.callback), error_, Message());
-  }
-  while (!messagesBeingRead_.empty()) {
-    MessageBeingRead m = std::move(messagesBeingRead_.front());
-    messagesBeingRead_.pop_front();
-    triggerReadCallback_(
-        m.sequenceNumber, std::move(m.callback), error_, std::move(m.message));
-  }
-  while (!messagesBeingWritten_.empty()) {
-    MessageBeingWritten m = std::move(messagesBeingWritten_.front());
-    messagesBeingWritten_.pop_front();
-    triggerWriteCallback_(
-        m.sequenceNumber, std::move(m.callback), error_, std::move(m.message));
-  }
-  while (!messagesBeingQueued_.empty()) {
-    MessageBeingQueued m = std::move(messagesBeingQueued_.front());
-    messagesBeingQueued_.pop_front();
-    triggerWriteCallback_(
-        m.sequenceNumber, std::move(m.callback), error_, std::move(m.message));
-  }
+  triggerReadyCallbacks_();
 }
 
 //
@@ -845,7 +881,7 @@ void Pipe::Impl::onReadOfMessageData_(int64_t sequenceNumber) {
   TP_DCHECK(iter != messagesBeingRead_.end());
   MessageBeingRead& messageBeingRead = *iter;
   messageBeingRead.dataStillBeingRead = false;
-  checkForMessagesDoneReading_();
+  triggerReadyCallbacks_();
 }
 
 void Pipe::Impl::onRecvOfTensorData_(int64_t sequenceNumber) {
@@ -857,7 +893,7 @@ void Pipe::Impl::onRecvOfTensorData_(int64_t sequenceNumber) {
   TP_DCHECK(iter != messagesBeingRead_.end());
   MessageBeingRead& messageBeingRead = *iter;
   messageBeingRead.numTensorDataStillBeingReceived--;
-  checkForMessagesDoneReading_();
+  triggerReadyCallbacks_();
 }
 
 void Pipe::Impl::onWriteOfMessageData_(int64_t sequenceNumber) {
@@ -869,7 +905,7 @@ void Pipe::Impl::onWriteOfMessageData_(int64_t sequenceNumber) {
   TP_DCHECK(iter != messagesBeingWritten_.end());
   MessageBeingWritten& messageBeingWritten = *iter;
   messageBeingWritten.dataStillBeingWritten = false;
-  checkForMessagesDoneWriting_();
+  triggerReadyCallbacks_();
 }
 
 void Pipe::Impl::onSendOfTensorData_(int64_t sequenceNumber) {
@@ -881,44 +917,7 @@ void Pipe::Impl::onSendOfTensorData_(int64_t sequenceNumber) {
   TP_DCHECK(iter != messagesBeingWritten_.end());
   MessageBeingWritten& messageBeingWritten = *iter;
   messageBeingWritten.numTensorDataStillBeingSent--;
-  checkForMessagesDoneWriting_();
-}
-
-void Pipe::Impl::checkForMessagesDoneReading_() {
-  TP_DCHECK(inLoop_());
-  while (!messagesBeingRead_.empty()) {
-    MessageBeingRead& messageBeingRead = messagesBeingRead_.front();
-    if (messageBeingRead.dataStillBeingRead ||
-        messageBeingRead.numTensorDataStillBeingReceived > 0) {
-      break;
-    }
-    MessageBeingRead messageRead = std::move(messagesBeingRead_.front());
-    messagesBeingRead_.pop_front();
-    triggerReadCallback_(
-        messageRead.sequenceNumber,
-        std::move(messageRead.callback),
-        Error::kSuccess,
-        std::move(messageRead.message));
-  }
-}
-
-void Pipe::Impl::checkForMessagesDoneWriting_() {
-  TP_DCHECK(inLoop_());
-  while (!messagesBeingWritten_.empty()) {
-    MessageBeingWritten& messageBeingWritten = messagesBeingWritten_.front();
-    if (messageBeingWritten.dataStillBeingWritten ||
-        messageBeingWritten.numTensorDataStillBeingSent > 0) {
-      break;
-    }
-    MessageBeingWritten messageWritten =
-        std::move(messagesBeingWritten_.front());
-    messagesBeingWritten_.pop_front();
-    triggerWriteCallback_(
-        messageWritten.sequenceNumber,
-        std::move(messageWritten.callback),
-        Error::kSuccess,
-        std::move(messageWritten.message));
-  }
+  triggerReadyCallbacks_();
 }
 
 } // namespace tensorpipe

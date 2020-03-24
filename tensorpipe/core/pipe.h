@@ -258,6 +258,8 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
         const Error&,
         Message);
 
+    void triggerReadyCallbacks_();
+
     //
     // Error handling
     //
