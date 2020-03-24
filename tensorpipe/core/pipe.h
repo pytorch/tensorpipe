@@ -52,11 +52,7 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
       std::shared_ptr<Context>,
       const std::string&);
 
-  Pipe(
-      ConstructorToken,
-      std::shared_ptr<Context>,
-      std::string,
-      std::shared_ptr<transport::Connection>);
+  Pipe(ConstructorToken, std::shared_ptr<Context>, const std::string&);
 
   Pipe(
       ConstructorToken,
@@ -85,178 +81,223 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
   void write(Message, write_callback_fn);
 
  private:
-  std::mutex mutex_;
-  std::atomic<std::thread::id> currentLoop_{std::thread::id()};
-  std::deque<std::function<void()>> pendingTasks_;
+  class Impl : public std::enable_shared_from_this<Impl> {
+    // Use the passkey idiom to allow make_shared to call what should be a
+    // private constructor. See https://abseil.io/tips/134 for more information.
+    struct ConstructorToken {};
 
-  void deferToLoop_(std::function<void()> fn);
+   public:
+    static std::shared_ptr<Impl> create(
+        std::shared_ptr<Context>,
+        const std::string&);
 
-  void startFromLoop_();
+    static std::shared_ptr<Impl> create(
+        std::shared_ptr<Context>,
+        std::shared_ptr<Listener>,
+        std::string,
+        std::shared_ptr<transport::Connection>);
 
-  void readDescriptorFromLoop_(read_descriptor_callback_fn);
+    Impl(
+        ConstructorToken,
+        std::shared_ptr<Context>,
+        std::string,
+        std::shared_ptr<transport::Connection>);
 
-  void readFromLoop_(Message, read_callback_fn);
+    Impl(
+        ConstructorToken,
+        std::shared_ptr<Context>,
+        std::shared_ptr<Listener>,
+        std::string,
+        std::shared_ptr<transport::Connection>);
 
-  void writeFromLoop_(Message, write_callback_fn);
+    void readDescriptor(read_descriptor_callback_fn);
+    void read(Message, read_callback_fn);
+    void write(Message, write_callback_fn);
 
-  bool inLoop_();
+    void close();
 
-  void closeFromLoop_();
+   private:
+    std::mutex mutex_;
+    std::atomic<std::thread::id> currentLoop_{std::thread::id()};
+    std::deque<std::function<void()>> pendingTasks_;
 
-  enum State {
-    INITIALIZING,
-    CLIENT_ABOUT_TO_SEND_HELLO_AND_BROCHURE,
-    SERVER_WAITING_FOR_BROCHURE,
-    CLIENT_WAITING_FOR_BROCHURE_ANSWER,
-    SERVER_WAITING_FOR_CONNECTIONS,
-    ESTABLISHED
-  };
+    void deferToLoop_(std::function<void()> fn);
 
-  State state_{INITIALIZING};
+    void startFromLoop_();
 
-  std::shared_ptr<Context> context_;
-  std::shared_ptr<Listener> listener_;
+    void readDescriptorFromLoop_(read_descriptor_callback_fn);
 
-  std::string transport_;
-  std::shared_ptr<transport::Connection> connection_;
-  std::unordered_map<std::string, std::shared_ptr<channel::Channel>> channels_;
+    void readFromLoop_(Message, read_callback_fn);
 
-  // The server will set this up when it tell the client to switch to a
-  // different connection or to open some channels.
-  optional<uint64_t> registrationId_;
-  std::unordered_map<std::string, uint64_t> channelRegistrationIds_;
+    void writeFromLoop_(Message, write_callback_fn);
 
-  enum ConnectionState { NEXT_UP_IS_DESCRIPTOR, NEXT_UP_IS_DATA };
+    bool inLoop_();
 
-  ConnectionState connectionState_{NEXT_UP_IS_DESCRIPTOR};
+    void closeFromLoop_();
 
-  struct MessageBeingExpected {
-    int64_t sequenceNumber{-1};
-    read_descriptor_callback_fn callback;
-  };
-
-  struct MessageBeingAllocated {
-    int64_t sequenceNumber{-1};
-    ssize_t length{-1};
-    struct Tensor {
-      ssize_t length{-1};
-      std::string channelName;
-      std::vector<uint8_t> channelDescriptor;
+    enum State {
+      INITIALIZING,
+      CLIENT_ABOUT_TO_SEND_HELLO_AND_BROCHURE,
+      SERVER_WAITING_FOR_BROCHURE,
+      CLIENT_WAITING_FOR_BROCHURE_ANSWER,
+      SERVER_WAITING_FOR_CONNECTIONS,
+      ESTABLISHED
     };
-    std::vector<Tensor> tensors;
+
+    State state_{INITIALIZING};
+
+    std::shared_ptr<Context> context_;
+    std::shared_ptr<Listener> listener_;
+
+    std::string transport_;
+    std::shared_ptr<transport::Connection> connection_;
+    std::unordered_map<std::string, std::shared_ptr<channel::Channel>>
+        channels_;
+
+    // The server will set this up when it tell the client to switch to a
+    // different connection or to open some channels.
+    optional<uint64_t> registrationId_;
+    std::unordered_map<std::string, uint64_t> channelRegistrationIds_;
+
+    enum ConnectionState { NEXT_UP_IS_DESCRIPTOR, NEXT_UP_IS_DATA };
+
+    ConnectionState connectionState_{NEXT_UP_IS_DESCRIPTOR};
+
+    struct MessageBeingExpected {
+      int64_t sequenceNumber{-1};
+      read_descriptor_callback_fn callback;
+    };
+
+    struct MessageBeingAllocated {
+      int64_t sequenceNumber{-1};
+      ssize_t length{-1};
+      struct Tensor {
+        ssize_t length{-1};
+        std::string channelName;
+        std::vector<uint8_t> channelDescriptor;
+      };
+      std::vector<Tensor> tensors;
+    };
+
+    struct MessageBeingRead {
+      int64_t sequenceNumber{-1};
+      Message message;
+      read_callback_fn callback;
+      bool dataStillBeingRead{true};
+      int64_t numTensorDataStillBeingReceived{0};
+    };
+
+    struct MessageBeingQueued {
+      int64_t sequenceNumber{-1};
+      Message message;
+      write_callback_fn callback;
+    };
+
+    struct MessageBeingWritten {
+      int64_t sequenceNumber{-1};
+      Message message;
+      write_callback_fn callback;
+      bool dataStillBeingWritten{true};
+      int64_t numTensorDataStillBeingSent{0};
+    };
+
+    int64_t nextMessageBeingRead_{0};
+    std::deque<MessageBeingExpected> messagesBeingExpected_;
+    int64_t nextReadDescriptorCallbackToCall_{0};
+    std::deque<MessageBeingAllocated> messagesBeingAllocated_;
+    std::deque<MessageBeingRead> messagesBeingRead_;
+    int64_t nextReadCallbackToCall_{0};
+
+    int64_t nextMessageBeingWritten_{0};
+    std::deque<MessageBeingQueued> messagesBeingQueued_;
+    std::deque<MessageBeingWritten> messagesBeingWritten_;
+    int64_t nextWriteCallbackToCall_{0};
+
+    Error error_;
+
+    //
+    // Initialization
+    //
+
+    void start_();
+
+    //
+    // Helpers to prepare callbacks from transports and listener
+    //
+
+    DeferringTolerantCallbackWrapper<Impl, const void*, size_t>
+        readCallbackWrapper_;
+    DeferringCallbackWrapper<Impl> readPacketCallbackWrapper_;
+    DeferringTolerantCallbackWrapper<Impl> writeCallbackWrapper_;
+    DeferringCallbackWrapper<Impl> writePacketCallbackWrapper_;
+    DeferringCallbackWrapper<
+        Impl,
+        std::string,
+        std::shared_ptr<transport::Connection>>
+        connectionRequestCallbackWrapper_;
+    DeferringTolerantCallbackWrapper<Impl> channelRecvCallbackWrapper_;
+    DeferringTolerantCallbackWrapper<Impl> channelSendCallbackWrapper_;
+
+    //
+    // Helpers to schedule our callbacks into user code
+    //
+
+    void triggerReadDescriptorCallback_(
+        int64_t,
+        read_descriptor_callback_fn&&,
+        const Error&,
+        Message);
+    void triggerReadCallback_(
+        int64_t,
+        read_callback_fn&&,
+        const Error&,
+        Message);
+    void triggerWriteCallback_(
+        int64_t,
+        write_callback_fn&&,
+        const Error&,
+        Message);
+
+    //
+    // Error handling
+    //
+
+    void handleError_();
+
+    //
+    // Everything else
+    //
+
+    void doWritesAccumulatedWhileWaitingForPipeToBeEstablished_();
+    void writeWhenEstablished_(int64_t, Message, write_callback_fn);
+    void onReadWhileServerWaitingForBrochure_(const proto::Packet&);
+    void onReadWhileClientWaitingForBrochureAnswer_(const proto::Packet&);
+    void onAcceptWhileServerWaitingForConnection_(
+        std::string,
+        std::shared_ptr<transport::Connection>);
+    void onAcceptWhileServerWaitingForChannel_(
+        std::string,
+        std::string,
+        std::shared_ptr<transport::Connection>);
+    void onReadOfMessageDescriptor_(const proto::Packet&);
+    void onReadOfMessageData_(int64_t);
+    void onRecvOfTensorData_(int64_t);
+    void onWriteOfMessageData_(int64_t);
+    void onSendOfTensorData_(int64_t);
+
+    void checkForMessagesDoneReading_();
+    void checkForMessagesDoneWriting_();
+
+    template <typename T, typename... Args>
+    friend class DeferringCallbackWrapper;
+    template <typename T, typename... Args>
+    friend class DeferringTolerantCallbackWrapper;
   };
 
-  struct MessageBeingRead {
-    int64_t sequenceNumber{-1};
-    Message message;
-    read_callback_fn callback;
-    bool dataStillBeingRead{true};
-    int64_t numTensorDataStillBeingReceived{0};
-  };
-
-  struct MessageBeingQueued {
-    int64_t sequenceNumber{-1};
-    Message message;
-    write_callback_fn callback;
-  };
-
-  struct MessageBeingWritten {
-    int64_t sequenceNumber{-1};
-    Message message;
-    write_callback_fn callback;
-    bool dataStillBeingWritten{true};
-    int64_t numTensorDataStillBeingSent{0};
-  };
-
-  int64_t nextMessageBeingRead_{0};
-  std::deque<MessageBeingExpected> messagesBeingExpected_;
-  int64_t nextReadDescriptorCallbackToCall_{0};
-  std::deque<MessageBeingAllocated> messagesBeingAllocated_;
-  std::deque<MessageBeingRead> messagesBeingRead_;
-  int64_t nextReadCallbackToCall_{0};
-
-  int64_t nextMessageBeingWritten_{0};
-  std::deque<MessageBeingQueued> messagesBeingQueued_;
-  std::deque<MessageBeingWritten> messagesBeingWritten_;
-  int64_t nextWriteCallbackToCall_{0};
-
-  Error error_;
-
-  //
-  // Initialization
-  //
-
-  void start_();
-
-  //
-  // Helpers to prepare callbacks from transports and listener
-  //
-
-  DeferringTolerantCallbackWrapper<Pipe, const void*, size_t>
-      readCallbackWrapper_;
-  DeferringCallbackWrapper<Pipe> readPacketCallbackWrapper_;
-  DeferringTolerantCallbackWrapper<Pipe> writeCallbackWrapper_;
-  DeferringCallbackWrapper<Pipe> writePacketCallbackWrapper_;
-  DeferringCallbackWrapper<
-      Pipe,
-      std::string,
-      std::shared_ptr<transport::Connection>>
-      connectionRequestCallbackWrapper_;
-  DeferringTolerantCallbackWrapper<Pipe> channelRecvCallbackWrapper_;
-  DeferringTolerantCallbackWrapper<Pipe> channelSendCallbackWrapper_;
-
-  //
-  // Helpers to schedule our callbacks into user code
-  //
-
-  void triggerReadDescriptorCallback_(
-      int64_t,
-      read_descriptor_callback_fn&&,
-      const Error&,
-      Message);
-  void triggerReadCallback_(int64_t, read_callback_fn&&, const Error&, Message);
-  void triggerWriteCallback_(
-      int64_t,
-      write_callback_fn&&,
-      const Error&,
-      Message);
-
-  //
-  // Error handling
-  //
-
-  void handleError_();
-
-  //
-  // Everything else
-  //
-
-  void doWritesAccumulatedWhileWaitingForPipeToBeEstablished_();
-  void writeWhenEstablished_(int64_t, Message, write_callback_fn);
-  void onReadWhileServerWaitingForBrochure_(const proto::Packet&);
-  void onReadWhileClientWaitingForBrochureAnswer_(const proto::Packet&);
-  void onAcceptWhileServerWaitingForConnection_(
-      std::string,
-      std::shared_ptr<transport::Connection>);
-  void onAcceptWhileServerWaitingForChannel_(
-      std::string,
-      std::string,
-      std::shared_ptr<transport::Connection>);
-  void onReadOfMessageDescriptor_(const proto::Packet&);
-  void onReadOfMessageData_(int64_t);
-  void onRecvOfTensorData_(int64_t);
-  void onWriteOfMessageData_(int64_t);
-  void onSendOfTensorData_(int64_t);
-
-  void checkForMessagesDoneReading_();
-  void checkForMessagesDoneWriting_();
+  std::shared_ptr<Impl> impl_;
 
   friend class Context;
   friend class Listener;
-  template <typename T, typename... Args>
-  friend class DeferringCallbackWrapper;
-  template <typename T, typename... Args>
-  friend class DeferringTolerantCallbackWrapper;
 };
 
 } // namespace tensorpipe

@@ -160,7 +160,6 @@ void Listener::triggerAcceptCallback_(
         shared_from_this(),
         std::move(transport),
         std::move(connection));
-    pipe->start_();
   }
   fn(error, std::move(pipe));
   lock.lock();
