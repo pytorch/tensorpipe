@@ -229,7 +229,7 @@ TEST_P(TransportTest, DISABLED_Connection_EmptyBuffer) {
         readCompletedFuture.wait();
       },
       [&](std::shared_ptr<Connection> conn) {
-        std::atomic<int> n = ioNum;
+        std::atomic<int> n(ioNum);
         for (int i = 0; i < ioNum; i++) {
           if ((i & 1) == 0) {
             // Empty buffer
