@@ -36,6 +36,7 @@ class Connection final : public transport::Connection,
 
   enum State {
     INITIALIZING = 1,
+    INITIALIZING_ERROR,
     SEND_FDS,
     RECV_FDS,
     ESTABLISHED,

@@ -50,8 +50,15 @@ Connection::~Connection() {
 void Connection::start() {
   // Create ringbuffer for inbox.
   std::shared_ptr<util::ringbuffer::RingBuffer> inboxRingBuffer;
-  std::tie(inboxHeaderFd_, inboxDataFd_, inboxRingBuffer) =
-      util::ringbuffer::shm::create(kDefaultSize);
+  try {
+    std::tie(inboxHeaderFd_, inboxDataFd_, inboxRingBuffer) =
+        util::ringbuffer::shm::create(kDefaultSize);
+  } catch (std::system_error& e) {
+    state_ = INITIALIZING_ERROR;
+    // Triggers destructor.
+    TP_THROW_SYSTEM(errno) << "Error while creating shm with " << kDefaultSize
+                           << " bytes";
+  }
   inbox_.emplace(std::move(inboxRingBuffer));
 
   // Register method to be called when our peer writes to our inbox.
@@ -429,6 +436,9 @@ void Connection::close() {
   // can't extend its lifetime by capturing a shared_ptr and increasing its
   // refcount.
   std::unique_lock<std::mutex> guard(mutex_);
+  if (state_ == INITIALIZING_ERROR) {
+    return;
+  }
   closeHoldingMutex();
 }
 
