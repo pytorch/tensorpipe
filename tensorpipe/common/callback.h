@@ -296,4 +296,72 @@ class DeferringCallbackWrapper {
   }
 };
 
+// This class is very similar to the above one, with the difference that the
+// callbacks wrapped by this class will *always* be called: the class will be
+// kept alive by the callback, and they will be called even in case of errors.
+// The use case for this class is when a resource was "acquired" (e.g., a buffer
+// was passed to a transport) and it will be "released" by calling the callback.
+template <typename T, typename... Args>
+class DeferringTolerantCallbackWrapper {
+ public:
+  using TCallback = std::function<void(const Error&, Args...)>;
+  using TBoundCallback = std::function<void(T&, Args...)>;
+
+  DeferringTolerantCallbackWrapper(std::enable_shared_from_this<T>& subject)
+      : subject_(subject){};
+
+  TCallback operator()(TBoundCallback fn) {
+    return std::function<void(const Error&, Args...)>(
+        [this, subject{subject_.shared_from_this()}, fn{std::move(fn)}](
+            const Error& error, Args... args) mutable {
+          this->entryPoint_(*subject, std::move(fn), error, std::move(args)...);
+        });
+  }
+
+ private:
+  std::enable_shared_from_this<T>& subject_;
+
+  void entryPoint_(
+      T& subject,
+      TBoundCallback fn,
+      const Error& error,
+      Args... args) {
+    // FIXME We're copying the args here...
+    subject.deferToLoop_(
+        [this, &subject, fn{std::move(fn)}, error, args...]() mutable {
+          entryPointFromLoop_(
+              subject, std::move(fn), error, std::move(args)...);
+        });
+  }
+
+  void entryPointFromLoop_(
+      T& subject,
+      TBoundCallback fn,
+      const Error& error,
+      Args... args) {
+    TP_DCHECK(subject.inLoop_());
+
+    processError_(subject, error);
+    // Proceed regardless of any error: this is why it's called "tolerant".
+    if (fn) {
+      fn(subject, std::move(args)...);
+    }
+  }
+
+  void processError_(T& subject, const Error& error) {
+    TP_DCHECK(subject.inLoop_());
+
+    // Nothing to do if we already were in an error state or if there is no
+    // error.
+    if (subject.error_ || !error) {
+      return;
+    }
+
+    // Otherwise enter the error state and do the cleanup.
+    subject.error_ = error;
+
+    subject.handleError_();
+  }
+};
+
 } // namespace tensorpipe

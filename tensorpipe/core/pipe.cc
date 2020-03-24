@@ -50,6 +50,7 @@ Pipe::Pipe(
       readCallbackWrapper_(*this),
       readPacketCallbackWrapper_(*this),
       writeCallbackWrapper_(*this),
+      writePacketCallbackWrapper_(*this),
       connectionRequestCallbackWrapper_(*this),
       channelRecvCallbackWrapper_(*this),
       channelSendCallbackWrapper_(*this) {}
@@ -68,6 +69,7 @@ Pipe::Pipe(
       readCallbackWrapper_(*this),
       readPacketCallbackWrapper_(*this),
       writeCallbackWrapper_(*this),
+      writePacketCallbackWrapper_(*this),
       connectionRequestCallbackWrapper_(*this),
       channelRecvCallbackWrapper_(*this),
       channelSendCallbackWrapper_(*this) {}
@@ -84,7 +86,7 @@ void Pipe::startFromLoop_() {
     pbPacketOut->mutable_spontaneous_connection();
     connection_->write(
         *pbPacketOut,
-        writeCallbackWrapper_([pbPacketOut](Pipe& /* unused */) {}));
+        writePacketCallbackWrapper_([pbPacketOut](Pipe& /* unused */) {}));
 
     auto pbPacketOut2 = std::make_shared<proto::Packet>();
     proto::Brochure* pbBrochure = pbPacketOut2->mutable_brochure();
@@ -111,7 +113,7 @@ void Pipe::startFromLoop_() {
     }
     connection_->write(
         *pbPacketOut2,
-        writeCallbackWrapper_([pbPacketOut2](Pipe& /* unused */) {}));
+        writePacketCallbackWrapper_([pbPacketOut2](Pipe& /* unused */) {}));
     state_ = CLIENT_WAITING_FOR_BROCHURE_ANSWER;
     auto pbPacketIn = std::make_shared<proto::Packet>();
     connection_->read(
@@ -462,7 +464,7 @@ void Pipe::writeWhenEstablished_(
 
   connection_->write(
       *pbPacketOut,
-      writeCallbackWrapper_([pbPacketOut](Pipe& /* unused */) {}));
+      writePacketCallbackWrapper_([pbPacketOut](Pipe& /* unused */) {}));
 
   connection_->write(
       message.data,
@@ -575,7 +577,7 @@ void Pipe::onReadWhileServerWaitingForBrochure_(
 
   connection_->write(
       *pbPacketOut,
-      writeCallbackWrapper_([pbPacketOut](Pipe& /* unused */) {}));
+      writePacketCallbackWrapper_([pbPacketOut](Pipe& /* unused */) {}));
 
   if (!needToWaitForConnections) {
     state_ = ESTABLISHED;
@@ -617,7 +619,7 @@ void Pipe::onReadWhileClientWaitingForBrochureAnswer_(
         pbBrochureAnswer.registration_id());
     connection->write(
         *pbPacketOut,
-        writeCallbackWrapper_([pbPacketOut](Pipe& /* unused */) {}));
+        writePacketCallbackWrapper_([pbPacketOut](Pipe& /* unused */) {}));
 
     transport_ = transport;
     connection_ = std::move(connection);
@@ -643,7 +645,7 @@ void Pipe::onReadWhileClientWaitingForBrochureAnswer_(
         pbChannelSelection.registration_id());
     connection->write(
         *pbPacketOut,
-        writeCallbackWrapper_([pbPacketOut](Pipe& /* unused */) {}));
+        writePacketCallbackWrapper_([pbPacketOut](Pipe& /* unused */) {}));
 
     channels_.emplace(
         name,

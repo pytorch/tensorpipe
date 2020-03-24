@@ -192,16 +192,18 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
   // Helpers to prepare callbacks from transports and listener
   //
 
-  DeferringCallbackWrapper<Pipe, const void*, size_t> readCallbackWrapper_;
+  DeferringTolerantCallbackWrapper<Pipe, const void*, size_t>
+      readCallbackWrapper_;
   DeferringCallbackWrapper<Pipe> readPacketCallbackWrapper_;
-  DeferringCallbackWrapper<Pipe> writeCallbackWrapper_;
+  DeferringTolerantCallbackWrapper<Pipe> writeCallbackWrapper_;
+  DeferringCallbackWrapper<Pipe> writePacketCallbackWrapper_;
   DeferringCallbackWrapper<
       Pipe,
       std::string,
       std::shared_ptr<transport::Connection>>
       connectionRequestCallbackWrapper_;
-  DeferringCallbackWrapper<Pipe> channelRecvCallbackWrapper_;
-  DeferringCallbackWrapper<Pipe> channelSendCallbackWrapper_;
+  DeferringTolerantCallbackWrapper<Pipe> channelRecvCallbackWrapper_;
+  DeferringTolerantCallbackWrapper<Pipe> channelSendCallbackWrapper_;
 
   //
   // Helpers to schedule our callbacks into user code
@@ -253,6 +255,8 @@ class Pipe final : public std::enable_shared_from_this<Pipe> {
   friend class Listener;
   template <typename T, typename... Args>
   friend class DeferringCallbackWrapper;
+  template <typename T, typename... Args>
+  friend class DeferringTolerantCallbackWrapper;
 };
 
 } // namespace tensorpipe
