@@ -61,30 +61,42 @@ class BasicChannel : public Channel,
       TRecvCallback callback) override;
 
  private:
-  // Each time a thread starts running some of the channel's code, we acquire
-  // this mutex. There are two "entry points" where control is handed to the
-  // channel: the public user-facing functions, and the callbacks (which we
-  // always wrap with wrapFooCallback_, which first calls fooEntryPoint_, which
-  // is where the mutex is acquired). Some internal methods may however want to
-  // temporarily release the lock, so we give all of them a reference to the
-  // lock that has been acquired at the entry point.
   std::mutex mutex_;
-  using TLock = std::unique_lock<std::mutex>&;
+  std::thread::id currentLoop_{std::thread::id()};
+  std::deque<std::function<void()>> pendingTasks_;
+
+  bool inLoop_();
+  void deferToLoop_(std::function<void()> fn);
+
+  void sendFromLoop_(
+      const void* ptr,
+      size_t length,
+      TDescriptorCallback descriptorCallback,
+      TSendCallback callback);
+
+  // Receive memory region from peer.
+  void recvFromLoop_(
+      TDescriptor descriptor,
+      void* ptr,
+      size_t length,
+      TRecvCallback callback);
+
+  void initFromLoop_();
 
   // Called by factory class after construction.
   void init_();
 
   // Arm connection to read next protobuf packet.
-  void readPacket_(TLock lock);
+  void readPacket_();
 
   // Called when a protobuf packet was received.
-  void onPacket_(const proto::Packet& packet, TLock lock);
+  void onPacket_(const proto::Packet& packet);
 
   // Called when protobuf packet is a request.
-  void onRequest_(const proto::Request& request, TLock lock);
+  void onRequest_(const proto::Request& request);
 
   // Called when protobuf packet is a reply.
-  void onReply_(const proto::Reply& reply, TLock lock);
+  void onReply_(const proto::Reply& reply);
 
   // Allow factory class to call `init_()`.
   friend class BasicChannelFactory;
@@ -115,23 +127,24 @@ class BasicChannel : public Channel,
   std::list<RecvOperation> recvOperations_;
 
   // Called if send operation was successful.
-  void sendCompleted(const uint64_t, TLock);
+  void sendCompleted(const uint64_t);
 
   // Called if recv operation was successful.
-  void recvCompleted(const uint64_t, TLock);
+  void recvCompleted(const uint64_t);
 
   // Helpers to prepare callbacks from transports
-  CallbackWrapper<BasicChannel, const void*, size_t> readCallbackWrapper_;
-  CallbackWrapper<BasicChannel> readProtoCallbackWrapper_;
-  CallbackWrapper<BasicChannel> writeCallbackWrapper_;
+  DeferringCallbackWrapper<BasicChannel, const void*, size_t>
+      readCallbackWrapper_;
+  DeferringCallbackWrapper<BasicChannel> readProtoCallbackWrapper_;
+  DeferringCallbackWrapper<BasicChannel> writeCallbackWrapper_;
 
   // Helper function to process transport error.
   // Shared between read and write callback entry points.
-  void handleError_(TLock lock);
+  void handleError_();
 
   // For some odd reason it seems we need to use a qualified name here...
   template <typename T, typename... Args>
-  friend class tensorpipe::CallbackWrapper;
+  friend class tensorpipe::DeferringCallbackWrapper;
 };
 
 } // namespace basic

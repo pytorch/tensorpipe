@@ -48,20 +48,63 @@ BasicChannel::BasicChannel(
   // itself isn't usable when the constructor is still being executed.
 }
 
+bool BasicChannel::inLoop_() {
+  return currentLoop_ == std::this_thread::get_id();
+}
+
+void BasicChannel::deferToLoop_(std::function<void()> fn) {
+  {
+    std::unique_lock<std::mutex> lock(mutex_);
+    pendingTasks_.push_back(std::move(fn));
+    if (currentLoop_ != std::thread::id()) {
+      return;
+    }
+    currentLoop_ = std::this_thread::get_id();
+  }
+
+  while (true) {
+    std::function<void()> task;
+    {
+      std::unique_lock<std::mutex> lock(mutex_);
+      if (pendingTasks_.empty()) {
+        currentLoop_ = std::thread::id();
+        return;
+      }
+      task = std::move(pendingTasks_.front());
+      pendingTasks_.pop_front();
+    }
+    task();
+  }
+}
+
 void BasicChannel::send(
     const void* ptr,
     size_t length,
     TDescriptorCallback descriptorCallback,
     TSendCallback callback) {
+  deferToLoop_([this,
+                ptr,
+                length,
+                descriptorCallback{std::move(descriptorCallback)},
+                callback{std::move(callback)}]() mutable {
+    sendFromLoop_(
+        ptr, length, std::move(descriptorCallback), std::move(callback));
+  });
+}
+
+// Send memory region to peer.
+void BasicChannel::sendFromLoop_(
+    const void* ptr,
+    size_t length,
+    TDescriptorCallback descriptorCallback,
+    TSendCallback callback) {
+  TP_DCHECK(inLoop_());
   proto::Descriptor pbDescriptor;
 
-  {
-    std::unique_lock<std::mutex> lock(mutex_);
-    const auto id = id_++;
-    pbDescriptor.set_operation_id(id);
-    sendOperations_.emplace_back(
-        SendOperation{id, ptr, length, std::move(callback)});
-  }
+  const auto id = id_++;
+  pbDescriptor.set_operation_id(id);
+  sendOperations_.emplace_back(
+      SendOperation{id, ptr, length, std::move(callback)});
 
   descriptorCallback(Error::kSuccess, saveDescriptor(pbDescriptor));
 }
@@ -72,57 +115,70 @@ void BasicChannel::recv(
     void* ptr,
     size_t length,
     TRecvCallback callback) {
+  deferToLoop_([this,
+                descriptor{std::move(descriptor)},
+                ptr,
+                length,
+                callback{std::move(callback)}]() mutable {
+    recvFromLoop_(std::move(descriptor), ptr, length, std::move(callback));
+  });
+}
+
+void BasicChannel::recvFromLoop_(
+    TDescriptor descriptor,
+    void* ptr,
+    size_t length,
+    TRecvCallback callback) {
+  TP_DCHECK(inLoop_());
   const auto pbDescriptor = loadDescriptor<proto::Descriptor>(descriptor);
   const auto id = pbDescriptor.operation_id();
 
-  {
-    std::unique_lock<std::mutex> lock(mutex_);
-    recvOperations_.emplace_back(
-        RecvOperation{id, ptr, length, std::move(callback)});
-  }
+  recvOperations_.emplace_back(
+      RecvOperation{id, ptr, length, std::move(callback)});
 
   // Ask peer to start sending data now that we have a target pointer.
   auto packet = std::make_shared<proto::Packet>();
   proto::Request* pbRequest = packet->mutable_request();
   pbRequest->set_operation_id(id);
   connection_->write(
-      *packet,
-      writeCallbackWrapper_(
-          [packet](BasicChannel& /* unused */, TLock /* unused */) {}));
+      *packet, writeCallbackWrapper_([packet](BasicChannel& /* unused */) {}));
   return;
 }
 
 void BasicChannel::init_() {
-  std::unique_lock<std::mutex> lock(mutex_);
-  readPacket_(lock);
+  deferToLoop_([this]() { initFromLoop_(); });
 }
 
-void BasicChannel::readPacket_(TLock lock) {
-  TP_DCHECK(lock.owns_lock() && lock.mutex() == &mutex_);
+void BasicChannel::initFromLoop_() {
+  TP_DCHECK(inLoop_());
+  readPacket_();
+}
+
+void BasicChannel::readPacket_() {
+  TP_DCHECK(inLoop_());
   auto packet = std::make_shared<proto::Packet>();
   connection_->read(
-      *packet,
-      readProtoCallbackWrapper_([packet](BasicChannel& channel, TLock lock) {
-        channel.onPacket_(*packet, lock);
+      *packet, readProtoCallbackWrapper_([packet](BasicChannel& channel) {
+        channel.onPacket_(*packet);
       }));
 }
 
-void BasicChannel::onPacket_(const proto::Packet& packet, TLock lock) {
-  TP_DCHECK(lock.owns_lock() && lock.mutex() == &mutex_);
+void BasicChannel::onPacket_(const proto::Packet& packet) {
+  TP_DCHECK(inLoop_());
   if (packet.has_request()) {
-    onRequest_(packet.request(), lock);
+    onRequest_(packet.request());
   } else if (packet.has_reply()) {
-    onReply_(packet.reply(), lock);
+    onReply_(packet.reply());
   } else {
     TP_THROW_ASSERT() << "Packet is not a request nor a reply.";
   }
 
   // Wait for next request.
-  readPacket_(lock);
+  readPacket_();
 }
 
-void BasicChannel::onRequest_(const proto::Request& request, TLock lock) {
-  TP_DCHECK(lock.owns_lock() && lock.mutex() == &mutex_);
+void BasicChannel::onRequest_(const proto::Request& request) {
+  TP_DCHECK(inLoop_());
   // Find the send operation matching the request's operation ID.
   const auto id = request.operation_id();
   auto it = std::find_if(
@@ -141,20 +197,17 @@ void BasicChannel::onRequest_(const proto::Request& request, TLock lock) {
   pbReply->set_operation_id(id);
   connection_->write(
       *pbPacketOut,
-      writeCallbackWrapper_(
-          [pbPacketOut](BasicChannel& /* unused */, TLock /* unused */) {}));
+      writeCallbackWrapper_([pbPacketOut](BasicChannel& /* unused */) {}));
 
   // Write payload.
   connection_->write(
-      op.ptr,
-      op.length,
-      writeCallbackWrapper_([id](BasicChannel& channel, TLock lock) {
-        channel.sendCompleted(id, lock);
+      op.ptr, op.length, writeCallbackWrapper_([id](BasicChannel& channel) {
+        channel.sendCompleted(id);
       }));
 }
 
-void BasicChannel::onReply_(const proto::Reply& reply, TLock lock) {
-  TP_DCHECK(lock.owns_lock() && lock.mutex() == &mutex_);
+void BasicChannel::onReply_(const proto::Reply& reply) {
+  TP_DCHECK(inLoop_());
   // Find the recv operation matching the reply's operation ID.
   const auto id = reply.operation_id();
   auto it = std::find_if(
@@ -175,12 +228,11 @@ void BasicChannel::onReply_(const proto::Reply& reply, TLock lock) {
           [id](
               BasicChannel& channel,
               const void* /* unused */,
-              size_t /* unused */,
-              TLock lock) { channel.recvCompleted(id, lock); }));
+              size_t /* unused */) { channel.recvCompleted(id); }));
 }
 
-void BasicChannel::sendCompleted(const uint64_t id, TLock lock) {
-  TP_DCHECK(lock.owns_lock() && lock.mutex() == &mutex_);
+void BasicChannel::sendCompleted(const uint64_t id) {
+  TP_DCHECK(inLoop_());
   auto it = std::find_if(
       sendOperations_.begin(), sendOperations_.end(), [id](const auto& op) {
         return op.id == id;
@@ -192,13 +244,11 @@ void BasicChannel::sendCompleted(const uint64_t id, TLock lock) {
   auto op = std::move(*it);
   sendOperations_.erase(it);
 
-  // Release lock before executing callback.
-  lock.unlock();
   op.callback(Error::kSuccess);
 }
 
-void BasicChannel::recvCompleted(const uint64_t id, TLock lock) {
-  TP_DCHECK(lock.owns_lock() && lock.mutex() == &mutex_);
+void BasicChannel::recvCompleted(const uint64_t id) {
+  TP_DCHECK(inLoop_());
   auto it = std::find_if(
       recvOperations_.begin(), recvOperations_.end(), [id](const auto& op) {
         return op.id == id;
@@ -210,20 +260,15 @@ void BasicChannel::recvCompleted(const uint64_t id, TLock lock) {
   auto op = std::move(*it);
   recvOperations_.erase(it);
 
-  // Release lock before executing callback.
-  lock.unlock();
   op.callback(Error::kSuccess);
 }
 
-void BasicChannel::handleError_(TLock lock) {
-  TP_DCHECK(lock.owns_lock() && lock.mutex() == &mutex_);
+void BasicChannel::handleError_() {
+  TP_DCHECK(inLoop_());
 
   // Move pending operations to stack.
   auto sendOperations = std::move(sendOperations_);
   auto recvOperations = std::move(recvOperations_);
-
-  // Release lock before executing callbacks.
-  lock.unlock();
 
   // Notify pending send callbacks of error.
   for (auto& op : sendOperations) {
