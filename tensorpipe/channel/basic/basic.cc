@@ -30,29 +30,35 @@ const std::string& BasicChannelFactory::domainDescriptor() const {
 std::shared_ptr<Channel> BasicChannelFactory::createChannel(
     std::shared_ptr<transport::Connection> connection,
     Channel::Endpoint /* unused */) {
-  auto channel = std::make_shared<BasicChannel>(
+  return std::make_shared<BasicChannel>(
       BasicChannel::ConstructorToken(), std::move(connection));
-  channel->init_();
-  return channel;
 }
 
 BasicChannel::BasicChannel(
     ConstructorToken /* unused */,
     std::shared_ptr<transport::Connection> connection)
+    : impl_(Impl::create(std::move(connection))) {}
+
+std::shared_ptr<BasicChannel::Impl> BasicChannel::Impl::create(
+    std::shared_ptr<transport::Connection> connection) {
+  auto impl = std::make_shared<Impl>(ConstructorToken(), std::move(connection));
+  impl->init_();
+  return impl;
+}
+
+BasicChannel::Impl::Impl(
+    ConstructorToken /* unused */,
+    std::shared_ptr<transport::Connection> connection)
     : connection_(std::move(connection)),
       readCallbackWrapper_(*this),
       readProtoCallbackWrapper_(*this),
-      writeCallbackWrapper_(*this) {
-  // The factory calls `init_()` after construction so that we can use
-  // `shared_from_this()`. The shared_ptr that refers to the object
-  // itself isn't usable when the constructor is still being executed.
-}
+      writeCallbackWrapper_(*this) {}
 
-bool BasicChannel::inLoop_() {
+bool BasicChannel::Impl::inLoop_() {
   return currentLoop_ == std::this_thread::get_id();
 }
 
-void BasicChannel::deferToLoop_(std::function<void()> fn) {
+void BasicChannel::Impl::deferToLoop_(std::function<void()> fn) {
   {
     std::unique_lock<std::mutex> lock(mutex_);
     pendingTasks_.push_back(std::move(fn));
@@ -82,6 +88,14 @@ void BasicChannel::send(
     size_t length,
     TDescriptorCallback descriptorCallback,
     TSendCallback callback) {
+  impl_->send(ptr, length, std::move(descriptorCallback), std::move(callback));
+}
+
+void BasicChannel::Impl::send(
+    const void* ptr,
+    size_t length,
+    TDescriptorCallback descriptorCallback,
+    TSendCallback callback) {
   deferToLoop_([this,
                 ptr,
                 length,
@@ -93,7 +107,7 @@ void BasicChannel::send(
 }
 
 // Send memory region to peer.
-void BasicChannel::sendFromLoop_(
+void BasicChannel::Impl::sendFromLoop_(
     const void* ptr,
     size_t length,
     TDescriptorCallback descriptorCallback,
@@ -115,6 +129,14 @@ void BasicChannel::recv(
     void* ptr,
     size_t length,
     TRecvCallback callback) {
+  impl_->recv(std::move(descriptor), ptr, length, std::move(callback));
+}
+
+void BasicChannel::Impl::recv(
+    TDescriptor descriptor,
+    void* ptr,
+    size_t length,
+    TRecvCallback callback) {
   deferToLoop_([this,
                 descriptor{std::move(descriptor)},
                 ptr,
@@ -124,7 +146,7 @@ void BasicChannel::recv(
   });
 }
 
-void BasicChannel::recvFromLoop_(
+void BasicChannel::Impl::recvFromLoop_(
     TDescriptor descriptor,
     void* ptr,
     size_t length,
@@ -141,29 +163,28 @@ void BasicChannel::recvFromLoop_(
   proto::Request* pbRequest = packet->mutable_request();
   pbRequest->set_operation_id(id);
   connection_->write(
-      *packet, writeCallbackWrapper_([packet](BasicChannel& /* unused */) {}));
+      *packet, writeCallbackWrapper_([packet](Impl& /* unused */) {}));
   return;
 }
 
-void BasicChannel::init_() {
+void BasicChannel::Impl::init_() {
   deferToLoop_([this]() { initFromLoop_(); });
 }
 
-void BasicChannel::initFromLoop_() {
+void BasicChannel::Impl::initFromLoop_() {
   TP_DCHECK(inLoop_());
   readPacket_();
 }
 
-void BasicChannel::readPacket_() {
+void BasicChannel::Impl::readPacket_() {
   TP_DCHECK(inLoop_());
   auto packet = std::make_shared<proto::Packet>();
-  connection_->read(
-      *packet, readProtoCallbackWrapper_([packet](BasicChannel& channel) {
-        channel.onPacket_(*packet);
-      }));
+  connection_->read(*packet, readProtoCallbackWrapper_([packet](Impl& impl) {
+    impl.onPacket_(*packet);
+  }));
 }
 
-void BasicChannel::onPacket_(const proto::Packet& packet) {
+void BasicChannel::Impl::onPacket_(const proto::Packet& packet) {
   TP_DCHECK(inLoop_());
   if (packet.has_request()) {
     onRequest_(packet.request());
@@ -177,7 +198,7 @@ void BasicChannel::onPacket_(const proto::Packet& packet) {
   readPacket_();
 }
 
-void BasicChannel::onRequest_(const proto::Request& request) {
+void BasicChannel::Impl::onRequest_(const proto::Request& request) {
   TP_DCHECK(inLoop_());
   // Find the send operation matching the request's operation ID.
   const auto id = request.operation_id();
@@ -197,16 +218,15 @@ void BasicChannel::onRequest_(const proto::Request& request) {
   pbReply->set_operation_id(id);
   connection_->write(
       *pbPacketOut,
-      writeCallbackWrapper_([pbPacketOut](BasicChannel& /* unused */) {}));
+      writeCallbackWrapper_([pbPacketOut](Impl& /* unused */) {}));
 
   // Write payload.
-  connection_->write(
-      op.ptr, op.length, writeCallbackWrapper_([id](BasicChannel& channel) {
-        channel.sendCompleted(id);
-      }));
+  connection_->write(op.ptr, op.length, writeCallbackWrapper_([id](Impl& impl) {
+                       impl.sendCompleted(id);
+                     }));
 }
 
-void BasicChannel::onReply_(const proto::Reply& reply) {
+void BasicChannel::Impl::onReply_(const proto::Reply& reply) {
   TP_DCHECK(inLoop_());
   // Find the recv operation matching the reply's operation ID.
   const auto id = reply.operation_id();
@@ -225,13 +245,12 @@ void BasicChannel::onReply_(const proto::Reply& reply) {
       op.ptr,
       op.length,
       readCallbackWrapper_(
-          [id](
-              BasicChannel& channel,
-              const void* /* unused */,
-              size_t /* unused */) { channel.recvCompleted(id); }));
+          [id](Impl& impl, const void* /* unused */, size_t /* unused */) {
+            impl.recvCompleted(id);
+          }));
 }
 
-void BasicChannel::sendCompleted(const uint64_t id) {
+void BasicChannel::Impl::sendCompleted(const uint64_t id) {
   TP_DCHECK(inLoop_());
   auto it = std::find_if(
       sendOperations_.begin(), sendOperations_.end(), [id](const auto& op) {
@@ -247,7 +266,7 @@ void BasicChannel::sendCompleted(const uint64_t id) {
   op.callback(Error::kSuccess);
 }
 
-void BasicChannel::recvCompleted(const uint64_t id) {
+void BasicChannel::Impl::recvCompleted(const uint64_t id) {
   TP_DCHECK(inLoop_());
   auto it = std::find_if(
       recvOperations_.begin(), recvOperations_.end(), [id](const auto& op) {
@@ -263,7 +282,7 @@ void BasicChannel::recvCompleted(const uint64_t id) {
   op.callback(Error::kSuccess);
 }
 
-void BasicChannel::handleError_() {
+void BasicChannel::Impl::handleError_() {
   TP_DCHECK(inLoop_());
 
   // Move pending operations to stack.
