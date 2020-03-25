@@ -301,8 +301,9 @@ void CmaChannel::Impl::recvFromLoop_(
         pbNotification->set_operation_id(id);
         impl.connection_->write(
             *pbPacketOut,
-            impl.writeCallbackWrapper_([pbPacketOut](Impl& /* unused */) {}));
-        callback(Error::kSuccess);
+            impl.writePacketCallbackWrapper_(
+                [pbPacketOut](Impl& /* unused */) {}));
+        callback(impl.error_);
       }));
 }
 

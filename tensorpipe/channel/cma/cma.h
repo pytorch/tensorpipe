@@ -189,8 +189,8 @@ class CmaChannel : public Channel,
     using TBoundWriteCallback = std::function<void(CmaChannel&)>;
 
     DeferringCallbackWrapper<Impl> readPacketCallbackWrapper_{*this};
-    DeferringCallbackWrapper<Impl> writeCallbackWrapper_{*this};
-    DeferringCallbackWrapper<Impl> copyCallbackWrapper_{*this};
+    DeferringCallbackWrapper<Impl> writePacketCallbackWrapper_{*this};
+    DeferringTolerantCallbackWrapper<Impl> copyCallbackWrapper_{*this};
 
     // Helper function to process transport error.
     // Shared between read and write callback entry points.
@@ -199,6 +199,8 @@ class CmaChannel : public Channel,
     // For some odd reason it seems we need to use a qualified name here...
     template <typename T, typename... Args>
     friend class tensorpipe::DeferringCallbackWrapper;
+    template <typename T, typename... Args>
+    friend class tensorpipe::DeferringTolerantCallbackWrapper;
   };
 
   std::shared_ptr<Impl> impl_;
