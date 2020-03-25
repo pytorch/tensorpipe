@@ -51,23 +51,26 @@ TEST_P(TransportTest, Connection_Initialization) {
 }
 
 TEST_P(TransportTest, Connection_InitializationError) {
-  std::promise<void> readCompletedProm;
+  int numRequests = 10;
 
   this->testConnection(
       [&](std::shared_ptr<Connection> /* unused */) {
         // Closes connection
       },
       [&](std::shared_ptr<Connection> conn) {
-        this->doRead(
-            conn,
-            [&, conn](
-                const Error& error,
-                const void* /* unused */,
-                size_t /* unused */) {
-              ASSERT_TRUE(error);
-              readCompletedProm.set_value();
-            });
-        readCompletedProm.get_future().wait();
+        for (int i = 0; i < numRequests; i++) {
+          std::promise<void> readCompletedProm;
+          this->doRead(
+              conn,
+              [&, conn](
+                  const Error& error,
+                  const void* /* unused */,
+                  size_t /* unused */) {
+                ASSERT_TRUE(error);
+                readCompletedProm.set_value();
+              });
+          readCompletedProm.get_future().wait();
+        }
       });
 }
 
