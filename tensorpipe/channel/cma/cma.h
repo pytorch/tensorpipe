@@ -101,20 +101,39 @@ class CmaChannel : public Channel,
       TRecvCallback callback) override;
 
  private:
-  mutable std::mutex mutex_;
-  using TLock = std::unique_lock<std::mutex>&;
+  std::mutex mutex_;
+  std::thread::id currentLoop_{std::thread::id()};
+  std::deque<std::function<void()>> pendingTasks_;
+
+  bool inLoop_();
+  void deferToLoop_(std::function<void()> fn);
 
   // Called by factory class after construction.
   void init_();
+  void initFromLoop_();
+
+  // Send memory region to peer.
+  void sendFromLoop_(
+      const void* ptr,
+      size_t length,
+      TDescriptorCallback descriptorCallback,
+      TSendCallback callback);
+
+  // Receive memory region from peer.
+  void recvFromLoop_(
+      TDescriptor descriptor,
+      void* ptr,
+      size_t length,
+      TRecvCallback callback);
 
   // Arm connection to read next protobuf packet.
   void readPacket_();
 
   // Called when a protobuf packet was received.
-  void onPacket_(const proto::Packet& packet, TLock lock);
+  void onPacket_(const proto::Packet& packet);
 
   // Called when protobuf packet is a notification.
-  void onNotification_(const proto::Notification& notification, TLock lock);
+  void onNotification_(const proto::Notification& notification);
 
   // Allow factory class to call `init_()`.
   friend class CmaChannelFactory;
@@ -142,17 +161,17 @@ class CmaChannel : public Channel,
   using TBoundReadProtoCallback = std::function<void(CmaChannel&)>;
   using TBoundWriteCallback = std::function<void(CmaChannel&)>;
 
-  CallbackWrapper<CmaChannel> readPacketCallbackWrapper_{*this};
-  CallbackWrapper<CmaChannel> writeCallbackWrapper_{*this};
-  CallbackWrapper<CmaChannel> copyCallbackWrapper_{*this};
+  DeferringCallbackWrapper<CmaChannel> readPacketCallbackWrapper_{*this};
+  DeferringCallbackWrapper<CmaChannel> writeCallbackWrapper_{*this};
+  DeferringCallbackWrapper<CmaChannel> copyCallbackWrapper_{*this};
 
   // Helper function to process transport error.
   // Shared between read and write callback entry points.
-  void handleError_(TLock lock);
+  void handleError_();
 
   // For some odd reason it seems we need to use a qualified name here...
   template <typename T, typename... Args>
-  friend class tensorpipe::CallbackWrapper;
+  friend class tensorpipe::DeferringCallbackWrapper;
 };
 
 } // namespace cma

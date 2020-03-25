@@ -160,7 +160,41 @@ CmaChannel::CmaChannel(
 }
 
 void CmaChannel::init_() {
+  deferToLoop_([this]() { initFromLoop_(); });
+}
+
+void CmaChannel::initFromLoop_() {
+  TP_DCHECK(inLoop_());
   readPacket_();
+}
+
+bool CmaChannel::inLoop_() {
+  return currentLoop_ == std::this_thread::get_id();
+}
+
+void CmaChannel::deferToLoop_(std::function<void()> fn) {
+  {
+    std::unique_lock<std::mutex> lock(mutex_);
+    pendingTasks_.push_back(std::move(fn));
+    if (currentLoop_ != std::thread::id()) {
+      return;
+    }
+    currentLoop_ = std::this_thread::get_id();
+  }
+
+  while (true) {
+    std::function<void()> task;
+    {
+      std::unique_lock<std::mutex> lock(mutex_);
+      if (pendingTasks_.empty()) {
+        currentLoop_ = std::thread::id();
+        return;
+      }
+      task = std::move(pendingTasks_.front());
+      pendingTasks_.pop_front();
+    }
+    task();
+  }
 }
 
 void CmaChannel::send(
@@ -168,6 +202,22 @@ void CmaChannel::send(
     size_t length,
     TDescriptorCallback descriptorCallback,
     TSendCallback callback) {
+  deferToLoop_([this,
+                ptr,
+                length,
+                descriptorCallback{std::move(descriptorCallback)},
+                callback{std::move(callback)}]() mutable {
+    sendFromLoop_(
+        ptr, length, std::move(descriptorCallback), std::move(callback));
+  });
+}
+
+void CmaChannel::sendFromLoop_(
+    const void* ptr,
+    size_t length,
+    TDescriptorCallback descriptorCallback,
+    TSendCallback callback) {
+  TP_DCHECK(inLoop_());
   TP_THROW_ASSERT_IF(factory_->joined_);
   if (error_) {
     // FIXME Ideally here we should either call the callback with an error (but
@@ -177,14 +227,11 @@ void CmaChannel::send(
   }
   proto::Descriptor pbDescriptor;
 
-  {
-    std::unique_lock<std::mutex> lock(mutex_);
-    const auto id = id_++;
-    pbDescriptor.set_operation_id(id);
-    pbDescriptor.set_pid(getpid());
-    pbDescriptor.set_ptr(reinterpret_cast<uint64_t>(ptr));
-    sendOperations_.emplace_back(SendOperation{id, std::move(callback)});
-  }
+  const auto id = id_++;
+  pbDescriptor.set_operation_id(id);
+  pbDescriptor.set_pid(getpid());
+  pbDescriptor.set_ptr(reinterpret_cast<uint64_t>(ptr));
+  sendOperations_.emplace_back(SendOperation{id, std::move(callback)});
 
   descriptorCallback(Error::kSuccess, saveDescriptor(pbDescriptor));
 }
@@ -195,6 +242,21 @@ void CmaChannel::recv(
     void* ptr,
     size_t length,
     TRecvCallback callback) {
+  deferToLoop_([this,
+                descriptor{std::move(descriptor)},
+                ptr,
+                length,
+                callback{std::move(callback)}]() mutable {
+    recvFromLoop_(std::move(descriptor), ptr, length, std::move(callback));
+  });
+}
+
+void CmaChannel::recvFromLoop_(
+    TDescriptor descriptor,
+    void* ptr,
+    size_t length,
+    TRecvCallback callback) {
+  TP_DCHECK(inLoop_());
   // TODO Short cut this if we're already in an error state.
   const auto pbDescriptor = loadDescriptor<proto::Descriptor>(descriptor);
   const uint64_t id = pbDescriptor.operation_id();
@@ -207,7 +269,7 @@ void CmaChannel::recv(
       ptr,
       length,
       copyCallbackWrapper_(
-          [id, callback{std::move(callback)}](CmaChannel& channel, TLock lock) {
+          [id, callback{std::move(callback)}](CmaChannel& channel) {
             // Let peer know we've completed the copy.
             auto pbPacketOut = std::make_shared<proto::Packet>();
             proto::Notification* pbNotification =
@@ -216,36 +278,33 @@ void CmaChannel::recv(
             channel.connection_->write(
                 *pbPacketOut,
                 channel.writeCallbackWrapper_(
-                    [pbPacketOut](
-                        CmaChannel& /* unused */, TLock /* unused */) {}));
-            lock.unlock();
+                    [pbPacketOut](CmaChannel& /* unused */) {}));
             callback(Error::kSuccess);
           }));
 }
 
 void CmaChannel::readPacket_() {
+  TP_DCHECK(inLoop_());
   auto pbPacketIn = std::make_shared<proto::Packet>();
   connection_->read(
       *pbPacketIn,
-      readPacketCallbackWrapper_([pbPacketIn](CmaChannel& channel, TLock lock) {
-        channel.onPacket_(*pbPacketIn, lock);
+      readPacketCallbackWrapper_([pbPacketIn](CmaChannel& channel) {
+        channel.onPacket_(*pbPacketIn);
       }));
 }
 
-void CmaChannel::onPacket_(const proto::Packet& pbPacketIn, TLock lock) {
-  TP_DCHECK(lock.owns_lock() && lock.mutex() == &mutex_);
+void CmaChannel::onPacket_(const proto::Packet& pbPacketIn) {
+  TP_DCHECK(inLoop_());
 
   TP_DCHECK_EQ(pbPacketIn.type_case(), proto::Packet::kNotification);
-  onNotification_(pbPacketIn.notification(), lock);
+  onNotification_(pbPacketIn.notification());
 
   // Arm connection to wait for next packet.
   readPacket_();
 }
 
-void CmaChannel::onNotification_(
-    const proto::Notification& pbNotification,
-    TLock lock) {
-  TP_DCHECK(lock.owns_lock() && lock.mutex() == &mutex_);
+void CmaChannel::onNotification_(const proto::Notification& pbNotification) {
+  TP_DCHECK(inLoop_());
 
   // Find the send operation matching the notification's operation ID.
   const auto id = pbNotification.operation_id();
@@ -260,21 +319,15 @@ void CmaChannel::onNotification_(
   auto op = std::move(*it);
   sendOperations_.erase(it);
 
-  // Release lock before executing callback.
-  lock.unlock();
-
   // Execute send completion callback.
   op.callback(Error::kSuccess);
 }
 
-void CmaChannel::handleError_(TLock lock) {
-  TP_DCHECK(lock.owns_lock() && lock.mutex() == &mutex_);
+void CmaChannel::handleError_() {
+  TP_DCHECK(inLoop_());
 
   // Move pending operations to stack.
   auto sendOperations = std::move(sendOperations_);
-
-  // Release lock before executing callbacks.
-  lock.unlock();
 
   // Notify pending send callbacks of error.
   for (auto& op : sendOperations) {
