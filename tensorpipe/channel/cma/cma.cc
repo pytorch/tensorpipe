@@ -104,12 +104,10 @@ std::shared_ptr<Channel> CmaChannelFactory::createChannel(
     std::shared_ptr<transport::Connection> connection,
     Channel::Endpoint /* unused */) {
   TP_THROW_ASSERT_IF(joined_);
-  auto channel = std::make_shared<CmaChannel>(
+  return std::make_shared<CmaChannel>(
       CmaChannel::ConstructorToken(),
       shared_from_this(),
       std::move(connection));
-  channel->init_();
-  return channel;
 }
 
 void CmaChannelFactory::requestCopy_(
@@ -153,26 +151,37 @@ CmaChannel::CmaChannel(
     ConstructorToken /* unused */,
     std::shared_ptr<CmaChannelFactory> factory,
     std::shared_ptr<transport::Connection> connection)
-    : factory_(std::move(factory)), connection_(std::move(connection)) {
-  // The factory calls `init_()` after construction so that we can use
-  // `shared_from_this()`. The shared_ptr that refers to the object
-  // itself isn't usable when the constructor is still being executed.
+    : impl_(Impl::create(std::move(factory), std::move(connection))) {}
+
+std::shared_ptr<CmaChannel::Impl> CmaChannel::Impl::create(
+    std::shared_ptr<CmaChannelFactory> factory,
+    std::shared_ptr<transport::Connection> connection) {
+  auto impl = std::make_shared<Impl>(
+      ConstructorToken(), std::move(factory), std::move(connection));
+  impl->init_();
+  return impl;
 }
 
-void CmaChannel::init_() {
+CmaChannel::Impl::Impl(
+    ConstructorToken /* unused */,
+    std::shared_ptr<CmaChannelFactory> factory,
+    std::shared_ptr<transport::Connection> connection)
+    : factory_(std::move(factory)), connection_(std::move(connection)) {}
+
+void CmaChannel::Impl::init_() {
   deferToLoop_([this]() { initFromLoop_(); });
 }
 
-void CmaChannel::initFromLoop_() {
+void CmaChannel::Impl::initFromLoop_() {
   TP_DCHECK(inLoop_());
   readPacket_();
 }
 
-bool CmaChannel::inLoop_() {
+bool CmaChannel::Impl::inLoop_() {
   return currentLoop_ == std::this_thread::get_id();
 }
 
-void CmaChannel::deferToLoop_(std::function<void()> fn) {
+void CmaChannel::Impl::deferToLoop_(std::function<void()> fn) {
   {
     std::unique_lock<std::mutex> lock(mutex_);
     pendingTasks_.push_back(std::move(fn));
@@ -202,6 +211,14 @@ void CmaChannel::send(
     size_t length,
     TDescriptorCallback descriptorCallback,
     TSendCallback callback) {
+  impl_->send(ptr, length, std::move(descriptorCallback), std::move(callback));
+}
+
+void CmaChannel::Impl::send(
+    const void* ptr,
+    size_t length,
+    TDescriptorCallback descriptorCallback,
+    TSendCallback callback) {
   deferToLoop_([this,
                 ptr,
                 length,
@@ -212,7 +229,7 @@ void CmaChannel::send(
   });
 }
 
-void CmaChannel::sendFromLoop_(
+void CmaChannel::Impl::sendFromLoop_(
     const void* ptr,
     size_t length,
     TDescriptorCallback descriptorCallback,
@@ -242,6 +259,14 @@ void CmaChannel::recv(
     void* ptr,
     size_t length,
     TRecvCallback callback) {
+  impl_->recv(std::move(descriptor), ptr, length, std::move(callback));
+}
+
+void CmaChannel::Impl::recv(
+    TDescriptor descriptor,
+    void* ptr,
+    size_t length,
+    TRecvCallback callback) {
   deferToLoop_([this,
                 descriptor{std::move(descriptor)},
                 ptr,
@@ -251,7 +276,7 @@ void CmaChannel::recv(
   });
 }
 
-void CmaChannel::recvFromLoop_(
+void CmaChannel::Impl::recvFromLoop_(
     TDescriptor descriptor,
     void* ptr,
     size_t length,
@@ -268,32 +293,29 @@ void CmaChannel::recvFromLoop_(
       remotePtr,
       ptr,
       length,
-      copyCallbackWrapper_(
-          [id, callback{std::move(callback)}](CmaChannel& channel) {
-            // Let peer know we've completed the copy.
-            auto pbPacketOut = std::make_shared<proto::Packet>();
-            proto::Notification* pbNotification =
-                pbPacketOut->mutable_notification();
-            pbNotification->set_operation_id(id);
-            channel.connection_->write(
-                *pbPacketOut,
-                channel.writeCallbackWrapper_(
-                    [pbPacketOut](CmaChannel& /* unused */) {}));
-            callback(Error::kSuccess);
-          }));
-}
-
-void CmaChannel::readPacket_() {
-  TP_DCHECK(inLoop_());
-  auto pbPacketIn = std::make_shared<proto::Packet>();
-  connection_->read(
-      *pbPacketIn,
-      readPacketCallbackWrapper_([pbPacketIn](CmaChannel& channel) {
-        channel.onPacket_(*pbPacketIn);
+      copyCallbackWrapper_([id, callback{std::move(callback)}](Impl& impl) {
+        // Let peer know we've completed the copy.
+        auto pbPacketOut = std::make_shared<proto::Packet>();
+        proto::Notification* pbNotification =
+            pbPacketOut->mutable_notification();
+        pbNotification->set_operation_id(id);
+        impl.connection_->write(
+            *pbPacketOut,
+            impl.writeCallbackWrapper_([pbPacketOut](Impl& /* unused */) {}));
+        callback(Error::kSuccess);
       }));
 }
 
-void CmaChannel::onPacket_(const proto::Packet& pbPacketIn) {
+void CmaChannel::Impl::readPacket_() {
+  TP_DCHECK(inLoop_());
+  auto pbPacketIn = std::make_shared<proto::Packet>();
+  connection_->read(
+      *pbPacketIn, readPacketCallbackWrapper_([pbPacketIn](Impl& impl) {
+        impl.onPacket_(*pbPacketIn);
+      }));
+}
+
+void CmaChannel::Impl::onPacket_(const proto::Packet& pbPacketIn) {
   TP_DCHECK(inLoop_());
 
   TP_DCHECK_EQ(pbPacketIn.type_case(), proto::Packet::kNotification);
@@ -303,7 +325,8 @@ void CmaChannel::onPacket_(const proto::Packet& pbPacketIn) {
   readPacket_();
 }
 
-void CmaChannel::onNotification_(const proto::Notification& pbNotification) {
+void CmaChannel::Impl::onNotification_(
+    const proto::Notification& pbNotification) {
   TP_DCHECK(inLoop_());
 
   // Find the send operation matching the notification's operation ID.
@@ -323,7 +346,7 @@ void CmaChannel::onNotification_(const proto::Notification& pbNotification) {
   op.callback(Error::kSuccess);
 }
 
-void CmaChannel::handleError_() {
+void CmaChannel::Impl::handleError_() {
   TP_DCHECK(inLoop_());
 
   // Move pending operations to stack.

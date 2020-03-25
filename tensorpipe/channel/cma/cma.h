@@ -78,6 +78,8 @@ class CmaChannelFactory
 
 class CmaChannel : public Channel,
                    public std::enable_shared_from_this<CmaChannel> {
+  // Use the passkey idiom to allow make_shared to call what should be a private
+  // constructor. See https://abseil.io/tips/134 for more information.
   struct ConstructorToken {};
 
  public:
@@ -101,77 +103,108 @@ class CmaChannel : public Channel,
       TRecvCallback callback) override;
 
  private:
-  std::mutex mutex_;
-  std::thread::id currentLoop_{std::thread::id()};
-  std::deque<std::function<void()>> pendingTasks_;
+  class Impl : public std::enable_shared_from_this<Impl> {
+    // Use the passkey idiom to allow make_shared to call what should be a
+    // private constructor. See https://abseil.io/tips/134 for more information.
+    struct ConstructorToken {};
 
-  bool inLoop_();
-  void deferToLoop_(std::function<void()> fn);
+   public:
+    static std::shared_ptr<Impl> create(
+        std::shared_ptr<CmaChannelFactory>,
+        std::shared_ptr<transport::Connection>);
 
-  // Called by factory class after construction.
-  void init_();
-  void initFromLoop_();
+    Impl(
+        ConstructorToken,
+        std::shared_ptr<CmaChannelFactory>,
+        std::shared_ptr<transport::Connection>);
 
-  // Send memory region to peer.
-  void sendFromLoop_(
-      const void* ptr,
-      size_t length,
-      TDescriptorCallback descriptorCallback,
-      TSendCallback callback);
+    void send(
+        const void* ptr,
+        size_t length,
+        TDescriptorCallback descriptorCallback,
+        TSendCallback callback);
 
-  // Receive memory region from peer.
-  void recvFromLoop_(
-      TDescriptor descriptor,
-      void* ptr,
-      size_t length,
-      TRecvCallback callback);
+    void recv(
+        TDescriptor descriptor,
+        void* ptr,
+        size_t length,
+        TRecvCallback callback);
 
-  // Arm connection to read next protobuf packet.
-  void readPacket_();
+   private:
+    std::mutex mutex_;
+    std::thread::id currentLoop_{std::thread::id()};
+    std::deque<std::function<void()>> pendingTasks_;
 
-  // Called when a protobuf packet was received.
-  void onPacket_(const proto::Packet& packet);
+    bool inLoop_();
+    void deferToLoop_(std::function<void()> fn);
 
-  // Called when protobuf packet is a notification.
-  void onNotification_(const proto::Notification& notification);
+    // Called by factory class after construction.
+    void init_();
+    void initFromLoop_();
+
+    // Send memory region to peer.
+    void sendFromLoop_(
+        const void* ptr,
+        size_t length,
+        TDescriptorCallback descriptorCallback,
+        TSendCallback callback);
+
+    // Receive memory region from peer.
+    void recvFromLoop_(
+        TDescriptor descriptor,
+        void* ptr,
+        size_t length,
+        TRecvCallback callback);
+
+    // Arm connection to read next protobuf packet.
+    void readPacket_();
+
+    // Called when a protobuf packet was received.
+    void onPacket_(const proto::Packet& packet);
+
+    // Called when protobuf packet is a notification.
+    void onNotification_(const proto::Notification& notification);
+
+    std::shared_ptr<CmaChannelFactory> factory_;
+    std::shared_ptr<transport::Connection> connection_;
+    Error error_{Error::kSuccess};
+
+    // Increasing identifier for send operations.
+    uint64_t id_{0};
+
+    // State capturing a single send operation.
+    struct SendOperation {
+      const uint64_t id;
+      TSendCallback callback;
+    };
+
+    std::list<SendOperation> sendOperations_;
+
+    // Callback types used by the transport.
+    using TReadProtoCallback = transport::Connection::read_proto_callback_fn;
+    using TWriteCallback = transport::Connection::write_callback_fn;
+
+    // Callback types used in this class (in case of success).
+    using TBoundReadProtoCallback = std::function<void(CmaChannel&)>;
+    using TBoundWriteCallback = std::function<void(CmaChannel&)>;
+
+    DeferringCallbackWrapper<Impl> readPacketCallbackWrapper_{*this};
+    DeferringCallbackWrapper<Impl> writeCallbackWrapper_{*this};
+    DeferringCallbackWrapper<Impl> copyCallbackWrapper_{*this};
+
+    // Helper function to process transport error.
+    // Shared between read and write callback entry points.
+    void handleError_();
+
+    // For some odd reason it seems we need to use a qualified name here...
+    template <typename T, typename... Args>
+    friend class tensorpipe::DeferringCallbackWrapper;
+  };
+
+  std::shared_ptr<Impl> impl_;
 
   // Allow factory class to call `init_()`.
   friend class CmaChannelFactory;
-
-  std::shared_ptr<CmaChannelFactory> factory_;
-  std::shared_ptr<transport::Connection> connection_;
-  Error error_{Error::kSuccess};
-
-  // Increasing identifier for send operations.
-  uint64_t id_{0};
-
-  // State capturing a single send operation.
-  struct SendOperation {
-    const uint64_t id;
-    TSendCallback callback;
-  };
-
-  std::list<SendOperation> sendOperations_;
-
-  // Callback types used by the transport.
-  using TReadProtoCallback = transport::Connection::read_proto_callback_fn;
-  using TWriteCallback = transport::Connection::write_callback_fn;
-
-  // Callback types used in this class (in case of success).
-  using TBoundReadProtoCallback = std::function<void(CmaChannel&)>;
-  using TBoundWriteCallback = std::function<void(CmaChannel&)>;
-
-  DeferringCallbackWrapper<CmaChannel> readPacketCallbackWrapper_{*this};
-  DeferringCallbackWrapper<CmaChannel> writeCallbackWrapper_{*this};
-  DeferringCallbackWrapper<CmaChannel> copyCallbackWrapper_{*this};
-
-  // Helper function to process transport error.
-  // Shared between read and write callback entry points.
-  void handleError_();
-
-  // For some odd reason it seems we need to use a qualified name here...
-  template <typename T, typename... Args>
-  friend class tensorpipe::DeferringCallbackWrapper;
 };
 
 } // namespace cma
