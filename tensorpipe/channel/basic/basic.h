@@ -153,9 +153,11 @@ class BasicChannel : public Channel,
     void recvCompleted(const uint64_t);
 
     // Helpers to prepare callbacks from transports
-    DeferringCallbackWrapper<Impl, const void*, size_t> readCallbackWrapper_;
+    DeferringTolerantCallbackWrapper<Impl, const void*, size_t>
+        readCallbackWrapper_;
     DeferringCallbackWrapper<Impl> readProtoCallbackWrapper_;
-    DeferringCallbackWrapper<Impl> writeCallbackWrapper_;
+    DeferringTolerantCallbackWrapper<Impl> writeCallbackWrapper_;
+    DeferringCallbackWrapper<Impl> writeProtoCallbackWrapper_;
 
     // Helper function to process transport error.
     // Shared between read and write callback entry points.
@@ -164,6 +166,8 @@ class BasicChannel : public Channel,
     // For some odd reason it seems we need to use a qualified name here...
     template <typename T, typename... Args>
     friend class tensorpipe::DeferringCallbackWrapper;
+    template <typename T, typename... Args>
+    friend class tensorpipe::DeferringTolerantCallbackWrapper;
   };
 
   std::shared_ptr<Impl> impl_;

@@ -52,7 +52,8 @@ BasicChannel::Impl::Impl(
     : connection_(std::move(connection)),
       readCallbackWrapper_(*this),
       readProtoCallbackWrapper_(*this),
-      writeCallbackWrapper_(*this) {}
+      writeCallbackWrapper_(*this),
+      writeProtoCallbackWrapper_(*this) {}
 
 bool BasicChannel::Impl::inLoop_() {
   return currentLoop_ == std::this_thread::get_id();
@@ -163,7 +164,7 @@ void BasicChannel::Impl::recvFromLoop_(
   proto::Request* pbRequest = packet->mutable_request();
   pbRequest->set_operation_id(id);
   connection_->write(
-      *packet, writeCallbackWrapper_([packet](Impl& /* unused */) {}));
+      *packet, writeProtoCallbackWrapper_([packet](Impl& /* unused */) {}));
   return;
 }
 
@@ -218,7 +219,7 @@ void BasicChannel::Impl::onRequest_(const proto::Request& request) {
   pbReply->set_operation_id(id);
   connection_->write(
       *pbPacketOut,
-      writeCallbackWrapper_([pbPacketOut](Impl& /* unused */) {}));
+      writeProtoCallbackWrapper_([pbPacketOut](Impl& /* unused */) {}));
 
   // Write payload.
   connection_->write(op.ptr, op.length, writeCallbackWrapper_([id](Impl& impl) {
@@ -263,7 +264,7 @@ void BasicChannel::Impl::sendCompleted(const uint64_t id) {
   auto op = std::move(*it);
   sendOperations_.erase(it);
 
-  op.callback(Error::kSuccess);
+  op.callback(error_);
 }
 
 void BasicChannel::Impl::recvCompleted(const uint64_t id) {
@@ -279,25 +280,15 @@ void BasicChannel::Impl::recvCompleted(const uint64_t id) {
   auto op = std::move(*it);
   recvOperations_.erase(it);
 
-  op.callback(Error::kSuccess);
+  op.callback(error_);
 }
 
 void BasicChannel::Impl::handleError_() {
   TP_DCHECK(inLoop_());
-
-  // Move pending operations to stack.
-  auto sendOperations = std::move(sendOperations_);
-  auto recvOperations = std::move(recvOperations_);
-
-  // Notify pending send callbacks of error.
-  for (auto& op : sendOperations) {
-    op.callback(error_);
-  }
-
-  // Notify pending recv callbacks of error.
-  for (auto& op : recvOperations) {
-    op.callback(error_);
-  }
+  // Close the connection so that all current operations will be aborted. This
+  // will cause their callbacks to be invoked, and only then we'll invoke ours.
+  // FIXME Just use close (once we have it), instead of resetting the pointer
+  connection_.reset();
 }
 
 } // namespace basic
