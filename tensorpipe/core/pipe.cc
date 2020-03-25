@@ -208,23 +208,28 @@ bool Pipe::Impl::inLoop_() {
 }
 
 void Pipe::Impl::deferToLoop_(std::function<void()> fn) {
-  if (inLoop_()) {
+  {
+    std::unique_lock<std::mutex> lock(mutex_);
     pendingTasks_.push_back(std::move(fn));
-    return;
+    if (currentLoop_ != std::thread::id()) {
+      return;
+    }
+    currentLoop_ = std::this_thread::get_id();
   }
 
-  std::unique_lock<std::mutex> lock(mutex_);
-  currentLoop_ = std::this_thread::get_id();
-
-  fn();
-
-  while (!pendingTasks_.empty()) {
-    pendingTasks_.front()();
-    pendingTasks_.pop_front();
+  while (true) {
+    std::function<void()> task;
+    {
+      std::unique_lock<std::mutex> lock(mutex_);
+      if (pendingTasks_.empty()) {
+        currentLoop_ = std::thread::id();
+        return;
+      }
+      task = std::move(pendingTasks_.front());
+      pendingTasks_.pop_front();
+    }
+    task();
   }
-
-  // FIXME Use some RAII pattern to make sure this is reset in case of exception
-  currentLoop_ = std::thread::id();
 }
 
 //
