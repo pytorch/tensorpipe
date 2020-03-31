@@ -8,21 +8,16 @@
 
 #pragma once
 
-#include <deque>
 #include <memory>
-#include <mutex>
 
 #include <tensorpipe/transport/connection.h>
-#include <tensorpipe/transport/shm/loop.h>
-#include <tensorpipe/transport/shm/reactor.h>
-#include <tensorpipe/transport/shm/socket.h>
-#include <tensorpipe/util/ringbuffer/consumer.h>
-#include <tensorpipe/util/ringbuffer/producer.h>
-#include <tensorpipe/util/ringbuffer/shm.h>
 
 namespace tensorpipe {
 namespace transport {
 namespace shm {
+
+class Loop;
+class Socket;
 
 class Connection final : public transport::Connection,
                          public std::enable_shared_from_this<Connection> {

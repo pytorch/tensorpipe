@@ -10,13 +10,20 @@
 
 #include <string.h>
 
+#include <deque>
 #include <vector>
 
 #include <tensorpipe/common/callback.h>
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/error_macros.h>
 #include <tensorpipe/transport/error.h>
+#include <tensorpipe/transport/shm/loop.h>
+#include <tensorpipe/transport/shm/reactor.h>
+#include <tensorpipe/transport/shm/socket.h>
+#include <tensorpipe/util/ringbuffer/consumer.h>
+#include <tensorpipe/util/ringbuffer/producer.h>
 #include <tensorpipe/util/ringbuffer/protobuf_streams.h>
+#include <tensorpipe/util/ringbuffer/shm.h>
 
 namespace tensorpipe {
 namespace transport {
