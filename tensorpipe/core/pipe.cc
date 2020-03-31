@@ -527,7 +527,7 @@ void Pipe::Impl::sendTensorsOfMessage_(
   messageBeingWritten.startedSendingTensors = true;
 
   if (messageBeingWritten.message.tensors.size() == 0) {
-    writeMessage_(messageBeingWritten);
+    checkForMessagesDoneCollectingTensorDescriptors_();
     return;
   }
 
@@ -919,6 +919,9 @@ void Pipe::Impl::onDescriptorOfTensor_(
     int64_t tensorIdx,
     channel::Channel::TDescriptor descriptor) {
   TP_DCHECK(inLoop_());
+  // FIXME Using find_if makes sense when we expect the result to be near the
+  // beginning, but here it's actually likely to be at the back. Perhaps it
+  // makes sense to just use a hashmap?
   auto iter = std::find_if(
       messagesBeingWritten_.begin(),
       messagesBeingWritten_.end(),
@@ -929,9 +932,7 @@ void Pipe::Impl::onDescriptorOfTensor_(
   TP_DCHECK_LT(tensorIdx, messageBeingWritten.tensors.size());
   messageBeingWritten.tensors[tensorIdx].descriptor = std::move(descriptor);
   --messageBeingWritten.numTensorDescriptorsStillBeingCollected;
-  if (messageBeingWritten.numTensorDescriptorsStillBeingCollected == 0) {
-    writeMessage_(messageBeingWritten);
-  }
+  checkForMessagesDoneCollectingTensorDescriptors_();
 }
 
 void Pipe::Impl::onReadOfMessageData_(int64_t sequenceNumber) {
@@ -980,6 +981,22 @@ void Pipe::Impl::onSendOfTensorData_(int64_t sequenceNumber) {
   MessageBeingWritten& messageBeingWritten = *iter;
   messageBeingWritten.numTensorDataStillBeingSent--;
   triggerReadyCallbacks_();
+}
+
+void Pipe::Impl::checkForMessagesDoneCollectingTensorDescriptors_() {
+  // FIXME It's not great to iterate over all pending messages each time. If
+  // this was a map indexed by sequence number we could just store the sequence
+  // number of the last message we had written and resume looking from there.
+  for (MessageBeingWritten& mRef : messagesBeingWritten_) {
+    if (mRef.startedWritingData) {
+      continue;
+    }
+    if (mRef.numTensorDescriptorsStillBeingCollected == 0) {
+      writeMessage_(mRef);
+    } else {
+      break;
+    }
+  }
 }
 
 } // namespace tensorpipe

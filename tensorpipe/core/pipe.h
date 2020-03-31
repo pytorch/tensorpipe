@@ -292,8 +292,7 @@ class Pipe final {
     void onWriteOfMessageData_(int64_t);
     void onSendOfTensorData_(int64_t);
 
-    void checkForMessagesDoneReading_();
-    void checkForMessagesDoneWriting_();
+    void checkForMessagesDoneCollectingTensorDescriptors_();
 
     template <typename T, typename... Args>
     friend class DeferringCallbackWrapper;
