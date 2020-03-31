@@ -369,28 +369,22 @@ std::shared_ptr<Connection> Connection::create_(
     handle->initFromLoop();
     handle->connectFromLoop(addr);
   });
-  auto conn = std::make_shared<Connection>(
+  return std::make_shared<Connection>(
       ConstructorToken(), std::move(loop), std::move(handle));
-  conn->init_();
-  return conn;
 }
 
 std::shared_ptr<Connection> Connection::create_(
     std::shared_ptr<Loop> loop,
     std::shared_ptr<TCPHandle> handle) {
-  auto conn = std::make_shared<Connection>(
+  return std::make_shared<Connection>(
       ConstructorToken(), std::move(loop), std::move(handle));
-  conn->init_();
-  return conn;
 }
 
 Connection::Connection(
     ConstructorToken /* unused */,
     std::shared_ptr<Loop> loop,
     std::shared_ptr<TCPHandle> handle)
-    : loop_(loop), impl_(std::make_shared<Impl>(loop, std::move(handle))) {}
-
-void Connection::init_() {
+    : loop_(loop), impl_(std::make_shared<Impl>(loop, std::move(handle))) {
   loop_->deferToLoop([impl{impl_}]() { impl->initFromLoop(); });
 }
 
