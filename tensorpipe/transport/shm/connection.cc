@@ -278,7 +278,7 @@ void WriteOperation::handleError(const Error& error) {
 
 class Connection::Impl : public std::enable_shared_from_this<Connection::Impl>,
                          public EventHandler {
-  static constexpr auto kDefaultSize = 2 * 1024 * 1024;
+  static constexpr auto kBufferSize = 2 * 1024 * 1024;
 
   enum State {
     INITIALIZING = 1,
@@ -426,7 +426,7 @@ void Connection::Impl::initFromLoop() {
   // Create ringbuffer for inbox.
   std::shared_ptr<util::ringbuffer::RingBuffer> inboxRingBuffer;
   std::tie(inboxHeaderFd_, inboxDataFd_, inboxRingBuffer) =
-      util::ringbuffer::shm::create(kDefaultSize);
+      util::ringbuffer::shm::create(kBufferSize);
   inbox_.emplace(std::move(inboxRingBuffer));
 
   // Register method to be called when our peer writes to our inbox.
@@ -488,7 +488,7 @@ void Connection::Impl::readFromLoop(
           TP_THROW_SYSTEM_IF(ret < 0, -ret);
         }
 
-        if (len + sizeof(uint32_t) > kDefaultSize) {
+        if (len + sizeof(uint32_t) > kBufferSize) {
           return -EPERM;
         }
 
@@ -564,7 +564,7 @@ void Connection::Impl::writeFromLoop(
   writeOperations_.emplace_back(
       [&message](util::ringbuffer::Producer& outbox) -> ssize_t {
         size_t len = message.ByteSize();
-        if (len + sizeof(uint32_t) > kDefaultSize) {
+        if (len + sizeof(uint32_t) > kBufferSize) {
           return -EPERM;
         }
 
