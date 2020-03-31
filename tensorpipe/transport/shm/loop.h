@@ -36,7 +36,7 @@ class EventHandler {
  public:
   virtual ~EventHandler() = default;
 
-  virtual void handleEventsFromReactor(int events) = 0;
+  virtual void handleEventsFromLoop(int events) = 0;
 };
 
 class Loop;
@@ -61,7 +61,7 @@ class FunctionEventHandler
 
   void cancel();
 
-  void handleEventsFromReactor(int events) override;
+  void handleEventsFromLoop(int events) override;
 
  private:
   Loop* loop_;
@@ -211,10 +211,10 @@ class Loop final : public std::enable_shared_from_this<Loop> {
 
   // Called by the reactor in response to epoll_wait(2) producing a
   // vector with epoll_event structs in `epollEvents_`.
-  void handleEpollEventsFromReactor();
+  void handleEpollEventsFromLoop();
 
   // Called by the reactor in response to a deferred function.
-  void handleDeferredFunctionFromReactor();
+  void handleDeferredFunctionFromLoop();
 };
 
 } // namespace shm

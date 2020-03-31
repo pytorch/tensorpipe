@@ -309,19 +309,19 @@ class Connection::Impl : public std::enable_shared_from_this<Connection::Impl>,
       write_callback_fn fn);
 
   // Implementation of EventHandler.
-  void handleEventsFromReactor(int events) override;
+  void handleEventsFromLoop(int events) override;
 
   // Handle events of type EPOLLIN.
-  void handleEventInFromReactor();
+  void handleEventInFromLoop();
 
   // Handle events of type EPOLLOUT.
-  void handleEventOutFromReactor();
+  void handleEventOutFromLoop();
 
   // Handle events of type EPOLLERR.
-  void handleEventErrFromReactor();
+  void handleEventErrFromLoop();
 
   // Handle events of type EPOLLHUP.
-  void handleEventHupFromReactor();
+  void handleEventHupFromLoop();
 
   // Handle inbox being readable.
   //
@@ -329,7 +329,7 @@ class Connection::Impl : public std::enable_shared_from_this<Connection::Impl>,
   // peer has written an entry into our inbox. It is called once per
   // message. Because it's called from another thread, we must always
   // take care to acquire the connection's lock here.
-  void handleInboxReadableFromReactor();
+  void handleInboxReadableFromLoop();
 
   // Handle outbox being writable.
   //
@@ -337,7 +337,7 @@ class Connection::Impl : public std::enable_shared_from_this<Connection::Impl>,
   // peer has read an entry from our outbox. It is called once per
   // message. Because it's called from another thread, we must always
   // take care to acquire the connection's lock here.
-  void handleOutboxWritableFromReactor();
+  void handleOutboxWritableFromLoop();
 
  private:
   State state_{INITIALIZING};
@@ -371,13 +371,13 @@ class Connection::Impl : public std::enable_shared_from_this<Connection::Impl>,
   void triggerProcessReadOperations();
 
   // Process pending read operations if in an operational or error state.
-  void processReadOperationsFromReactor();
+  void processReadOperationsFromLoop();
 
   // Defer execution of processWriteOperations to loop thread.
   void triggerProcessWriteOperations();
 
   // Process pending write operations if in an operational state.
-  void processWriteOperationsFromReactor();
+  void processWriteOperationsFromLoop();
 
   // Fail with error.
   void failFromLoop(Error&&);
@@ -429,13 +429,13 @@ void Connection::Impl::initFromLoop() {
   // Register method to be called when our peer writes to our inbox.
   inboxReactorToken_ = reactor_->add(
       runIfAlive(*this, std::function<void(Impl&)>([](Impl& impl) {
-        impl.handleInboxReadableFromReactor();
+        impl.handleInboxReadableFromLoop();
       })));
 
   // Register method to be called when our peer reads from our outbox.
   outboxReactorToken_ = reactor_->add(
       runIfAlive(*this, std::function<void(Impl&)>([](Impl& impl) {
-        impl.handleOutboxWritableFromReactor();
+        impl.handleOutboxWritableFromLoop();
       })));
 
   // We're sending file descriptors first, so wait for writability.
@@ -583,7 +583,7 @@ void Connection::Impl::writeFromLoop(
   triggerProcessWriteOperations();
 }
 
-void Connection::Impl::handleEventsFromReactor(int events) {
+void Connection::Impl::handleEventsFromLoop(int events) {
   TP_DCHECK(loop_->inLoopThread());
 
   // Handle only one of the events in the mask. Events on the control
@@ -593,24 +593,24 @@ void Connection::Impl::handleEventsFromReactor(int events) {
   // descriptor from the event loop, without worrying about the next
   // handler trying to do so as well.
   if (events & EPOLLIN) {
-    handleEventInFromReactor();
+    handleEventInFromLoop();
     return;
   }
   if (events & EPOLLOUT) {
-    handleEventOutFromReactor();
+    handleEventOutFromLoop();
     return;
   }
   if (events & EPOLLERR) {
-    handleEventErrFromReactor();
+    handleEventErrFromLoop();
     return;
   }
   if (events & EPOLLHUP) {
-    handleEventHupFromReactor();
+    handleEventHupFromLoop();
     return;
   }
 }
 
-void Connection::Impl::handleEventInFromReactor() {
+void Connection::Impl::handleEventInFromLoop() {
   TP_DCHECK(loop_->inLoopThread());
   if (state_ == RECV_FDS) {
     Fd reactorHeaderFd;
@@ -646,11 +646,11 @@ void Connection::Impl::handleEventInFromReactor() {
 
     // The connection is usable now.
     state_ = ESTABLISHED;
-    processWriteOperationsFromReactor();
+    processWriteOperationsFromLoop();
     // Trigger read operations in case a pair of local read() and remote
     // write() happened before connection is established. Otherwise read()
     // callback would lose if it's the only read() request.
-    processReadOperationsFromReactor();
+    processReadOperationsFromLoop();
     return;
   }
 
@@ -660,14 +660,14 @@ void Connection::Impl::handleEventInFromReactor() {
     // zero-byte read indicating EOF.
     error_ = TP_CREATE_ERROR(EOFError);
     closeFromLoop();
-    processReadOperationsFromReactor();
+    processReadOperationsFromLoop();
     return;
   }
 
   TP_LOG_WARNING() << "handleEventIn not handled";
 }
 
-void Connection::Impl::handleEventOutFromReactor() {
+void Connection::Impl::handleEventOutFromLoop() {
   TP_DCHECK(loop_->inLoopThread());
   if (state_ == SEND_FDS) {
     int reactorHeaderFd;
@@ -696,36 +696,36 @@ void Connection::Impl::handleEventOutFromReactor() {
   TP_LOG_WARNING() << "handleEventOut not handled";
 }
 
-void Connection::Impl::handleEventErrFromReactor() {
+void Connection::Impl::handleEventErrFromLoop() {
   TP_DCHECK(loop_->inLoopThread());
   error_ = TP_CREATE_ERROR(EOFError);
   closeFromLoop();
-  processReadOperationsFromReactor();
+  processReadOperationsFromLoop();
 }
 
-void Connection::Impl::handleEventHupFromReactor() {
+void Connection::Impl::handleEventHupFromLoop() {
   TP_DCHECK(loop_->inLoopThread());
   error_ = TP_CREATE_ERROR(EOFError);
   closeFromLoop();
-  processReadOperationsFromReactor();
+  processReadOperationsFromLoop();
 }
 
-void Connection::Impl::handleInboxReadableFromReactor() {
+void Connection::Impl::handleInboxReadableFromLoop() {
   TP_DCHECK(loop_->inLoopThread());
-  processReadOperationsFromReactor();
+  processReadOperationsFromLoop();
 }
 
-void Connection::Impl::handleOutboxWritableFromReactor() {
+void Connection::Impl::handleOutboxWritableFromLoop() {
   TP_DCHECK(loop_->inLoopThread());
-  processWriteOperationsFromReactor();
+  processWriteOperationsFromLoop();
 }
 
 void Connection::Impl::triggerProcessReadOperations() {
   loop_->deferToLoop(
-      [ptr{shared_from_this()}, this] { processReadOperationsFromReactor(); });
+      [ptr{shared_from_this()}, this] { processReadOperationsFromLoop(); });
 }
 
-void Connection::Impl::processReadOperationsFromReactor() {
+void Connection::Impl::processReadOperationsFromLoop() {
   TP_DCHECK(loop_->inLoopThread());
 
   if (error_) {
@@ -758,10 +758,10 @@ void Connection::Impl::processReadOperationsFromReactor() {
 
 void Connection::Impl::triggerProcessWriteOperations() {
   loop_->deferToLoop(
-      [ptr{shared_from_this()}, this] { processWriteOperationsFromReactor(); });
+      [ptr{shared_from_this()}, this] { processWriteOperationsFromLoop(); });
 }
 
-void Connection::Impl::processWriteOperationsFromReactor() {
+void Connection::Impl::processWriteOperationsFromLoop() {
   TP_DCHECK(loop_->inLoopThread());
 
   if (state_ < ESTABLISHED) {

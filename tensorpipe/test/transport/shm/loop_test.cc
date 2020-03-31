@@ -21,7 +21,7 @@ namespace {
 
 class Handler : public EventHandler {
  public:
-  void handleEventsFromReactor(int events) override {
+  void handleEventsFromLoop(int events) override {
     std::unique_lock<std::mutex> lock(m_);
     events_.push_back(events);
     cv_.notify_all();

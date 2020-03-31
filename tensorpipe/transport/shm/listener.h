@@ -45,7 +45,7 @@ class Listener final : public transport::Listener,
 
   address_t addr() const override;
 
-  void handleEventsFromReactor(int events) override;
+  void handleEventsFromLoop(int events) override;
 
  private:
   std::mutex mutex_;

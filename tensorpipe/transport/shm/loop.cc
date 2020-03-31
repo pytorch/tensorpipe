@@ -50,7 +50,7 @@ void FunctionEventHandler::cancel() {
   }
 }
 
-void FunctionEventHandler::handleEventsFromReactor(int events) {
+void FunctionEventHandler::handleEventsFromLoop(int events) {
   if (events & event_) {
     fn_(*this);
   }
@@ -74,10 +74,9 @@ Loop::Loop(ConstructorToken /* unused */) {
 
   // Create reactor.
   reactor_ = std::make_shared<Reactor>();
-  epollReactorToken_ =
-      reactor_->add([this] { handleEpollEventsFromReactor(); });
+  epollReactorToken_ = reactor_->add([this] { handleEpollEventsFromLoop(); });
   deferredFunctionReactorToken_ =
-      reactor_->add([this] { handleDeferredFunctionFromReactor(); });
+      reactor_->add([this] { handleDeferredFunctionFromLoop(); });
 
   // Start epoll(2) thread.
   thread_ = std::thread(&Loop::loop, this);
@@ -203,7 +202,7 @@ void Loop::join() {
   thread_.join();
 }
 
-void Loop::handleEpollEventsFromReactor() {
+void Loop::handleEpollEventsFromLoop() {
   std::unique_lock<std::mutex> lock(epollMutex_);
 
   // Process events returned by epoll_wait(2).
@@ -217,7 +216,7 @@ void Loop::handleEpollEventsFromReactor() {
         // Trigger callback. Note that the object is kept alive
         // through the shared_ptr that we acquired by locking the
         // weak_ptr in the handlers vector.
-        h->handleEventsFromReactor(event.events);
+        h->handleEventsFromLoop(event.events);
         // Reset the handler shared_ptr before reacquiring the lock.
         // This may trigger destruction of the object.
         h.reset();
@@ -231,7 +230,7 @@ void Loop::handleEpollEventsFromReactor() {
   epollCond_.notify_one();
 }
 
-void Loop::handleDeferredFunctionFromReactor() {
+void Loop::handleDeferredFunctionFromLoop() {
   std::unique_lock<std::mutex> lock(deferredFunctionMutex_);
   auto it = deferredFunctionList_.begin();
   TP_DCHECK(it != deferredFunctionList_.end());
