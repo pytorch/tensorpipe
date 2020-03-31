@@ -393,24 +393,20 @@ class Connection::Impl : public std::enable_shared_from_this<Connection::Impl>,
 std::shared_ptr<Connection> Connection::create(
     std::shared_ptr<Loop> loop,
     std::shared_ptr<Socket> socket) {
-  auto conn = std::make_shared<Connection>(
+  return std::make_shared<Connection>(
       ConstructorToken(), std::move(loop), std::move(socket));
-  conn->init_();
-  return conn;
 }
 
 Connection::Connection(
     ConstructorToken /* unused */,
     std::shared_ptr<Loop> loop,
     std::shared_ptr<Socket> socket)
-    : loop_(loop), impl_(std::make_shared<Impl>(loop, std::move(socket))) {}
+    : loop_(loop), impl_(std::make_shared<Impl>(loop, std::move(socket))) {
+  loop_->deferToLoop([impl{impl_}]() { impl->initFromLoop(); });
+}
 
 Connection::~Connection() {
   loop_->deferToLoop([impl{impl_}]() { impl->closeFromLoop(); });
-}
-
-void Connection::init_() {
-  loop_->deferToLoop([impl{impl_}]() { impl->initFromLoop(); });
 }
 
 Connection::Impl::Impl(
