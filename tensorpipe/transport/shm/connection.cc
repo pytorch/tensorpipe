@@ -22,6 +22,377 @@ namespace tensorpipe {
 namespace transport {
 namespace shm {
 
+namespace {
+
+// Reads happen only if the user supplied a callback (and optionally
+// a destination buffer). The callback is run from the event loop
+// thread upon receiving a notification from our peer.
+//
+// The memory pointer argument to the callback is valid only for the
+// duration of the callback. If the memory contents must be
+// preserved for longer, it must be copied elsewhere.
+//
+class ReadOperation {
+  enum Mode {
+    READ_LENGTH,
+    READ_PAYLOAD,
+  };
+
+ public:
+  using read_callback_fn = Connection::read_callback_fn;
+  using read_fn = std::function<ssize_t(util::ringbuffer::Consumer&)>;
+  explicit ReadOperation(void* ptr, size_t len, read_callback_fn fn);
+  explicit ReadOperation(read_fn reader, read_callback_fn fn);
+  explicit ReadOperation(read_callback_fn fn);
+
+  // Processes a pending read.
+  bool handleRead(util::ringbuffer::Consumer& consumer);
+
+  bool completed() const {
+    return (mode_ == READ_PAYLOAD && bytesRead_ == len_);
+  }
+
+  void handleError(const Error& error);
+
+ private:
+  Mode mode_{READ_LENGTH};
+  void* ptr_{nullptr};
+  read_fn reader_;
+  std::unique_ptr<uint8_t[]> buf_;
+  size_t len_{0};
+  size_t bytesRead_{0};
+  read_callback_fn fn_;
+  const bool ptrProvided_;
+};
+
+// Writes happen only if the user supplied a memory pointer, the
+// number of bytes to write, and a callback to execute upon
+// completion of the write.
+//
+// The memory pointed to by the pointer may only be reused or freed
+// after the callback has been called.
+//
+class WriteOperation {
+  enum Mode {
+    WRITE_LENGTH,
+    WRITE_PAYLOAD,
+  };
+
+ public:
+  using write_callback_fn = Connection::write_callback_fn;
+  using write_fn = std::function<ssize_t(util::ringbuffer::Producer&)>;
+  WriteOperation(const void* ptr, size_t len, write_callback_fn fn);
+  WriteOperation(write_fn writer, write_callback_fn fn);
+
+  bool handleWrite(util::ringbuffer::Producer& producer);
+
+  bool completed() const {
+    return (mode_ == WRITE_PAYLOAD && bytesWritten_ == len_);
+  }
+
+  void handleError(const Error& error);
+
+ private:
+  Mode mode_{WRITE_LENGTH};
+  const void* ptr_{nullptr};
+  write_fn writer_;
+  size_t len_{0};
+  size_t bytesWritten_{0};
+  write_callback_fn fn_;
+};
+
+ReadOperation::ReadOperation(void* ptr, size_t len, read_callback_fn fn)
+    : ptr_(ptr), len_(len), fn_(std::move(fn)), ptrProvided_(true) {}
+
+ReadOperation::ReadOperation(read_fn reader, read_callback_fn fn)
+    : reader_(std::move(reader)), fn_(std::move(fn)), ptrProvided_(false) {}
+
+ReadOperation::ReadOperation(read_callback_fn fn)
+    : fn_(std::move(fn)), ptrProvided_(false) {}
+
+bool ReadOperation::handleRead(util::ringbuffer::Consumer& inbox) {
+  // Start read transaction.
+  // Retry because this must succeed.
+  for (;;) {
+    const auto ret = inbox.startTx();
+    TP_DCHECK(ret >= 0 || ret == -EAGAIN);
+    if (ret < 0) {
+      continue;
+    }
+    break;
+  }
+
+  bool lengthRead = false;
+  if (reader_) {
+    auto ret = reader_(inbox);
+    if (ret == -ENODATA) {
+      ret = inbox.cancelTx();
+      TP_THROW_SYSTEM_IF(ret < 0, -ret);
+      return false;
+    }
+    TP_THROW_SYSTEM_IF(ret < 0, -ret);
+
+    mode_ = READ_PAYLOAD;
+    bytesRead_ = len_ = ret;
+  } else {
+    if (mode_ == READ_LENGTH) {
+      uint32_t length;
+      {
+        ssize_t ret;
+        ret = inbox.copyInTx(sizeof(length), &length);
+        if (ret == -ENODATA) {
+          ret = inbox.cancelTx();
+          TP_THROW_SYSTEM_IF(ret < 0, -ret);
+          return false;
+        }
+        TP_THROW_SYSTEM_IF(ret < 0, -ret);
+      }
+
+      if (ptrProvided_) {
+        TP_DCHECK_EQ(length, len_);
+      } else {
+        len_ = length;
+        buf_ = std::make_unique<uint8_t[]>(len_);
+        ptr_ = buf_.get();
+      }
+      mode_ = READ_PAYLOAD;
+      lengthRead = true;
+    }
+
+    // If reading empty buffer, skip payload read.
+    if (len_ > 0) {
+      const auto ret = inbox.copyAtMostInTx(
+          len_ - bytesRead_, reinterpret_cast<uint8_t*>(ptr_) + bytesRead_);
+      if (ret == -ENODATA) {
+        if (lengthRead) {
+          const auto ret = inbox.commitTx();
+          TP_THROW_SYSTEM_IF(ret < 0, -ret);
+          return true;
+        } else {
+          const auto ret = inbox.cancelTx();
+          TP_THROW_SYSTEM_IF(ret < 0, -ret);
+          return false;
+        }
+      }
+      TP_THROW_SYSTEM_IF(ret < 0, -ret);
+      bytesRead_ += ret;
+    }
+  }
+
+  {
+    const auto ret = inbox.commitTx();
+    TP_THROW_SYSTEM_IF(ret < 0, -ret);
+  }
+
+  if (completed()) {
+    fn_(Error::kSuccess, ptr_, len_);
+  }
+
+  return true;
+}
+
+void ReadOperation::handleError(const Error& error) {
+  fn_(error, nullptr, 0);
+}
+
+WriteOperation::WriteOperation(
+    const void* ptr,
+    size_t len,
+    write_callback_fn fn)
+    : ptr_(ptr), len_(len), fn_(std::move(fn)) {}
+
+WriteOperation::WriteOperation(write_fn writer, write_callback_fn fn)
+    : writer_(std::move(writer)), fn_(std::move(fn)) {}
+
+bool WriteOperation::handleWrite(util::ringbuffer::Producer& outbox) {
+  // Start write transaction.
+  // Retry because this must succeed.
+  // TODO: fallback if it doesn't.
+  for (;;) {
+    const auto ret = outbox.startTx();
+    TP_DCHECK(ret >= 0 || ret == -EAGAIN);
+    if (ret < 0) {
+      continue;
+    }
+    break;
+  }
+
+  ssize_t ret;
+  if (writer_) {
+    ret = writer_(outbox);
+    if (ret > 0) {
+      mode_ = WRITE_PAYLOAD;
+      bytesWritten_ = len_ = ret;
+    }
+  } else {
+    if (mode_ == WRITE_LENGTH) {
+      ret = outbox.writeInTx<uint32_t>(len_);
+      if (ret > 0) {
+        mode_ = WRITE_PAYLOAD;
+      }
+    }
+
+    // If writing empty buffer, skip payload write because ptr_
+    // could be nullptr.
+    if (mode_ == WRITE_PAYLOAD && len_ > 0) {
+      ret = outbox.writeAtMostInTx(
+          len_ - bytesWritten_,
+          static_cast<const uint8_t*>(ptr_) + bytesWritten_);
+      if (ret > 0) {
+        bytesWritten_ += ret;
+      }
+    }
+  }
+
+  if (ret == -ENOSPC) {
+    const auto ret = outbox.cancelTx();
+    TP_THROW_SYSTEM_IF(ret < 0, -ret);
+    return false;
+  }
+  TP_THROW_SYSTEM_IF(ret < 0, -ret);
+
+  {
+    const auto ret = outbox.commitTx();
+    TP_THROW_SYSTEM_IF(ret < 0, -ret);
+  }
+
+  if (completed()) {
+    fn_(Error::kSuccess);
+  }
+
+  return true;
+}
+
+void WriteOperation::handleError(const Error& error) {
+  fn_(error);
+}
+
+} // namespace
+
+class Connection::Impl : public std::enable_shared_from_this<Connection::Impl>,
+                         public EventHandler {
+  static constexpr auto kDefaultSize = 2 * 1024 * 1024;
+
+  enum State {
+    INITIALIZING = 1,
+    SEND_FDS,
+    RECV_FDS,
+    ESTABLISHED,
+    DESTROYING,
+  };
+
+ public:
+  Impl(std::shared_ptr<Loop> loop, std::shared_ptr<Socket> socket);
+
+  // Called to initialize member fields that need `shared_from_this`.
+  void initFromLoop();
+
+  void closeFromLoop();
+
+  // Implementation of transport::Connection.
+  void readFromLoop(read_callback_fn fn);
+
+  // Implementation of transport::Connection.
+  void readFromLoop(
+      google::protobuf::MessageLite& message,
+      read_proto_callback_fn fn);
+
+  // Implementation of transport::Connection.
+  void readFromLoop(void* ptr, size_t length, read_callback_fn fn);
+
+  // Implementation of transport::Connection
+  void writeFromLoop(const void* ptr, size_t length, write_callback_fn fn);
+
+  // Implementation of transport::Connection
+  void writeFromLoop(
+      const google::protobuf::MessageLite& message,
+      write_callback_fn fn);
+
+  // Implementation of EventHandler.
+  void handleEventsFromReactor(int events) override;
+
+  // Handle events of type EPOLLIN.
+  void handleEventInFromReactor(std::unique_lock<std::mutex> lock);
+
+  // Handle events of type EPOLLOUT.
+  void handleEventOutFromReactor(std::unique_lock<std::mutex> lock);
+
+  // Handle events of type EPOLLERR.
+  void handleEventErrFromReactor(std::unique_lock<std::mutex> lock);
+
+  // Handle events of type EPOLLHUP.
+  void handleEventHupFromReactor(std::unique_lock<std::mutex> lock);
+
+  // Handle inbox being readable.
+  //
+  // This is triggered from the reactor loop when this connection's
+  // peer has written an entry into our inbox. It is called once per
+  // message. Because it's called from another thread, we must always
+  // take care to acquire the connection's lock here.
+  void handleInboxReadableFromReactor();
+
+  // Handle outbox being writable.
+  //
+  // This is triggered from the reactor loop when this connection's
+  // peer has read an entry from our outbox. It is called once per
+  // message. Because it's called from another thread, we must always
+  // take care to acquire the connection's lock here.
+  void handleOutboxWritableFromReactor();
+
+ private:
+  std::mutex mutex_;
+  State state_{INITIALIZING};
+  Error error_;
+  std::shared_ptr<Loop> loop_;
+  std::shared_ptr<Reactor> reactor_;
+  std::shared_ptr<Socket> socket_;
+
+  // Inbox.
+  int inboxHeaderFd_;
+  int inboxDataFd_;
+  optional<util::ringbuffer::Consumer> inbox_;
+  optional<Reactor::TToken> inboxReactorToken_;
+
+  // Outbox.
+  optional<util::ringbuffer::Producer> outbox_;
+  optional<Reactor::TToken> outboxReactorToken_;
+
+  // Peer trigger/tokens.
+  optional<Reactor::Trigger> peerReactorTrigger_;
+  optional<Reactor::TToken> peerInboxReactorToken_;
+  optional<Reactor::TToken> peerOutboxReactorToken_;
+
+  // Pending read operations.
+  std::deque<ReadOperation> readOperations_;
+
+  // Pending write operations.
+  std::deque<WriteOperation> writeOperations_;
+
+  // Defer execution of processReadOperations to loop thread.
+  void triggerProcessReadOperations();
+
+  // Process pending read operations if in an operational or error state.
+  void processReadOperationsFromReactor(std::unique_lock<std::mutex>& lock);
+
+  // Defer execution of processWriteOperations to loop thread.
+  void triggerProcessWriteOperations();
+
+  // Process pending write operations if in an operational state.
+  void processWriteOperationsFromReactor(std::unique_lock<std::mutex>& lock);
+
+  // Set error object while holding mutex.
+  void setErrorHoldingMutexFromReactor(Error&&);
+
+  // Fail with error while holding mutex.
+  void failHoldingMutexFromReactor(Error&&, std::unique_lock<std::mutex>& lock);
+
+  // Close connection.
+  void close();
+
+  // Close connection while holding mutex.
+  void closeHoldingMutex();
+};
+
 std::shared_ptr<Connection> Connection::create(
     std::shared_ptr<Loop> loop,
     std::shared_ptr<Socket> socket) {
@@ -512,181 +883,6 @@ void Connection::Impl::closeHoldingMutex() {
     loop_->unregisterDescriptor(socket_->fd());
     socket_.reset();
   }
-}
-
-Connection::Impl::ReadOperation::ReadOperation(
-    void* ptr,
-    size_t len,
-    read_callback_fn fn)
-    : ptr_(ptr), len_(len), fn_(std::move(fn)), ptrProvided_(true) {}
-
-Connection::Impl::ReadOperation::ReadOperation(
-    read_fn reader,
-    read_callback_fn fn)
-    : reader_(std::move(reader)), fn_(std::move(fn)), ptrProvided_(false) {}
-
-Connection::Impl::ReadOperation::ReadOperation(read_callback_fn fn)
-    : fn_(std::move(fn)), ptrProvided_(false) {}
-
-bool Connection::Impl::ReadOperation::handleRead(
-    util::ringbuffer::Consumer& inbox) {
-  // Start read transaction.
-  // Retry because this must succeed.
-  for (;;) {
-    const auto ret = inbox.startTx();
-    TP_DCHECK(ret >= 0 || ret == -EAGAIN);
-    if (ret < 0) {
-      continue;
-    }
-    break;
-  }
-
-  bool lengthRead = false;
-  if (reader_) {
-    auto ret = reader_(inbox);
-    if (ret == -ENODATA) {
-      ret = inbox.cancelTx();
-      TP_THROW_SYSTEM_IF(ret < 0, -ret);
-      return false;
-    }
-    TP_THROW_SYSTEM_IF(ret < 0, -ret);
-
-    mode_ = READ_PAYLOAD;
-    bytesRead_ = len_ = ret;
-  } else {
-    if (mode_ == READ_LENGTH) {
-      uint32_t length;
-      {
-        ssize_t ret;
-        ret = inbox.copyInTx(sizeof(length), &length);
-        if (ret == -ENODATA) {
-          ret = inbox.cancelTx();
-          TP_THROW_SYSTEM_IF(ret < 0, -ret);
-          return false;
-        }
-        TP_THROW_SYSTEM_IF(ret < 0, -ret);
-      }
-
-      if (ptrProvided_) {
-        TP_DCHECK_EQ(length, len_);
-      } else {
-        len_ = length;
-        buf_ = std::make_unique<uint8_t[]>(len_);
-        ptr_ = buf_.get();
-      }
-      mode_ = READ_PAYLOAD;
-      lengthRead = true;
-    }
-
-    // If reading empty buffer, skip payload read.
-    if (len_ > 0) {
-      const auto ret = inbox.copyAtMostInTx(
-          len_ - bytesRead_, reinterpret_cast<uint8_t*>(ptr_) + bytesRead_);
-      if (ret == -ENODATA) {
-        if (lengthRead) {
-          const auto ret = inbox.commitTx();
-          TP_THROW_SYSTEM_IF(ret < 0, -ret);
-          return true;
-        } else {
-          const auto ret = inbox.cancelTx();
-          TP_THROW_SYSTEM_IF(ret < 0, -ret);
-          return false;
-        }
-      }
-      TP_THROW_SYSTEM_IF(ret < 0, -ret);
-      bytesRead_ += ret;
-    }
-  }
-
-  {
-    const auto ret = inbox.commitTx();
-    TP_THROW_SYSTEM_IF(ret < 0, -ret);
-  }
-
-  if (completed()) {
-    fn_(Error::kSuccess, ptr_, len_);
-  }
-
-  return true;
-}
-
-void Connection::Impl::ReadOperation::handleError(const Error& error) {
-  fn_(error, nullptr, 0);
-}
-
-Connection::Impl::WriteOperation::WriteOperation(
-    const void* ptr,
-    size_t len,
-    write_callback_fn fn)
-    : ptr_(ptr), len_(len), fn_(std::move(fn)) {}
-
-Connection::Impl::WriteOperation::WriteOperation(
-    write_fn writer,
-    write_callback_fn fn)
-    : writer_(std::move(writer)), fn_(std::move(fn)) {}
-
-bool Connection::Impl::WriteOperation::handleWrite(
-    util::ringbuffer::Producer& outbox) {
-  // Start write transaction.
-  // Retry because this must succeed.
-  // TODO: fallback if it doesn't.
-  for (;;) {
-    const auto ret = outbox.startTx();
-    TP_DCHECK(ret >= 0 || ret == -EAGAIN);
-    if (ret < 0) {
-      continue;
-    }
-    break;
-  }
-
-  ssize_t ret;
-  if (writer_) {
-    ret = writer_(outbox);
-    if (ret > 0) {
-      mode_ = WRITE_PAYLOAD;
-      bytesWritten_ = len_ = ret;
-    }
-  } else {
-    if (mode_ == WRITE_LENGTH) {
-      ret = outbox.writeInTx<uint32_t>(len_);
-      if (ret > 0) {
-        mode_ = WRITE_PAYLOAD;
-      }
-    }
-
-    // If writing empty buffer, skip payload write because ptr_
-    // could be nullptr.
-    if (mode_ == WRITE_PAYLOAD && len_ > 0) {
-      ret = outbox.writeAtMostInTx(
-          len_ - bytesWritten_,
-          static_cast<const uint8_t*>(ptr_) + bytesWritten_);
-      if (ret > 0) {
-        bytesWritten_ += ret;
-      }
-    }
-  }
-
-  if (ret == -ENOSPC) {
-    const auto ret = outbox.cancelTx();
-    TP_THROW_SYSTEM_IF(ret < 0, -ret);
-    return false;
-  }
-  TP_THROW_SYSTEM_IF(ret < 0, -ret);
-
-  {
-    const auto ret = outbox.commitTx();
-    TP_THROW_SYSTEM_IF(ret < 0, -ret);
-  }
-
-  if (completed()) {
-    fn_(Error::kSuccess);
-  }
-
-  return true;
-}
-
-void Connection::Impl::WriteOperation::handleError(const Error& error) {
-  fn_(error);
 }
 
 } // namespace shm
