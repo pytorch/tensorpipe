@@ -312,16 +312,16 @@ class Connection::Impl : public std::enable_shared_from_this<Connection::Impl>,
   void handleEventsFromReactor(int events) override;
 
   // Handle events of type EPOLLIN.
-  void handleEventInFromReactor(std::unique_lock<std::mutex> lock);
+  void handleEventInFromReactor();
 
   // Handle events of type EPOLLOUT.
-  void handleEventOutFromReactor(std::unique_lock<std::mutex> lock);
+  void handleEventOutFromReactor();
 
   // Handle events of type EPOLLERR.
-  void handleEventErrFromReactor(std::unique_lock<std::mutex> lock);
+  void handleEventErrFromReactor();
 
   // Handle events of type EPOLLHUP.
-  void handleEventHupFromReactor(std::unique_lock<std::mutex> lock);
+  void handleEventHupFromReactor();
 
   // Handle inbox being readable.
   //
@@ -340,7 +340,6 @@ class Connection::Impl : public std::enable_shared_from_this<Connection::Impl>,
   void handleOutboxWritableFromReactor();
 
  private:
-  std::mutex mutex_;
   State state_{INITIALIZING};
   Error error_;
   std::shared_ptr<Loop> loop_;
@@ -372,25 +371,16 @@ class Connection::Impl : public std::enable_shared_from_this<Connection::Impl>,
   void triggerProcessReadOperations();
 
   // Process pending read operations if in an operational or error state.
-  void processReadOperationsFromReactor(std::unique_lock<std::mutex>& lock);
+  void processReadOperationsFromReactor();
 
   // Defer execution of processWriteOperations to loop thread.
   void triggerProcessWriteOperations();
 
   // Process pending write operations if in an operational state.
-  void processWriteOperationsFromReactor(std::unique_lock<std::mutex>& lock);
+  void processWriteOperationsFromReactor();
 
-  // Set error object while holding mutex.
-  void setErrorHoldingMutexFromReactor(Error&&);
-
-  // Fail with error while holding mutex.
-  void failHoldingMutexFromReactor(Error&&, std::unique_lock<std::mutex>& lock);
-
-  // Close connection.
-  void close();
-
-  // Close connection while holding mutex.
-  void closeHoldingMutex();
+  // Fail with error.
+  void failFromLoop(Error&&);
 };
 
 std::shared_ptr<Connection> Connection::create(
@@ -463,7 +453,6 @@ void Connection::read(read_callback_fn fn) {
 void Connection::Impl::readFromLoop(read_callback_fn fn) {
   TP_DCHECK(loop_->inLoopThread());
 
-  std::unique_lock<std::mutex> guard(mutex_);
   readOperations_.emplace_back(std::move(fn));
 
   // If there are pending read operations, make sure the event loop
@@ -485,7 +474,6 @@ void Connection::Impl::readFromLoop(
     read_proto_callback_fn fn) {
   TP_DCHECK(loop_->inLoopThread());
 
-  std::unique_lock<std::mutex> guard(mutex_);
   readOperations_.emplace_back(
       [&message](util::ringbuffer::Consumer& inbox) -> ssize_t {
         uint32_t len;
@@ -532,7 +520,6 @@ void Connection::Impl::readFromLoop(
     read_callback_fn fn) {
   TP_DCHECK(loop_->inLoopThread());
 
-  std::unique_lock<std::mutex> guard(mutex_);
   readOperations_.emplace_back(ptr, length, std::move(fn));
 
   // If there are pending read operations, make sure the event loop
@@ -553,7 +540,6 @@ void Connection::Impl::writeFromLoop(
     write_callback_fn fn) {
   TP_DCHECK(loop_->inLoopThread());
 
-  std::unique_lock<std::mutex> guard(mutex_);
   writeOperations_.emplace_back(ptr, length, std::move(fn));
   triggerProcessWriteOperations();
 }
@@ -572,7 +558,6 @@ void Connection::Impl::writeFromLoop(
     write_callback_fn fn) {
   TP_DCHECK(loop_->inLoopThread());
 
-  std::unique_lock<std::mutex> guard(mutex_);
   writeOperations_.emplace_back(
       [&message](util::ringbuffer::Producer& outbox) -> ssize_t {
         size_t len = message.ByteSize();
@@ -600,35 +585,32 @@ void Connection::Impl::writeFromLoop(
 
 void Connection::Impl::handleEventsFromReactor(int events) {
   TP_DCHECK(loop_->inLoopThread());
-  std::unique_lock<std::mutex> lock(mutex_);
 
   // Handle only one of the events in the mask. Events on the control
   // file descriptor are rare enough for the cost of having epoll call
   // into this function multiple times to not matter. The benefit is
-  // that we never have to acquire the lock more than once and that
-  // every handler can close and unregister the control file
+  // that every handler can close and unregister the control file
   // descriptor from the event loop, without worrying about the next
   // handler trying to do so as well.
   if (events & EPOLLIN) {
-    handleEventInFromReactor(std::move(lock));
+    handleEventInFromReactor();
     return;
   }
   if (events & EPOLLOUT) {
-    handleEventOutFromReactor(std::move(lock));
+    handleEventOutFromReactor();
     return;
   }
   if (events & EPOLLERR) {
-    handleEventErrFromReactor(std::move(lock));
+    handleEventErrFromReactor();
     return;
   }
   if (events & EPOLLHUP) {
-    handleEventHupFromReactor(std::move(lock));
+    handleEventHupFromReactor();
     return;
   }
 }
 
-void Connection::Impl::handleEventInFromReactor(
-    std::unique_lock<std::mutex> lock) {
+void Connection::Impl::handleEventInFromReactor() {
   TP_DCHECK(loop_->inLoopThread());
   if (state_ == RECV_FDS) {
     Fd reactorHeaderFd;
@@ -647,7 +629,7 @@ void Connection::Impl::handleEventInFromReactor(
         outboxHeaderFd,
         outboxDataFd);
     if (err) {
-      failHoldingMutexFromReactor(std::move(err), lock);
+      failFromLoop(std::move(err));
       return;
     }
 
@@ -664,11 +646,11 @@ void Connection::Impl::handleEventInFromReactor(
 
     // The connection is usable now.
     state_ = ESTABLISHED;
-    processWriteOperationsFromReactor(lock);
+    processWriteOperationsFromReactor();
     // Trigger read operations in case a pair of local read() and remote
     // write() happened before connection is established. Otherwise read()
     // callback would lose if it's the only read() request.
-    processReadOperationsFromReactor(lock);
+    processReadOperationsFromReactor();
     return;
   }
 
@@ -676,17 +658,16 @@ void Connection::Impl::handleEventInFromReactor(
     // We don't expect to read anything on this socket once the
     // connection has been established. If we do, assume it's a
     // zero-byte read indicating EOF.
-    setErrorHoldingMutexFromReactor(TP_CREATE_ERROR(EOFError));
-    closeHoldingMutex();
-    processReadOperationsFromReactor(lock);
+    error_ = TP_CREATE_ERROR(EOFError);
+    closeFromLoop();
+    processReadOperationsFromReactor();
     return;
   }
 
   TP_LOG_WARNING() << "handleEventIn not handled";
 }
 
-void Connection::Impl::handleEventOutFromReactor(
-    std::unique_lock<std::mutex> lock) {
+void Connection::Impl::handleEventOutFromReactor() {
   TP_DCHECK(loop_->inLoopThread());
   if (state_ == SEND_FDS) {
     int reactorHeaderFd;
@@ -702,7 +683,7 @@ void Connection::Impl::handleEventOutFromReactor(
         inboxHeaderFd_,
         inboxDataFd_);
     if (err) {
-      failHoldingMutexFromReactor(std::move(err), lock);
+      failFromLoop(std::move(err));
       return;
     }
 
@@ -715,54 +696,44 @@ void Connection::Impl::handleEventOutFromReactor(
   TP_LOG_WARNING() << "handleEventOut not handled";
 }
 
-void Connection::Impl::handleEventErrFromReactor(
-    std::unique_lock<std::mutex> lock) {
+void Connection::Impl::handleEventErrFromReactor() {
   TP_DCHECK(loop_->inLoopThread());
-  setErrorHoldingMutexFromReactor(TP_CREATE_ERROR(EOFError));
-  closeHoldingMutex();
-  processReadOperationsFromReactor(lock);
+  error_ = TP_CREATE_ERROR(EOFError);
+  closeFromLoop();
+  processReadOperationsFromReactor();
 }
 
-void Connection::Impl::handleEventHupFromReactor(
-    std::unique_lock<std::mutex> lock) {
+void Connection::Impl::handleEventHupFromReactor() {
   TP_DCHECK(loop_->inLoopThread());
-  setErrorHoldingMutexFromReactor(TP_CREATE_ERROR(EOFError));
-  closeHoldingMutex();
-  processReadOperationsFromReactor(lock);
+  error_ = TP_CREATE_ERROR(EOFError);
+  closeFromLoop();
+  processReadOperationsFromReactor();
 }
 
 void Connection::Impl::handleInboxReadableFromReactor() {
   TP_DCHECK(loop_->inLoopThread());
-  std::unique_lock<std::mutex> lock(mutex_);
-  processReadOperationsFromReactor(lock);
+  processReadOperationsFromReactor();
 }
 
 void Connection::Impl::handleOutboxWritableFromReactor() {
   TP_DCHECK(loop_->inLoopThread());
-  std::unique_lock<std::mutex> lock(mutex_);
-  processWriteOperationsFromReactor(lock);
+  processWriteOperationsFromReactor();
 }
 
 void Connection::Impl::triggerProcessReadOperations() {
-  loop_->deferToLoop([ptr{shared_from_this()}, this] {
-    std::unique_lock<std::mutex> lock(mutex_);
-    processReadOperationsFromReactor(lock);
-  });
+  loop_->deferToLoop(
+      [ptr{shared_from_this()}, this] { processReadOperationsFromReactor(); });
 }
 
-void Connection::Impl::processReadOperationsFromReactor(
-    std::unique_lock<std::mutex>& lock) {
+void Connection::Impl::processReadOperationsFromReactor() {
   TP_DCHECK(loop_->inLoopThread());
-  TP_DCHECK(lock.owns_lock());
 
   if (error_) {
     std::deque<ReadOperation> operationsToError;
     std::swap(operationsToError, readOperations_);
-    lock.unlock();
     for (auto& readOperation : operationsToError) {
       readOperation.handleError(error_);
     }
-    lock.lock();
     return;
   }
 
@@ -775,31 +746,23 @@ void Connection::Impl::processReadOperationsFromReactor(
   while (!readOperations_.empty()) {
     auto readOperation = std::move(readOperations_.front());
     readOperations_.pop_front();
-    lock.unlock();
     if (readOperation.handleRead(*inbox_)) {
       peerReactorTrigger_->run(peerOutboxReactorToken_.value());
     }
-    lock.lock();
     if (!readOperation.completed()) {
       readOperations_.push_front(std::move(readOperation));
       break;
     }
   }
-
-  TP_DCHECK(lock.owns_lock());
 }
 
 void Connection::Impl::triggerProcessWriteOperations() {
-  loop_->deferToLoop([ptr{shared_from_this()}, this] {
-    std::unique_lock<std::mutex> lock(mutex_);
-    processWriteOperationsFromReactor(lock);
-  });
+  loop_->deferToLoop(
+      [ptr{shared_from_this()}, this] { processWriteOperationsFromReactor(); });
 }
 
-void Connection::Impl::processWriteOperationsFromReactor(
-    std::unique_lock<std::mutex>& lock) {
+void Connection::Impl::processWriteOperationsFromReactor() {
   TP_DCHECK(loop_->inLoopThread());
-  TP_DCHECK(lock.owns_lock());
 
   if (state_ < ESTABLISHED) {
     return;
@@ -808,53 +771,36 @@ void Connection::Impl::processWriteOperationsFromReactor(
   if (error_) {
     std::deque<WriteOperation> operationsToError;
     std::swap(operationsToError, writeOperations_);
-    lock.unlock();
     for (auto& writeOperation : operationsToError) {
       writeOperation.handleError(error_);
     }
-    lock.lock();
     return;
   }
 
   while (!writeOperations_.empty()) {
     auto writeOperation = std::move(writeOperations_.front());
     writeOperations_.pop_front();
-    lock.unlock();
     if (writeOperation.handleWrite(*outbox_)) {
       peerReactorTrigger_->run(peerInboxReactorToken_.value());
     }
-    lock.lock();
     if (!writeOperation.completed()) {
       writeOperations_.push_front(writeOperation);
       break;
     }
   }
-
-  TP_DCHECK(lock.owns_lock());
 }
 
-void Connection::Impl::setErrorHoldingMutexFromReactor(Error&& error) {
+void Connection::Impl::failFromLoop(Error&& error) {
   TP_DCHECK(loop_->inLoopThread());
-  error_ = error;
-}
-
-void Connection::Impl::failHoldingMutexFromReactor(
-    Error&& error,
-    std::unique_lock<std::mutex>& lock) {
-  TP_DCHECK(loop_->inLoopThread());
-  setErrorHoldingMutexFromReactor(std::move(error));
+  error_ = std::move(error);
   while (!readOperations_.empty()) {
     auto& readOperation = readOperations_.front();
-    lock.unlock();
     readOperation.handleError(error_);
-    lock.lock();
     readOperations_.pop_front();
   }
   while (!writeOperations_.empty()) {
     auto& writeOperation = writeOperations_.front();
-    lock.unlock();
     writeOperation.handleError(error_);
-    lock.lock();
     writeOperations_.pop_front();
   }
 }
@@ -862,15 +808,6 @@ void Connection::Impl::failHoldingMutexFromReactor(
 void Connection::Impl::closeFromLoop() {
   TP_DCHECK(loop_->inLoopThread());
 
-  // To avoid races, the close operation should also be queued and deferred to
-  // the reactor. However, since close can be called from the destructor, we
-  // can't extend its lifetime by capturing a shared_ptr and increasing its
-  // refcount.
-  std::unique_lock<std::mutex> guard(mutex_);
-  closeHoldingMutex();
-}
-
-void Connection::Impl::closeHoldingMutex() {
   if (inboxReactorToken_.has_value()) {
     reactor_->remove(inboxReactorToken_.value());
     inboxReactorToken_.reset();
