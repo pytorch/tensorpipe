@@ -16,9 +16,16 @@
 using namespace tensorpipe;
 using namespace tensorpipe::transport;
 
+namespace {
+
+// This value is defined in tensorpipe/transport/shm/connection.h
+static constexpr auto kBufferSize = 2 * 1024 * 1024;
+
+} // namespace
+
 TEST_P(TransportTest, Chunking) {
   // This is larger than the default ring buffer size.
-  const int kMsgSize = 5 * shm::Connection::kDefaultSize;
+  const int kMsgSize = 5 * kBufferSize;
   std::string srcBuf(kMsgSize, 0x42);
   auto dstBuf = std::make_unique<char[]>(kMsgSize);
   std::promise<void> writeCompletedProm;
@@ -60,7 +67,7 @@ TEST_P(TransportTest, Chunking) {
 
 TEST_P(TransportTest, ChunkingImplicitRead) {
   // This is larger than the default ring buffer size.
-  const size_t kMsgSize = 5 * shm::Connection::kDefaultSize;
+  const size_t kMsgSize = 5 * kBufferSize;
   std::string msg(kMsgSize, 0x42);
   std::promise<void> writeCompletedProm;
   std::promise<void> readCompletedProm;
@@ -96,7 +103,7 @@ TEST_P(TransportTest, QueueWrites) {
   // This is large enough that two of those will not fit in the ring buffer at
   // the same time.
   constexpr int numMsg = 2;
-  constexpr size_t numBytes = (3 * shm::Connection::kDefaultSize) / 4;
+  constexpr size_t numBytes = (3 * kBufferSize) / 4;
   std::array<char, numBytes> garbage;
   std::promise<void> writeScheduledProm;
   std::promise<void> writeCompletedProm;
@@ -142,7 +149,7 @@ TEST_P(TransportTest, QueueWrites) {
 
 TEST_P(TransportTest, ProtobufWriteWrapAround) {
   constexpr int numMsg = 2;
-  constexpr size_t kSize = (3 * shm::Connection::kDefaultSize) / 4;
+  constexpr size_t kSize = (3 * kBufferSize) / 4;
   std::promise<void> writeCompletedProm;
   std::promise<void> readCompletedProm;
   std::future<void> writeCompletedFuture = writeCompletedProm.get_future();

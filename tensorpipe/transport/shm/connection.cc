@@ -35,6 +35,19 @@ Connection::Connection(
     ConstructorToken /* unused */,
     std::shared_ptr<Loop> loop,
     std::shared_ptr<Socket> socket)
+    : loop_(loop), impl_(std::make_shared<Impl>(loop, std::move(socket))) {}
+
+Connection::~Connection() {
+  loop_->deferToLoop([impl{impl_}]() { impl->closeFromLoop(); });
+}
+
+void Connection::start() {
+  loop_->deferToLoop([impl{impl_}]() { impl->initFromLoop(); });
+}
+
+Connection::Impl::Impl(
+    std::shared_ptr<Loop> loop,
+    std::shared_ptr<Socket> socket)
     : loop_(std::move(loop)),
       reactor_(loop_->reactor()),
       socket_(std::move(socket)) {
@@ -43,11 +56,9 @@ Connection::Connection(
   socket_->block(false);
 }
 
-Connection::~Connection() {
-  close();
-}
+void Connection::Impl::initFromLoop() {
+  TP_DCHECK(loop_->inLoopThread());
 
-void Connection::start() {
   // Create ringbuffer for inbox.
   std::shared_ptr<util::ringbuffer::RingBuffer> inboxRingBuffer;
   std::tie(inboxHeaderFd_, inboxDataFd_, inboxRingBuffer) =
@@ -56,14 +67,14 @@ void Connection::start() {
 
   // Register method to be called when our peer writes to our inbox.
   inboxReactorToken_ = reactor_->add(
-      runIfAlive(*this, std::function<void(Connection&)>([](Connection& conn) {
-        conn.handleInboxReadableFromReactor();
+      runIfAlive(*this, std::function<void(Impl&)>([](Impl& impl) {
+        impl.handleInboxReadableFromReactor();
       })));
 
   // Register method to be called when our peer reads from our outbox.
   outboxReactorToken_ = reactor_->add(
-      runIfAlive(*this, std::function<void(Connection&)>([](Connection& conn) {
-        conn.handleOutboxWritableFromReactor();
+      runIfAlive(*this, std::function<void(Impl&)>([](Impl& impl) {
+        impl.handleOutboxWritableFromReactor();
       })));
 
   // We're sending file descriptors first, so wait for writability.
@@ -73,6 +84,14 @@ void Connection::start() {
 
 // Implementation of transport::Connection.
 void Connection::read(read_callback_fn fn) {
+  loop_->deferToLoop([impl{impl_}, fn{std::move(fn)}]() mutable {
+    impl->readFromLoop(std::move(fn));
+  });
+}
+
+void Connection::Impl::readFromLoop(read_callback_fn fn) {
+  TP_DCHECK(loop_->inLoopThread());
+
   std::unique_lock<std::mutex> guard(mutex_);
   readOperations_.emplace_back(std::move(fn));
 
@@ -85,6 +104,16 @@ void Connection::read(read_callback_fn fn) {
 void Connection::read(
     google::protobuf::MessageLite& message,
     read_proto_callback_fn fn) {
+  loop_->deferToLoop([impl{impl_}, &message, fn{std::move(fn)}]() mutable {
+    impl->readFromLoop(message, std::move(fn));
+  });
+}
+
+void Connection::Impl::readFromLoop(
+    google::protobuf::MessageLite& message,
+    read_proto_callback_fn fn) {
+  TP_DCHECK(loop_->inLoopThread());
+
   std::unique_lock<std::mutex> guard(mutex_);
   readOperations_.emplace_back(
       [&message](util::ringbuffer::Consumer& inbox) -> ssize_t {
@@ -121,6 +150,17 @@ void Connection::read(
 
 // Implementation of transport::Connection.
 void Connection::read(void* ptr, size_t length, read_callback_fn fn) {
+  loop_->deferToLoop([impl{impl_}, ptr, length, fn{std::move(fn)}]() mutable {
+    impl->readFromLoop(ptr, length, std::move(fn));
+  });
+}
+
+void Connection::Impl::readFromLoop(
+    void* ptr,
+    size_t length,
+    read_callback_fn fn) {
+  TP_DCHECK(loop_->inLoopThread());
+
   std::unique_lock<std::mutex> guard(mutex_);
   readOperations_.emplace_back(ptr, length, std::move(fn));
 
@@ -131,6 +171,17 @@ void Connection::read(void* ptr, size_t length, read_callback_fn fn) {
 
 // Implementation of transport::Connection
 void Connection::write(const void* ptr, size_t length, write_callback_fn fn) {
+  loop_->deferToLoop([impl{impl_}, ptr, length, fn{std::move(fn)}]() mutable {
+    impl->writeFromLoop(ptr, length, std::move(fn));
+  });
+}
+
+void Connection::Impl::writeFromLoop(
+    const void* ptr,
+    size_t length,
+    write_callback_fn fn) {
+  TP_DCHECK(loop_->inLoopThread());
+
   std::unique_lock<std::mutex> guard(mutex_);
   writeOperations_.emplace_back(ptr, length, std::move(fn));
   triggerProcessWriteOperations();
@@ -140,6 +191,16 @@ void Connection::write(const void* ptr, size_t length, write_callback_fn fn) {
 void Connection::write(
     const google::protobuf::MessageLite& message,
     write_callback_fn fn) {
+  loop_->deferToLoop([impl{impl_}, &message, fn{std::move(fn)}]() mutable {
+    impl->writeFromLoop(message, std::move(fn));
+  });
+}
+
+void Connection::Impl::writeFromLoop(
+    const google::protobuf::MessageLite& message,
+    write_callback_fn fn) {
+  TP_DCHECK(loop_->inLoopThread());
+
   std::unique_lock<std::mutex> guard(mutex_);
   writeOperations_.emplace_back(
       [&message](util::ringbuffer::Producer& outbox) -> ssize_t {
@@ -166,8 +227,8 @@ void Connection::write(
   triggerProcessWriteOperations();
 }
 
-void Connection::handleEventsFromReactor(int events) {
-  TP_DCHECK(loop_->inReactorThread());
+void Connection::Impl::handleEventsFromReactor(int events) {
+  TP_DCHECK(loop_->inLoopThread());
   std::unique_lock<std::mutex> lock(mutex_);
 
   // Handle only one of the events in the mask. Events on the control
@@ -195,8 +256,9 @@ void Connection::handleEventsFromReactor(int events) {
   }
 }
 
-void Connection::handleEventInFromReactor(std::unique_lock<std::mutex> lock) {
-  TP_DCHECK(loop_->inReactorThread());
+void Connection::Impl::handleEventInFromReactor(
+    std::unique_lock<std::mutex> lock) {
+  TP_DCHECK(loop_->inLoopThread());
   if (state_ == RECV_FDS) {
     Fd reactorHeaderFd;
     Fd reactorDataFd;
@@ -252,8 +314,9 @@ void Connection::handleEventInFromReactor(std::unique_lock<std::mutex> lock) {
   TP_LOG_WARNING() << "handleEventIn not handled";
 }
 
-void Connection::handleEventOutFromReactor(std::unique_lock<std::mutex> lock) {
-  TP_DCHECK(loop_->inReactorThread());
+void Connection::Impl::handleEventOutFromReactor(
+    std::unique_lock<std::mutex> lock) {
+  TP_DCHECK(loop_->inLoopThread());
   if (state_ == SEND_FDS) {
     int reactorHeaderFd;
     int reactorDataFd;
@@ -281,42 +344,44 @@ void Connection::handleEventOutFromReactor(std::unique_lock<std::mutex> lock) {
   TP_LOG_WARNING() << "handleEventOut not handled";
 }
 
-void Connection::handleEventErrFromReactor(std::unique_lock<std::mutex> lock) {
-  TP_DCHECK(loop_->inReactorThread());
+void Connection::Impl::handleEventErrFromReactor(
+    std::unique_lock<std::mutex> lock) {
+  TP_DCHECK(loop_->inLoopThread());
   setErrorHoldingMutexFromReactor(TP_CREATE_ERROR(EOFError));
   closeHoldingMutex();
   processReadOperationsFromReactor(lock);
 }
 
-void Connection::handleEventHupFromReactor(std::unique_lock<std::mutex> lock) {
-  TP_DCHECK(loop_->inReactorThread());
+void Connection::Impl::handleEventHupFromReactor(
+    std::unique_lock<std::mutex> lock) {
+  TP_DCHECK(loop_->inLoopThread());
   setErrorHoldingMutexFromReactor(TP_CREATE_ERROR(EOFError));
   closeHoldingMutex();
   processReadOperationsFromReactor(lock);
 }
 
-void Connection::handleInboxReadableFromReactor() {
-  TP_DCHECK(loop_->inReactorThread());
+void Connection::Impl::handleInboxReadableFromReactor() {
+  TP_DCHECK(loop_->inLoopThread());
   std::unique_lock<std::mutex> lock(mutex_);
   processReadOperationsFromReactor(lock);
 }
 
-void Connection::handleOutboxWritableFromReactor() {
-  TP_DCHECK(loop_->inReactorThread());
+void Connection::Impl::handleOutboxWritableFromReactor() {
+  TP_DCHECK(loop_->inLoopThread());
   std::unique_lock<std::mutex> lock(mutex_);
   processWriteOperationsFromReactor(lock);
 }
 
-void Connection::triggerProcessReadOperations() {
-  loop_->deferToReactor([ptr{shared_from_this()}, this] {
+void Connection::Impl::triggerProcessReadOperations() {
+  loop_->deferToLoop([ptr{shared_from_this()}, this] {
     std::unique_lock<std::mutex> lock(mutex_);
     processReadOperationsFromReactor(lock);
   });
 }
 
-void Connection::processReadOperationsFromReactor(
+void Connection::Impl::processReadOperationsFromReactor(
     std::unique_lock<std::mutex>& lock) {
-  TP_DCHECK(loop_->inReactorThread());
+  TP_DCHECK(loop_->inLoopThread());
   TP_DCHECK(lock.owns_lock());
 
   if (error_) {
@@ -353,16 +418,16 @@ void Connection::processReadOperationsFromReactor(
   TP_DCHECK(lock.owns_lock());
 }
 
-void Connection::triggerProcessWriteOperations() {
-  loop_->deferToReactor([ptr{shared_from_this()}, this] {
+void Connection::Impl::triggerProcessWriteOperations() {
+  loop_->deferToLoop([ptr{shared_from_this()}, this] {
     std::unique_lock<std::mutex> lock(mutex_);
     processWriteOperationsFromReactor(lock);
   });
 }
 
-void Connection::processWriteOperationsFromReactor(
+void Connection::Impl::processWriteOperationsFromReactor(
     std::unique_lock<std::mutex>& lock) {
-  TP_DCHECK(loop_->inReactorThread());
+  TP_DCHECK(loop_->inLoopThread());
   TP_DCHECK(lock.owns_lock());
 
   if (state_ < ESTABLISHED) {
@@ -397,15 +462,15 @@ void Connection::processWriteOperationsFromReactor(
   TP_DCHECK(lock.owns_lock());
 }
 
-void Connection::setErrorHoldingMutexFromReactor(Error&& error) {
-  TP_DCHECK(loop_->inReactorThread());
+void Connection::Impl::setErrorHoldingMutexFromReactor(Error&& error) {
+  TP_DCHECK(loop_->inLoopThread());
   error_ = error;
 }
 
-void Connection::failHoldingMutexFromReactor(
+void Connection::Impl::failHoldingMutexFromReactor(
     Error&& error,
     std::unique_lock<std::mutex>& lock) {
-  TP_DCHECK(loop_->inReactorThread());
+  TP_DCHECK(loop_->inLoopThread());
   setErrorHoldingMutexFromReactor(std::move(error));
   while (!readOperations_.empty()) {
     auto& readOperation = readOperations_.front();
@@ -423,7 +488,9 @@ void Connection::failHoldingMutexFromReactor(
   }
 }
 
-void Connection::close() {
+void Connection::Impl::closeFromLoop() {
+  TP_DCHECK(loop_->inLoopThread());
+
   // To avoid races, the close operation should also be queued and deferred to
   // the reactor. However, since close can be called from the destructor, we
   // can't extend its lifetime by capturing a shared_ptr and increasing its
@@ -432,7 +499,7 @@ void Connection::close() {
   closeHoldingMutex();
 }
 
-void Connection::closeHoldingMutex() {
+void Connection::Impl::closeHoldingMutex() {
   if (inboxReactorToken_.has_value()) {
     reactor_->remove(inboxReactorToken_.value());
     inboxReactorToken_.reset();
@@ -447,19 +514,22 @@ void Connection::closeHoldingMutex() {
   }
 }
 
-Connection::ReadOperation::ReadOperation(
+Connection::Impl::ReadOperation::ReadOperation(
     void* ptr,
     size_t len,
     read_callback_fn fn)
     : ptr_(ptr), len_(len), fn_(std::move(fn)), ptrProvided_(true) {}
 
-Connection::ReadOperation::ReadOperation(read_fn reader, read_callback_fn fn)
+Connection::Impl::ReadOperation::ReadOperation(
+    read_fn reader,
+    read_callback_fn fn)
     : reader_(std::move(reader)), fn_(std::move(fn)), ptrProvided_(false) {}
 
-Connection::ReadOperation::ReadOperation(read_callback_fn fn)
+Connection::Impl::ReadOperation::ReadOperation(read_callback_fn fn)
     : fn_(std::move(fn)), ptrProvided_(false) {}
 
-bool Connection::ReadOperation::handleRead(util::ringbuffer::Consumer& inbox) {
+bool Connection::Impl::ReadOperation::handleRead(
+    util::ringbuffer::Consumer& inbox) {
   // Start read transaction.
   // Retry because this must succeed.
   for (;;) {
@@ -540,22 +610,22 @@ bool Connection::ReadOperation::handleRead(util::ringbuffer::Consumer& inbox) {
   return true;
 }
 
-void Connection::ReadOperation::handleError(const Error& error) {
+void Connection::Impl::ReadOperation::handleError(const Error& error) {
   fn_(error, nullptr, 0);
 }
 
-Connection::WriteOperation::WriteOperation(
+Connection::Impl::WriteOperation::WriteOperation(
     const void* ptr,
     size_t len,
     write_callback_fn fn)
     : ptr_(ptr), len_(len), fn_(std::move(fn)) {}
 
-Connection::WriteOperation::WriteOperation(
+Connection::Impl::WriteOperation::WriteOperation(
     write_fn writer,
     write_callback_fn fn)
     : writer_(std::move(writer)), fn_(std::move(fn)) {}
 
-bool Connection::WriteOperation::handleWrite(
+bool Connection::Impl::WriteOperation::handleWrite(
     util::ringbuffer::Producer& outbox) {
   // Start write transaction.
   // Retry because this must succeed.
@@ -615,7 +685,7 @@ bool Connection::WriteOperation::handleWrite(
   return true;
 }
 
-void Connection::WriteOperation::handleError(const Error& error) {
+void Connection::Impl::WriteOperation::handleError(const Error& error) {
   fn_(error);
 }
 

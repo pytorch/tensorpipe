@@ -94,7 +94,7 @@ Loop::~Loop() {
   TP_DCHECK(!thread_.joinable());
 }
 
-void Loop::deferToReactor(TDeferredFunction fn) {
+void Loop::deferToLoop(TDeferredFunction fn) {
   std::unique_lock<std::mutex> lock(deferredFunctionMutex_);
   deferredFunctionList_.push_back(std::move(fn));
   reactor_->trigger(deferredFunctionReactorToken_);

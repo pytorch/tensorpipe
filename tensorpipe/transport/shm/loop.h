@@ -89,7 +89,7 @@ class Loop final : public std::enable_shared_from_this<Loop> {
 
   // Run function on reactor thread.
   // If the function throws, the thread crashes.
-  void deferToReactor(TDeferredFunction fn);
+  void deferToLoop(TDeferredFunction fn);
 
   // Provide access to the underlying reactor.
   const std::shared_ptr<Reactor>& reactor();
@@ -147,7 +147,7 @@ class Loop final : public std::enable_shared_from_this<Loop> {
   // Tell loop to terminate when no more handlers remain.
   void join();
 
-  inline bool inReactorThread() {
+  inline bool inLoopThread() {
     return reactor_->inReactorThread();
   }
 
