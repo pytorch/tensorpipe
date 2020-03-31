@@ -32,7 +32,7 @@ namespace shm {
 // machine. It uses extra data in the ring buffer header to store a
 // mutex and condition variable to avoid a busy loop.
 //
-class Reactor final : public std::enable_shared_from_this<Reactor> {
+class Reactor final {
   // This allows for buffering 2k triggers (at 4 bytes a piece).
   static constexpr auto kSize = 8192;
 

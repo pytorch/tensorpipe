@@ -38,7 +38,7 @@ class Listener;
 // located across the world, they may simply use a set of TCP
 // connections to communicate.
 //
-class Pipe final : public std::enable_shared_from_this<Pipe> {
+class Pipe final {
   // Use the passkey idiom to allow make_shared to call what should be a private
   // constructor. See https://abseil.io/tips/134 for more information.
   struct ConstructorToken {};

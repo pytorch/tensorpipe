@@ -25,8 +25,7 @@ class Context;
 class Listener;
 class TCPHandle;
 
-class Connection : public transport::Connection,
-                   public std::enable_shared_from_this<Connection> {
+class Connection : public transport::Connection {
   // Use the passkey idiom to allow make_shared to call what should be a private
   // constructor. See https://abseil.io/tips/134 for more information.
   struct ConstructorToken {};

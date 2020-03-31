@@ -196,7 +196,7 @@ class Sockaddr final {
   socklen_t addrlen_;
 };
 
-class Socket final : public Fd, public std::enable_shared_from_this<Socket> {
+class Socket final : public Fd {
  public:
   static std::shared_ptr<Socket> createForFamily(sa_family_t ai_family);
 

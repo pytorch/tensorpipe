@@ -76,8 +76,7 @@ class CmaChannelFactory
   friend class CmaChannel;
 };
 
-class CmaChannel : public Channel,
-                   public std::enable_shared_from_this<CmaChannel> {
+class CmaChannel : public Channel {
   // Use the passkey idiom to allow make_shared to call what should be a private
   // constructor. See https://abseil.io/tips/134 for more information.
   struct ConstructorToken {};
