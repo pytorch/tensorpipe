@@ -42,10 +42,6 @@ class Connection final : public transport::Connection,
 
   ~Connection() override;
 
-  // Kickstart connection state machine. Must be called outside
-  // constructor because it calls `shared_from_this()`.
-  void start();
-
   // Implementation of transport::Connection.
   void read(read_callback_fn fn) override;
 
@@ -68,6 +64,10 @@ class Connection final : public transport::Connection,
 
   std::shared_ptr<Loop> loop_;
   std::shared_ptr<Impl> impl_;
+
+  // Kickstart connection state machine. Must be called outside
+  // constructor because it calls `shared_from_this()`.
+  void init_();
 };
 
 } // namespace shm

@@ -388,7 +388,7 @@ std::shared_ptr<Connection> Connection::create(
     std::shared_ptr<Socket> socket) {
   auto conn = std::make_shared<Connection>(
       ConstructorToken(), std::move(loop), std::move(socket));
-  conn->start();
+  conn->init_();
   return conn;
 }
 
@@ -402,7 +402,7 @@ Connection::~Connection() {
   loop_->deferToLoop([impl{impl_}]() { impl->closeFromLoop(); });
 }
 
-void Connection::start() {
+void Connection::init_() {
   loop_->deferToLoop([impl{impl_}]() { impl->initFromLoop(); });
 }
 
