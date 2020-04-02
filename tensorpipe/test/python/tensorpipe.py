@@ -28,6 +28,8 @@ class TestTensorpipe(unittest.TestCase):
 
         listener = tp.Listener(context, ["tcp://127.0.0.1"])
 
+        write_completed = threading.Event()
+
         def on_connection(pipe: tp.Pipe) -> None:
             global server_pipe
             tensor = tp.OutgoingTensor(b"World!", b"")
@@ -36,7 +38,7 @@ class TestTensorpipe(unittest.TestCase):
             server_pipe = pipe
 
         def on_write() -> None:
-            pass
+            write_completed.set()
 
         listener.listen(on_connection)
 
@@ -61,16 +63,18 @@ class TestTensorpipe(unittest.TestCase):
 
         client_pipe.read_descriptor(on_read_descriptor)
 
+        write_completed.wait()
         read_completed.wait()
 
         self.assertEqual(received_message, bytearray(b"Hello "))
         self.assertEqual(received_tensors, [bytearray(b"World!")])
 
-        # del client_pipe
-        # del server_pipe
-        # del listener
-
-        # context.join()
+        # Due to a current limitation we're not releasing the GIL when calling
+        # the context's destructor, which implicitly calls join, which may fire
+        # some callbacks that also try to acquire the GIL and thus deadlock.
+        # So, for now, we must explicitly call join.
+        # See https://github.com/pybind/pybind11/issues/1446.
+        context.join()
 
 
 if __name__ == "__main__":

@@ -263,7 +263,10 @@ PYBIND11_MODULE(pytensorpipe, module) {
   pipe.def(
       py::init(&tensorpipe::Pipe::create), py::arg("context"), py::arg("url"));
 
-  context.def("join", &tensorpipe::Context::join);
+  context.def(
+      "join",
+      &tensorpipe::Context::join,
+      py::call_guard<py::gil_scoped_release>());
 
   // Callback registration.
 
