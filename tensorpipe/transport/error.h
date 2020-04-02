@@ -58,5 +58,12 @@ class EOFError final : public BaseError {
   std::string what() const override;
 };
 
+class ConnectionClosedError final : public BaseError {
+ public:
+  ConnectionClosedError() {}
+
+  std::string what() const override;
+};
+
 } // namespace transport
 } // namespace tensorpipe

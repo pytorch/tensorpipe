@@ -69,6 +69,9 @@ TEST(Reactor, Basic) {
         // Wait for other process to run trigger.
         ASSERT_EQ(queue.pop(), 1);
         ASSERT_EQ(queue.pop(), 2);
+
+        reactor->remove(token1);
+        reactor->remove(token2);
       },
       [](int fd) {
         Reactor::TToken token1;
@@ -114,4 +117,8 @@ TEST(Reactor, TokenReuse) {
   auto t6 = reactor->add([&] { queue.push(6); });
   ASSERT_EQ(t5, t2);
   ASSERT_EQ(t6, t3);
+
+  reactor->remove(t4);
+  reactor->remove(t5);
+  reactor->remove(t6);
 }

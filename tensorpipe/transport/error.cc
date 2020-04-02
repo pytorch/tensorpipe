@@ -38,5 +38,9 @@ std::string EOFError::what() const {
   return "eof";
 }
 
+std::string ConnectionClosedError::what() const {
+  return "connection closed";
+}
+
 } // namespace transport
 } // namespace tensorpipe

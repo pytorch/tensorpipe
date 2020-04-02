@@ -10,6 +10,7 @@
 
 #include <atomic>
 #include <functional>
+#include <list>
 #include <mutex>
 #include <set>
 #include <thread>
@@ -42,7 +43,11 @@ class Reactor final {
 
   explicit Reactor();
 
-  ~Reactor();
+  using TDeferredFunction = std::function<void()>;
+
+  // Run function on reactor thread.
+  // If the function throws, the thread crashes.
+  void deferToLoop(TDeferredFunction fn);
 
   // Add function to the reactor.
   // Returns token that can be used to trigger it.
@@ -61,6 +66,12 @@ class Reactor final {
     return std::this_thread::get_id() == thread_.get_id();
   }
 
+  void close();
+
+  void join();
+
+  ~Reactor();
+
  private:
   Fd headerFd_;
   Fd dataFd_;
@@ -69,7 +80,12 @@ class Reactor final {
 
   std::mutex mutex_;
   std::thread thread_;
-  std::atomic_bool done_{false};
+  std::atomic<bool> closed_{false};
+  std::atomic<bool> joined_{false};
+
+  TToken deferredFunctionToken_;
+  std::mutex deferredFunctionMutex_;
+  std::list<TDeferredFunction> deferredFunctionList_;
 
   // Reactor thread entry point.
   void run();
@@ -83,6 +99,12 @@ class Reactor final {
   // and comfortably use a std::vector here.
   //
   std::vector<TFunction> functions_;
+
+  // Count how many functions are registered.
+  std::atomic<uint64_t> functionCount_{0};
+
+  // Called in response to a deferred function.
+  void handleDeferredFunctionFromLoop();
 
  public:
   class Trigger {
