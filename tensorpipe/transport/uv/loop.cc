@@ -35,8 +35,8 @@ void Loop::close() {
   bool wasClosed = false;
   closed_.compare_exchange_strong(wasClosed, true);
   if (!wasClosed) {
+    closingEmitter_.close();
     deferToLoop(runIfAlive(*this, std::function<void(Loop&)>([](Loop& loop) {
-      loop.closeAllHandlesFromLoop();
       uv_unref(reinterpret_cast<uv_handle_t*>(loop.async_.get()));
     })));
   }
@@ -114,17 +114,6 @@ void Loop::runFunctionsFromLoop() {
 
   for (auto& fn : fns) {
     fn();
-  }
-}
-
-void Loop::closeAllHandlesFromLoop() {
-  uv_walk(loop_.get(), this->closeOneHandleFromLoop, nullptr);
-}
-
-void Loop::closeOneHandleFromLoop(uv_handle_t* uvHandle, void* /* unused */) {
-  if (uvHandle->type == UV_TCP) {
-    TCPHandle& ourHandle = *reinterpret_cast<TCPHandle*>(uvHandle->data);
-    ourHandle.closeFromLoop();
   }
 }
 

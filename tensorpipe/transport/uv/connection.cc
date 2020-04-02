@@ -218,6 +218,7 @@ class Connection::Impl : public std::enable_shared_from_this<Connection::Impl> {
   std::shared_ptr<Loop> loop_;
   std::shared_ptr<TCPHandle> handle_;
   Error error_{Error::kSuccess};
+  ClosingReceiver closingReceiver_;
 
   std::deque<ReadOperation> readOperations_;
   std::deque<WriteOperation> writeOperations_;
@@ -231,10 +232,13 @@ class Connection::Impl : public std::enable_shared_from_this<Connection::Impl> {
 Connection::Impl::Impl(
     std::shared_ptr<Loop> loop,
     std::shared_ptr<TCPHandle> handle)
-    : loop_(std::move(loop)), handle_(std::move(handle)) {}
+    : loop_(std::move(loop)),
+      handle_(std::move(handle)),
+      closingReceiver_(loop_, loop_->closingEmitter_) {}
 
 void Connection::Impl::initFromLoop() {
   leak_ = shared_from_this();
+  closingReceiver_.activate(*this);
   handle_->armCloseCallbackFromLoop(
       [this]() { this->closeCallbackFromLoop_(); });
   handle_->armAllocCallbackFromLoop(

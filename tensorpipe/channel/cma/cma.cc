@@ -82,6 +82,7 @@ void CmaChannelFactory::close() {
   bool wasClosed = false;
   closed_.compare_exchange_strong(wasClosed, true);
   if (!wasClosed) {
+    closingEmitter_.close();
     requests_.push(nullopt);
   }
 }
@@ -174,7 +175,9 @@ CmaChannel::Impl::Impl(
     ConstructorToken /* unused */,
     std::shared_ptr<CmaChannelFactory> factory,
     std::shared_ptr<transport::Connection> connection)
-    : factory_(std::move(factory)), connection_(std::move(connection)) {}
+    : factory_(std::move(factory)),
+      connection_(std::move(connection)),
+      closingReceiver_(factory_, factory_->closingEmitter_) {}
 
 void CmaChannel::Impl::init_() {
   deferToLoop_([this]() { initFromLoop_(); });
@@ -182,6 +185,7 @@ void CmaChannel::Impl::init_() {
 
 void CmaChannel::Impl::initFromLoop_() {
   TP_DCHECK(inLoop_());
+  closingReceiver_.activate(*this);
   readPacket_();
 }
 

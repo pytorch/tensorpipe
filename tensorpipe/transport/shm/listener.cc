@@ -13,6 +13,7 @@
 #include <mutex>
 #include <vector>
 
+#include <tensorpipe/common/callback.h>
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/optional.h>
 #include <tensorpipe/transport/error.h>
@@ -38,6 +39,7 @@ class Listener::Impl : public std::enable_shared_from_this<Listener::Impl>,
   // Called to obtain the listener's address.
   std::string addrFromLoop() const;
 
+  void close();
   void closeFromLoop();
 
   void handleEventsFromLoop(int events) override;
@@ -47,6 +49,7 @@ class Listener::Impl : public std::enable_shared_from_this<Listener::Impl>,
   std::shared_ptr<Socket> socket_;
   Sockaddr addr_;
   std::deque<accept_callback_fn> fns_;
+  ClosingReceiver closingReceiver_;
 };
 
 std::shared_ptr<Listener> Listener::create_(
@@ -58,10 +61,12 @@ std::shared_ptr<Listener> Listener::create_(
 Listener::Impl::Impl(std::shared_ptr<Loop> loop, const Sockaddr& addr)
     : loop_(std::move(loop)),
       socket_(Socket::createForFamily(AF_UNIX)),
-      addr_(addr) {}
+      addr_(addr),
+      closingReceiver_(loop_, loop_->closingEmitter_) {}
 
 void Listener::Impl::initFromLoop() {
   TP_DCHECK(loop_->inLoopThread());
+  closingReceiver_.activate(*this);
   // Bind socket to abstract socket address.
   socket_->bind(addr_);
   socket_->block(false);
@@ -87,7 +92,11 @@ void Listener::Impl::closeFromLoop() {
 }
 
 void Listener::close() {
-  loop_->deferToLoop([impl{impl_}]() { impl->closeFromLoop(); });
+  impl_->close();
+}
+
+void Listener::Impl::close() {
+  loop_->deferToLoop([impl{shared_from_this()}]() { impl->closeFromLoop(); });
 }
 
 Listener::~Listener() {

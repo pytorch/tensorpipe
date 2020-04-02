@@ -164,6 +164,8 @@ class Pipe final {
     optional<uint64_t> registrationId_;
     std::unordered_map<std::string, uint64_t> channelRegistrationIds_;
 
+    ClosingReceiver closingReceiver_;
+
     enum ConnectionState { NEXT_UP_IS_DESCRIPTOR, NEXT_UP_IS_DATA };
 
     ConnectionState connectionState_{NEXT_UP_IS_DESCRIPTOR};

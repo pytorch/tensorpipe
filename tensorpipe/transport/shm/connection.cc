@@ -294,6 +294,7 @@ class Connection::Impl : public std::enable_shared_from_this<Connection::Impl>,
   // Called to initialize member fields that need `shared_from_this`.
   void initFromLoop();
 
+  void close();
   void closeFromLoop();
 
   // Implementation of transport::Connection.
@@ -352,6 +353,7 @@ class Connection::Impl : public std::enable_shared_from_this<Connection::Impl>,
   std::shared_ptr<Loop> loop_;
   std::shared_ptr<Reactor> reactor_;
   std::shared_ptr<Socket> socket_;
+  ClosingReceiver closingReceiver_;
 
   // Inbox.
   int inboxHeaderFd_;
@@ -406,7 +408,11 @@ Connection::Connection(
 }
 
 void Connection::close() {
-  loop_->deferToLoop([impl{impl_}]() { impl->closeFromLoop(); });
+  impl_->close();
+}
+
+void Connection::Impl::close() {
+  loop_->deferToLoop([impl{shared_from_this()}]() { impl->closeFromLoop(); });
 }
 
 Connection::~Connection() {
@@ -418,7 +424,8 @@ Connection::Impl::Impl(
     std::shared_ptr<Socket> socket)
     : loop_(std::move(loop)),
       reactor_(loop_->reactor()),
-      socket_(std::move(socket)) {
+      socket_(std::move(socket)),
+      closingReceiver_(loop_, loop_->closingEmitter_) {
   // Ensure underlying control socket is non-blocking such that it
   // works well with event driven I/O.
   socket_->block(false);
@@ -426,6 +433,8 @@ Connection::Impl::Impl(
 
 void Connection::Impl::initFromLoop() {
   TP_DCHECK(loop_->inLoopThread());
+
+  closingReceiver_.activate(*this);
 
   // Create ringbuffer for inbox.
   std::shared_ptr<util::ringbuffer::RingBuffer> inboxRingBuffer;

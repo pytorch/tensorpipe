@@ -72,6 +72,8 @@ void Context::close() {
   if (closed_.compare_exchange_strong(wasClosed, true)) {
     TP_DCHECK(!wasClosed);
 
+    closingEmitter_.close();
+
     for (auto& iter : contexts_) {
       iter.second->close();
     }

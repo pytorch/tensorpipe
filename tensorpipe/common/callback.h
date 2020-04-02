@@ -364,4 +364,69 @@ class DeferringTolerantCallbackWrapper {
   }
 };
 
+// This class is designed to be installed on objects that, when closed, should
+// in turn cause other objects to be closed too. This is the case for contexts
+// and factories, which close pipes, connections, listeners and channels.
+// This class goes hand in hand with the one following it.
+class ClosingEmitter {
+ public:
+  void subscribe(uintptr_t token, std::function<void()> fn) {
+    std::unique_lock<std::mutex> lock(mutex_);
+    receivers_.emplace(token, std::move(fn));
+  }
+
+  void unsubscribe(uintptr_t token) {
+    std::unique_lock<std::mutex> lock(mutex_);
+    receivers_.erase(token);
+  }
+
+  void close() {
+    std::unique_lock<std::mutex> lock(mutex_);
+    for (auto& it : receivers_) {
+      it.second();
+    }
+  }
+
+ private:
+  // We need a mutex because at the moment the users of this class are accessing
+  // it directly, without being proxied through a method of the object hosting
+  // the emitter, and thus not being channeled through its event loop.
+  std::mutex mutex_;
+  std::unordered_map<uintptr_t, std::function<void()>> receivers_;
+};
+
+// This class is designed to be installed on objects that need to become closed
+// when another object is closed. This is the case for pipes, connections,
+// listeners and channels when contexts and factories get closed.
+// This class goes hand in hand with the previous one.
+class ClosingReceiver {
+ public:
+  // T will be the context or the channel factory.
+  template <typename T>
+  ClosingReceiver(const std::shared_ptr<T>& object, ClosingEmitter& emitter)
+      : emitter_(std::shared_ptr<ClosingEmitter>(object, &emitter)) {}
+
+  // T will be the pipe, the connection or the channel.
+  template <typename T>
+  void activate(T& subject) {
+    TP_DCHECK_EQ(token_, 0);
+    token_ = reinterpret_cast<uint64_t>(&subject);
+    TP_DCHECK_GT(token_, 0);
+    emitter_->subscribe(
+        token_, runIfAlive(subject, std::function<void(T&)>([](T& subject) {
+                             subject.close();
+                           })));
+  }
+
+  ~ClosingReceiver() {
+    if (token_ > 0) {
+      emitter_->unsubscribe(token_);
+    }
+  }
+
+ private:
+  uintptr_t token_{0};
+  std::shared_ptr<ClosingEmitter> emitter_;
+};
+
 } // namespace tensorpipe

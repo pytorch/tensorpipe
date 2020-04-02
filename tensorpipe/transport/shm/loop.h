@@ -20,12 +20,16 @@
 
 #include <sys/epoll.h>
 
+#include <tensorpipe/common/callback.h>
 #include <tensorpipe/transport/shm/fd.h>
 #include <tensorpipe/transport/shm/reactor.h>
 
 namespace tensorpipe {
 namespace transport {
 namespace shm {
+
+class Connection;
+class Listener;
 
 // Abstract base class called by the epoll(2) event loop.
 //
@@ -235,6 +239,7 @@ class Loop final : public std::enable_shared_from_this<Loop> {
   std::atomic<bool> joined_{false};
   std::mutex mutex_;
   std::thread thread_;
+  ClosingEmitter closingEmitter_;
 
   // Store weak_ptr for every registered fd.
   std::vector<std::weak_ptr<EventHandler>> handlers_;
@@ -247,6 +252,9 @@ class Loop final : public std::enable_shared_from_this<Loop> {
 
   // Called by the reactor in response to a deferred function.
   void handleDeferredFunctionFromLoop();
+
+  friend class Connection;
+  friend class Listener;
 };
 
 } // namespace shm

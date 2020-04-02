@@ -37,7 +37,7 @@ std::shared_ptr<Channel> BasicChannelFactory::createChannel(
 }
 
 void BasicChannelFactory::close() {
-  // Nothing to do?
+  closingEmitter_.close();
 }
 
 void BasicChannelFactory::join() {
@@ -71,6 +71,7 @@ BasicChannel::Impl::Impl(
     std::shared_ptr<transport::Connection> connection)
     : factory_(std::move(factory)),
       connection_(std::move(connection)),
+      closingReceiver_(factory_, factory_->closingEmitter_),
       readCallbackWrapper_(*this),
       readProtoCallbackWrapper_(*this),
       writeCallbackWrapper_(*this),
@@ -195,6 +196,7 @@ void BasicChannel::Impl::init_() {
 
 void BasicChannel::Impl::initFromLoop_() {
   TP_DCHECK(inLoop_());
+  closingReceiver_.activate(*this);
   readPacket_();
 }
 

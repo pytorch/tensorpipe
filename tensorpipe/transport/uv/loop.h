@@ -24,6 +24,9 @@ namespace tensorpipe {
 namespace transport {
 namespace uv {
 
+class Connection;
+class Listener;
+
 class Loop final : public std::enable_shared_from_this<Loop> {
   // The constructor needs to be public (so that make_shared can invoke it) but
   // in order to prevent external users from calling it (to force them to use
@@ -88,6 +91,7 @@ class Loop final : public std::enable_shared_from_this<Loop> {
   std::unique_ptr<uv_async_t> async_;
   std::atomic<bool> closed_{false};
   std::atomic<bool> joined_{false};
+  ClosingEmitter closingEmitter_;
 
   // Wake up the event loop.
   void wakeup();
@@ -106,9 +110,8 @@ class Loop final : public std::enable_shared_from_this<Loop> {
   // on the loop class.
   void runFunctionsFromLoop();
 
-  void closeAllHandlesFromLoop();
-
-  static void closeOneHandleFromLoop(uv_handle_t* handle, void* /* unused */);
+  friend class Connection;
+  friend class Listener;
 };
 
 } // namespace uv

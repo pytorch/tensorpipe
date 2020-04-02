@@ -64,6 +64,7 @@ class CmaChannelFactory
   Queue<optional<CopyRequest>> requests_;
   std::atomic<bool> closed_{false};
   std::atomic<bool> joined_{false};
+  ClosingEmitter closingEmitter_;
 
   void init_();
 
@@ -178,6 +179,7 @@ class CmaChannel : public Channel {
     std::shared_ptr<CmaChannelFactory> factory_;
     std::shared_ptr<transport::Connection> connection_;
     Error error_{Error::kSuccess};
+    ClosingReceiver closingReceiver_;
 
     // Increasing identifier for send operations.
     uint64_t id_{0};

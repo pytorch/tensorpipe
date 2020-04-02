@@ -49,6 +49,7 @@ class Listener::Impl : public std::enable_shared_from_this<Listener::Impl> {
   std::shared_ptr<Loop> loop_;
   std::shared_ptr<TCPHandle> handle_;
   // TODO Add proper error handling.
+  ClosingReceiver closingReceiver_;
 
   // Once an accept callback fires, it becomes disarmed and must be rearmed.
   // Any firings that occur while the callback is disarmed are stashed and
@@ -72,10 +73,13 @@ class Listener::Impl : public std::enable_shared_from_this<Listener::Impl> {
 Listener::Impl::Impl(
     std::shared_ptr<Loop> loop,
     std::shared_ptr<TCPHandle> handle)
-    : loop_(std::move(loop)), handle_(std::move(handle)) {}
+    : loop_(std::move(loop)),
+      handle_(std::move(handle)),
+      closingReceiver_(loop_, loop_->closingEmitter_) {}
 
 void Listener::Impl::initFromLoop() {
   leak_ = shared_from_this();
+  closingReceiver_.activate(*this);
   handle_->armCloseCallbackFromLoop(
       [this]() { this->closeCallbackFromLoop_(); });
   handle_->listenFromLoop(

@@ -86,6 +86,7 @@ void Loop::close() {
   bool wasClosed = false;
   closed_.compare_exchange_strong(wasClosed, true);
   if (!wasClosed) {
+    closingEmitter_.close();
     wakeup();
   }
 }

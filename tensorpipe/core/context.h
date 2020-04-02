@@ -17,6 +17,7 @@
 #include <vector>
 
 #include <tensorpipe/channel/channel.h>
+#include <tensorpipe/common/callback.h>
 #include <tensorpipe/common/optional.h>
 #include <tensorpipe/common/queue.h>
 #include <tensorpipe/transport/context.h>
@@ -72,6 +73,8 @@ class Context final {
 
   std::shared_ptr<transport::Context> getContextForTransport_(std::string);
   std::shared_ptr<channel::ChannelFactory> getChannelFactory_(std::string);
+
+  ClosingEmitter closingEmitter_;
 
   friend class Listener;
   friend class Pipe;

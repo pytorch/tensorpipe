@@ -131,6 +131,8 @@ class Listener final : public std::enable_shared_from_this<Listener> {
   std::unordered_map<uint64_t, connection_request_callback_fn>
       connectionRequestRegistrations_;
 
+  ClosingReceiver closingReceiver_;
+
   //
   // Initialization
   //

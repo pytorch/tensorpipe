@@ -39,6 +39,9 @@ class BasicChannelFactory
 
  private:
   std::string domainDescriptor_;
+  ClosingEmitter closingEmitter_;
+
+  friend class BasicChannel;
 };
 
 class BasicChannel : public Channel {
@@ -143,6 +146,7 @@ class BasicChannel : public Channel {
     std::shared_ptr<BasicChannelFactory> factory_;
     std::shared_ptr<transport::Connection> connection_;
     Error error_{Error::kSuccess};
+    ClosingReceiver closingReceiver_;
 
     // Increasing identifier for send operations.
     uint64_t id_{0};

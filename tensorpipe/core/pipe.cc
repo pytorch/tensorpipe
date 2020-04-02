@@ -89,6 +89,7 @@ Pipe::Impl::Impl(
       context_(std::move(context)),
       transport_(std::move(transport)),
       connection_(std::move(connection)),
+      closingReceiver_(context_, context_->closingEmitter_),
       readCallbackWrapper_(*this),
       readPacketCallbackWrapper_(*this),
       writeCallbackWrapper_(*this),
@@ -109,6 +110,7 @@ Pipe::Impl::Impl(
       listener_(std::move(listener)),
       transport_(std::move(transport)),
       connection_(std::move(connection)),
+      closingReceiver_(context_, context_->closingEmitter_),
       readCallbackWrapper_(*this),
       readPacketCallbackWrapper_(*this),
       writeCallbackWrapper_(*this),
@@ -124,6 +126,7 @@ void Pipe::Impl::start_() {
 
 void Pipe::Impl::startFromLoop_() {
   TP_DCHECK(inLoop_());
+  closingReceiver_.activate(*this);
   if (state_ == CLIENT_ABOUT_TO_SEND_HELLO_AND_BROCHURE) {
     auto pbPacketOut = std::make_shared<proto::Packet>();
     // This makes the packet contain a SpontaneousConnection message.

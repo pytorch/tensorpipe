@@ -30,6 +30,7 @@ Listener::Listener(
     std::shared_ptr<Context> context,
     const std::vector<std::string>& urls)
     : context_(std::move(context)),
+      closingReceiver_(context_, context_->closingEmitter_),
       readPacketCallbackWrapper_(*this),
       acceptCallbackWrapper_(*this) {
   for (const auto& url : urls) {
@@ -49,6 +50,7 @@ Listener::Listener(
 
 void Listener::start_() {
   std::unique_lock<std::mutex> lock(mutex_);
+  closingReceiver_.activate(*this);
   for (const auto& listener : listeners_) {
     armListener_(listener.first, lock);
   }
