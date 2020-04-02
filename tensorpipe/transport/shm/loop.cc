@@ -82,15 +82,26 @@ Loop::Loop(ConstructorToken /* unused */) {
   thread_ = std::thread(&Loop::loop, this);
 }
 
-Loop::~Loop() {
-  if (!done_) {
-    TP_LOG_WARNING()
-        << "The loop is being destroyed but join() wasn't called on it. "
-        << "Perhaps a scope exited prematurely, possibly due to an exception?";
-    join();
+void Loop::close() {
+  bool wasClosed = false;
+  closed_.compare_exchange_strong(wasClosed, true);
+  if (!wasClosed) {
+    wakeup();
   }
-  TP_DCHECK(done_);
-  TP_DCHECK(!thread_.joinable());
+}
+
+void Loop::join() {
+  close();
+
+  bool wasJoined = false;
+  joined_.compare_exchange_strong(wasJoined, true);
+  if (!wasJoined) {
+    thread_.join();
+  }
+}
+
+Loop::~Loop() {
+  join();
 }
 
 void Loop::deferToLoop(TDeferredFunction fn) {
@@ -190,16 +201,10 @@ void Loop::loop() {
     // Return if another thread is waiting in `join` and there is
     // nothing left to be done. The handler count is equal to 1
     // because we're always monitoring the eventfd for wakeups.
-    if (done_ && handlerCount_ == 1) {
+    if (closed_ && handlerCount_ == 1) {
       return;
     }
   }
-}
-
-void Loop::join() {
-  done_ = true;
-  wakeup();
-  thread_.join();
 }
 
 void Loop::handleEpollEventsFromLoop() {

@@ -405,8 +405,12 @@ Connection::Connection(
   loop_->deferToLoop([impl{impl_}]() { impl->initFromLoop(); });
 }
 
-Connection::~Connection() {
+void Connection::close() {
   loop_->deferToLoop([impl{impl_}]() { impl->closeFromLoop(); });
+}
+
+Connection::~Connection() {
+  close();
 }
 
 Connection::Impl::Impl(

@@ -199,6 +199,7 @@ class Connection::Impl : public std::enable_shared_from_this<Connection::Impl> {
   void writeFromLoop(const void* ptr, size_t length, write_callback_fn fn);
 
   // Called to shut down the connection and its resources.
+  void close();
   void closeFromLoop();
 
  private:
@@ -298,6 +299,10 @@ void Connection::Impl::writeFromLoop(
   handle_->writeFromLoop(bufsPtr, bufsLen, [this](int status) {
     this->writeCallbackFromLoop_(status);
   });
+}
+
+void Connection::Impl::close() {
+  loop_->deferToLoop([impl{shared_from_this()}]() { impl->closeFromLoop(); });
 }
 
 void Connection::Impl::closeFromLoop() {
@@ -412,8 +417,12 @@ void Connection::write(const void* ptr, size_t length, write_callback_fn fn) {
   });
 }
 
-Connection::~Connection() {
+void Connection::close() {
   loop_->deferToLoop([impl{impl_}]() { impl->closeFromLoop(); });
+}
+
+Connection::~Connection() {
+  close();
 }
 
 } // namespace uv

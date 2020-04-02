@@ -31,25 +31,37 @@ Loop::Loop(ConstructorToken /* unused */)
   thread_ = std::thread(&Loop::loop, this);
 }
 
-Loop::~Loop() noexcept {
-  // Thread must have been joined before destructing the loop.
-  TP_DCHECK(!thread_.joinable());
-  // Release resources associated with loop.
-  auto rv = uv_loop_close(loop_.get());
-  TP_THROW_UV_IF(rv < 0, rv);
+void Loop::close() {
+  bool wasClosed = false;
+  closed_.compare_exchange_strong(wasClosed, true);
+  if (!wasClosed) {
+    deferToLoop(runIfAlive(*this, std::function<void(Loop&)>([](Loop& loop) {
+      loop.closeAllHandlesFromLoop();
+      uv_unref(reinterpret_cast<uv_handle_t*>(loop.async_.get()));
+    })));
+  }
 }
 
 void Loop::join() {
-  deferToLoop(runIfAlive(*this, std::function<void(Loop&)>([](Loop& loop) {
-    loop.closeAllHandlesFromLoop();
-    uv_unref(reinterpret_cast<uv_handle_t*>(loop.async_.get()));
-  })));
+  close();
 
-  // Wait for event loop thread to terminate.
-  thread_.join();
+  bool wasJoined = false;
+  joined_.compare_exchange_strong(wasJoined, true);
+  if (!wasJoined) {
+    // Wait for event loop thread to terminate.
+    thread_.join();
 
-  // There should not be any pending deferred work at this time.
-  TP_DCHECK(fns_.empty());
+    // There should not be any pending deferred work at this time.
+    TP_DCHECK(fns_.empty());
+  }
+}
+
+Loop::~Loop() noexcept {
+  join();
+
+  // Release resources associated with loop.
+  auto rv = uv_loop_close(loop_.get());
+  TP_THROW_UV_IF(rv < 0, rv);
 }
 
 void Loop::deferToLoop(std::function<void()> fn) {

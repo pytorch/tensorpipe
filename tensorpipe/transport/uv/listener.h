@@ -32,13 +32,15 @@ class Listener : public transport::Listener {
       std::shared_ptr<Loop> loop,
       std::shared_ptr<TCPHandle> handle);
 
-  ~Listener() override;
-
   using transport::Listener::accept_callback_fn;
 
   void accept(accept_callback_fn fn) override;
 
   address_t addr() const override;
+
+  void close() override;
+
+  ~Listener() override;
 
  private:
   // Create a listener that listens on the specified address.

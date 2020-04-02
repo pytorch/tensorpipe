@@ -34,6 +34,7 @@ class Listener::Impl : public std::enable_shared_from_this<Listener::Impl> {
   std::string addrFromLoop() const;
 
   // Called to shut down the connection and its resources.
+  void close();
   void closeFromLoop();
 
  private:
@@ -87,6 +88,10 @@ void Listener::Impl::acceptFromLoop(accept_callback_fn fn) {
 
 std::string Listener::Impl::addrFromLoop() const {
   return handle_->sockNameFromLoop().str();
+}
+
+void Listener::Impl::close() {
+  loop_->deferToLoop([impl{shared_from_this()}]() { impl->closeFromLoop(); });
 }
 
 void Listener::Impl::closeFromLoop() {
@@ -144,8 +149,12 @@ address_t Listener::addr() const {
   return addr;
 }
 
-Listener::~Listener() {
+void Listener::close() {
   loop_->deferToLoop([impl{impl_}]() { impl->closeFromLoop(); });
+}
+
+Listener::~Listener() {
+  close();
 }
 
 } // namespace uv

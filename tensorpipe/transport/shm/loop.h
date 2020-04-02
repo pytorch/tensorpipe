@@ -85,8 +85,6 @@ class Loop final : public std::enable_shared_from_this<Loop> {
 
   explicit Loop(ConstructorToken);
 
-  ~Loop();
-
   // Prefer using deferToLoop over runInLoop when you don't need to wait for the
   // result.
   template <typename F>
@@ -173,8 +171,12 @@ class Loop final : public std::enable_shared_from_this<Loop> {
     return handler;
   }
 
+  void close();
+
   // Tell loop to terminate when no more handlers remain.
   void join();
+
+  ~Loop();
 
   inline bool inLoopThread() {
     return reactor_->inReactorThread();
@@ -229,7 +231,8 @@ class Loop final : public std::enable_shared_from_this<Loop> {
 
   Fd epollFd_;
   Fd eventFd_;
-  std::atomic<bool> done_{false};
+  std::atomic<bool> closed_{false};
+  std::atomic<bool> joined_{false};
   std::mutex mutex_;
   std::thread thread_;
 

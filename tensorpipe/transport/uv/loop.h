@@ -36,10 +36,6 @@ class Loop final : public std::enable_shared_from_this<Loop> {
 
   explicit Loop(ConstructorToken);
 
-  ~Loop() noexcept;
-
-  void join();
-
   // Prefer using deferToLoop over runInLoop when you don't need to wait for the
   // result.
   template <typename F>
@@ -79,11 +75,19 @@ class Loop final : public std::enable_shared_from_this<Loop> {
     return loop_.get();
   }
 
+  void close();
+
+  void join();
+
+  ~Loop() noexcept;
+
  private:
   std::mutex mutex_;
   std::thread thread_;
   std::unique_ptr<uv_loop_t> loop_;
   std::unique_ptr<uv_async_t> async_;
+  std::atomic<bool> closed_{false};
+  std::atomic<bool> joined_{false};
 
   // Wake up the event loop.
   void wakeup();

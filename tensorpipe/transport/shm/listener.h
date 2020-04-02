@@ -28,13 +28,15 @@ class Listener final : public transport::Listener {
  public:
   Listener(ConstructorToken, std::shared_ptr<Loop> loop, const Sockaddr& addr);
 
-  ~Listener() override;
-
   using transport::Listener::accept_callback_fn;
 
   void accept(accept_callback_fn fn) override;
 
   address_t addr() const override;
+
+  void close() override;
+
+  ~Listener() override;
 
  private:
   static std::shared_ptr<Listener> create_(

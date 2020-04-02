@@ -19,8 +19,6 @@ namespace transport {
 
 class Connection {
  public:
-  virtual ~Connection() = default;
-
   using read_callback_fn =
       std::function<void(const Error& error, const void* ptr, size_t len)>;
 
@@ -61,6 +59,10 @@ class Connection {
   virtual void write(
       const google::protobuf::MessageLite& message,
       write_callback_fn fn);
+
+  virtual void close() = 0;
+
+  virtual ~Connection() = default;
 };
 
 } // namespace transport

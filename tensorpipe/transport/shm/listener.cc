@@ -78,13 +78,20 @@ Listener::Listener(
 
 void Listener::Impl::closeFromLoop() {
   TP_DCHECK(loop_->inLoopThread());
-  if (!fns_.empty()) {
-    loop_->unregisterDescriptor(socket_->fd());
+  if (socket_) {
+    if (!fns_.empty()) {
+      loop_->unregisterDescriptor(socket_->fd());
+    }
+    socket_.reset();
   }
 }
 
-Listener::~Listener() {
+void Listener::close() {
   loop_->deferToLoop([impl{impl_}]() { impl->closeFromLoop(); });
+}
+
+Listener::~Listener() {
+  close();
 }
 
 void Listener::accept(accept_callback_fn fn) {

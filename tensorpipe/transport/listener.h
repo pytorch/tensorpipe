@@ -21,8 +21,6 @@ class Connection;
 
 class Listener {
  public:
-  virtual ~Listener() = default;
-
   using accept_callback_fn =
       std::function<void(const Error& error, std::shared_ptr<Connection>)>;
 
@@ -33,6 +31,10 @@ class Listener {
   // front, or dynamically populated by the operating system (e.g. by
   // letting the operating system pick a TCP port to listen on).
   virtual address_t addr() const = 0;
+
+  virtual void close() = 0;
+
+  virtual ~Listener() = default;
 };
 
 } // namespace transport

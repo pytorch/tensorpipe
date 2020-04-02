@@ -32,10 +32,17 @@ std::string generateDomainDescriptor() {
 Context::Context()
     : loop_(Loop::create()), domainDescriptor_(generateDomainDescriptor()) {}
 
-Context::~Context() {}
+void Context::close() {
+  loop_->close();
+}
 
 void Context::join() {
+  close();
   loop_->join();
+}
+
+Context::~Context() {
+  join();
 }
 
 std::shared_ptr<transport::Connection> Context::connect(address_t addr) {

@@ -32,8 +32,6 @@ class Connection final : public transport::Connection {
       std::shared_ptr<Loop> loop,
       std::shared_ptr<Socket> socket);
 
-  ~Connection() override;
-
   // Implementation of transport::Connection.
   void read(read_callback_fn fn) override;
 
@@ -50,6 +48,11 @@ class Connection final : public transport::Connection {
   // Implementation of transport::Connection
   void write(const google::protobuf::MessageLite& message, write_callback_fn fn)
       override;
+
+  // Close connection.
+  void close() override;
+
+  ~Connection() override;
 
  private:
   static std::shared_ptr<Connection> create_(

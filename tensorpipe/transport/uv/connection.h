@@ -33,8 +33,6 @@ class Connection : public transport::Connection {
       std::shared_ptr<Loop> loop,
       std::shared_ptr<TCPHandle> handle);
 
-  ~Connection() override;
-
   using transport::Connection::read_callback_fn;
 
   void read(read_callback_fn fn) override;
@@ -44,6 +42,10 @@ class Connection : public transport::Connection {
   using transport::Connection::write_callback_fn;
 
   void write(const void* ptr, size_t length, write_callback_fn fn) override;
+
+  void close() override;
+
+  ~Connection() override;
 
  private:
   // Create a connection that connects to the specified address.

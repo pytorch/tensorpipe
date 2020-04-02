@@ -19,10 +19,6 @@ namespace transport {
 
 class Context {
  public:
-  virtual ~Context() = default;
-
-  virtual void join() = 0;
-
   virtual std::shared_ptr<Connection> connect(address_t addr) = 0;
 
   virtual std::shared_ptr<Listener> listen(address_t addr) = 0;
@@ -39,6 +35,12 @@ class Context {
   // only co-located processes generate the same domain descriptor.
   //
   virtual const std::string& domainDescriptor() const = 0;
+
+  virtual void close() = 0;
+
+  virtual void join() = 0;
+
+  virtual ~Context() = default;
 };
 
 } // namespace transport

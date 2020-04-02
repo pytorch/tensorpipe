@@ -20,15 +20,17 @@ class Context final : public transport::Context {
  public:
   explicit Context();
 
-  ~Context() override;
-
-  void join() override;
-
   std::shared_ptr<transport::Connection> connect(address_t addr) override;
 
   std::shared_ptr<transport::Listener> listen(address_t addr) override;
 
   const std::string& domainDescriptor() const override;
+
+  void close() override;
+
+  void join() override;
+
+  ~Context() override;
 
  private:
   std::shared_ptr<Loop> loop_;
