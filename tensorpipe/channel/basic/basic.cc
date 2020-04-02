@@ -31,7 +31,9 @@ std::shared_ptr<Channel> BasicChannelFactory::createChannel(
     std::shared_ptr<transport::Connection> connection,
     Channel::Endpoint /* unused */) {
   return std::make_shared<BasicChannel>(
-      BasicChannel::ConstructorToken(), std::move(connection));
+      BasicChannel::ConstructorToken(),
+      shared_from_this(),
+      std::move(connection));
 }
 
 void BasicChannelFactory::close() {
@@ -50,20 +52,25 @@ BasicChannelFactory::~BasicChannelFactory() {
 
 BasicChannel::BasicChannel(
     ConstructorToken /* unused */,
+    std::shared_ptr<BasicChannelFactory> factory,
     std::shared_ptr<transport::Connection> connection)
-    : impl_(Impl::create(std::move(connection))) {}
+    : impl_(Impl::create(std::move(factory), std::move(connection))) {}
 
 std::shared_ptr<BasicChannel::Impl> BasicChannel::Impl::create(
+    std::shared_ptr<BasicChannelFactory> factory,
     std::shared_ptr<transport::Connection> connection) {
-  auto impl = std::make_shared<Impl>(ConstructorToken(), std::move(connection));
+  auto impl = std::make_shared<Impl>(
+      ConstructorToken(), std::move(factory), std::move(connection));
   impl->init_();
   return impl;
 }
 
 BasicChannel::Impl::Impl(
     ConstructorToken /* unused */,
+    std::shared_ptr<BasicChannelFactory> factory,
     std::shared_ptr<transport::Connection> connection)
-    : connection_(std::move(connection)),
+    : factory_(std::move(factory)),
+      connection_(std::move(connection)),
       readCallbackWrapper_(*this),
       readProtoCallbackWrapper_(*this),
       writeCallbackWrapper_(*this),

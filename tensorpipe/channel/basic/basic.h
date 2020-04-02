@@ -19,7 +19,9 @@ namespace tensorpipe {
 namespace channel {
 namespace basic {
 
-class BasicChannelFactory : public ChannelFactory {
+class BasicChannelFactory
+    : public ChannelFactory,
+      public std::enable_shared_from_this<BasicChannelFactory> {
  public:
   explicit BasicChannelFactory();
 
@@ -47,6 +49,7 @@ class BasicChannel : public Channel {
  public:
   BasicChannel(
       ConstructorToken,
+      std::shared_ptr<BasicChannelFactory> factory,
       std::shared_ptr<transport::Connection> connection);
 
   // Send memory region to peer.
@@ -74,9 +77,14 @@ class BasicChannel : public Channel {
     struct ConstructorToken {};
 
    public:
-    static std::shared_ptr<Impl> create(std::shared_ptr<transport::Connection>);
+    static std::shared_ptr<Impl> create(
+        std::shared_ptr<BasicChannelFactory>,
+        std::shared_ptr<transport::Connection>);
 
-    Impl(ConstructorToken, std::shared_ptr<transport::Connection>);
+    Impl(
+        ConstructorToken,
+        std::shared_ptr<BasicChannelFactory>,
+        std::shared_ptr<transport::Connection>);
 
     void send(
         const void* ptr,
@@ -132,6 +140,7 @@ class BasicChannel : public Channel {
     // Called when protobuf packet is a reply.
     void onReply_(const proto::Reply& reply);
 
+    std::shared_ptr<BasicChannelFactory> factory_;
     std::shared_ptr<transport::Connection> connection_;
     Error error_{Error::kSuccess};
 
