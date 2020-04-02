@@ -38,5 +38,9 @@ std::string EOFError::what() const {
   return "eof";
 }
 
+std::string ChannelClosedError::what() const {
+  return "channel closed";
+}
+
 } // namespace channel
 } // namespace tensorpipe

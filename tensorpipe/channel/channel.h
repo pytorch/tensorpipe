@@ -55,8 +55,6 @@ class Channel {
 
   enum class Endpoint : bool { kConnect, kListen };
 
-  virtual ~Channel();
-
   // Send memory region to peer.
   virtual void send(
       const void* ptr,
@@ -70,6 +68,13 @@ class Channel {
       void* ptr,
       size_t length,
       TRecvCallback callback) = 0;
+
+  // Put the channel in a terminal state, aborting pending operations and
+  // rejecting future ones, and release its resources. This may be carried out
+  // asynchronously, in background.
+  virtual void close() = 0;
+
+  virtual ~Channel() = default;
 };
 
 // Abstract base class for channel factory classes.
@@ -81,8 +86,6 @@ class Channel {
 class ChannelFactory {
  public:
   explicit ChannelFactory(std::string name);
-
-  virtual ~ChannelFactory();
 
   // Return the factory's name.
   const std::string& name() const;
@@ -106,7 +109,15 @@ class ChannelFactory {
       std::shared_ptr<transport::Connection>,
       Channel::Endpoint) = 0;
 
-  virtual void join();
+  // Put the channel factory in a terminal state, in turn closing all of its
+  // channels, and release its resources. This may be done asynchronously, in
+  // background.
+  virtual void close() = 0;
+
+  // Wait for all resources to be released and all background activity to stop.
+  virtual void join() = 0;
+
+  virtual ~ChannelFactory() = default;
 
  private:
   std::string name_;

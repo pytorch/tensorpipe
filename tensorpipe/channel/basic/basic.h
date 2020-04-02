@@ -23,13 +23,17 @@ class BasicChannelFactory : public ChannelFactory {
  public:
   explicit BasicChannelFactory();
 
-  ~BasicChannelFactory() override;
-
   const std::string& domainDescriptor() const override;
 
   std::shared_ptr<Channel> createChannel(
       std::shared_ptr<transport::Connection>,
       Channel::Endpoint) override;
+
+  void close() override;
+
+  void join() override;
+
+  ~BasicChannelFactory() override;
 
  private:
   std::string domainDescriptor_;
@@ -59,6 +63,10 @@ class BasicChannel : public Channel {
       size_t length,
       TRecvCallback callback) override;
 
+  void close() override;
+
+  ~BasicChannel() override;
+
  private:
   class Impl : public std::enable_shared_from_this<Impl> {
     // Use the passkey idiom to allow make_shared to call what should be a
@@ -82,6 +90,8 @@ class BasicChannel : public Channel {
         size_t length,
         TRecvCallback callback);
 
+    void close();
+
    private:
     std::mutex mutex_;
     std::thread::id currentLoop_{std::thread::id()};
@@ -104,6 +114,8 @@ class BasicChannel : public Channel {
         TRecvCallback callback);
 
     void initFromLoop_();
+
+    void closeFromLoop_();
 
     // Called by factory class after construction.
     void init_();

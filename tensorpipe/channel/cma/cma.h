@@ -35,15 +35,17 @@ class CmaChannelFactory
 
   explicit CmaChannelFactory(ConstructorToken, int queueCapacity = INT_MAX);
 
-  ~CmaChannelFactory() override;
-
   const std::string& domainDescriptor() const override;
 
   std::shared_ptr<Channel> createChannel(
       std::shared_ptr<transport::Connection>,
       Channel::Endpoint) override;
 
+  void close() override;
+
   void join() override;
+
+  ~CmaChannelFactory() override;
 
  private:
   using copy_request_callback_fn = std::function<void(const Error&)>;
@@ -60,6 +62,7 @@ class CmaChannelFactory
   std::string domainDescriptor_;
   std::thread thread_;
   Queue<optional<CopyRequest>> requests_;
+  std::atomic<bool> closed_{false};
   std::atomic<bool> joined_{false};
 
   void init_();
@@ -101,6 +104,10 @@ class CmaChannel : public Channel {
       size_t length,
       TRecvCallback callback) override;
 
+  void close() override;
+
+  ~CmaChannel() override;
+
  private:
   class Impl : public std::enable_shared_from_this<Impl> {
     // Use the passkey idiom to allow make_shared to call what should be a
@@ -129,6 +136,8 @@ class CmaChannel : public Channel {
         size_t length,
         TRecvCallback callback);
 
+    void close();
+
    private:
     std::mutex mutex_;
     std::thread::id currentLoop_{std::thread::id()};
@@ -154,6 +163,8 @@ class CmaChannel : public Channel {
         void* ptr,
         size_t length,
         TRecvCallback callback);
+
+    void closeFromLoop_();
 
     // Arm connection to read next protobuf packet.
     void readPacket_();

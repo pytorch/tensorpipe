@@ -58,5 +58,12 @@ class EOFError final : public BaseError {
   std::string what() const override;
 };
 
+class ChannelClosedError final : public BaseError {
+ public:
+  ChannelClosedError() {}
+
+  std::string what() const override;
+};
+
 } // namespace channel
 } // namespace tensorpipe

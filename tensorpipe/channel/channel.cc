@@ -11,13 +11,7 @@
 namespace tensorpipe {
 namespace channel {
 
-Channel::~Channel() {}
-
 ChannelFactory::ChannelFactory(std::string name) : name_(std::move(name)) {}
-
-void ChannelFactory::join() {}
-
-ChannelFactory::~ChannelFactory() {}
 
 const std::string& ChannelFactory::name() const {
   return name_;

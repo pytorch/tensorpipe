@@ -10,9 +10,11 @@
 
 #include <algorithm>
 
+#include <tensorpipe/channel/error.h>
 #include <tensorpipe/channel/helpers.h>
 #include <tensorpipe/common/callback.h>
 #include <tensorpipe/common/defs.h>
+#include <tensorpipe/common/error_macros.h>
 
 namespace tensorpipe {
 namespace channel {
@@ -20,8 +22,6 @@ namespace basic {
 
 BasicChannelFactory::BasicChannelFactory()
     : ChannelFactory("basic"), domainDescriptor_("any") {}
-
-BasicChannelFactory::~BasicChannelFactory() {}
 
 const std::string& BasicChannelFactory::domainDescriptor() const {
   return domainDescriptor_;
@@ -32,6 +32,20 @@ std::shared_ptr<Channel> BasicChannelFactory::createChannel(
     Channel::Endpoint /* unused */) {
   return std::make_shared<BasicChannel>(
       BasicChannel::ConstructorToken(), std::move(connection));
+}
+
+void BasicChannelFactory::close() {
+  // Nothing to do?
+}
+
+void BasicChannelFactory::join() {
+  close();
+
+  // Nothing to do?
+}
+
+BasicChannelFactory::~BasicChannelFactory() {
+  join();
 }
 
 BasicChannel::BasicChannel(
@@ -177,6 +191,26 @@ void BasicChannel::Impl::initFromLoop_() {
   readPacket_();
 }
 
+void BasicChannel::close() {
+  impl_->close();
+}
+
+BasicChannel::~BasicChannel() {
+  close();
+}
+
+void BasicChannel::Impl::close() {
+  deferToLoop_([this]() { closeFromLoop_(); });
+}
+
+void BasicChannel::Impl::closeFromLoop_() {
+  TP_DCHECK(inLoop_());
+  if (!error_) {
+    error_ = TP_CREATE_ERROR(ChannelClosedError);
+    handleError_();
+  }
+}
+
 void BasicChannel::Impl::readPacket_() {
   TP_DCHECK(inLoop_());
   auto packet = std::make_shared<proto::Packet>();
@@ -287,8 +321,7 @@ void BasicChannel::Impl::handleError_() {
   TP_DCHECK(inLoop_());
   // Close the connection so that all current operations will be aborted. This
   // will cause their callbacks to be invoked, and only then we'll invoke ours.
-  // FIXME Just use close (once we have it), instead of resetting the pointer
-  connection_.reset();
+  connection_->close();
 }
 
 } // namespace basic

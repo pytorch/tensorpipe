@@ -74,25 +74,33 @@ void CmaChannelFactory::init_() {
   thread_ = std::thread(&CmaChannelFactory::handleCopyRequests_, this);
 }
 
+void CmaChannelFactory::close() {
+  // FIXME Acquiring this lock causes a deadlock when calling join. The solution
+  // is avoiding locks by using the event loop approach just like in transports.
+  // std::unique_lock<std::mutex> lock(mutex_);
+
+  bool wasClosed = false;
+  closed_.compare_exchange_strong(wasClosed, true);
+  if (!wasClosed) {
+    requests_.push(nullopt);
+  }
+}
+
 void CmaChannelFactory::join() {
   std::unique_lock<std::mutex> lock(mutex_);
-  TP_THROW_ASSERT_IF(joined_);
-  joined_ = true;
-  requests_.push(nullopt);
-  thread_.join();
+
+  close();
+
+  bool wasJoined = false;
+  joined_.compare_exchange_strong(wasJoined, true);
+  if (!wasJoined) {
+    thread_.join();
+    // TP_DCHECK(requests_.empty());
+  }
 }
 
 CmaChannelFactory::~CmaChannelFactory() {
-  if (!joined_) {
-    TP_LOG_WARNING()
-        << "The channel factory is being destroyed but join() wasn't called on "
-        << "it. Perhaps a scope exited prematurely, possibly due to an "
-        << "exception?";
-    join();
-  }
-  TP_DCHECK(joined_);
-  // TP_DCHECK(requests_.empty());
-  TP_DCHECK(!thread_.joinable());
+  join();
 }
 
 const std::string& CmaChannelFactory::domainDescriptor() const {
@@ -307,6 +315,26 @@ void CmaChannel::Impl::recvFromLoop_(
       }));
 }
 
+void CmaChannel::close() {
+  impl_->close();
+}
+
+CmaChannel::~CmaChannel() {
+  close();
+}
+
+void CmaChannel::Impl::close() {
+  deferToLoop_([this]() { closeFromLoop_(); });
+}
+
+void CmaChannel::Impl::closeFromLoop_() {
+  TP_DCHECK(inLoop_());
+  if (!error_) {
+    error_ = TP_CREATE_ERROR(ChannelClosedError);
+    handleError_();
+  }
+}
+
 void CmaChannel::Impl::readPacket_() {
   TP_DCHECK(inLoop_());
   auto pbPacketIn = std::make_shared<proto::Packet>();
@@ -357,6 +385,8 @@ void CmaChannel::Impl::handleError_() {
   for (auto& op : sendOperations) {
     op.callback(error_);
   }
+
+  connection_->close();
 }
 
 } // namespace cma
