@@ -39,12 +39,30 @@ Reactor::Reactor() {
   dataFd_ = Fd(dataFd);
   consumer_.emplace(rb);
   producer_.emplace(rb);
+  deferredFunctionToken_ = add([this]() { handleDeferredFunctionFromLoop(); });
   thread_ = std::thread(&Reactor::run, this);
 }
 
+void Reactor::close() {
+  bool wasClosed = false;
+  closed_.compare_exchange_strong(wasClosed, true);
+  if (!wasClosed) {
+    // No need to wake up the reactor, since it is busy-waiting.
+  }
+}
+
+void Reactor::join() {
+  close();
+
+  bool wasJoined = false;
+  joined_.compare_exchange_strong(wasJoined, true);
+  if (!wasJoined) {
+    thread_.join();
+  }
+}
+
 Reactor::~Reactor() {
-  done_.store(true);
-  thread_.join();
+  join();
 }
 
 Reactor::TToken Reactor::add(TFunction fn) {
@@ -68,6 +86,9 @@ Reactor::TToken Reactor::add(TFunction fn) {
   }
 
   functions_[token] = std::move(fn);
+
+  functionCount_++;
+
   return token;
 }
 
@@ -75,6 +96,7 @@ void Reactor::remove(TToken token) {
   std::unique_lock<std::mutex> lock(mutex_);
   functions_[token] = nullptr;
   reusableTokens_.insert(token);
+  functionCount_--;
 }
 
 void Reactor::trigger(TToken token) {
@@ -87,7 +109,9 @@ std::tuple<int, int> Reactor::fds() const {
 }
 
 void Reactor::run() {
-  while (!done_.load()) {
+  // Stop when another thread has asked the reactor the close and when
+  // all functions have been removed except for the one used to defer.
+  while (!closed_ || functionCount_ > 1) {
     uint32_t token;
     auto ret = consumer_->copy(sizeof(token), &token);
     if (ret == -ENODATA) {
@@ -109,6 +133,8 @@ void Reactor::run() {
       fn();
     }
   }
+  TP_DCHECK(deferredFunctionList_.empty());
+  remove(deferredFunctionToken_);
 }
 
 Reactor::Trigger::Trigger(Fd&& headerFd, Fd&& dataFd)
@@ -120,6 +146,25 @@ Reactor::Trigger::Trigger(Fd&& headerFd, Fd&& dataFd)
 
 void Reactor::Trigger::run(TToken token) {
   writeToken(producer_, token);
+}
+
+void Reactor::deferToLoop(TDeferredFunction fn) {
+  std::unique_lock<std::mutex> lock(deferredFunctionMutex_);
+  deferredFunctionList_.push_back(std::move(fn));
+  trigger(deferredFunctionToken_);
+}
+
+void Reactor::handleDeferredFunctionFromLoop() {
+  std::unique_lock<std::mutex> lock(deferredFunctionMutex_);
+  std::list<TDeferredFunction> fns;
+  std::swap(fns, deferredFunctionList_);
+
+  // Unlock before executing, because the function could try to
+  // defer another function and that needs the lock.
+  lock.unlock();
+  for (auto& fn : fns) {
+    fn();
+  }
 }
 
 } // namespace shm

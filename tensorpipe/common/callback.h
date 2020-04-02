@@ -13,6 +13,7 @@
 #include <memory>
 #include <mutex>
 #include <tuple>
+#include <unordered_map>
 
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/error.h>

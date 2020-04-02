@@ -824,6 +824,7 @@ void Connection::Impl::failFromLoop(Error&& error) {
 void Connection::Impl::closeFromLoop() {
   TP_DCHECK(loop_->inLoopThread());
 
+  failFromLoop(TP_CREATE_ERROR(ConnectionClosedError));
   if (inboxReactorToken_.has_value()) {
     reactor_->remove(inboxReactorToken_.value());
     inboxReactorToken_.reset();

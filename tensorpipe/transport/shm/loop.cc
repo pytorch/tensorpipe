@@ -75,8 +75,6 @@ Loop::Loop(ConstructorToken /* unused */) {
   // Create reactor.
   reactor_ = std::make_shared<Reactor>();
   epollReactorToken_ = reactor_->add([this] { handleEpollEventsFromLoop(); });
-  deferredFunctionReactorToken_ =
-      reactor_->add([this] { handleDeferredFunctionFromLoop(); });
 
   // Start epoll(2) thread.
   thread_ = std::thread(&Loop::loop, this);
@@ -87,6 +85,7 @@ void Loop::close() {
   closed_.compare_exchange_strong(wasClosed, true);
   if (!wasClosed) {
     closingEmitter_.close();
+    reactor_->close();
     wakeup();
   }
 }
@@ -97,6 +96,7 @@ void Loop::join() {
   bool wasJoined = false;
   joined_.compare_exchange_strong(wasJoined, true);
   if (!wasJoined) {
+    reactor_->join();
     thread_.join();
   }
 }
@@ -106,9 +106,7 @@ Loop::~Loop() {
 }
 
 void Loop::deferToLoop(TDeferredFunction fn) {
-  std::unique_lock<std::mutex> lock(deferredFunctionMutex_);
-  deferredFunctionList_.push_back(std::move(fn));
-  reactor_->trigger(deferredFunctionReactorToken_);
+  reactor_->deferToLoop(std::move(fn));
 }
 
 const std::shared_ptr<Reactor>& Loop::reactor() {
@@ -176,7 +174,9 @@ void Loop::loop() {
   wakeupHandler->start();
 
   std::unique_lock<std::mutex> lock(epollMutex_);
-  for (;;) {
+  // Stop when another thread has asked the loop the close and when all
+  // handlers have been unregistered except for the wakeup eventfd one.
+  while (!closed_ || handlerCount_ > 1) {
     // Use fixed epoll_event capacity for every call.
     epollEvents_.resize(kCapacity_);
 
@@ -198,14 +198,8 @@ void Loop::loop() {
     while (!epollEvents_.empty()) {
       epollCond_.wait(lock);
     }
-
-    // Return if another thread is waiting in `join` and there is
-    // nothing left to be done. The handler count is equal to 1
-    // because we're always monitoring the eventfd for wakeups.
-    if (closed_ && handlerCount_ == 1) {
-      return;
-    }
   }
+  reactor_->remove(epollReactorToken_);
 }
 
 void Loop::handleEpollEventsFromLoop() {
@@ -234,19 +228,6 @@ void Loop::handleEpollEventsFromLoop() {
   // Let epoll thread know we've completed processing.
   epollEvents_.clear();
   epollCond_.notify_one();
-}
-
-void Loop::handleDeferredFunctionFromLoop() {
-  std::unique_lock<std::mutex> lock(deferredFunctionMutex_);
-  auto it = deferredFunctionList_.begin();
-  TP_DCHECK(it != deferredFunctionList_.end());
-  auto fn = std::move(*it);
-  deferredFunctionList_.erase(it);
-
-  // Unlock before executing, because the function could try to
-  // defer another function and that needs the lock.
-  lock.unlock();
-  fn();
 }
 
 } // namespace shm

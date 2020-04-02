@@ -213,20 +213,6 @@ class Loop final : public std::enable_shared_from_this<Loop> {
   std::condition_variable epollCond_;
   std::vector<struct epoll_event> epollEvents_;
 
-  // Deferred functions.
-  //
-  // None of the callbacks are triggered inline. Doing so usually
-  // comes with the risk of trying to acquire the same lock twice, or
-  // some form of inversion. Instead, we run all callbacks from the
-  // reactor thread, either in response to some I/O event, or because
-  // we were asked to do so. The latter we call "deferred functions"
-  // because execution is deferred to a later point in time (and more
-  // importantly, with a clean stack).
-  //
-  Reactor::TToken deferredFunctionReactorToken_;
-  std::mutex deferredFunctionMutex_;
-  std::list<TDeferredFunction> deferredFunctionList_;
-
   // Wake up the event loop.
   void wakeup();
 
@@ -249,9 +235,6 @@ class Loop final : public std::enable_shared_from_this<Loop> {
   // Called by the reactor in response to epoll_wait(2) producing a
   // vector with epoll_event structs in `epollEvents_`.
   void handleEpollEventsFromLoop();
-
-  // Called by the reactor in response to a deferred function.
-  void handleDeferredFunctionFromLoop();
 
   friend class Connection;
   friend class Listener;
