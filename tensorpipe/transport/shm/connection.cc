@@ -390,7 +390,7 @@ class Connection::Impl : public std::enable_shared_from_this<Connection::Impl>,
   void failFromLoop(Error&&);
 };
 
-std::shared_ptr<Connection> Connection::create(
+std::shared_ptr<Connection> Connection::create_(
     std::shared_ptr<Loop> loop,
     std::shared_ptr<Socket> socket) {
   return std::make_shared<Connection>(

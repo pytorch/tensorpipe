@@ -9,11 +9,12 @@
 #pragma once
 
 #include <tensorpipe/transport/context.h>
-#include <tensorpipe/transport/uv/loop.h>
 
 namespace tensorpipe {
 namespace transport {
 namespace uv {
+
+class Loop;
 
 class Context final : public transport::Context {
  public:

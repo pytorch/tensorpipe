@@ -40,7 +40,8 @@ class Loop final : public std::enable_shared_from_this<Loop> {
 
   void join();
 
-  // Prefer using defer over run, when you don't need to wait for the result.
+  // Prefer using deferToLoop over runInLoop when you don't need to wait for the
+  // result.
   template <typename F>
   void runInLoop(F&& fn) {
     // When called from the event loop thread itself (e.g., from a callback),

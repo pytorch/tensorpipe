@@ -12,6 +12,8 @@
 #include <tensorpipe/common/error_macros.h>
 #include <tensorpipe/transport/uv/connection.h>
 #include <tensorpipe/transport/uv/error.h>
+#include <tensorpipe/transport/uv/loop.h>
+#include <tensorpipe/transport/uv/sockaddr.h>
 #include <tensorpipe/transport/uv/uv.h>
 
 namespace tensorpipe {
@@ -118,20 +120,15 @@ std::shared_ptr<Listener> Listener::create_(
     handle->initFromLoop();
     handle->bindFromLoop(addr);
   });
-  auto listener =
-      std::make_shared<Listener>(ConstructorToken(), loop, std::move(handle));
-  listener->init_();
-  return listener;
+  return std::make_shared<Listener>(
+      ConstructorToken(), loop, std::move(handle));
 }
 
 Listener::Listener(
     ConstructorToken /* unused */,
     std::shared_ptr<Loop> loop,
     std::shared_ptr<TCPHandle> handle)
-    : loop_(std::move(loop)),
-      impl_(std::make_shared<Impl>(loop_, std::move(handle))) {}
-
-void Listener::init_() {
+    : loop_(loop), impl_(std::make_shared<Impl>(loop, std::move(handle))) {
   loop_->deferToLoop([impl{impl_}]() { impl->initFromLoop(); });
 }
 

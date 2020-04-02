@@ -16,6 +16,8 @@ namespace tensorpipe {
 namespace transport {
 namespace shm {
 
+class Context;
+class Listener;
 class Loop;
 class Socket;
 
@@ -25,10 +27,6 @@ class Connection final : public transport::Connection {
   struct ConstructorToken {};
 
  public:
-  static std::shared_ptr<Connection> create(
-      std::shared_ptr<Loop> loop,
-      std::shared_ptr<Socket> socket);
-
   Connection(
       ConstructorToken,
       std::shared_ptr<Loop> loop,
@@ -54,10 +52,17 @@ class Connection final : public transport::Connection {
       override;
 
  private:
+  static std::shared_ptr<Connection> create_(
+      std::shared_ptr<Loop> loop,
+      std::shared_ptr<Socket> socket);
+
   class Impl;
 
   std::shared_ptr<Loop> loop_;
   std::shared_ptr<Impl> impl_;
+
+  friend class Context;
+  friend class Listener;
 };
 
 } // namespace shm

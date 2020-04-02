@@ -10,6 +10,8 @@
 
 #include <tensorpipe/transport/uv/connection.h>
 #include <tensorpipe/transport/uv/listener.h>
+#include <tensorpipe/transport/uv/loop.h>
+#include <tensorpipe/transport/uv/sockaddr.h>
 
 namespace tensorpipe {
 namespace transport {

@@ -8,14 +8,9 @@
 
 #pragma once
 
-#include <array>
-#include <deque>
 #include <memory>
 
-#include <tensorpipe/common/optional.h>
 #include <tensorpipe/transport/connection.h>
-#include <tensorpipe/transport/uv/loop.h>
-#include <tensorpipe/transport/uv/sockaddr.h>
 
 namespace tensorpipe {
 namespace transport {
@@ -23,6 +18,8 @@ namespace uv {
 
 class Context;
 class Listener;
+class Loop;
+class Sockaddr;
 class TCPHandle;
 
 class Connection : public transport::Connection {

@@ -11,6 +11,8 @@
 #include <tensorpipe/common/system.h>
 #include <tensorpipe/transport/shm/connection.h>
 #include <tensorpipe/transport/shm/listener.h>
+#include <tensorpipe/transport/shm/loop.h>
+#include <tensorpipe/transport/shm/socket.h>
 
 namespace tensorpipe {
 namespace transport {
@@ -43,12 +45,12 @@ std::shared_ptr<transport::Connection> Context::connect(address_t addr) {
   auto sockaddr = Sockaddr::createAbstractUnixAddr(addr);
   auto socket = Socket::createForFamily(AF_UNIX);
   socket->connect(sockaddr);
-  return Connection::create(loop_, std::move(socket));
+  return Connection::create_(loop_, std::move(socket));
 }
 
 std::shared_ptr<transport::Listener> Context::listen(address_t addr) {
   auto sockaddr = Sockaddr::createAbstractUnixAddr(addr);
-  return Listener::create(loop_, sockaddr);
+  return Listener::create_(loop_, sockaddr);
 }
 
 const std::string& Context::domainDescriptor() const {

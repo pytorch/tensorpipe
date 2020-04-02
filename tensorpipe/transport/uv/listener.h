@@ -9,23 +9,19 @@
 #pragma once
 
 #include <memory>
-#include <unordered_set>
 
-#include <tensorpipe/common/callback.h>
 #include <tensorpipe/transport/listener.h>
-
-#include <tensorpipe/transport/uv/loop.h>
-#include <tensorpipe/transport/uv/sockaddr.h>
 
 namespace tensorpipe {
 namespace transport {
 namespace uv {
 
 class Context;
+class Loop;
+class Sockaddr;
 class TCPHandle;
 
-class Listener : public transport::Listener,
-                 public std::enable_shared_from_this<Listener> {
+class Listener : public transport::Listener {
   // Use the passkey idiom to allow make_shared to call what should be a private
   // constructor. See https://abseil.io/tips/134 for more information.
   struct ConstructorToken {};
@@ -49,9 +45,6 @@ class Listener : public transport::Listener,
   static std::shared_ptr<Listener> create_(
       std::shared_ptr<Loop> loop,
       const Sockaddr& addr);
-
-  // Called to initialize member fields that need `shared_from_this`.
-  void init_();
 
   // All the logic resides in an "implementation" class. The lifetime of these
   // objects is detached from the lifetime of the listener, and is instead

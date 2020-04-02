@@ -8,52 +8,45 @@
 
 #pragma once
 
-#include <deque>
-#include <functional>
 #include <memory>
-#include <mutex>
-#include <vector>
 
-#include <tensorpipe/common/optional.h>
 #include <tensorpipe/transport/listener.h>
-#include <tensorpipe/transport/shm/connection.h>
-#include <tensorpipe/transport/shm/loop.h>
-#include <tensorpipe/transport/shm/socket.h>
 
 namespace tensorpipe {
 namespace transport {
 namespace shm {
 
-class Listener final : public transport::Listener,
-                       public std::enable_shared_from_this<Listener>,
-                       public EventHandler {
+class Context;
+class Loop;
+class Sockaddr;
+
+class Listener final : public transport::Listener {
   // Use the passkey idiom to allow make_shared to call what should be a private
   // constructor. See https://abseil.io/tips/134 for more information.
   struct ConstructorToken {};
 
  public:
-  static std::shared_ptr<Listener> create(
-      std::shared_ptr<Loop> loop,
-      const Sockaddr& addr);
-
-  using transport::Listener::accept_callback_fn;
-
   Listener(ConstructorToken, std::shared_ptr<Loop> loop, const Sockaddr& addr);
 
   ~Listener() override;
+
+  using transport::Listener::accept_callback_fn;
 
   void accept(accept_callback_fn fn) override;
 
   address_t addr() const override;
 
-  void handleEventsFromLoop(int events) override;
-
  private:
-  std::mutex mutex_;
+  static std::shared_ptr<Listener> create_(
+      std::shared_ptr<Loop> loop,
+      const Sockaddr& addr);
+
+  class Impl;
+
   std::shared_ptr<Loop> loop_;
-  std::shared_ptr<Socket> listener_;
-  Sockaddr addr_;
-  std::deque<accept_callback_fn> fns_;
+  std::shared_ptr<Impl> impl_;
+
+  friend class Context;
 };
 
 } // namespace shm

@@ -8,10 +8,16 @@
 
 #include <tensorpipe/transport/uv/connection.h>
 
+#include <array>
+#include <deque>
+
 #include <tensorpipe/common/callback.h>
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/error_macros.h>
+#include <tensorpipe/common/optional.h>
 #include <tensorpipe/transport/uv/error.h>
+#include <tensorpipe/transport/uv/loop.h>
+#include <tensorpipe/transport/uv/sockaddr.h>
 #include <tensorpipe/transport/uv/uv.h>
 
 namespace tensorpipe {
