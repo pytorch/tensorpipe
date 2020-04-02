@@ -10,6 +10,8 @@
 
 #include <tensorpipe/common/address.h>
 #include <tensorpipe/common/defs.h>
+#include <tensorpipe/common/error_macros.h>
+#include <tensorpipe/core/error.h>
 #include <tensorpipe/proto/core.pb.h>
 
 namespace tensorpipe {
@@ -50,6 +52,19 @@ void Listener::start_() {
   for (const auto& listener : listeners_) {
     armListener_(listener.first, lock);
   }
+}
+
+void Listener::close() {
+  std::unique_lock<std::mutex> lock(mutex_);
+
+  if (!error_) {
+    error_ = TP_CREATE_ERROR(ListenerClosedError);
+    handleError_(lock);
+  }
+}
+
+Listener::~Listener() {
+  close();
 }
 
 //
@@ -200,6 +215,10 @@ void Listener::handleError_(TLock lock) {
         lock);
   }
   connectionRequestRegistrations_.clear();
+
+  for (const auto& listener : listeners_) {
+    listener.second->close();
+  }
 }
 
 //

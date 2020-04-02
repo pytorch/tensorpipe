@@ -67,24 +67,38 @@ std::shared_ptr<channel::ChannelFactory> Context::getChannelFactory_(
   return iter->second;
 }
 
-void Context::join() {
-  done_ = true;
-  for (auto& iter : contexts_) {
-    iter.second->join();
+void Context::close() {
+  bool wasClosed = false;
+  if (closed_.compare_exchange_strong(wasClosed, true)) {
+    TP_DCHECK(!wasClosed);
+
+    for (auto& iter : contexts_) {
+      iter.second->close();
+    }
+    for (auto& iter : channelFactories_) {
+      iter.second->close();
+    }
   }
-  for (auto& iter : channelFactories_) {
-    iter.second->join();
+}
+
+void Context::join() {
+  close();
+
+  bool wasJoined = false;
+  if (joined_.compare_exchange_strong(wasJoined, true)) {
+    TP_DCHECK(!wasJoined);
+
+    for (auto& iter : contexts_) {
+      iter.second->join();
+    }
+    for (auto& iter : channelFactories_) {
+      iter.second->join();
+    }
   }
 }
 
 Context::~Context() {
-  if (!done_) {
-    TP_LOG_WARNING()
-        << "The context is being destroyed but join() wasn't called on it. "
-        << "Perhaps a scope exited prematurely, possibly due to an exception?";
-    join();
-  }
-  TP_DCHECK(done_);
+  join();
 }
 
 } // namespace tensorpipe

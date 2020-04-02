@@ -175,6 +175,10 @@ void Pipe::Impl::startFromLoop_() {
 }
 
 Pipe::~Pipe() {
+  close();
+}
+
+void Pipe::close() {
   impl_->close();
 }
 

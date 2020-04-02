@@ -33,8 +33,6 @@ class Context final {
 
   explicit Context(ConstructorToken);
 
-  ~Context();
-
   void registerTransport(
       int64_t,
       std::string,
@@ -45,10 +43,19 @@ class Context final {
       std::string,
       std::shared_ptr<channel::ChannelFactory>);
 
+  // Put the context in a terminal state, in turn closing all of its pipes and
+  // listeners, and release its resources. This may be done asynchronously, in
+  // background.
+  void close();
+
+  // Wait for all resources to be released and all background activity to stop.
   void join();
 
+  ~Context();
+
  private:
-  std::atomic<bool> done_{false};
+  std::atomic<bool> closed_{false};
+  std::atomic<bool> joined_{false};
 
   std::unordered_map<std::string, std::shared_ptr<transport::Context>>
       contexts_;

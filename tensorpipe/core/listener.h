@@ -78,6 +78,15 @@ class Listener final : public std::enable_shared_from_this<Listener> {
   //
   std::string url(const std::string& transport) const;
 
+  // Put the listener in a terminal state, aborting its pending operations and
+  // rejecting future ones, and release its resrouces. This may be carried out
+  // asynchronously, in background. Since the pipes may occasionally use the
+  // listener to open new connections, closing a listener may trigger errors
+  // in the pipes.
+  void close();
+
+  ~Listener();
+
  private:
   // Each time a thread starts running some of the listener's code, we acquire
   // this mutex. There are two "entry points" where control is handed to the

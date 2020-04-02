@@ -61,8 +61,6 @@ class Pipe final {
       std::string,
       std::shared_ptr<transport::Connection>);
 
-  ~Pipe();
-
   //
   // Entry points for user code
   //
@@ -79,6 +77,13 @@ class Pipe final {
   using write_callback_fn = std::function<void(const Error&, Message)>;
 
   void write(Message, write_callback_fn);
+
+  // Put the pipe in a terminal state, aborting its pending operations and
+  // rejecting future ones, and release its resrouces. This may be carried out
+  // asynchronously, in background.
+  void close();
+
+  ~Pipe();
 
  private:
   class Impl : public std::enable_shared_from_this<Impl> {
