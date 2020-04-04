@@ -187,6 +187,7 @@ void WriteOperation::callbackFromLoop(const Error& error) {
 class Connection::Impl : public std::enable_shared_from_this<Connection::Impl> {
  public:
   Impl(std::shared_ptr<Loop>, std::shared_ptr<TCPHandle>);
+  Impl(std::shared_ptr<Loop>, const Sockaddr&);
 
   // Called to initialize member fields that need `shared_from_this`.
   void initFromLoop();
@@ -235,6 +236,21 @@ Connection::Impl::Impl(
     : loop_(std::move(loop)),
       handle_(std::move(handle)),
       closingReceiver_(loop_, loop_->closingEmitter_) {}
+
+Connection::Impl::Impl(std::shared_ptr<Loop> loop, const Sockaddr& addr)
+    : loop_(std::move(loop)),
+      handle_(TCPHandle::create(loop_)),
+      closingReceiver_(loop_, loop_->closingEmitter_) {
+  loop_->deferToLoop([this, addr]() {
+    handle_->initFromLoop();
+    handle_->connectFromLoop(addr, [this](int status) {
+      if (status < 0) {
+        error_ = TP_CREATE_ERROR(UVError, status);
+        closeFromLoop();
+      }
+    });
+  });
+}
 
 void Connection::Impl::initFromLoop() {
   leak_ = shared_from_this();
@@ -379,13 +395,8 @@ void Connection::Impl::closeCallbackFromLoop_() {
 std::shared_ptr<Connection> Connection::create_(
     std::shared_ptr<Loop> loop,
     const Sockaddr& addr) {
-  auto handle = TCPHandle::create(loop);
-  loop->deferToLoop([handle, addr]() {
-    handle->initFromLoop();
-    handle->connectFromLoop(addr);
-  });
   return std::make_shared<Connection>(
-      ConstructorToken(), std::move(loop), std::move(handle));
+      ConstructorToken(), std::move(loop), addr);
 }
 
 std::shared_ptr<Connection> Connection::create_(
@@ -400,6 +411,14 @@ Connection::Connection(
     std::shared_ptr<Loop> loop,
     std::shared_ptr<TCPHandle> handle)
     : loop_(loop), impl_(std::make_shared<Impl>(loop, std::move(handle))) {
+  loop_->deferToLoop([impl{impl_}]() { impl->initFromLoop(); });
+}
+
+Connection::Connection(
+    ConstructorToken /* unused */,
+    std::shared_ptr<Loop> loop,
+    const Sockaddr& addr)
+    : loop_(loop), impl_(std::make_shared<Impl>(loop, addr)) {
   loop_->deferToLoop([impl{impl_}]() { impl->initFromLoop(); });
 }
 

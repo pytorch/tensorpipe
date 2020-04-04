@@ -319,8 +319,6 @@ class TCPHandle : public StreamHandle<TCPHandle, uv_tcp_t> {
 
   Sockaddr sockNameFromLoop();
 
-  void connectFromLoop(const Sockaddr& addr);
-
   void connectFromLoop(
       const Sockaddr& addr,
       ConnectRequest::TConnectCallback fn);
