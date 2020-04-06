@@ -38,11 +38,6 @@ Sockaddr TCPHandle::sockNameFromLoop() {
   return Sockaddr(addr, addrlen);
 }
 
-void TCPHandle::connectFromLoop(const Sockaddr& addr) {
-  TP_DCHECK(this->loop_->inLoopThread());
-  connectFromLoop(addr, [](int status) {});
-}
-
 void TCPHandle::connectFromLoop(
     const Sockaddr& addr,
     ConnectRequest::TConnectCallback fn) {
