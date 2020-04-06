@@ -18,7 +18,7 @@
 namespace tensorpipe {
 
 std::shared_ptr<Listener::Impl> Listener::Impl::create(
-    std::shared_ptr<Context> context,
+    std::shared_ptr<Context::PrivateIface> context,
     const std::vector<std::string>& urls) {
   auto impl = std::make_shared<Listener::Impl>(
       ConstructorToken(), std::move(context), urls);
@@ -28,28 +28,25 @@ std::shared_ptr<Listener::Impl> Listener::Impl::create(
 
 Listener::Listener(
     ConstructorToken /* unused */,
-    std::shared_ptr<Context> context,
+    std::shared_ptr<Context::PrivateIface> context,
     const std::vector<std::string>& urls)
     : impl_(Impl::create(std::move(context), urls)) {}
 
 Listener::Impl::Impl(
     ConstructorToken /* unused */,
-    std::shared_ptr<Context> context,
+    std::shared_ptr<Context::PrivateIface> context,
     const std::vector<std::string>& urls)
     : context_(std::move(context)),
-      closingReceiver_(context_, context_->closingEmitter_),
+      closingReceiver_(context_, context_->getClosingEmitter()),
       readPacketCallbackWrapper_(*this),
       acceptCallbackWrapper_(*this) {
   for (const auto& url : urls) {
     std::string transport;
     std::string address;
     std::tie(transport, address) = splitSchemeOfURL(url);
-    auto iter = context_->contexts_.find(transport);
-    if (iter == context_->contexts_.end()) {
-      TP_THROW_EINVAL() << "unsupported transport " << transport;
-    }
-    transport::Context& context = *(iter->second);
-    std::shared_ptr<transport::Listener> listener = context.listen(address);
+    std::shared_ptr<transport::Context> context =
+        context_->getContextForTransport(transport);
+    std::shared_ptr<transport::Listener> listener = context->listen(address);
     addresses_.emplace(transport, listener->addr());
     listeners_.emplace(transport, std::move(listener));
   }

@@ -25,13 +25,13 @@ namespace tensorpipe {
 //
 
 std::shared_ptr<Pipe::Impl> Pipe::Impl::create(
-    std::shared_ptr<Context> context,
+    std::shared_ptr<Context::PrivateIface> context,
     const std::string& url) {
   std::string transport;
   std::string address;
   std::tie(transport, address) = splitSchemeOfURL(url);
   std::shared_ptr<transport::Connection> connection =
-      context->getContextForTransport_(transport)->connect(std::move(address));
+      context->getContextForTransport(transport)->connect(std::move(address));
   auto impl = std::make_shared<Impl>(
       ConstructorToken(),
       std::move(context),
@@ -42,7 +42,7 @@ std::shared_ptr<Pipe::Impl> Pipe::Impl::create(
 }
 
 std::shared_ptr<Pipe::Impl> Pipe::Impl::create(
-    std::shared_ptr<Context> context,
+    std::shared_ptr<Context::PrivateIface> context,
     std::shared_ptr<Listener::PrivateIface> listener,
     std::string transport,
     std::shared_ptr<transport::Connection> connection) {
@@ -58,13 +58,13 @@ std::shared_ptr<Pipe::Impl> Pipe::Impl::create(
 
 Pipe::Pipe(
     ConstructorToken /* unused */,
-    std::shared_ptr<Context> context,
+    std::shared_ptr<Context::PrivateIface> context,
     const std::string& url)
     : impl_(Impl::create(std::move(context), url)) {}
 
 Pipe::Pipe(
     ConstructorToken /* unused */,
-    std::shared_ptr<Context> context,
+    std::shared_ptr<Context::PrivateIface> context,
     std::shared_ptr<Listener::PrivateIface> listener,
     std::string transport,
     std::shared_ptr<transport::Connection> connection)
@@ -76,14 +76,14 @@ Pipe::Pipe(
 
 Pipe::Impl::Impl(
     ConstructorToken /* unused */,
-    std::shared_ptr<Context> context,
+    std::shared_ptr<Context::PrivateIface> context,
     std::string transport,
     std::shared_ptr<transport::Connection> connection)
     : state_(CLIENT_ABOUT_TO_SEND_HELLO_AND_BROCHURE),
       context_(std::move(context)),
       transport_(std::move(transport)),
       connection_(std::move(connection)),
-      closingReceiver_(context_, context_->closingEmitter_),
+      closingReceiver_(context_, context_->getClosingEmitter()),
       readCallbackWrapper_(*this),
       readPacketCallbackWrapper_(*this),
       writeCallbackWrapper_(*this),
@@ -95,7 +95,7 @@ Pipe::Impl::Impl(
 
 Pipe::Impl::Impl(
     ConstructorToken /* unused */,
-    std::shared_ptr<Context> context,
+    std::shared_ptr<Context::PrivateIface> context,
     std::shared_ptr<Listener::PrivateIface> listener,
     std::string transport,
     std::shared_ptr<transport::Connection> connection)
@@ -104,7 +104,7 @@ Pipe::Impl::Impl(
       listener_(std::move(listener)),
       transport_(std::move(transport)),
       connection_(std::move(connection)),
-      closingReceiver_(context_, context_->closingEmitter_),
+      closingReceiver_(context_, context_->getClosingEmitter()),
       readCallbackWrapper_(*this),
       readPacketCallbackWrapper_(*this),
       writeCallbackWrapper_(*this),
@@ -133,9 +133,9 @@ void Pipe::Impl::startFromLoop_() {
     proto::Brochure* pbBrochure = pbPacketOut2->mutable_brochure();
     auto pbAllTransportAdvertisements =
         pbBrochure->mutable_transport_advertisement();
-    for (const auto& contextIter : context_->contexts_) {
-      const std::string& transport = contextIter.first;
-      const transport::Context& context = *(contextIter.second);
+    for (const auto& contextIter : context_->getOrderedContexts()) {
+      const std::string& transport = std::get<0>(contextIter.second);
+      const transport::Context& context = *(std::get<1>(contextIter.second));
       proto::TransportAdvertisement* pbTransportAdvertisement =
           &(*pbAllTransportAdvertisements)[transport];
       pbTransportAdvertisement->set_domain_descriptor(
@@ -143,10 +143,11 @@ void Pipe::Impl::startFromLoop_() {
     }
     auto pbAllChannelAdvertisements =
         pbBrochure->mutable_channel_advertisement();
-    for (const auto& channelFactoryIter : context_->channelFactories_) {
-      const std::string& name = channelFactoryIter.first;
+    for (const auto& channelFactoryIter :
+         context_->getOrderedChannelFactories()) {
+      const std::string& name = std::get<0>(channelFactoryIter.second);
       const channel::ChannelFactory& channelFactory =
-          *(channelFactoryIter.second);
+          *(std::get<1>(channelFactoryIter.second));
       proto::ChannelAdvertisement* pbChannelAdvertisement =
           &(*pbAllChannelAdvertisements)[name];
       pbChannelAdvertisement->set_domain_descriptor(
@@ -538,7 +539,7 @@ void Pipe::Impl::sendTensorsOfMessage_(
     const auto& tensor = messageBeingWritten.message.tensors[tensorIdx];
     bool foundAChannel = false;
     for (const auto& channelFactoryIter :
-         context_->channelFactoriesByPriority_) {
+         context_->getOrderedChannelFactories()) {
       const std::string& name = std::get<0>(channelFactoryIter.second);
 
       auto channelIter = channels_.find(name);
@@ -629,7 +630,7 @@ void Pipe::Impl::onReadWhileServerWaitingForBrochure_(
   bool needToWaitForConnections = false;
 
   bool foundATransport = false;
-  for (const auto& contextIter : context_->contextsByPriority_) {
+  for (const auto& contextIter : context_->getOrderedContexts()) {
     const std::string& transport = std::get<0>(contextIter.second);
     const transport::Context& context = *(std::get<1>(contextIter.second));
 
@@ -680,7 +681,8 @@ void Pipe::Impl::onReadWhileServerWaitingForBrochure_(
   TP_THROW_ASSERT_IF(!foundATransport);
 
   auto pbAllChannelSelections = pbBrochureAnswer->mutable_channel_selection();
-  for (const auto& channelFactoryIter : context_->channelFactoriesByPriority_) {
+  for (const auto& channelFactoryIter :
+       context_->getOrderedChannelFactories()) {
     const std::string& name = std::get<0>(channelFactoryIter.second);
     const channel::ChannelFactory& channelFactory =
         *(std::get<1>(channelFactoryIter.second));
@@ -744,13 +746,12 @@ void Pipe::Impl::onReadWhileClientWaitingForBrochureAnswer_(
   const proto::BrochureAnswer& pbBrochureAnswer = pbPacketIn.brochure_answer();
   const std::string& transport = pbBrochureAnswer.transport();
   std::string address = pbBrochureAnswer.address();
-  auto contextIter = context_->contexts_.find(transport);
-  TP_DCHECK(contextIter != context_->contexts_.cend());
-  transport::Context& context = *(contextIter->second);
+  std::shared_ptr<transport::Context> context =
+      context_->getContextForTransport(transport);
 
   if (transport != transport_) {
     std::shared_ptr<transport::Connection> connection =
-        context.connect(address);
+        context->connect(address);
     auto pbPacketOut = std::make_shared<proto::Packet>();
     proto::RequestedConnection* pbRequestedConnection =
         pbPacketOut->mutable_requested_connection();
@@ -770,12 +771,11 @@ void Pipe::Impl::onReadWhileClientWaitingForBrochureAnswer_(
     const proto::ChannelSelection& pbChannelSelection =
         pbChannelSelectionIter.second;
 
-    auto channelFactoryIter = context_->channelFactories_.find(name);
-    TP_DCHECK(channelFactoryIter != context_->channelFactories_.end());
-    channel::ChannelFactory& channelFactory = *(channelFactoryIter->second);
+    std::shared_ptr<channel::ChannelFactory> channelFactory =
+        context_->getChannelFactory(name);
 
     std::shared_ptr<transport::Connection> connection =
-        context.connect(address);
+        context->connect(address);
 
     auto pbPacketOut = std::make_shared<proto::Packet>();
     proto::RequestedConnection* pbRequestedConnection =
@@ -788,7 +788,7 @@ void Pipe::Impl::onReadWhileClientWaitingForBrochureAnswer_(
 
     channels_.emplace(
         name,
-        channelFactory.createChannel(
+        channelFactory->createChannel(
             std::move(connection), channel::Channel::Endpoint::kConnect));
   }
 
@@ -847,10 +847,8 @@ void Pipe::Impl::onAcceptWhileServerWaitingForChannel_(
   auto channelIter = channels_.find(name);
   TP_DCHECK(channelIter == channels_.end());
 
-  auto channelFactoryIter = context_->channelFactories_.find(name);
-  TP_DCHECK(channelFactoryIter != context_->channelFactories_.end());
   std::shared_ptr<channel::ChannelFactory> channelFactory =
-      channelFactoryIter->second;
+      context_->getChannelFactory(name);
 
   channels_.emplace(
       name,

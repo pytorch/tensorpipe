@@ -62,26 +62,94 @@ class Context final : public std::enable_shared_from_this<Context> {
   ~Context();
 
  private:
-  std::atomic<bool> closed_{false};
-  std::atomic<bool> joined_{false};
+  class PrivateIface {
+   public:
+    virtual ClosingEmitter& getClosingEmitter() = 0;
 
-  std::unordered_map<std::string, std::shared_ptr<transport::Context>>
-      contexts_;
-  std::unordered_map<std::string, std::shared_ptr<channel::ChannelFactory>>
-      channelFactories_;
+    virtual std::shared_ptr<transport::Context> getContextForTransport(
+        const std::string&) = 0;
 
-  std::
-      map<int64_t, std::tuple<std::string, std::shared_ptr<transport::Context>>>
-          contextsByPriority_;
-  std::map<
-      int64_t,
-      std::tuple<std::string, std::shared_ptr<channel::ChannelFactory>>>
-      channelFactoriesByPriority_;
+    virtual std::shared_ptr<channel::ChannelFactory> getChannelFactory(
+        const std::string&) = 0;
 
-  std::shared_ptr<transport::Context> getContextForTransport_(std::string);
-  std::shared_ptr<channel::ChannelFactory> getChannelFactory_(std::string);
+    using TOrderedContexts = std::map<
+        int64_t,
+        std::tuple<std::string, std::shared_ptr<transport::Context>>>;
 
-  ClosingEmitter closingEmitter_;
+    virtual const TOrderedContexts& getOrderedContexts() = 0;
+
+    using TOrderedChannelFactories = std::map<
+        int64_t,
+        std::tuple<std::string, std::shared_ptr<channel::ChannelFactory>>>;
+
+    virtual const TOrderedChannelFactories& getOrderedChannelFactories() = 0;
+
+    virtual ~PrivateIface() = default;
+  };
+
+  class Impl : public PrivateIface, public std::enable_shared_from_this<Impl> {
+    // Use the passkey idiom to allow make_shared to call what should be a
+    // private constructor. See https://abseil.io/tips/134 for more information.
+    struct ConstructorToken {};
+
+   public:
+    static std::shared_ptr<Impl> create();
+
+    Impl(ConstructorToken);
+
+    void registerTransport(
+        int64_t,
+        std::string,
+        std::shared_ptr<transport::Context>);
+
+    void registerChannelFactory(
+        int64_t,
+        std::string,
+        std::shared_ptr<channel::ChannelFactory>);
+
+    std::shared_ptr<Listener> listen(const std::vector<std::string>&);
+
+    std::shared_ptr<Pipe> connect(const std::string&);
+
+    ClosingEmitter& getClosingEmitter() override;
+
+    std::shared_ptr<transport::Context> getContextForTransport(
+        const std::string&) override;
+    std::shared_ptr<channel::ChannelFactory> getChannelFactory(
+        const std::string&) override;
+
+    using PrivateIface::TOrderedChannelFactories;
+
+    const TOrderedContexts& getOrderedContexts() override;
+
+    using PrivateIface::TOrderedContexts;
+
+    const TOrderedChannelFactories& getOrderedChannelFactories() override;
+
+    void close();
+
+    void join();
+
+    ~Impl() override = default;
+
+   private:
+    std::atomic<bool> closed_{false};
+    std::atomic<bool> joined_{false};
+
+    std::unordered_map<std::string, std::shared_ptr<transport::Context>>
+        contexts_;
+    std::unordered_map<std::string, std::shared_ptr<channel::ChannelFactory>>
+        channelFactories_;
+
+    TOrderedContexts contextsByPriority_;
+    TOrderedChannelFactories channelFactoriesByPriority_;
+
+    ClosingEmitter closingEmitter_;
+  };
+
+  // Using a shared_ptr allows us to detach the lifetime of the implementation
+  // from the public object's one and perform the destruction asynchronously.
+  std::shared_ptr<Impl> impl_;
 
   friend class Listener;
   friend class Pipe;

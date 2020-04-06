@@ -19,9 +19,22 @@ std::shared_ptr<Context> Context::create() {
   return std::make_shared<Context>(ConstructorToken());
 }
 
-Context::Context(ConstructorToken /* unused */) {}
+Context::Context(ConstructorToken /* unused */) : impl_(Impl::create()) {}
+
+std::shared_ptr<Context::Impl> Context::Impl::create() {
+  return std::make_shared<Context::Impl>(ConstructorToken());
+}
+
+Context::Impl::Impl(ConstructorToken /* unused */) {}
 
 void Context::registerTransport(
+    int64_t priority,
+    std::string transport,
+    std::shared_ptr<transport::Context> context) {
+  impl_->registerTransport(priority, std::move(transport), std::move(context));
+}
+
+void Context::Impl::registerTransport(
     int64_t priority,
     std::string transport,
     std::shared_ptr<transport::Context> context) {
@@ -39,6 +52,14 @@ void Context::registerChannelFactory(
     int64_t priority,
     std::string name,
     std::shared_ptr<channel::ChannelFactory> channelFactory) {
+  impl_->registerChannelFactory(
+      priority, std::move(name), std::move(channelFactory));
+}
+
+void Context::Impl::registerChannelFactory(
+    int64_t priority,
+    std::string name,
+    std::shared_ptr<channel::ChannelFactory> channelFactory) {
   TP_THROW_ASSERT_IF(name.empty());
   TP_THROW_ASSERT_IF(channelFactories_.find(name) != channelFactories_.end())
       << "channel factory " << name << " already registered";
@@ -53,17 +74,34 @@ void Context::registerChannelFactory(
 
 std::shared_ptr<Listener> Context::listen(
     const std::vector<std::string>& urls) {
+  return impl_->listen(urls);
+}
+
+std::shared_ptr<Listener> Context::Impl::listen(
+    const std::vector<std::string>& urls) {
   return std::make_shared<Listener>(
-      Listener::ConstructorToken(), shared_from_this(), urls);
+      Listener::ConstructorToken(),
+      std::static_pointer_cast<PrivateIface>(shared_from_this()),
+      urls);
 }
 
 std::shared_ptr<Pipe> Context::connect(const std::string& url) {
-  return std::make_shared<Pipe>(
-      Pipe::ConstructorToken(), shared_from_this(), url);
+  return impl_->connect(url);
 }
 
-std::shared_ptr<transport::Context> Context::getContextForTransport_(
-    std::string transport) {
+std::shared_ptr<Pipe> Context::Impl::connect(const std::string& url) {
+  return std::make_shared<Pipe>(
+      Pipe::ConstructorToken(),
+      std::static_pointer_cast<PrivateIface>(shared_from_this()),
+      url);
+}
+
+ClosingEmitter& Context::Impl::getClosingEmitter() {
+  return closingEmitter_;
+}
+
+std::shared_ptr<transport::Context> Context::Impl::getContextForTransport(
+    const std::string& transport) {
   auto iter = contexts_.find(transport);
   if (iter == contexts_.end()) {
     TP_THROW_EINVAL() << "unsupported transport " << transport;
@@ -71,8 +109,8 @@ std::shared_ptr<transport::Context> Context::getContextForTransport_(
   return iter->second;
 }
 
-std::shared_ptr<channel::ChannelFactory> Context::getChannelFactory_(
-    std::string name) {
+std::shared_ptr<channel::ChannelFactory> Context::Impl::getChannelFactory(
+    const std::string& name) {
   auto iter = channelFactories_.find(name);
   if (iter == channelFactories_.end()) {
     TP_THROW_EINVAL() << "unsupported channel factory " << name;
@@ -80,7 +118,20 @@ std::shared_ptr<channel::ChannelFactory> Context::getChannelFactory_(
   return iter->second;
 }
 
+const Context::Impl::TOrderedContexts& Context::Impl::getOrderedContexts() {
+  return contextsByPriority_;
+}
+
+const Context::Impl::TOrderedChannelFactories& Context::Impl::
+    getOrderedChannelFactories() {
+  return channelFactoriesByPriority_;
+}
+
 void Context::close() {
+  impl_->close();
+}
+
+void Context::Impl::close() {
   bool wasClosed = false;
   if (closed_.compare_exchange_strong(wasClosed, true)) {
     TP_DCHECK(!wasClosed);
@@ -97,6 +148,10 @@ void Context::close() {
 }
 
 void Context::join() {
+  impl_->join();
+}
+
+void Context::Impl::join() {
   close();
 
   bool wasJoined = false;

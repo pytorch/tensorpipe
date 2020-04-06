@@ -43,7 +43,7 @@ class Listener final : public std::enable_shared_from_this<Listener> {
  public:
   Listener(
       ConstructorToken,
-      std::shared_ptr<Context>,
+      std::shared_ptr<Context::PrivateIface>,
       const std::vector<std::string>&);
 
   //
@@ -110,12 +110,12 @@ class Listener final : public std::enable_shared_from_this<Listener> {
 
    public:
     static std::shared_ptr<Impl> create(
-        std::shared_ptr<Context>,
+        std::shared_ptr<Context::PrivateIface>,
         const std::vector<std::string>&);
 
     Impl(
         ConstructorToken,
-        std::shared_ptr<Context>,
+        std::shared_ptr<Context::PrivateIface>,
         const std::vector<std::string>&);
 
     void accept(accept_callback_fn);
@@ -150,7 +150,7 @@ class Listener final : public std::enable_shared_from_this<Listener> {
 
     Error error_;
 
-    std::shared_ptr<Context> context_;
+    std::shared_ptr<Context::PrivateIface> context_;
     std::unordered_map<std::string, std::shared_ptr<transport::Listener>>
         listeners_;
     std::map<std::string, transport::address_t> addresses_;

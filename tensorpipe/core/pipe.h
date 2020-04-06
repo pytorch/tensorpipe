@@ -47,11 +47,14 @@ class Pipe final {
   // Initialization
   //
 
-  Pipe(ConstructorToken, std::shared_ptr<Context>, const std::string&);
+  Pipe(
+      ConstructorToken,
+      std::shared_ptr<Context::PrivateIface>,
+      const std::string&);
 
   Pipe(
       ConstructorToken,
-      std::shared_ptr<Context>,
+      std::shared_ptr<Context::PrivateIface>,
       std::shared_ptr<Listener::PrivateIface>,
       std::string,
       std::shared_ptr<transport::Connection>);
@@ -88,24 +91,24 @@ class Pipe final {
 
    public:
     static std::shared_ptr<Impl> create(
-        std::shared_ptr<Context>,
+        std::shared_ptr<Context::PrivateIface>,
         const std::string&);
 
     static std::shared_ptr<Impl> create(
-        std::shared_ptr<Context>,
+        std::shared_ptr<Context::PrivateIface>,
         std::shared_ptr<Listener::PrivateIface>,
         std::string,
         std::shared_ptr<transport::Connection>);
 
     Impl(
         ConstructorToken,
-        std::shared_ptr<Context>,
+        std::shared_ptr<Context::PrivateIface>,
         std::string,
         std::shared_ptr<transport::Connection>);
 
     Impl(
         ConstructorToken,
-        std::shared_ptr<Context>,
+        std::shared_ptr<Context::PrivateIface>,
         std::shared_ptr<Listener::PrivateIface>,
         std::string,
         std::shared_ptr<transport::Connection>);
@@ -146,7 +149,7 @@ class Pipe final {
 
     State state_{INITIALIZING};
 
-    std::shared_ptr<Context> context_;
+    std::shared_ptr<Context::PrivateIface> context_;
     std::shared_ptr<Listener::PrivateIface> listener_;
 
     std::string transport_;
