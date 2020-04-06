@@ -256,12 +256,19 @@ PYBIND11_MODULE(pytensorpipe, module) {
   // Creators.
 
   context.def(py::init(&tensorpipe::Context::create));
-  listener.def(
-      py::init(&tensorpipe::Listener::create),
-      py::arg("context"),
+  context.def(
+      "listen",
+      [](std::shared_ptr<tensorpipe::Context> context,
+         const std::vector<std::string>& urls) {
+        return context->listen(urls);
+      },
       py::arg("urls"));
-  pipe.def(
-      py::init(&tensorpipe::Pipe::create), py::arg("context"), py::arg("url"));
+  context.def(
+      "connect",
+      [](std::shared_ptr<tensorpipe::Context> context, const std::string& url) {
+        return context->connect(url);
+      },
+      py::arg("url"));
 
   context.def(
       "join",

@@ -137,9 +137,9 @@ TEST(Context, ClientPingSerial) {
       -1, "cma", channel::cma::CmaChannelFactory::create());
 #endif // TP_ENABLE_CMA
 
-  auto listener = Listener::create(context, genUrls());
+  auto listener = context->listen(genUrls());
 
-  auto clientPipe = Pipe::create(context, listener->url("uv"));
+  auto clientPipe = context->connect(listener->url("uv"));
 
   listener->accept([&](const Error& error, std::shared_ptr<Pipe> pipe) {
     if (error) {
@@ -220,7 +220,7 @@ TEST(Context, ClientPingInline) {
       -1, "cma", channel::cma::CmaChannelFactory::create());
 #endif // TP_ENABLE_CMA
 
-  auto listener = Listener::create(context, genUrls());
+  auto listener = context->listen(genUrls());
 
   std::shared_ptr<Pipe> serverPipe;
   listener->accept([&serverPipe, &readCompletedProm, &buffers](
@@ -261,7 +261,7 @@ TEST(Context, ClientPingInline) {
     });
   });
 
-  auto clientPipe = Pipe::create(context, listener->url("uv"));
+  auto clientPipe = context->connect(listener->url("uv"));
   clientPipe->write(makeMessage(1), [&](const Error& error, Message message) {
     if (error) {
       ADD_FAILURE() << error.what();
@@ -300,7 +300,7 @@ TEST(Context, ServerPingPongTwice) {
       -1, "cma", channel::cma::CmaChannelFactory::create());
 #endif // TP_ENABLE_CMA
 
-  auto listener = Listener::create(context, genUrls());
+  auto listener = context->listen(genUrls());
 
   std::shared_ptr<Pipe> serverPipe;
   int numPingsGoneThrough = 0;
@@ -365,7 +365,7 @@ TEST(Context, ServerPingPongTwice) {
     }
   });
 
-  auto clientPipe = Pipe::create(context, listener->url("uv"));
+  auto clientPipe = context->connect(listener->url("uv"));
   int numPongsGoneThrough = 0;
   for (int i = 0; i < 2; i++) {
     clientPipe->readDescriptor([&clientPipe,
@@ -467,7 +467,7 @@ TEST(Context, MixedTensorMessage) {
       -1, "cma", channel::cma::CmaChannelFactory::create());
 #endif // TP_ENABLE_CMA
 
-  auto listener = Listener::create(context, genUrls());
+  auto listener = context->listen(genUrls());
 
   std::shared_ptr<Pipe> serverPipe;
   std::atomic<int> readNum(n);
@@ -491,7 +491,7 @@ TEST(Context, MixedTensorMessage) {
     });
   });
 
-  auto clientPipe = Pipe::create(context, listener->url("uv"));
+  auto clientPipe = context->connect(listener->url("uv"));
   std::atomic<int> writeNum(n);
   clientPipe->write(makeMessage(1), [&](const Error& error, Message message) {
     ASSERT_FALSE(error);

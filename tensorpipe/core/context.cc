@@ -9,6 +9,8 @@
 #include <tensorpipe/core/context.h>
 
 #include <tensorpipe/common/defs.h>
+#include <tensorpipe/core/listener.h>
+#include <tensorpipe/core/pipe.h>
 #include <tensorpipe/transport/connection.h>
 
 namespace tensorpipe {
@@ -47,6 +49,17 @@ void Context::registerChannelFactory(
   channelFactories_.emplace(name, channelFactory);
   channelFactoriesByPriority_.emplace(
       priority, std::make_tuple(name, channelFactory));
+}
+
+std::shared_ptr<Listener> Context::listen(
+    const std::vector<std::string>& urls) {
+  return std::make_shared<Listener>(
+      Listener::ConstructorToken(), shared_from_this(), urls);
+}
+
+std::shared_ptr<Pipe> Context::connect(const std::string& url) {
+  return std::make_shared<Pipe>(
+      Pipe::ConstructorToken(), shared_from_this(), url);
 }
 
 std::shared_ptr<transport::Context> Context::getContextForTransport_(

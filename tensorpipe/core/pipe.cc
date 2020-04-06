@@ -24,12 +24,6 @@ namespace tensorpipe {
 // Initialization
 //
 
-std::shared_ptr<Pipe> Pipe::create(
-    std::shared_ptr<Context> context,
-    const std::string& url) {
-  return std::make_shared<Pipe>(ConstructorToken(), std::move(context), url);
-}
-
 std::shared_ptr<Pipe::Impl> Pipe::Impl::create(
     std::shared_ptr<Context> context,
     const std::string& url) {

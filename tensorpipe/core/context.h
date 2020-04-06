@@ -24,7 +24,10 @@
 
 namespace tensorpipe {
 
-class Context final {
+class Listener;
+class Pipe;
+
+class Context final : public std::enable_shared_from_this<Context> {
   // Use the passkey idiom to allow make_shared to call what should be a private
   // constructor. See https://abseil.io/tips/134 for more information.
   struct ConstructorToken {};
@@ -43,6 +46,10 @@ class Context final {
       int64_t,
       std::string,
       std::shared_ptr<channel::ChannelFactory>);
+
+  std::shared_ptr<Listener> listen(const std::vector<std::string>&);
+
+  std::shared_ptr<Pipe> connect(const std::string&);
 
   // Put the context in a terminal state, in turn closing all of its pipes and
   // listeners, and release its resources. This may be done asynchronously, in

@@ -17,13 +17,6 @@
 
 namespace tensorpipe {
 
-std::shared_ptr<Listener> Listener::create(
-    std::shared_ptr<Context> context,
-    const std::vector<std::string>& urls) {
-  return std::make_shared<Listener>(
-      ConstructorToken(), std::move(context), urls);
-}
-
 std::shared_ptr<Listener::Impl> Listener::Impl::create(
     std::shared_ptr<Context> context,
     const std::vector<std::string>& urls) {

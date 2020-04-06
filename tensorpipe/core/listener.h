@@ -41,10 +41,6 @@ class Listener final : public std::enable_shared_from_this<Listener> {
   struct ConstructorToken {};
 
  public:
-  static std::shared_ptr<Listener> create(
-      std::shared_ptr<Context>,
-      const std::vector<std::string>&);
-
   Listener(
       ConstructorToken,
       std::shared_ptr<Context>,

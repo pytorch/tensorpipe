@@ -172,7 +172,7 @@ static void runServer(const Options& options) {
   }
 
   std::promise<std::shared_ptr<Pipe>> pipeProm;
-  std::shared_ptr<Listener> listener = Listener::create(context, {addr});
+  std::shared_ptr<Listener> listener = context->listen({addr});
   listener->accept([&](const Error& error, std::shared_ptr<Pipe> pipe) {
     TP_THROW_ASSERT_IF(error) << error.what();
     pipeProm.set_value(std::move(pipe));
@@ -302,7 +302,7 @@ static void runClient(const Options& options) {
     TP_THROW_ASSERT() << "unknown channel: " << options.channel;
   }
 
-  std::shared_ptr<Pipe> pipe = Pipe::create(context, addr);
+  std::shared_ptr<Pipe> pipe = context->connect(addr);
 
   std::promise<void> doneProm;
   clientPingPongNonBlock(

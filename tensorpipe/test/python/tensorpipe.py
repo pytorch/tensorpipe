@@ -26,7 +26,7 @@ class TestTensorpipe(unittest.TestCase):
         # We must keep a reference to it, or it will be destroyed early.
         server_pipe = None
 
-        listener = tp.Listener(context, ["tcp://127.0.0.1"])
+        listener: tp.Listener = context.listen(["tcp://127.0.0.1"])
 
         write_completed = threading.Event()
 
@@ -42,7 +42,7 @@ class TestTensorpipe(unittest.TestCase):
 
         listener.listen(on_connection)
 
-        client_pipe = tp.Pipe(context, listener.get_url("tcp"))
+        client_pipe: tp.Pipe = context.connect(listener.get_url("tcp"))
 
         received_message = None
         received_tensors = None

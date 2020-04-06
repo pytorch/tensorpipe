@@ -47,10 +47,6 @@ class Pipe final {
   // Initialization
   //
 
-  static std::shared_ptr<Pipe> create(
-      std::shared_ptr<Context>,
-      const std::string&);
-
   Pipe(ConstructorToken, std::shared_ptr<Context>, const std::string&);
 
   Pipe(
