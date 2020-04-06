@@ -16,13 +16,12 @@
 #include <tensorpipe/common/error.h>
 #include <tensorpipe/common/optional.h>
 #include <tensorpipe/core/context.h>
+#include <tensorpipe/core/listener.h>
 #include <tensorpipe/core/message.h>
 #include <tensorpipe/proto/core.pb.h>
 #include <tensorpipe/transport/connection.h>
 
 namespace tensorpipe {
-
-class Listener;
 
 // The pipe.
 //
@@ -57,7 +56,7 @@ class Pipe final {
   Pipe(
       ConstructorToken,
       std::shared_ptr<Context>,
-      std::shared_ptr<Listener>,
+      std::shared_ptr<Listener::PrivateIface>,
       std::string,
       std::shared_ptr<transport::Connection>);
 
@@ -98,7 +97,7 @@ class Pipe final {
 
     static std::shared_ptr<Impl> create(
         std::shared_ptr<Context>,
-        std::shared_ptr<Listener>,
+        std::shared_ptr<Listener::PrivateIface>,
         std::string,
         std::shared_ptr<transport::Connection>);
 
@@ -111,7 +110,7 @@ class Pipe final {
     Impl(
         ConstructorToken,
         std::shared_ptr<Context>,
-        std::shared_ptr<Listener>,
+        std::shared_ptr<Listener::PrivateIface>,
         std::string,
         std::shared_ptr<transport::Connection>);
 
@@ -152,7 +151,7 @@ class Pipe final {
     State state_{INITIALIZING};
 
     std::shared_ptr<Context> context_;
-    std::shared_ptr<Listener> listener_;
+    std::shared_ptr<Listener::PrivateIface> listener_;
 
     std::string transport_;
     std::shared_ptr<transport::Connection> connection_;

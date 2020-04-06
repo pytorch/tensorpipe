@@ -12,6 +12,7 @@
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/error_macros.h>
 #include <tensorpipe/core/error.h>
+#include <tensorpipe/core/pipe.h>
 #include <tensorpipe/proto/core.pb.h>
 
 namespace tensorpipe {
@@ -19,13 +20,26 @@ namespace tensorpipe {
 std::shared_ptr<Listener> Listener::create(
     std::shared_ptr<Context> context,
     const std::vector<std::string>& urls) {
-  auto listener =
-      std::make_shared<Listener>(ConstructorToken(), std::move(context), urls);
-  listener->start_();
-  return listener;
+  return std::make_shared<Listener>(
+      ConstructorToken(), std::move(context), urls);
+}
+
+std::shared_ptr<Listener::Impl> Listener::Impl::create(
+    std::shared_ptr<Context> context,
+    const std::vector<std::string>& urls) {
+  auto impl = std::make_shared<Listener::Impl>(
+      ConstructorToken(), std::move(context), urls);
+  impl->start_();
+  return impl;
 }
 
 Listener::Listener(
+    ConstructorToken /* unused */,
+    std::shared_ptr<Context> context,
+    const std::vector<std::string>& urls)
+    : impl_(Impl::create(std::move(context), urls)) {}
+
+Listener::Impl::Impl(
     ConstructorToken /* unused */,
     std::shared_ptr<Context> context,
     const std::vector<std::string>& urls)
@@ -48,11 +62,11 @@ Listener::Listener(
   }
 }
 
-void Listener::start_() {
+void Listener::Impl::start_() {
   deferToLoop_([this]() { startFromLoop_(); });
 }
 
-void Listener::startFromLoop_() {
+void Listener::Impl::startFromLoop_() {
   TP_DCHECK(inLoop_());
   closingReceiver_.activate(*this);
   for (const auto& listener : listeners_) {
@@ -60,11 +74,11 @@ void Listener::startFromLoop_() {
   }
 }
 
-bool Listener::inLoop_() {
+bool Listener::Impl::inLoop_() {
   return currentLoop_ == std::this_thread::get_id();
 }
 
-void Listener::deferToLoop_(std::function<void()> fn) {
+void Listener::Impl::deferToLoop_(std::function<void()> fn) {
   {
     std::unique_lock<std::mutex> lock(mutex_);
     pendingTasks_.push_back(std::move(fn));
@@ -90,10 +104,14 @@ void Listener::deferToLoop_(std::function<void()> fn) {
 }
 
 void Listener::close() {
+  impl_->close();
+}
+
+void Listener::Impl::close() {
   deferToLoop_([this]() { closeFromLoop_(); });
 }
 
-void Listener::closeFromLoop_() {
+void Listener::Impl::closeFromLoop_() {
   TP_DCHECK(inLoop_());
 
   if (!error_) {
@@ -111,11 +129,15 @@ Listener::~Listener() {
 //
 
 void Listener::accept(accept_callback_fn fn) {
+  impl_->accept(std::move(fn));
+}
+
+void Listener::Impl::accept(accept_callback_fn fn) {
   deferToLoop_(
       [this, fn{std::move(fn)}]() mutable { acceptFromLoop_(std::move(fn)); });
 }
 
-void Listener::acceptFromLoop_(accept_callback_fn fn) {
+void Listener::Impl::acceptFromLoop_(accept_callback_fn fn) {
   TP_DCHECK(inLoop_());
 
   if (error_) {
@@ -130,16 +152,16 @@ void Listener::acceptFromLoop_(accept_callback_fn fn) {
   acceptCallback_.arm(runIfAlive(
       *this,
       std::function<void(
-          Listener&,
+          Impl&,
           const Error&,
           std::string,
           std::shared_ptr<transport::Connection>)>(
           [fn{std::move(fn)}](
-              Listener& listener,
+              Impl& impl,
               const Error& error,
               std::string transport,
               std::shared_ptr<transport::Connection> connection) mutable {
-            listener.triggerAcceptCallback_(
+            impl.triggerAcceptCallback_(
                 std::move(fn),
                 error,
                 std::move(transport),
@@ -148,12 +170,20 @@ void Listener::acceptFromLoop_(accept_callback_fn fn) {
 }
 
 const std::map<std::string, std::string>& Listener::addresses() const {
+  return impl_->addresses();
+}
+
+const std::map<std::string, std::string>& Listener::Impl::addresses() const {
   // As this is an immutable member (after it has been initialized in
   // the constructor), we'll access it without deferring to the loop.
   return addresses_;
 }
 
 const std::string& Listener::address(const std::string& transport) const {
+  return impl_->address(transport);
+}
+
+const std::string& Listener::Impl::address(const std::string& transport) const {
   // As this is an immutable member (after it has been initialized in
   // the constructor), we'll access it without deferring to the loop.
   const auto it = addresses_.find(transport);
@@ -163,6 +193,10 @@ const std::string& Listener::address(const std::string& transport) const {
 }
 
 std::string Listener::url(const std::string& transport) const {
+  return impl_->url(transport);
+}
+
+std::string Listener::Impl::url(const std::string& transport) const {
   // As this is an immutable member (after it has been initialized in
   // the constructor), we'll access it without deferring to the loop.
   return transport + "://" + address(transport);
@@ -172,7 +206,7 @@ std::string Listener::url(const std::string& transport) const {
 // Entry points for internal code
 //
 
-uint64_t Listener::registerConnectionRequest_(
+uint64_t Listener::Impl::registerConnectionRequest(
     connection_request_callback_fn fn) {
   // We cannot return a value if we defer the function. Thus we obtain an ID
   // now (and this is why the next ID is an atomic), return it, and defer the
@@ -186,7 +220,7 @@ uint64_t Listener::registerConnectionRequest_(
   return registrationId;
 }
 
-void Listener::registerConnectionRequestFromLoop_(
+void Listener::Impl::registerConnectionRequestFromLoop_(
     uint64_t registrationId,
     connection_request_callback_fn fn) {
   TP_DCHECK(inLoop_());
@@ -202,13 +236,14 @@ void Listener::registerConnectionRequestFromLoop_(
   }
 }
 
-void Listener::unregisterConnectionRequest_(uint64_t registrationId) {
+void Listener::Impl::unregisterConnectionRequest(uint64_t registrationId) {
   deferToLoop_([this, registrationId]() {
     unregisterConnectionRequestFromLoop_(registrationId);
   });
 }
 
-void Listener::unregisterConnectionRequestFromLoop_(uint64_t registrationId) {
+void Listener::Impl::unregisterConnectionRequestFromLoop_(
+    uint64_t registrationId) {
   TP_DCHECK(inLoop_());
   connectionRequestRegistrations_.erase(registrationId);
 }
@@ -217,7 +252,7 @@ void Listener::unregisterConnectionRequestFromLoop_(uint64_t registrationId) {
 // Helpers to schedule our callbacks into user code
 //
 
-void Listener::triggerAcceptCallback_(
+void Listener::Impl::triggerAcceptCallback_(
     accept_callback_fn fn,
     const Error& error,
     std::string transport,
@@ -231,14 +266,14 @@ void Listener::triggerAcceptCallback_(
     pipe = std::make_shared<Pipe>(
         Pipe::ConstructorToken(),
         context_,
-        shared_from_this(),
+        std::static_pointer_cast<PrivateIface>(shared_from_this()),
         std::move(transport),
         std::move(connection));
   }
   fn(error, std::move(pipe));
 }
 
-void Listener::triggerConnectionRequestCallback_(
+void Listener::Impl::triggerConnectionRequestCallback_(
     connection_request_callback_fn fn,
     const Error& error,
     std::string transport,
@@ -252,7 +287,7 @@ void Listener::triggerConnectionRequestCallback_(
 // Error handling
 //
 
-void Listener::handleError_() {
+void Listener::Impl::handleError_() {
   TP_DCHECK(inLoop_());
 
   acceptCallback_.triggerAll([&]() {
@@ -278,7 +313,7 @@ void Listener::handleError_() {
 // Everything else
 //
 
-void Listener::onAccept_(
+void Listener::Impl::onAccept_(
     std::string transport,
     std::shared_ptr<transport::Connection> connection) {
   TP_DCHECK(inLoop_());
@@ -291,17 +326,17 @@ void Listener::onAccept_(
           [pbPacketIn,
            transport{std::move(transport)},
            weakConnection{std::weak_ptr<transport::Connection>(connection)}](
-              Listener& listener) mutable {
+              Impl& impl) mutable {
             std::shared_ptr<transport::Connection> connection =
                 weakConnection.lock();
             TP_DCHECK(connection);
-            listener.connectionsWaitingForHello_.erase(connection);
-            listener.onConnectionHelloRead_(
+            impl.connectionsWaitingForHello_.erase(connection);
+            impl.onConnectionHelloRead_(
                 std::move(transport), std::move(connection), *pbPacketIn);
           }));
 }
 
-void Listener::armListener_(std::string transport) {
+void Listener::Impl::armListener_(std::string transport) {
   TP_DCHECK(inLoop_());
   auto iter = listeners_.find(transport);
   if (iter == listeners_.end()) {
@@ -310,14 +345,13 @@ void Listener::armListener_(std::string transport) {
   auto transportListener = iter->second;
   transportListener->accept(acceptCallbackWrapper_(
       [transport](
-          Listener& listener,
-          std::shared_ptr<transport::Connection> connection) {
-        listener.onAccept_(transport, std::move(connection));
-        listener.armListener_(transport);
+          Impl& impl, std::shared_ptr<transport::Connection> connection) {
+        impl.onAccept_(transport, std::move(connection));
+        impl.armListener_(transport);
       }));
 }
 
-void Listener::onConnectionHelloRead_(
+void Listener::Impl::onConnectionHelloRead_(
     std::string transport,
     std::shared_ptr<transport::Connection> connection,
     const proto::Packet& pbPacketIn) {

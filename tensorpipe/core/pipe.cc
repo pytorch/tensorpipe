@@ -49,7 +49,7 @@ std::shared_ptr<Pipe::Impl> Pipe::Impl::create(
 
 std::shared_ptr<Pipe::Impl> Pipe::Impl::create(
     std::shared_ptr<Context> context,
-    std::shared_ptr<Listener> listener,
+    std::shared_ptr<Listener::PrivateIface> listener,
     std::string transport,
     std::shared_ptr<transport::Connection> connection) {
   auto impl = std::make_shared<Impl>(
@@ -71,7 +71,7 @@ Pipe::Pipe(
 Pipe::Pipe(
     ConstructorToken /* unused */,
     std::shared_ptr<Context> context,
-    std::shared_ptr<Listener> listener,
+    std::shared_ptr<Listener::PrivateIface> listener,
     std::string transport,
     std::shared_ptr<transport::Connection> connection)
     : impl_(Impl::create(
@@ -102,7 +102,7 @@ Pipe::Impl::Impl(
 Pipe::Impl::Impl(
     ConstructorToken /* unused */,
     std::shared_ptr<Context> context,
-    std::shared_ptr<Listener> listener,
+    std::shared_ptr<Listener::PrivateIface> listener,
     std::string transport,
     std::shared_ptr<transport::Connection> connection)
     : state_(SERVER_WAITING_FOR_BROCHURE),
@@ -194,11 +194,11 @@ void Pipe::Impl::closeFromLoop_() {
 
   // TODO Make a RAII wrapper so that this isn't necessary.
   if (registrationId_.has_value()) {
-    listener_->unregisterConnectionRequest_(registrationId_.value());
+    listener_->unregisterConnectionRequest(registrationId_.value());
     registrationId_.reset();
   }
   for (const auto& iter : channelRegistrationIds_) {
-    listener_->unregisterConnectionRequest_(iter.second);
+    listener_->unregisterConnectionRequest(iter.second);
   }
   channelRegistrationIds_.clear();
   error_ = TP_CREATE_ERROR(PipeClosedError);
@@ -640,11 +640,13 @@ void Pipe::Impl::onReadWhileServerWaitingForBrochure_(
     const transport::Context& context = *(std::get<1>(contextIter.second));
 
     // This pipe's listener might not have an address for that transport.
-    const auto listenerIter = listener_->listeners_.find(transport);
-    if (listenerIter == listener_->listeners_.cend()) {
+    const std::map<std::string, std::string>& addresses =
+        listener_->addresses();
+    const auto addressIter = addresses.find(transport);
+    if (addressIter == addresses.cend()) {
       continue;
     }
-    const transport::Listener& listener = *(listenerIter->second);
+    const std::string& address = addressIter->second;
 
     const auto pbTransportAdvertisementIter =
         pbBrochure.transport_advertisement().find(transport);
@@ -661,12 +663,12 @@ void Pipe::Impl::onReadWhileServerWaitingForBrochure_(
     }
 
     pbBrochureAnswer->set_transport(transport);
-    pbBrochureAnswer->set_address(listener.addr());
+    pbBrochureAnswer->set_address(address);
 
     if (transport != transport_) {
       transport_ = transport;
       TP_DCHECK(!registrationId_.has_value());
-      registrationId_.emplace(listener_->registerConnectionRequest_(
+      registrationId_.emplace(listener_->registerConnectionRequest(
           connectionRequestCallbackWrapper_(
               [](Impl& impl,
                  std::string transport,
@@ -704,7 +706,7 @@ void Pipe::Impl::onReadWhileServerWaitingForBrochure_(
     }
 
     channelRegistrationIds_[name] =
-        listener_->registerConnectionRequest_(connectionRequestCallbackWrapper_(
+        listener_->registerConnectionRequest(connectionRequestCallbackWrapper_(
             [name](
                 Impl& impl,
                 std::string transport,
@@ -815,7 +817,7 @@ void Pipe::Impl::onAcceptWhileServerWaitingForConnection_(
   TP_DCHECK(inLoop_());
   TP_DCHECK_EQ(state_, SERVER_WAITING_FOR_CONNECTIONS);
   TP_DCHECK(registrationId_.has_value());
-  listener_->unregisterConnectionRequest_(registrationId_.value());
+  listener_->unregisterConnectionRequest(registrationId_.value());
   registrationId_.reset();
   TP_DCHECK_EQ(transport_, receivedTransport);
   connection_.reset();
@@ -844,7 +846,7 @@ void Pipe::Impl::onAcceptWhileServerWaitingForChannel_(
   TP_DCHECK_EQ(state_, SERVER_WAITING_FOR_CONNECTIONS);
   auto channelRegistrationIdIter = channelRegistrationIds_.find(name);
   TP_DCHECK(channelRegistrationIdIter != channelRegistrationIds_.end());
-  listener_->unregisterConnectionRequest_(channelRegistrationIdIter->second);
+  listener_->unregisterConnectionRequest(channelRegistrationIdIter->second);
   channelRegistrationIds_.erase(channelRegistrationIdIter);
 
   TP_DCHECK_EQ(transport_, receivedTransport);

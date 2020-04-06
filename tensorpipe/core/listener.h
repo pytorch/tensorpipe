@@ -16,11 +16,13 @@
 #include <tensorpipe/common/error.h>
 #include <tensorpipe/common/optional.h>
 #include <tensorpipe/core/context.h>
-#include <tensorpipe/core/pipe.h>
+#include <tensorpipe/proto/core.pb.h>
 #include <tensorpipe/transport/connection.h>
 #include <tensorpipe/transport/listener.h>
 
 namespace tensorpipe {
+
+class Pipe;
 
 // The listener.
 //
@@ -88,120 +90,169 @@ class Listener final : public std::enable_shared_from_this<Listener> {
   ~Listener();
 
  private:
-  mutable std::mutex mutex_;
-  std::thread::id currentLoop_{std::thread::id()};
-  std::deque<std::function<void()>> pendingTasks_;
+  class PrivateIface {
+   public:
+    using connection_request_callback_fn = std::function<void(
+        const Error&,
+        std::string,
+        std::shared_ptr<transport::Connection>)>;
 
-  bool inLoop_();
+    virtual uint64_t registerConnectionRequest(
+        connection_request_callback_fn) = 0;
 
-  void deferToLoop_(std::function<void()> fn);
+    virtual void unregisterConnectionRequest(uint64_t) = 0;
 
-  void acceptFromLoop_(accept_callback_fn);
+    virtual const std::map<std::string, std::string>& addresses() const = 0;
 
-  void closeFromLoop_();
+    virtual ~PrivateIface() = default;
+  };
 
-  using connection_request_callback_fn = std::function<
-      void(const Error&, std::string, std::shared_ptr<transport::Connection>)>;
+  class Impl : public PrivateIface, public std::enable_shared_from_this<Impl> {
+    // Use the passkey idiom to allow make_shared to call what should be a
+    // private constructor. See https://abseil.io/tips/134 for more information.
+    struct ConstructorToken {};
 
-  Error error_;
+   public:
+    static std::shared_ptr<Impl> create(
+        std::shared_ptr<Context>,
+        const std::vector<std::string>&);
 
-  std::shared_ptr<Context> context_;
-  std::unordered_map<std::string, std::shared_ptr<transport::Listener>>
-      listeners_;
-  std::map<std::string, transport::address_t> addresses_;
-  LocklessRearmableCallback<
-      std::function<void(
-          const Error&,
-          std::string,
-          std::shared_ptr<transport::Connection>)>,
-      const Error&,
-      std::string,
-      std::shared_ptr<transport::Connection>>
-      acceptCallback_;
+    Impl(
+        ConstructorToken,
+        std::shared_ptr<Context>,
+        const std::vector<std::string>&);
 
-  // Needed to keep them alive.
-  std::unordered_set<std::shared_ptr<transport::Connection>>
-      connectionsWaitingForHello_;
+    void accept(accept_callback_fn);
 
-  // This is atomic because it may be accessed from outside the loop.
-  std::atomic<uint64_t> nextConnectionRequestRegistrationId_{0};
+    const std::map<std::string, std::string>& addresses() const override;
 
-  // FIXME Consider using a (ordered) map, because keys are IDs which are
-  // generated in sequence and thus we can do a quick (but partial) check of
-  // whether a callback is in the map by comparing its ID with the smallest and
-  // largest key, which in an ordered map are the first and last item.
-  std::unordered_map<uint64_t, connection_request_callback_fn>
-      connectionRequestRegistrations_;
+    const std::string& address(const std::string& transport) const;
 
-  ClosingReceiver closingReceiver_;
+    std::string url(const std::string& transport) const;
 
-  //
-  // Initialization
-  //
+    using PrivateIface::connection_request_callback_fn;
 
-  void start_();
+    uint64_t registerConnectionRequest(connection_request_callback_fn) override;
+    void unregisterConnectionRequest(uint64_t) override;
 
-  void startFromLoop_();
+    void close();
 
-  //
-  // Entry points for internal code
-  //
+    ~Impl() override = default;
 
-  uint64_t registerConnectionRequest_(connection_request_callback_fn);
+   private:
+    mutable std::mutex mutex_;
+    std::thread::id currentLoop_{std::thread::id()};
+    std::deque<std::function<void()>> pendingTasks_;
 
-  void registerConnectionRequestFromLoop_(
-      uint64_t,
-      connection_request_callback_fn);
+    bool inLoop_();
 
-  void unregisterConnectionRequest_(uint64_t);
+    void deferToLoop_(std::function<void()> fn);
 
-  void unregisterConnectionRequestFromLoop_(uint64_t);
+    void acceptFromLoop_(accept_callback_fn);
 
-  //
-  // Helpers to prepare callbacks from transports
-  //
+    void closeFromLoop_();
 
-  DeferringCallbackWrapper<Listener> readPacketCallbackWrapper_;
-  DeferringCallbackWrapper<Listener, std::shared_ptr<transport::Connection>>
-      acceptCallbackWrapper_;
+    Error error_;
 
-  //
-  // Helpers to schedule our callbacks into user code
-  //
+    std::shared_ptr<Context> context_;
+    std::unordered_map<std::string, std::shared_ptr<transport::Listener>>
+        listeners_;
+    std::map<std::string, transport::address_t> addresses_;
+    LocklessRearmableCallback<
+        std::function<void(
+            const Error&,
+            std::string,
+            std::shared_ptr<transport::Connection>)>,
+        const Error&,
+        std::string,
+        std::shared_ptr<transport::Connection>>
+        acceptCallback_;
 
-  void triggerAcceptCallback_(
-      accept_callback_fn,
-      const Error&,
-      std::string,
-      std::shared_ptr<transport::Connection>);
+    // Needed to keep them alive.
+    std::unordered_set<std::shared_ptr<transport::Connection>>
+        connectionsWaitingForHello_;
 
-  void triggerConnectionRequestCallback_(
-      connection_request_callback_fn,
-      const Error&,
-      std::string,
-      std::shared_ptr<transport::Connection>);
+    // This is atomic because it may be accessed from outside the loop.
+    std::atomic<uint64_t> nextConnectionRequestRegistrationId_{0};
 
-  //
-  // Error handling
-  //
+    // FIXME Consider using a (ordered) map, because keys are IDs which are
+    // generated in sequence and thus we can do a quick (but partial) check of
+    // whether a callback is in the map by comparing its ID with the smallest
+    // and largest key, which in an ordered map are the first and last item.
+    std::unordered_map<uint64_t, connection_request_callback_fn>
+        connectionRequestRegistrations_;
 
-  void handleError_();
+    ClosingReceiver closingReceiver_;
 
-  //
-  // Everything else
-  //
+    //
+    // Initialization
+    //
 
-  void armListener_(std::string);
-  void onAccept_(std::string, std::shared_ptr<transport::Connection>);
-  void onConnectionHelloRead_(
-      std::string,
-      std::shared_ptr<transport::Connection>,
-      const proto::Packet&);
+    void start_();
+
+    void startFromLoop_();
+
+    //
+    // Entry points for internal code
+    //
+
+    void registerConnectionRequestFromLoop_(
+        uint64_t,
+        connection_request_callback_fn);
+
+    void unregisterConnectionRequestFromLoop_(uint64_t);
+
+    //
+    // Helpers to prepare callbacks from transports
+    //
+
+    DeferringCallbackWrapper<Impl> readPacketCallbackWrapper_;
+    DeferringCallbackWrapper<Impl, std::shared_ptr<transport::Connection>>
+        acceptCallbackWrapper_;
+
+    //
+    // Helpers to schedule our callbacks into user code
+    //
+
+    void triggerAcceptCallback_(
+        accept_callback_fn,
+        const Error&,
+        std::string,
+        std::shared_ptr<transport::Connection>);
+
+    void triggerConnectionRequestCallback_(
+        connection_request_callback_fn,
+        const Error&,
+        std::string,
+        std::shared_ptr<transport::Connection>);
+
+    //
+    // Error handling
+    //
+
+    void handleError_();
+
+    //
+    // Everything else
+    //
+
+    void armListener_(std::string);
+    void onAccept_(std::string, std::shared_ptr<transport::Connection>);
+    void onConnectionHelloRead_(
+        std::string,
+        std::shared_ptr<transport::Connection>,
+        const proto::Packet&);
+
+    template <typename T, typename... Args>
+    friend class DeferringCallbackWrapper;
+  };
+
+  // Using a shared_ptr allows us to detach the lifetime of the implementation
+  // from the public object's one and perform the destruction asynchronously.
+  std::shared_ptr<Impl> impl_;
 
   friend class Context;
   friend class Pipe;
-  template <typename T, typename... Args>
-  friend class DeferringCallbackWrapper;
 };
 
 } // namespace tensorpipe
