@@ -8,12 +8,80 @@
 
 #include <tensorpipe/core/context.h>
 
+#include <atomic>
+#include <thread>
+#include <unordered_map>
+
+#include <tensorpipe/common/callback.h>
 #include <tensorpipe/common/defs.h>
+#include <tensorpipe/common/optional.h>
+#include <tensorpipe/common/queue.h>
 #include <tensorpipe/core/listener.h>
 #include <tensorpipe/core/pipe.h>
 #include <tensorpipe/transport/connection.h>
 
 namespace tensorpipe {
+
+class Context::Impl : public Context::PrivateIface,
+                      public std::enable_shared_from_this<Context::Impl> {
+  // Use the passkey idiom to allow make_shared to call what should be a
+  // private constructor. See https://abseil.io/tips/134 for more information.
+  struct ConstructorToken {};
+
+ public:
+  static std::shared_ptr<Impl> create();
+
+  Impl(ConstructorToken);
+
+  void registerTransport(
+      int64_t,
+      std::string,
+      std::shared_ptr<transport::Context>);
+
+  void registerChannelFactory(
+      int64_t,
+      std::string,
+      std::shared_ptr<channel::ChannelFactory>);
+
+  std::shared_ptr<Listener> listen(const std::vector<std::string>&);
+
+  std::shared_ptr<Pipe> connect(const std::string&);
+
+  ClosingEmitter& getClosingEmitter() override;
+
+  std::shared_ptr<transport::Context> getContextForTransport(
+      const std::string&) override;
+  std::shared_ptr<channel::ChannelFactory> getChannelFactory(
+      const std::string&) override;
+
+  using PrivateIface::TOrderedChannelFactories;
+
+  const TOrderedContexts& getOrderedContexts() override;
+
+  using PrivateIface::TOrderedContexts;
+
+  const TOrderedChannelFactories& getOrderedChannelFactories() override;
+
+  void close();
+
+  void join();
+
+  ~Impl() override = default;
+
+ private:
+  std::atomic<bool> closed_{false};
+  std::atomic<bool> joined_{false};
+
+  std::unordered_map<std::string, std::shared_ptr<transport::Context>>
+      contexts_;
+  std::unordered_map<std::string, std::shared_ptr<channel::ChannelFactory>>
+      channelFactories_;
+
+  TOrderedContexts contextsByPriority_;
+  TOrderedChannelFactories channelFactoriesByPriority_;
+
+  ClosingEmitter closingEmitter_;
+};
 
 std::shared_ptr<Context> Context::create() {
   return std::make_shared<Context>(ConstructorToken());

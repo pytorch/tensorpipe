@@ -8,17 +8,14 @@
 
 #pragma once
 
-#include <deque>
-#include <mutex>
-#include <unordered_map>
+#include <functional>
+#include <memory>
+#include <string>
 
-#include <tensorpipe/common/callback.h>
 #include <tensorpipe/common/error.h>
-#include <tensorpipe/common/optional.h>
 #include <tensorpipe/core/context.h>
 #include <tensorpipe/core/listener.h>
 #include <tensorpipe/core/message.h>
-#include <tensorpipe/proto/core.pb.h>
 #include <tensorpipe/transport/connection.h>
 
 namespace tensorpipe {
@@ -84,227 +81,10 @@ class Pipe final {
   ~Pipe();
 
  private:
-  class Impl : public std::enable_shared_from_this<Impl> {
-    // Use the passkey idiom to allow make_shared to call what should be a
-    // private constructor. See https://abseil.io/tips/134 for more information.
-    struct ConstructorToken {};
+  class Impl;
 
-   public:
-    static std::shared_ptr<Impl> create(
-        std::shared_ptr<Context::PrivateIface>,
-        const std::string&);
-
-    static std::shared_ptr<Impl> create(
-        std::shared_ptr<Context::PrivateIface>,
-        std::shared_ptr<Listener::PrivateIface>,
-        std::string,
-        std::shared_ptr<transport::Connection>);
-
-    Impl(
-        ConstructorToken,
-        std::shared_ptr<Context::PrivateIface>,
-        std::string,
-        std::shared_ptr<transport::Connection>);
-
-    Impl(
-        ConstructorToken,
-        std::shared_ptr<Context::PrivateIface>,
-        std::shared_ptr<Listener::PrivateIface>,
-        std::string,
-        std::shared_ptr<transport::Connection>);
-
-    void readDescriptor(read_descriptor_callback_fn);
-    void read(Message, read_callback_fn);
-    void write(Message, write_callback_fn);
-
-    void close();
-
-   private:
-    std::mutex mutex_;
-    std::atomic<std::thread::id> currentLoop_{std::thread::id()};
-    std::deque<std::function<void()>> pendingTasks_;
-
-    void deferToLoop_(std::function<void()> fn);
-
-    void startFromLoop_();
-
-    void readDescriptorFromLoop_(read_descriptor_callback_fn);
-
-    void readFromLoop_(Message, read_callback_fn);
-
-    void writeFromLoop_(Message, write_callback_fn);
-
-    bool inLoop_();
-
-    void closeFromLoop_();
-
-    enum State {
-      INITIALIZING,
-      CLIENT_ABOUT_TO_SEND_HELLO_AND_BROCHURE,
-      SERVER_WAITING_FOR_BROCHURE,
-      CLIENT_WAITING_FOR_BROCHURE_ANSWER,
-      SERVER_WAITING_FOR_CONNECTIONS,
-      ESTABLISHED
-    };
-
-    State state_{INITIALIZING};
-
-    std::shared_ptr<Context::PrivateIface> context_;
-    std::shared_ptr<Listener::PrivateIface> listener_;
-
-    std::string transport_;
-    std::shared_ptr<transport::Connection> connection_;
-    std::unordered_map<std::string, std::shared_ptr<channel::Channel>>
-        channels_;
-
-    // The server will set this up when it tell the client to switch to a
-    // different connection or to open some channels.
-    optional<uint64_t> registrationId_;
-    std::unordered_map<std::string, uint64_t> channelRegistrationIds_;
-
-    ClosingReceiver closingReceiver_;
-
-    enum ConnectionState { NEXT_UP_IS_DESCRIPTOR, NEXT_UP_IS_DATA };
-
-    ConnectionState connectionState_{NEXT_UP_IS_DESCRIPTOR};
-
-    struct MessageBeingExpected {
-      int64_t sequenceNumber{-1};
-      read_descriptor_callback_fn callback;
-    };
-
-    struct MessageBeingAllocated {
-      int64_t sequenceNumber{-1};
-      ssize_t length{-1};
-      struct Tensor {
-        ssize_t length{-1};
-        std::string channelName;
-        channel::Channel::TDescriptor descriptor;
-      };
-      std::vector<Tensor> tensors;
-    };
-
-    struct MessageBeingRead {
-      int64_t sequenceNumber{-1};
-      Message message;
-      read_callback_fn callback;
-      bool dataStillBeingRead{false};
-      int64_t numTensorDataStillBeingReceived{0};
-    };
-
-    struct MessageBeingWritten {
-      int64_t sequenceNumber{-1};
-      Message message;
-      write_callback_fn callback;
-      bool startedWritingData{false};
-      bool startedSendingTensors{false};
-      bool dataStillBeingWritten{false};
-      int64_t numTensorDescriptorsStillBeingCollected{0};
-      int64_t numTensorDataStillBeingSent{0};
-      struct Tensor {
-        std::string channelName;
-        channel::Channel::TDescriptor descriptor;
-      };
-      std::vector<Tensor> tensors;
-    };
-
-    int64_t nextMessageBeingRead_{0};
-    std::deque<MessageBeingExpected> messagesBeingExpected_;
-    int64_t nextReadDescriptorCallbackToCall_{0};
-    std::deque<MessageBeingAllocated> messagesBeingAllocated_;
-    std::deque<MessageBeingRead> messagesBeingRead_;
-    int64_t nextReadCallbackToCall_{0};
-
-    int64_t nextMessageBeingWritten_{0};
-    std::deque<MessageBeingWritten> messagesBeingWritten_;
-    int64_t nextWriteCallbackToCall_{0};
-
-    Error error_;
-
-    //
-    // Initialization
-    //
-
-    void start_();
-
-    //
-    // Helpers to prepare callbacks from transports and listener
-    //
-
-    DeferringTolerantCallbackWrapper<Impl, const void*, size_t>
-        readCallbackWrapper_;
-    DeferringCallbackWrapper<Impl> readPacketCallbackWrapper_;
-    DeferringTolerantCallbackWrapper<Impl> writeCallbackWrapper_;
-    DeferringCallbackWrapper<Impl> writePacketCallbackWrapper_;
-    DeferringCallbackWrapper<
-        Impl,
-        std::string,
-        std::shared_ptr<transport::Connection>>
-        connectionRequestCallbackWrapper_;
-    DeferringTolerantCallbackWrapper<Impl, channel::Channel::TDescriptor>
-        channelDescriptorCallbackWrapper_;
-    DeferringTolerantCallbackWrapper<Impl> channelRecvCallbackWrapper_;
-    DeferringTolerantCallbackWrapper<Impl> channelSendCallbackWrapper_;
-
-    //
-    // Helpers to schedule our callbacks into user code
-    //
-
-    void triggerReadDescriptorCallback_(
-        int64_t,
-        read_descriptor_callback_fn&&,
-        const Error&,
-        Message);
-    void triggerReadCallback_(
-        int64_t,
-        read_callback_fn&&,
-        const Error&,
-        Message);
-    void triggerWriteCallback_(
-        int64_t,
-        write_callback_fn&&,
-        const Error&,
-        Message);
-
-    void triggerReadyCallbacks_();
-
-    //
-    // Error handling
-    //
-
-    void handleError_();
-
-    //
-    // Everything else
-    //
-
-    void doWritesAccumulatedWhileWaitingForPipeToBeEstablished_();
-    void sendTensorsOfMessage_(MessageBeingWritten&);
-    void writeMessage_(MessageBeingWritten&);
-    void onReadWhileServerWaitingForBrochure_(const proto::Packet&);
-    void onReadWhileClientWaitingForBrochureAnswer_(const proto::Packet&);
-    void onAcceptWhileServerWaitingForConnection_(
-        std::string,
-        std::shared_ptr<transport::Connection>);
-    void onAcceptWhileServerWaitingForChannel_(
-        std::string,
-        std::string,
-        std::shared_ptr<transport::Connection>);
-    void onReadOfMessageDescriptor_(const proto::Packet&);
-    void onDescriptorOfTensor_(int64_t, int64_t, channel::Channel::TDescriptor);
-    void onReadOfMessageData_(int64_t);
-    void onRecvOfTensorData_(int64_t);
-    void onWriteOfMessageData_(int64_t);
-    void onSendOfTensorData_(int64_t);
-
-    void checkForMessagesDoneCollectingTensorDescriptors_();
-
-    template <typename T, typename... Args>
-    friend class DeferringCallbackWrapper;
-    template <typename T, typename... Args>
-    friend class DeferringTolerantCallbackWrapper;
-  };
-
+  // Using a shared_ptr allows us to detach the lifetime of the implementation
+  // from the public object's one and perform the destruction asynchronously.
   std::shared_ptr<Impl> impl_;
 
   friend class Context;
