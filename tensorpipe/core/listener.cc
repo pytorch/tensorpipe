@@ -49,19 +49,56 @@ Listener::Listener(
 }
 
 void Listener::start_() {
-  std::unique_lock<std::mutex> lock(mutex_);
+  deferToLoop_([this]() { startFromLoop_(); });
+}
+
+void Listener::startFromLoop_() {
+  TP_DCHECK(inLoop_());
   closingReceiver_.activate(*this);
   for (const auto& listener : listeners_) {
-    armListener_(listener.first, lock);
+    armListener_(listener.first);
+  }
+}
+
+bool Listener::inLoop_() {
+  return currentLoop_ == std::this_thread::get_id();
+}
+
+void Listener::deferToLoop_(std::function<void()> fn) {
+  {
+    std::unique_lock<std::mutex> lock(mutex_);
+    pendingTasks_.push_back(std::move(fn));
+    if (currentLoop_ != std::thread::id()) {
+      return;
+    }
+    currentLoop_ = std::this_thread::get_id();
+  }
+
+  while (true) {
+    std::function<void()> task;
+    {
+      std::unique_lock<std::mutex> lock(mutex_);
+      if (pendingTasks_.empty()) {
+        currentLoop_ = std::thread::id();
+        return;
+      }
+      task = std::move(pendingTasks_.front());
+      pendingTasks_.pop_front();
+    }
+    task();
   }
 }
 
 void Listener::close() {
-  std::unique_lock<std::mutex> lock(mutex_);
+  deferToLoop_([this]() { closeFromLoop_(); });
+}
+
+void Listener::closeFromLoop_() {
+  TP_DCHECK(inLoop_());
 
   if (!error_) {
     error_ = TP_CREATE_ERROR(ListenerClosedError);
-    handleError_(lock);
+    handleError_();
   }
 }
 
@@ -74,49 +111,51 @@ Listener::~Listener() {
 //
 
 void Listener::accept(accept_callback_fn fn) {
-  std::unique_lock<std::mutex> lock(mutex_);
+  deferToLoop_(
+      [this, fn{std::move(fn)}]() mutable { acceptFromLoop_(std::move(fn)); });
+}
+
+void Listener::acceptFromLoop_(accept_callback_fn fn) {
+  TP_DCHECK(inLoop_());
 
   if (error_) {
     triggerAcceptCallback_(
         std::move(fn),
         error_,
         std::string(),
-        std::shared_ptr<transport::Connection>(),
-        lock);
+        std::shared_ptr<transport::Connection>());
     return;
   }
 
-  acceptCallback_.arm(
-      runIfAlive(
-          *this,
-          std::function<void(
-              Listener&,
-              const Error&,
-              std::string,
-              std::shared_ptr<transport::Connection>,
-              TLock)>([fn{std::move(fn)}](
-                          Listener& listener,
-                          const Error& error,
-                          std::string transport,
-                          std::shared_ptr<transport::Connection> connection,
-                          TLock lock) mutable {
+  acceptCallback_.arm(runIfAlive(
+      *this,
+      std::function<void(
+          Listener&,
+          const Error&,
+          std::string,
+          std::shared_ptr<transport::Connection>)>(
+          [fn{std::move(fn)}](
+              Listener& listener,
+              const Error& error,
+              std::string transport,
+              std::shared_ptr<transport::Connection> connection) mutable {
             listener.triggerAcceptCallback_(
                 std::move(fn),
                 error,
                 std::move(transport),
-                std::move(connection),
-                lock);
-          })),
-      lock);
+                std::move(connection));
+          })));
 }
 
 const std::map<std::string, std::string>& Listener::addresses() const {
-  std::unique_lock<std::mutex> lock(mutex_);
+  // As this is an immutable member (after it has been initialized in
+  // the constructor), we'll access it without deferring to the loop.
   return addresses_;
 }
 
 const std::string& Listener::address(const std::string& transport) const {
-  std::unique_lock<std::mutex> lock(mutex_);
+  // As this is an immutable member (after it has been initialized in
+  // the constructor), we'll access it without deferring to the loop.
   const auto it = addresses_.find(transport);
   TP_THROW_ASSERT_IF(it == addresses_.end())
       << ": transport '" << transport << "' not in use by this listener.";
@@ -124,7 +163,8 @@ const std::string& Listener::address(const std::string& transport) const {
 }
 
 std::string Listener::url(const std::string& transport) const {
-  // std::unique_lock<std::mutex> lock(mutex_);
+  // As this is an immutable member (after it has been initialized in
+  // the constructor), we'll access it without deferring to the loop.
   return transport + "://" + address(transport);
 }
 
@@ -134,24 +174,42 @@ std::string Listener::url(const std::string& transport) const {
 
 uint64_t Listener::registerConnectionRequest_(
     connection_request_callback_fn fn) {
-  std::unique_lock<std::mutex> lock(mutex_);
-
+  // We cannot return a value if we defer the function. Thus we obtain an ID
+  // now (and this is why the next ID is an atomic), return it, and defer the
+  // rest of the processing.
+  // FIXME Avoid this hack by doing like we did with the channels' recv: have
+  // this accept a callback that is called with the registration ID.
   uint64_t registrationId = nextConnectionRequestRegistrationId_++;
+  deferToLoop_([this, registrationId, fn{std::move(fn)}]() mutable {
+    registerConnectionRequestFromLoop_(registrationId, std::move(fn));
+  });
+  return registrationId;
+}
+
+void Listener::registerConnectionRequestFromLoop_(
+    uint64_t registrationId,
+    connection_request_callback_fn fn) {
+  TP_DCHECK(inLoop_());
+
   if (error_) {
     triggerConnectionRequestCallback_(
         std::move(fn),
         error_,
         std::string(),
-        std::shared_ptr<transport::Connection>(),
-        lock);
+        std::shared_ptr<transport::Connection>());
   } else {
     connectionRequestRegistrations_.emplace(registrationId, std::move(fn));
   }
-  return registrationId;
 }
 
 void Listener::unregisterConnectionRequest_(uint64_t registrationId) {
-  std::unique_lock<std::mutex> lock(mutex_);
+  deferToLoop_([this, registrationId]() {
+    unregisterConnectionRequestFromLoop_(registrationId);
+  });
+}
+
+void Listener::unregisterConnectionRequestFromLoop_(uint64_t registrationId) {
+  TP_DCHECK(inLoop_());
   connectionRequestRegistrations_.erase(registrationId);
 }
 
@@ -163,12 +221,11 @@ void Listener::triggerAcceptCallback_(
     accept_callback_fn fn,
     const Error& error,
     std::string transport,
-    std::shared_ptr<transport::Connection> connection,
-    TLock lock) {
-  TP_DCHECK(lock.owns_lock() && lock.mutex() == &mutex_);
-  lock.unlock();
+    std::shared_ptr<transport::Connection> connection) {
+  TP_DCHECK(inLoop_());
   // Create the pipe here, without holding the lock, as otherwise TSAN would
   // report a false positive lock order inversion.
+  // FIXME Simplify this now that we don't use locks anymore.
   std::shared_ptr<Pipe> pipe;
   if (!error) {
     pipe = std::make_shared<Pipe>(
@@ -179,42 +236,36 @@ void Listener::triggerAcceptCallback_(
         std::move(connection));
   }
   fn(error, std::move(pipe));
-  lock.lock();
 }
 
 void Listener::triggerConnectionRequestCallback_(
     connection_request_callback_fn fn,
     const Error& error,
     std::string transport,
-    std::shared_ptr<transport::Connection> connection,
-    TLock lock) {
-  TP_DCHECK(lock.owns_lock() && lock.mutex() == &mutex_);
-  lock.unlock();
+    std::shared_ptr<transport::Connection> connection) {
+  TP_DCHECK(inLoop_());
+  // FIXME Avoid this function now that we don't use locks anymore.
   fn(error, std::move(transport), std::move(connection));
-  lock.lock();
 }
 
 //
 // Error handling
 //
 
-void Listener::handleError_(TLock lock) {
-  TP_DCHECK(lock.owns_lock() && lock.mutex() == &mutex_);
+void Listener::handleError_() {
+  TP_DCHECK(inLoop_());
 
-  acceptCallback_.triggerAll(
-      [&]() {
-        return std::make_tuple(
-            error_, std::string(), std::shared_ptr<transport::Connection>());
-      },
-      lock);
+  acceptCallback_.triggerAll([&]() {
+    return std::make_tuple(
+        error_, std::string(), std::shared_ptr<transport::Connection>());
+  });
   for (auto& iter : connectionRequestRegistrations_) {
     connection_request_callback_fn fn = std::move(iter.second);
     triggerConnectionRequestCallback_(
         std::move(fn),
         error_,
         std::string(),
-        std::shared_ptr<transport::Connection>(),
-        lock);
+        std::shared_ptr<transport::Connection>());
   }
   connectionRequestRegistrations_.clear();
 
@@ -229,9 +280,8 @@ void Listener::handleError_(TLock lock) {
 
 void Listener::onAccept_(
     std::string transport,
-    std::shared_ptr<transport::Connection> connection,
-    TLock lock) {
-  TP_DCHECK(lock.owns_lock() && lock.mutex() == &mutex_);
+    std::shared_ptr<transport::Connection> connection) {
+  TP_DCHECK(inLoop_());
   // Keep it alive until we figure out what to do with it.
   connectionsWaitingForHello_.insert(connection);
   auto pbPacketIn = std::make_shared<proto::Packet>();
@@ -241,18 +291,18 @@ void Listener::onAccept_(
           [pbPacketIn,
            transport{std::move(transport)},
            weakConnection{std::weak_ptr<transport::Connection>(connection)}](
-              Listener& listener, TLock lock) mutable {
+              Listener& listener) mutable {
             std::shared_ptr<transport::Connection> connection =
                 weakConnection.lock();
             TP_DCHECK(connection);
             listener.connectionsWaitingForHello_.erase(connection);
             listener.onConnectionHelloRead_(
-                std::move(transport), std::move(connection), *pbPacketIn, lock);
+                std::move(transport), std::move(connection), *pbPacketIn);
           }));
 }
 
-void Listener::armListener_(std::string transport, TLock lock) {
-  TP_DCHECK(lock.owns_lock() && lock.mutex() == &mutex_);
+void Listener::armListener_(std::string transport) {
+  TP_DCHECK(inLoop_());
   auto iter = listeners_.find(transport);
   if (iter == listeners_.end()) {
     TP_THROW_EINVAL() << "unsupported transport " << transport;
@@ -261,22 +311,20 @@ void Listener::armListener_(std::string transport, TLock lock) {
   transportListener->accept(acceptCallbackWrapper_(
       [transport](
           Listener& listener,
-          std::shared_ptr<transport::Connection> connection,
-          TLock lock) {
-        listener.onAccept_(transport, std::move(connection), lock);
-        listener.armListener_(transport, lock);
+          std::shared_ptr<transport::Connection> connection) {
+        listener.onAccept_(transport, std::move(connection));
+        listener.armListener_(transport);
       }));
 }
 
 void Listener::onConnectionHelloRead_(
     std::string transport,
     std::shared_ptr<transport::Connection> connection,
-    const proto::Packet& pbPacketIn,
-    TLock lock) {
-  TP_DCHECK(lock.owns_lock() && lock.mutex() == &mutex_);
+    const proto::Packet& pbPacketIn) {
+  TP_DCHECK(inLoop_());
   if (pbPacketIn.has_spontaneous_connection()) {
     acceptCallback_.trigger(
-        Error::kSuccess, std::move(transport), std::move(connection), lock);
+        Error::kSuccess, std::move(transport), std::move(connection));
   } else if (pbPacketIn.has_requested_connection()) {
     const proto::RequestedConnection& pbRequestedConnection =
         pbPacketIn.requested_connection();
@@ -287,8 +335,7 @@ void Listener::onConnectionHelloRead_(
         std::move(fn),
         Error::kSuccess,
         std::move(transport),
-        std::move(connection),
-        lock);
+        std::move(connection));
   } else {
     TP_LOG_ERROR() << "packet contained unknown content: "
                    << pbPacketIn.type_case();

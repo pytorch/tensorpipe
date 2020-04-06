@@ -112,32 +112,25 @@ class RearmableCallbackWithOwnLock {
 // unarmed are stashed and will be delayed until a callback is provided again.
 // (This version of the class forwards a user-provided lock to the callback)
 template <typename F, typename... Args>
-class RearmableCallbackWithExternalLock {
-  using TLock = std::unique_lock<std::mutex>&;
+class LocklessRearmableCallback {
   using TStoredArgs = std::tuple<typename std::remove_reference<Args>::type...>;
 
  public:
-  void arm(F&& f, TLock lock) {
-    TP_DCHECK(lock.owns_lock());
+  void arm(F&& f) {
     if (!args_.empty()) {
       TStoredArgs args{std::move(args_.front())};
       args_.pop_front();
-      cb_apply(
-          std::move(f),
-          std::tuple_cat(std::move(args), std::forward_as_tuple(lock)));
+      cb_apply(std::move(f), std::move(args));
     } else {
       callbacks_.push_back(std::move(f));
     }
   };
 
-  void trigger(Args... args, TLock lock) {
-    TP_DCHECK(lock.owns_lock());
+  void trigger(Args... args) {
     if (!callbacks_.empty()) {
       F f{std::move(callbacks_.front())};
       callbacks_.pop_front();
-      cb_apply(
-          std::move(f),
-          std::tuple<Args..., TLock>(std::forward<Args>(args)..., lock));
+      cb_apply(std::move(f), std::tuple<Args...>(std::forward<Args>(args)...));
     } else {
       args_.emplace_back(std::forward<Args>(args)...);
     }
@@ -146,12 +139,11 @@ class RearmableCallbackWithExternalLock {
   // This method is intended for "flushing" the callback, for example when an
   // error condition is reached which means that no more callbacks will be
   // processed but the current ones still must be honored.
-  void triggerAll(std::function<std::tuple<Args...>()> fn, TLock lock) {
-    TP_DCHECK(lock.owns_lock());
+  void triggerAll(std::function<std::tuple<Args...>()> fn) {
     while (!callbacks_.empty()) {
       F f{std::move(callbacks_.front())};
       callbacks_.pop_front();
-      cb_apply(std::move(f), std::tuple_cat(fn(), std::forward_as_tuple(lock)));
+      cb_apply(std::move(f), fn());
     }
   }
 
