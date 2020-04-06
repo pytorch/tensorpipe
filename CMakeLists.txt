@@ -20,6 +20,7 @@ endif()
 
 option(TP_ENABLE_SHM "Enable shm transport" ${LINUX})
 option(TP_ENABLE_CMA "Enable cma channel" ${LINUX})
+option(TP_BUILD_LIBUV "Build libuv from source" OFF)
 
 # Define sanitizer option, if specified.
 include(Sanitize)
@@ -38,19 +39,9 @@ include(CTest)
 if(BUILD_TESTING)
   add_subdirectory(third_party/googletest EXCLUDE_FROM_ALL)
 endif()
-add_subdirectory(third_party/libuv EXCLUDE_FROM_ALL)
+
 if(BUILD_PYTHON_MODULE)
   add_subdirectory(third_party/pybind11 EXCLUDE_FROM_ALL)
 endif()
-
-# Add include paths for libuv targets.
-# These are defined as relative paths in third_party/libuv/CMakeLists.txt,
-# but they don't propagate to downstream targets that depend on libuv.
-set_target_properties(uv PROPERTIES
-  INTERFACE_INCLUDE_DIRECTORIES "${libuv_SOURCE_DIR}/include"
-  )
-set_target_properties(uv_a PROPERTIES
-  INTERFACE_INCLUDE_DIRECTORIES "${libuv_SOURCE_DIR}/include"
-  )
 
 add_subdirectory(tensorpipe)
