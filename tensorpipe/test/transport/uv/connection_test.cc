@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <tensorpipe/test/transport/uv/uv_test.h>
+#include <tensorpipe/test/transport/transport_test.h>
 
 #include <gtest/gtest.h>
 

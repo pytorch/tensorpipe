@@ -6,8 +6,24 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <tensorpipe/test/channel/basic/basic_test.h>
+#include <tensorpipe/channel/basic/context.h>
+#include <tensorpipe/test/channel/channel_test.h>
+
+namespace {
+
+class BasicChannelTestHelper : public ChannelTestHelper {
+ public:
+  std::shared_ptr<tensorpipe::channel::Context> makeContext() override {
+    return std::make_shared<tensorpipe::channel::basic::Context>();
+  }
+
+  std::string getName() override {
+    return "basic";
+  }
+};
 
 BasicChannelTestHelper helper;
+
+} // namespace
 
 INSTANTIATE_TEST_CASE_P(Basic, ChannelTest, ::testing::Values(&helper));
