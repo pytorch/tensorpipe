@@ -14,6 +14,8 @@
 
 #include <algorithm>
 #include <limits>
+#include <list>
+#include <mutex>
 
 #include <tensorpipe/channel/cma/channel.h>
 #include <tensorpipe/channel/error.h>
@@ -21,7 +23,10 @@
 #include <tensorpipe/common/callback.h>
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/error_macros.h>
+#include <tensorpipe/common/optional.h>
+#include <tensorpipe/common/queue.h>
 #include <tensorpipe/common/system.h>
+#include <tensorpipe/proto/channel/cma.pb.h>
 
 namespace tensorpipe {
 namespace channel {
@@ -57,6 +62,54 @@ std::string generateDomainDescriptor() {
 }
 
 } // namespace
+
+class Context::Impl : public Context::PrivateIface,
+                      public std::enable_shared_from_this<Context::Impl> {
+ public:
+  Impl();
+
+  const std::string& domainDescriptor() const;
+
+  std::shared_ptr<channel::Channel> createChannel(
+      std::shared_ptr<transport::Connection>,
+      Channel::Endpoint);
+
+  ClosingEmitter& getClosingEmitter() override;
+
+  using copy_request_callback_fn = std::function<void(const Error&)>;
+
+  void requestCopy(
+      pid_t remotePid,
+      void* remotePtr,
+      void* localPtr,
+      size_t length,
+      copy_request_callback_fn fn) override;
+
+  void close();
+
+  void join();
+
+  ~Impl() override = default;
+
+ private:
+  struct CopyRequest {
+    pid_t remotePid;
+    void* remotePtr;
+    void* localPtr;
+    size_t length;
+    copy_request_callback_fn callback;
+  };
+
+  mutable std::mutex mutex_;
+  std::string domainDescriptor_;
+  std::thread thread_;
+  Queue<optional<CopyRequest>> requests_;
+  std::atomic<bool> closed_{false};
+  std::atomic<bool> joined_{false};
+  ClosingEmitter closingEmitter_;
+
+  void handleCopyRequests_();
+};
 
 Context::Context()
     : channel::Context(kChannelName),

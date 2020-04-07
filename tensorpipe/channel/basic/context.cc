@@ -9,17 +9,46 @@
 #include <tensorpipe/channel/basic/context.h>
 
 #include <algorithm>
+#include <list>
 
 #include <tensorpipe/channel/basic/channel.h>
 #include <tensorpipe/channel/error.h>
 #include <tensorpipe/channel/helpers.h>
 #include <tensorpipe/common/callback.h>
 #include <tensorpipe/common/defs.h>
+#include <tensorpipe/common/error.h>
 #include <tensorpipe/common/error_macros.h>
+#include <tensorpipe/proto/channel/basic.pb.h>
 
 namespace tensorpipe {
 namespace channel {
 namespace basic {
+
+class Context::Impl : public Context::PrivateIface,
+                      public std::enable_shared_from_this<Context::Impl> {
+ public:
+  Impl();
+
+  const std::string& domainDescriptor() const;
+
+  std::shared_ptr<channel::Channel> createChannel(
+      std::shared_ptr<transport::Connection>,
+      Channel::Endpoint);
+
+  ClosingEmitter& getClosingEmitter() override;
+
+  void close();
+
+  void join();
+
+  ~Impl() override = default;
+
+ private:
+  std::string domainDescriptor_;
+  std::atomic<bool> closed_{false};
+  std::atomic<bool> joined_{false};
+  ClosingEmitter closingEmitter_;
+};
 
 Context::Context()
     : channel::Context("basic"), impl_(std::make_shared<Impl>()) {}

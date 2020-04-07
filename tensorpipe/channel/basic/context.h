@@ -8,12 +8,11 @@
 
 #pragma once
 
-#include <list>
+#include <memory>
+#include <string>
 
 #include <tensorpipe/channel/context.h>
 #include <tensorpipe/common/callback.h>
-#include <tensorpipe/common/error.h>
-#include <tensorpipe/proto/channel/basic.pb.h>
 
 namespace tensorpipe {
 namespace channel {
@@ -43,30 +42,7 @@ class Context : public channel::Context {
     virtual ~PrivateIface() = default;
   };
 
-  class Impl : public PrivateIface, public std::enable_shared_from_this<Impl> {
-   public:
-    Impl();
-
-    const std::string& domainDescriptor() const;
-
-    std::shared_ptr<Channel> createChannel(
-        std::shared_ptr<transport::Connection>,
-        Channel::Endpoint);
-
-    ClosingEmitter& getClosingEmitter() override;
-
-    void close();
-
-    void join();
-
-    ~Impl() override = default;
-
-   private:
-    std::string domainDescriptor_;
-    std::atomic<bool> closed_{false};
-    std::atomic<bool> joined_{false};
-    ClosingEmitter closingEmitter_;
-  };
+  class Impl;
 
   // The implementation is managed by a shared_ptr because each child object
   // will also hold a shared_ptr to it (downcast as a shared_ptr to the private
