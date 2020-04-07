@@ -358,8 +358,8 @@ class DeferringTolerantCallbackWrapper {
 };
 
 // This class is designed to be installed on objects that, when closed, should
-// in turn cause other objects to be closed too. This is the case for contexts
-// and factories, which close pipes, connections, listeners and channels.
+// in turn cause other objects to be closed too. This is the case for contexts,
+// which close pipes, connections, listeners and channels.
 // This class goes hand in hand with the one following it.
 class ClosingEmitter {
  public:
@@ -390,11 +390,11 @@ class ClosingEmitter {
 
 // This class is designed to be installed on objects that need to become closed
 // when another object is closed. This is the case for pipes, connections,
-// listeners and channels when contexts and factories get closed.
+// listeners and channels when contexts get closed.
 // This class goes hand in hand with the previous one.
 class ClosingReceiver {
  public:
-  // T will be the context or the channel factory.
+  // T will be the context.
   template <typename T>
   ClosingReceiver(const std::shared_ptr<T>& object, ClosingEmitter& emitter)
       : emitter_(std::shared_ptr<ClosingEmitter>(object, &emitter)) {}

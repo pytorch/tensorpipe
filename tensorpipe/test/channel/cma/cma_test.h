@@ -8,13 +8,13 @@
 
 #pragma once
 
-#include <tensorpipe/channel/cma/cma.h>
+#include <tensorpipe/channel/cma/context.h>
 #include <tensorpipe/test/channel/channel_test.h>
 
 class CmaChannelTestHelper : public ChannelTestHelper {
  public:
-  std::shared_ptr<tensorpipe::channel::ChannelFactory> makeFactory() override {
-    return tensorpipe::channel::cma::CmaChannelFactory::create();
+  std::shared_ptr<tensorpipe::channel::Context> makeContext() override {
+    return std::make_shared<tensorpipe::channel::cma::Context>();
   }
 
   std::string getName() override {

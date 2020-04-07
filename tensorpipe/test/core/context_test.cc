@@ -130,11 +130,11 @@ TEST(Context, ClientPingSerial) {
   context->registerTransport(
       -1, "shm", std::make_shared<transport::shm::Context>());
 #endif // TP_ENABLE_SHM
-  context->registerChannelFactory(
-      0, "basic", std::make_shared<channel::basic::BasicChannelFactory>());
+  context->registerChannel(
+      0, "basic", std::make_shared<channel::basic::Context>());
 #ifdef TP_ENABLE_CMA
-  context->registerChannelFactory(
-      -1, "cma", channel::cma::CmaChannelFactory::create());
+  context->registerChannel(
+      -1, "cma", std::make_shared<channel::cma::Context>());
 #endif // TP_ENABLE_CMA
 
   auto listener = context->listen(genUrls());
@@ -213,11 +213,11 @@ TEST(Context, ClientPingInline) {
   context->registerTransport(
       -1, "shm", std::make_shared<transport::shm::Context>());
 #endif // TP_ENABLE_SHM
-  context->registerChannelFactory(
-      0, "basic", std::make_shared<channel::basic::BasicChannelFactory>());
+  context->registerChannel(
+      0, "basic", std::make_shared<channel::basic::Context>());
 #ifdef TP_ENABLE_CMA
-  context->registerChannelFactory(
-      -1, "cma", channel::cma::CmaChannelFactory::create());
+  context->registerChannel(
+      -1, "cma", std::make_shared<channel::cma::Context>());
 #endif // TP_ENABLE_CMA
 
   auto listener = context->listen(genUrls());
@@ -293,11 +293,11 @@ TEST(Context, ServerPingPongTwice) {
   context->registerTransport(
       -1, "shm", std::make_shared<transport::shm::Context>());
 #endif // TP_ENABLE_SHM
-  context->registerChannelFactory(
-      0, "basic", std::make_shared<channel::basic::BasicChannelFactory>());
+  context->registerChannel(
+      0, "basic", std::make_shared<channel::basic::Context>());
 #ifdef TP_ENABLE_CMA
-  context->registerChannelFactory(
-      -1, "cma", channel::cma::CmaChannelFactory::create());
+  context->registerChannel(
+      -1, "cma", std::make_shared<channel::cma::Context>());
 #endif // TP_ENABLE_CMA
 
   auto listener = context->listen(genUrls());
@@ -460,11 +460,11 @@ TEST(Context, MixedTensorMessage) {
   context->registerTransport(
       -1, "shm", std::make_shared<transport::shm::Context>());
 #endif // TP_ENABLE_SHM
-  context->registerChannelFactory(
-      0, "basic", std::make_shared<channel::basic::BasicChannelFactory>());
+  context->registerChannel(
+      0, "basic", std::make_shared<channel::basic::Context>());
 #ifdef TP_ENABLE_CMA
-  context->registerChannelFactory(
-      -1, "cma", channel::cma::CmaChannelFactory::create());
+  context->registerChannel(
+      -1, "cma", std::make_shared<channel::cma::Context>());
 #endif // TP_ENABLE_CMA
 
   auto listener = context->listen(genUrls());

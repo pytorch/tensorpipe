@@ -16,28 +16,28 @@ using namespace tensorpipe;
 using namespace tensorpipe::channel;
 
 TEST_P(ChannelTest, Name) {
-  std::shared_ptr<ChannelFactory> factory = GetParam()->makeFactory();
-  EXPECT_EQ(factory->name(), GetParam()->getName());
-  factory->join();
+  std::shared_ptr<Context> context = GetParam()->makeContext();
+  EXPECT_EQ(context->name(), GetParam()->getName());
+  context->join();
 }
 
 TEST_P(ChannelTest, DomainDescriptor) {
-  std::shared_ptr<ChannelFactory> factory1 = GetParam()->makeFactory();
-  std::shared_ptr<ChannelFactory> factory2 = GetParam()->makeFactory();
-  EXPECT_FALSE(factory1->domainDescriptor().empty());
-  EXPECT_FALSE(factory2->domainDescriptor().empty());
-  EXPECT_EQ(factory1->domainDescriptor(), factory2->domainDescriptor());
+  std::shared_ptr<Context> context1 = GetParam()->makeContext();
+  std::shared_ptr<Context> context2 = GetParam()->makeContext();
+  EXPECT_FALSE(context1->domainDescriptor().empty());
+  EXPECT_FALSE(context2->domainDescriptor().empty());
+  EXPECT_EQ(context1->domainDescriptor(), context2->domainDescriptor());
 }
 
 TEST_P(ChannelTest, ClientToServer) {
-  std::shared_ptr<ChannelFactory> factory1 = GetParam()->makeFactory();
-  std::shared_ptr<ChannelFactory> factory2 = GetParam()->makeFactory();
+  std::shared_ptr<Context> context1 = GetParam()->makeContext();
+  std::shared_ptr<Context> context2 = GetParam()->makeContext();
   constexpr auto dataSize = 256;
   Queue<Channel::TDescriptor> descriptorQueue;
 
   testConnectionPair(
       [&](std::shared_ptr<transport::Connection> conn) {
-        auto channel = factory1->createChannel(
+        auto channel = context1->createChannel(
             std::move(conn), Channel::Endpoint::kListen);
 
         // Initialize with sequential values.
@@ -57,7 +57,7 @@ TEST_P(ChannelTest, ClientToServer) {
         ASSERT_FALSE(future.get());
       },
       [&](std::shared_ptr<transport::Connection> conn) {
-        auto channel = factory2->createChannel(
+        auto channel = context2->createChannel(
             std::move(conn), Channel::Endpoint::kConnect);
 
         // Initialize with zeroes.
@@ -75,19 +75,19 @@ TEST_P(ChannelTest, ClientToServer) {
         }
       });
 
-  factory1->join();
-  factory2->join();
+  context1->join();
+  context2->join();
 }
 
 TEST_P(ChannelTest, ServerToClient) {
-  std::shared_ptr<ChannelFactory> factory1 = GetParam()->makeFactory();
-  std::shared_ptr<ChannelFactory> factory2 = GetParam()->makeFactory();
+  std::shared_ptr<Context> context1 = GetParam()->makeContext();
+  std::shared_ptr<Context> context2 = GetParam()->makeContext();
   constexpr auto dataSize = 256;
   Queue<Channel::TDescriptor> descriptorQueue;
 
   testConnectionPair(
       [&](std::shared_ptr<transport::Connection> conn) {
-        auto channel = factory1->createChannel(
+        auto channel = context1->createChannel(
             std::move(conn), Channel::Endpoint::kListen);
 
         // Initialize with zeroes.
@@ -105,7 +105,7 @@ TEST_P(ChannelTest, ServerToClient) {
         }
       },
       [&](std::shared_ptr<transport::Connection> conn) {
-        auto channel = factory2->createChannel(
+        auto channel = context2->createChannel(
             std::move(conn), Channel::Endpoint::kConnect);
 
         // Initialize with sequential values.
@@ -125,20 +125,20 @@ TEST_P(ChannelTest, ServerToClient) {
         ASSERT_FALSE(future.get());
       });
 
-  factory1->join();
-  factory2->join();
+  context1->join();
+  context2->join();
 }
 
 TEST_P(ChannelTest, SendMultipleTensors) {
-  std::shared_ptr<ChannelFactory> factory1 = GetParam()->makeFactory();
-  std::shared_ptr<ChannelFactory> factory2 = GetParam()->makeFactory();
+  std::shared_ptr<Context> context1 = GetParam()->makeContext();
+  std::shared_ptr<Context> context2 = GetParam()->makeContext();
   constexpr auto dataSize = 256 * 1024; // 256KB
   Queue<Channel::TDescriptor> descriptorQueue;
   constexpr int numTensors = 100;
 
   testConnectionPair(
       [&](std::shared_ptr<transport::Connection> conn) {
-        auto channel = factory1->createChannel(
+        auto channel = context1->createChannel(
             std::move(conn), Channel::Endpoint::kListen);
 
         // Initialize with sequential values.
@@ -166,7 +166,7 @@ TEST_P(ChannelTest, SendMultipleTensors) {
         }
       },
       [&](std::shared_ptr<transport::Connection> conn) {
-        auto channel = factory2->createChannel(
+        auto channel = context2->createChannel(
             std::move(conn), Channel::Endpoint::kConnect);
 
         // Initialize with zeroes.
@@ -195,19 +195,19 @@ TEST_P(ChannelTest, SendMultipleTensors) {
         }
       });
 
-  factory1->join();
-  factory2->join();
+  context1->join();
+  context2->join();
 }
 
-TEST_P(ChannelTest, FactoryIsNotJoined) {
-  std::shared_ptr<ChannelFactory> factory = GetParam()->makeFactory();
+TEST_P(ChannelTest, contextIsNotJoined) {
+  std::shared_ptr<Context> context = GetParam()->makeContext();
 
   testConnectionPair(
       [&](std::shared_ptr<transport::Connection> conn) {
-        factory->createChannel(std::move(conn), Channel::Endpoint::kListen);
+        context->createChannel(std::move(conn), Channel::Endpoint::kListen);
       },
       [&](std::shared_ptr<transport::Connection> conn) {
-        factory->createChannel(std::move(conn), Channel::Endpoint::kConnect);
+        context->createChannel(std::move(conn), Channel::Endpoint::kConnect);
       });
 }
 
@@ -218,14 +218,14 @@ TEST_P(ChannelTest, CallbacksAreDeferred) {
   // behavior, we'll check a highly correlated one: that the recv callback isn't
   // called inline from within the recv method. We do so by having that behavior
   // cause a deadlock.
-  std::shared_ptr<ChannelFactory> factory1 = GetParam()->makeFactory();
-  std::shared_ptr<ChannelFactory> factory2 = GetParam()->makeFactory();
+  std::shared_ptr<Context> context1 = GetParam()->makeContext();
+  std::shared_ptr<Context> context2 = GetParam()->makeContext();
   constexpr auto dataSize = 256;
   Queue<Channel::TDescriptor> descriptorQueue;
 
   testConnectionPair(
       [&](std::shared_ptr<transport::Connection> conn) {
-        auto channel = factory1->createChannel(
+        auto channel = context1->createChannel(
             std::move(conn), Channel::Endpoint::kListen);
 
         // Initialize with sequential values.
@@ -258,7 +258,7 @@ TEST_P(ChannelTest, CallbacksAreDeferred) {
         ASSERT_FALSE(promise.get_future().get());
       },
       [&](std::shared_ptr<transport::Connection> conn) {
-        auto channel = factory2->createChannel(
+        auto channel = context2->createChannel(
             std::move(conn), Channel::Endpoint::kConnect);
 
         // Initialize with zeroes.
@@ -286,6 +286,6 @@ TEST_P(ChannelTest, CallbacksAreDeferred) {
         }
       });
 
-  factory1->join();
-  factory2->join();
+  context1->join();
+  context2->join();
 }

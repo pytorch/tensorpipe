@@ -6,14 +6,14 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <tensorpipe/channel/channel.h>
+#include <tensorpipe/channel/context.h>
 
 namespace tensorpipe {
 namespace channel {
 
-ChannelFactory::ChannelFactory(std::string name) : name_(std::move(name)) {}
+Context::Context(std::string name) : name_(std::move(name)) {}
 
-const std::string& ChannelFactory::name() const {
+const std::string& Context::name() const {
   return name_;
 }
 

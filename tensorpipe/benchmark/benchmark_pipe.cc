@@ -10,9 +10,9 @@
 
 #include <tensorpipe/benchmark/measurements.h>
 #include <tensorpipe/benchmark/options.h>
-#include <tensorpipe/channel/basic/basic.h>
+#include <tensorpipe/channel/basic/context.h>
 #ifdef TP_ENABLE_CMA
-#include <tensorpipe/channel/cma/cma.h>
+#include <tensorpipe/channel/cma/context.h>
 #endif // TP_ENABLE_CMA
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/core/context.h>
@@ -157,13 +157,13 @@ static void runServer(const Options& options) {
     TP_THROW_ASSERT() << "unknown transport: " << options.transport;
   }
   if (options.channel == "basic") {
-    context->registerChannelFactory(
-        0, "basic", std::make_shared<channel::basic::BasicChannelFactory>());
+    context->registerChannel(
+        0, "basic", std::make_shared<channel::basic::Context>());
   } else
 #ifdef TP_ENABLE_CMA
       if (options.channel == "cma") {
-    context->registerChannelFactory(
-        0, "cma", channel::cma::CmaChannelFactory::create());
+    context->registerChannel(
+        0, "cma", std::make_shared<channel::cma::Context>());
   } else
 #endif // TP_ENABLE_CMA
   {
@@ -288,13 +288,13 @@ static void runClient(const Options& options) {
     TP_THROW_ASSERT() << "unknown transport: " << options.transport;
   }
   if (options.channel == "basic") {
-    context->registerChannelFactory(
-        0, "basic", std::make_shared<channel::basic::BasicChannelFactory>());
+    context->registerChannel(
+        0, "basic", std::make_shared<channel::basic::Context>());
   } else
 #ifdef TP_ENABLE_CMA
       if (options.channel == "cma") {
-    context->registerChannelFactory(
-        0, "cma", channel::cma::CmaChannelFactory::create());
+    context->registerChannel(
+        0, "cma", std::make_shared<channel::cma::Context>());
   } else
 #endif // TP_ENABLE_CMA
   {

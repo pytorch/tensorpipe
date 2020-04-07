@@ -12,7 +12,7 @@
 #include <memory>
 #include <thread>
 
-#include <tensorpipe/channel/channel.h>
+#include <tensorpipe/channel/context.h>
 #include <tensorpipe/common/queue.h>
 #include <tensorpipe/transport/uv/context.h>
 
@@ -20,7 +20,7 @@
 
 class ChannelTestHelper {
  public:
-  virtual std::shared_ptr<tensorpipe::channel::ChannelFactory> makeFactory() = 0;
+  virtual std::shared_ptr<tensorpipe::channel::Context> makeContext() = 0;
   virtual std::string getName() = 0;
   virtual ~ChannelTestHelper() = default;
 };

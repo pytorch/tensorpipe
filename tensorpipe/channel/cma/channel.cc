@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <tensorpipe/channel/cma/cma.h>
+#include <tensorpipe/channel/cma/channel.h>
 
 #include <sys/types.h>
 #include <sys/uio.h>
@@ -26,195 +26,44 @@ namespace tensorpipe {
 namespace channel {
 namespace cma {
 
-namespace {
-
-const std::string kChannelName{"cma"};
-
-std::string generateDomainDescriptor() {
-  std::ostringstream oss;
-  auto bootID = getBootID();
-  TP_THROW_ASSERT_IF(!bootID) << "Unable to read boot_id";
-
-  // According to the man page of process_vm_readv and process_vm_writev,
-  // permission to read from or write to another process is governed by a ptrace
-  // access mode PTRACE_MODE_ATTACH_REALCREDS check. This consists in a series
-  // of checks, some governed by the CAP_SYS_PTRACE capability, others by the
-  // Linux Security Modules (LSMs), but the primary constraint is that the real,
-  // effective, and saved-set user IDs of the target match the caller's real
-  // user ID, and the same for group IDs. Since channels are bidirectional, we
-  // end up needing these IDs to all be the same on both processes.
-
-  // Combine boot ID, effective UID, and effective GID.
-  oss << kChannelName;
-  oss << ":" << bootID.value();
-  // FIXME As domain descriptors are just compared for equality, we only include
-  // the effective IDs, but we should abide by the rules above and make sure
-  // that they match the real and saved-set ones too.
-  oss << "/" << geteuid();
-  oss << "/" << getegid();
-  return oss.str();
-}
-
-} // namespace
-
-std::shared_ptr<CmaChannelFactory> CmaChannelFactory::create() {
-  return std::make_shared<CmaChannelFactory>(ConstructorToken());
-}
-
-std::shared_ptr<CmaChannelFactory::Impl> CmaChannelFactory::Impl::create() {
-  return std::make_shared<CmaChannelFactory::Impl>(ConstructorToken());
-}
-
-CmaChannelFactory::CmaChannelFactory(ConstructorToken /* unused */)
-    : ChannelFactory(kChannelName), impl_(Impl::create()) {}
-
-CmaChannelFactory::Impl::Impl(ConstructorToken /* unused */)
-    : domainDescriptor_(generateDomainDescriptor()), requests_(INT_MAX) {
-  thread_ = std::thread(&Impl::handleCopyRequests_, this);
-}
-
-void CmaChannelFactory::close() {
-  impl_->close();
-}
-
-void CmaChannelFactory::Impl::close() {
-  // FIXME Acquiring this lock causes a deadlock when calling join. The solution
-  // is avoiding locks by using the event loop approach just like in transports.
-  // std::unique_lock<std::mutex> lock(mutex_);
-
-  bool wasClosed = false;
-  closed_.compare_exchange_strong(wasClosed, true);
-  if (!wasClosed) {
-    closingEmitter_.close();
-    requests_.push(nullopt);
-  }
-}
-
-void CmaChannelFactory::join() {
-  impl_->join();
-}
-
-void CmaChannelFactory::Impl::join() {
-  std::unique_lock<std::mutex> lock(mutex_);
-
-  close();
-
-  bool wasJoined = false;
-  joined_.compare_exchange_strong(wasJoined, true);
-  if (!wasJoined) {
-    thread_.join();
-    // TP_DCHECK(requests_.empty());
-  }
-}
-
-CmaChannelFactory::~CmaChannelFactory() {
-  join();
-}
-
-ClosingEmitter& CmaChannelFactory::Impl::getClosingEmitter() {
-  return closingEmitter_;
-}
-
-const std::string& CmaChannelFactory::domainDescriptor() const {
-  return impl_->domainDescriptor();
-}
-
-const std::string& CmaChannelFactory::Impl::domainDescriptor() const {
-  std::unique_lock<std::mutex> lock(mutex_);
-  return domainDescriptor_;
-}
-
-std::shared_ptr<Channel> CmaChannelFactory::createChannel(
-    std::shared_ptr<transport::Connection> connection,
-    Channel::Endpoint endpoint) {
-  return impl_->createChannel(std::move(connection), endpoint);
-}
-
-std::shared_ptr<Channel> CmaChannelFactory::Impl::createChannel(
-    std::shared_ptr<transport::Connection> connection,
-    Channel::Endpoint /* unused */) {
-  TP_THROW_ASSERT_IF(joined_);
-  return std::make_shared<CmaChannel>(
-      CmaChannel::ConstructorToken(),
-      std::static_pointer_cast<PrivateIface>(shared_from_this()),
-      std::move(connection));
-}
-
-void CmaChannelFactory::Impl::requestCopy(
-    pid_t remotePid,
-    void* remotePtr,
-    void* localPtr,
-    size_t length,
-    std::function<void(const Error&)> fn) {
-  requests_.push(
-      CopyRequest{remotePid, remotePtr, localPtr, length, std::move(fn)});
-}
-
-void CmaChannelFactory::Impl::handleCopyRequests_() {
-  while (true) {
-    auto maybeRequest = requests_.pop();
-    if (!maybeRequest.has_value()) {
-      break;
-    }
-    CopyRequest request = std::move(maybeRequest).value();
-
-    // Perform copy.
-    struct iovec local {
-      .iov_base = request.localPtr, .iov_len = request.length
-    };
-    struct iovec remote {
-      .iov_base = request.remotePtr, .iov_len = request.length
-    };
-    auto nread =
-        ::process_vm_readv(request.remotePid, &local, 1, &remote, 1, 0);
-    if (nread == -1) {
-      request.callback(TP_CREATE_ERROR(SystemError, "cma", errno));
-    } else if (nread != request.length) {
-      request.callback(TP_CREATE_ERROR(ShortReadError, request.length, nread));
-    } else {
-      request.callback(Error::kSuccess);
-    }
-  }
-}
-
-CmaChannel::CmaChannel(
+Channel::Channel(
     ConstructorToken /* unused */,
-    std::shared_ptr<CmaChannelFactory::PrivateIface> factory,
+    std::shared_ptr<Context::PrivateIface> context,
     std::shared_ptr<transport::Connection> connection)
-    : impl_(Impl::create(std::move(factory), std::move(connection))) {}
+    : impl_(Impl::create(std::move(context), std::move(connection))) {}
 
-std::shared_ptr<CmaChannel::Impl> CmaChannel::Impl::create(
-    std::shared_ptr<CmaChannelFactory::PrivateIface> factory,
+std::shared_ptr<Channel::Impl> Channel::Impl::create(
+    std::shared_ptr<Context::PrivateIface> context,
     std::shared_ptr<transport::Connection> connection) {
   auto impl = std::make_shared<Impl>(
-      ConstructorToken(), std::move(factory), std::move(connection));
+      ConstructorToken(), std::move(context), std::move(connection));
   impl->init_();
   return impl;
 }
 
-CmaChannel::Impl::Impl(
+Channel::Impl::Impl(
     ConstructorToken /* unused */,
-    std::shared_ptr<CmaChannelFactory::PrivateIface> factory,
+    std::shared_ptr<Context::PrivateIface> context,
     std::shared_ptr<transport::Connection> connection)
-    : factory_(std::move(factory)),
+    : context_(std::move(context)),
       connection_(std::move(connection)),
-      closingReceiver_(factory_, factory_->getClosingEmitter()) {}
+      closingReceiver_(context_, context_->getClosingEmitter()) {}
 
-void CmaChannel::Impl::init_() {
+void Channel::Impl::init_() {
   deferToLoop_([this]() { initFromLoop_(); });
 }
 
-void CmaChannel::Impl::initFromLoop_() {
+void Channel::Impl::initFromLoop_() {
   TP_DCHECK(inLoop_());
   closingReceiver_.activate(*this);
   readPacket_();
 }
 
-bool CmaChannel::Impl::inLoop_() {
+bool Channel::Impl::inLoop_() {
   return currentLoop_ == std::this_thread::get_id();
 }
 
-void CmaChannel::Impl::deferToLoop_(std::function<void()> fn) {
+void Channel::Impl::deferToLoop_(std::function<void()> fn) {
   {
     std::unique_lock<std::mutex> lock(mutex_);
     pendingTasks_.push_back(std::move(fn));
@@ -239,7 +88,7 @@ void CmaChannel::Impl::deferToLoop_(std::function<void()> fn) {
   }
 }
 
-void CmaChannel::send(
+void Channel::send(
     const void* ptr,
     size_t length,
     TDescriptorCallback descriptorCallback,
@@ -247,7 +96,7 @@ void CmaChannel::send(
   impl_->send(ptr, length, std::move(descriptorCallback), std::move(callback));
 }
 
-void CmaChannel::Impl::send(
+void Channel::Impl::send(
     const void* ptr,
     size_t length,
     TDescriptorCallback descriptorCallback,
@@ -262,13 +111,13 @@ void CmaChannel::Impl::send(
   });
 }
 
-void CmaChannel::Impl::sendFromLoop_(
+void Channel::Impl::sendFromLoop_(
     const void* ptr,
     size_t length,
     TDescriptorCallback descriptorCallback,
     TSendCallback callback) {
   TP_DCHECK(inLoop_());
-  // TP_THROW_ASSERT_IF(factory_->joined_);
+  // TP_THROW_ASSERT_IF(context_->joined_);
   if (error_) {
     // FIXME Ideally here we should either call the callback with an error (but
     // this may deadlock if we do it inline) or return an error as an additional
@@ -287,7 +136,7 @@ void CmaChannel::Impl::sendFromLoop_(
 }
 
 // Receive memory region from peer.
-void CmaChannel::recv(
+void Channel::recv(
     TDescriptor descriptor,
     void* ptr,
     size_t length,
@@ -295,7 +144,7 @@ void CmaChannel::recv(
   impl_->recv(std::move(descriptor), ptr, length, std::move(callback));
 }
 
-void CmaChannel::Impl::recv(
+void Channel::Impl::recv(
     TDescriptor descriptor,
     void* ptr,
     size_t length,
@@ -309,7 +158,7 @@ void CmaChannel::Impl::recv(
   });
 }
 
-void CmaChannel::Impl::recvFromLoop_(
+void Channel::Impl::recvFromLoop_(
     TDescriptor descriptor,
     void* ptr,
     size_t length,
@@ -321,7 +170,7 @@ void CmaChannel::Impl::recvFromLoop_(
   pid_t remotePid = pbDescriptor.pid();
   void* remotePtr = reinterpret_cast<void*>(pbDescriptor.ptr());
 
-  factory_->requestCopy(
+  context_->requestCopy(
       remotePid,
       remotePtr,
       ptr,
@@ -340,19 +189,19 @@ void CmaChannel::Impl::recvFromLoop_(
       }));
 }
 
-void CmaChannel::close() {
+void Channel::close() {
   impl_->close();
 }
 
-CmaChannel::~CmaChannel() {
+Channel::~Channel() {
   close();
 }
 
-void CmaChannel::Impl::close() {
+void Channel::Impl::close() {
   deferToLoop_([this]() { closeFromLoop_(); });
 }
 
-void CmaChannel::Impl::closeFromLoop_() {
+void Channel::Impl::closeFromLoop_() {
   TP_DCHECK(inLoop_());
   if (!error_) {
     error_ = TP_CREATE_ERROR(ChannelClosedError);
@@ -360,7 +209,7 @@ void CmaChannel::Impl::closeFromLoop_() {
   }
 }
 
-void CmaChannel::Impl::readPacket_() {
+void Channel::Impl::readPacket_() {
   TP_DCHECK(inLoop_());
   auto pbPacketIn = std::make_shared<proto::Packet>();
   connection_->read(
@@ -369,7 +218,7 @@ void CmaChannel::Impl::readPacket_() {
       }));
 }
 
-void CmaChannel::Impl::onPacket_(const proto::Packet& pbPacketIn) {
+void Channel::Impl::onPacket_(const proto::Packet& pbPacketIn) {
   TP_DCHECK(inLoop_());
 
   TP_DCHECK_EQ(pbPacketIn.type_case(), proto::Packet::kNotification);
@@ -379,8 +228,7 @@ void CmaChannel::Impl::onPacket_(const proto::Packet& pbPacketIn) {
   readPacket_();
 }
 
-void CmaChannel::Impl::onNotification_(
-    const proto::Notification& pbNotification) {
+void Channel::Impl::onNotification_(const proto::Notification& pbNotification) {
   TP_DCHECK(inLoop_());
 
   // Find the send operation matching the notification's operation ID.
@@ -400,7 +248,7 @@ void CmaChannel::Impl::onNotification_(
   op.callback(Error::kSuccess);
 }
 
-void CmaChannel::Impl::handleError_() {
+void Channel::Impl::handleError_() {
   TP_DCHECK(inLoop_());
 
   // Move pending operations to stack.

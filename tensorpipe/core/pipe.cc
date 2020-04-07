@@ -251,7 +251,7 @@ std::shared_ptr<Pipe::Impl> Pipe::Impl::create(
   std::string address;
   std::tie(transport, address) = splitSchemeOfURL(url);
   std::shared_ptr<transport::Connection> connection =
-      context->getContextForTransport(transport)->connect(std::move(address));
+      context->getTransport(transport)->connect(std::move(address));
   auto impl = std::make_shared<Impl>(
       ConstructorToken(),
       std::move(context),
@@ -353,25 +353,26 @@ void Pipe::Impl::startFromLoop_() {
     proto::Brochure* pbBrochure = pbPacketOut2->mutable_brochure();
     auto pbAllTransportAdvertisements =
         pbBrochure->mutable_transport_advertisement();
-    for (const auto& contextIter : context_->getOrderedContexts()) {
-      const std::string& transport = std::get<0>(contextIter.second);
-      const transport::Context& context = *(std::get<1>(contextIter.second));
+    for (const auto& transportContextIter : context_->getOrderedTransports()) {
+      const std::string& transportName =
+          std::get<0>(transportContextIter.second);
+      const transport::Context& transportContext =
+          *(std::get<1>(transportContextIter.second));
       proto::TransportAdvertisement* pbTransportAdvertisement =
-          &(*pbAllTransportAdvertisements)[transport];
+          &(*pbAllTransportAdvertisements)[transportName];
       pbTransportAdvertisement->set_domain_descriptor(
-          context.domainDescriptor());
+          transportContext.domainDescriptor());
     }
     auto pbAllChannelAdvertisements =
         pbBrochure->mutable_channel_advertisement();
-    for (const auto& channelFactoryIter :
-         context_->getOrderedChannelFactories()) {
-      const std::string& name = std::get<0>(channelFactoryIter.second);
-      const channel::ChannelFactory& channelFactory =
-          *(std::get<1>(channelFactoryIter.second));
+    for (const auto& channelContextIter : context_->getOrderedChannels()) {
+      const std::string& channelName = std::get<0>(channelContextIter.second);
+      const channel::Context& channelContext =
+          *(std::get<1>(channelContextIter.second));
       proto::ChannelAdvertisement* pbChannelAdvertisement =
-          &(*pbAllChannelAdvertisements)[name];
+          &(*pbAllChannelAdvertisements)[channelName];
       pbChannelAdvertisement->set_domain_descriptor(
-          channelFactory.domainDescriptor());
+          channelContext.domainDescriptor());
     }
     connection_->write(
         *pbPacketOut2,
@@ -758,11 +759,10 @@ void Pipe::Impl::sendTensorsOfMessage_(
        ++tensorIdx) {
     const auto& tensor = messageBeingWritten.message.tensors[tensorIdx];
     bool foundAChannel = false;
-    for (const auto& channelFactoryIter :
-         context_->getOrderedChannelFactories()) {
-      const std::string& name = std::get<0>(channelFactoryIter.second);
+    for (const auto& channelContextIter : context_->getOrderedChannels()) {
+      const std::string& channelName = std::get<0>(channelContextIter.second);
 
-      auto channelIter = channels_.find(name);
+      auto channelIter = channels_.find(channelName);
       if (channelIter == channels_.cend()) {
         continue;
       }
@@ -781,7 +781,8 @@ void Pipe::Impl::sendTensorsOfMessage_(
               [sequenceNumber{messageBeingWritten.sequenceNumber}](Impl& impl) {
                 impl.onSendOfTensorData_(sequenceNumber);
               }));
-      messageBeingWritten.tensors.push_back(MessageBeingWritten::Tensor{name});
+      messageBeingWritten.tensors.push_back(
+          MessageBeingWritten::Tensor{channelName});
       ++messageBeingWritten.numTensorDescriptorsStillBeingCollected;
       ++messageBeingWritten.numTensorDataStillBeingSent;
 
@@ -850,21 +851,22 @@ void Pipe::Impl::onReadWhileServerWaitingForBrochure_(
   bool needToWaitForConnections = false;
 
   bool foundATransport = false;
-  for (const auto& contextIter : context_->getOrderedContexts()) {
-    const std::string& transport = std::get<0>(contextIter.second);
-    const transport::Context& context = *(std::get<1>(contextIter.second));
+  for (const auto& transportContextIter : context_->getOrderedTransports()) {
+    const std::string& transportName = std::get<0>(transportContextIter.second);
+    const transport::Context& transportContext =
+        *(std::get<1>(transportContextIter.second));
 
     // This pipe's listener might not have an address for that transport.
     const std::map<std::string, std::string>& addresses =
         listener_->addresses();
-    const auto addressIter = addresses.find(transport);
+    const auto addressIter = addresses.find(transportName);
     if (addressIter == addresses.cend()) {
       continue;
     }
     const std::string& address = addressIter->second;
 
     const auto pbTransportAdvertisementIter =
-        pbBrochure.transport_advertisement().find(transport);
+        pbBrochure.transport_advertisement().find(transportName);
     if (pbTransportAdvertisementIter ==
         pbBrochure.transport_advertisement().cend()) {
       continue;
@@ -873,15 +875,15 @@ void Pipe::Impl::onReadWhileServerWaitingForBrochure_(
         pbTransportAdvertisementIter->second;
     const std::string& domainDescriptor =
         pbTransportAdvertisement.domain_descriptor();
-    if (domainDescriptor != context.domainDescriptor()) {
+    if (domainDescriptor != transportContext.domainDescriptor()) {
       continue;
     }
 
-    pbBrochureAnswer->set_transport(transport);
+    pbBrochureAnswer->set_transport(transportName);
     pbBrochureAnswer->set_address(address);
 
-    if (transport != transport_) {
-      transport_ = transport;
+    if (transportName != transport_) {
+      transport_ = transportName;
       TP_DCHECK(!registrationId_.has_value());
       registrationId_.emplace(listener_->registerConnectionRequest(
           connectionRequestCallbackWrapper_(
@@ -901,14 +903,13 @@ void Pipe::Impl::onReadWhileServerWaitingForBrochure_(
   TP_THROW_ASSERT_IF(!foundATransport);
 
   auto pbAllChannelSelections = pbBrochureAnswer->mutable_channel_selection();
-  for (const auto& channelFactoryIter :
-       context_->getOrderedChannelFactories()) {
-    const std::string& name = std::get<0>(channelFactoryIter.second);
-    const channel::ChannelFactory& channelFactory =
-        *(std::get<1>(channelFactoryIter.second));
+  for (const auto& channelContextIter : context_->getOrderedChannels()) {
+    const std::string& channelName = std::get<0>(channelContextIter.second);
+    const channel::Context& channelContext =
+        *(std::get<1>(channelContextIter.second));
 
     const auto pbChannelAdvertisementIter =
-        pbBrochure.channel_advertisement().find(name);
+        pbBrochure.channel_advertisement().find(channelName);
     if (pbChannelAdvertisementIter ==
         pbBrochure.channel_advertisement().cend()) {
       continue;
@@ -917,23 +918,24 @@ void Pipe::Impl::onReadWhileServerWaitingForBrochure_(
         pbChannelAdvertisementIter->second;
     const std::string& domainDescriptor =
         pbChannelAdvertisement.domain_descriptor();
-    if (domainDescriptor != channelFactory.domainDescriptor()) {
+    if (domainDescriptor != channelContext.domainDescriptor()) {
       continue;
     }
 
-    channelRegistrationIds_[name] =
+    channelRegistrationIds_[channelName] =
         listener_->registerConnectionRequest(connectionRequestCallbackWrapper_(
-            [name](
+            [channelName](
                 Impl& impl,
                 std::string transport,
                 std::shared_ptr<transport::Connection> connection) {
               impl.onAcceptWhileServerWaitingForChannel_(
-                  name, std::move(transport), std::move(connection));
+                  channelName, std::move(transport), std::move(connection));
             }));
     needToWaitForConnections = true;
     proto::ChannelSelection* pbChannelSelection =
-        &(*pbAllChannelSelections)[name];
-    pbChannelSelection->set_registration_id(channelRegistrationIds_[name]);
+        &(*pbAllChannelSelections)[channelName];
+    pbChannelSelection->set_registration_id(
+        channelRegistrationIds_[channelName]);
   }
 
   connection_->write(
@@ -966,12 +968,12 @@ void Pipe::Impl::onReadWhileClientWaitingForBrochureAnswer_(
   const proto::BrochureAnswer& pbBrochureAnswer = pbPacketIn.brochure_answer();
   const std::string& transport = pbBrochureAnswer.transport();
   std::string address = pbBrochureAnswer.address();
-  std::shared_ptr<transport::Context> context =
-      context_->getContextForTransport(transport);
+  std::shared_ptr<transport::Context> transportContext =
+      context_->getTransport(transport);
 
   if (transport != transport_) {
     std::shared_ptr<transport::Connection> connection =
-        context->connect(address);
+        transportContext->connect(address);
     auto pbPacketOut = std::make_shared<proto::Packet>();
     proto::RequestedConnection* pbRequestedConnection =
         pbPacketOut->mutable_requested_connection();
@@ -987,15 +989,15 @@ void Pipe::Impl::onReadWhileClientWaitingForBrochureAnswer_(
 
   for (const auto& pbChannelSelectionIter :
        pbBrochureAnswer.channel_selection()) {
-    const std::string& name = pbChannelSelectionIter.first;
+    const std::string& channelName = pbChannelSelectionIter.first;
     const proto::ChannelSelection& pbChannelSelection =
         pbChannelSelectionIter.second;
 
-    std::shared_ptr<channel::ChannelFactory> channelFactory =
-        context_->getChannelFactory(name);
+    std::shared_ptr<channel::Context> channelContext =
+        context_->getChannel(channelName);
 
     std::shared_ptr<transport::Connection> connection =
-        context->connect(address);
+        transportContext->connect(address);
 
     auto pbPacketOut = std::make_shared<proto::Packet>();
     proto::RequestedConnection* pbRequestedConnection =
@@ -1007,8 +1009,8 @@ void Pipe::Impl::onReadWhileClientWaitingForBrochureAnswer_(
         writePacketCallbackWrapper_([pbPacketOut](Impl& /* unused */) {}));
 
     channels_.emplace(
-        name,
-        channelFactory->createChannel(
+        channelName,
+        channelContext->createChannel(
             std::move(connection), channel::Channel::Endpoint::kConnect));
   }
 
@@ -1053,26 +1055,26 @@ void Pipe::Impl::onAcceptWhileServerWaitingForConnection_(
 }
 
 void Pipe::Impl::onAcceptWhileServerWaitingForChannel_(
-    std::string name,
+    std::string channelName,
     std::string receivedTransport,
     std::shared_ptr<transport::Connection> receivedConnection) {
   TP_DCHECK(inLoop_());
   TP_DCHECK_EQ(state_, SERVER_WAITING_FOR_CONNECTIONS);
-  auto channelRegistrationIdIter = channelRegistrationIds_.find(name);
+  auto channelRegistrationIdIter = channelRegistrationIds_.find(channelName);
   TP_DCHECK(channelRegistrationIdIter != channelRegistrationIds_.end());
   listener_->unregisterConnectionRequest(channelRegistrationIdIter->second);
   channelRegistrationIds_.erase(channelRegistrationIdIter);
 
   TP_DCHECK_EQ(transport_, receivedTransport);
-  auto channelIter = channels_.find(name);
+  auto channelIter = channels_.find(channelName);
   TP_DCHECK(channelIter == channels_.end());
 
-  std::shared_ptr<channel::ChannelFactory> channelFactory =
-      context_->getChannelFactory(name);
+  std::shared_ptr<channel::Context> channelContext =
+      context_->getChannel(channelName);
 
   channels_.emplace(
-      name,
-      channelFactory->createChannel(
+      channelName,
+      channelContext->createChannel(
           std::move(receivedConnection), channel::Channel::Endpoint::kListen));
 
   if (!registrationId_.has_value() && channelRegistrationIds_.empty()) {
