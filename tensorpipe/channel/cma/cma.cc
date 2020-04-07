@@ -69,9 +69,9 @@ CmaChannelFactory::CmaChannelFactory(ConstructorToken /* unused */)
     : ChannelFactory(kChannelName), impl_(Impl::create()) {}
 
 CmaChannelFactory::Impl::Impl(ConstructorToken /* unused */)
-    : domainDescriptor_(generateDomainDescriptor()),
-      thread_(&Impl::handleCopyRequests_, this),
-      requests_(INT_MAX) {}
+    : domainDescriptor_(generateDomainDescriptor()), requests_(INT_MAX) {
+  thread_ = std::thread(&Impl::handleCopyRequests_, this);
+}
 
 void CmaChannelFactory::close() {
   impl_->close();
