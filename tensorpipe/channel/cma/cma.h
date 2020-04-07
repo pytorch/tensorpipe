@@ -23,9 +23,9 @@ namespace tensorpipe {
 namespace channel {
 namespace cma {
 
-class CmaChannelFactory : public ChannelFactory {
+class Context : public channel::Context {
  public:
-  CmaChannelFactory();
+  Context();
 
   const std::string& domainDescriptor() const override;
 
@@ -37,7 +37,7 @@ class CmaChannelFactory : public ChannelFactory {
 
   void join() override;
 
-  ~CmaChannelFactory() override;
+  ~Context() override;
 
  private:
   class PrivateIface {
@@ -109,18 +109,18 @@ class CmaChannelFactory : public ChannelFactory {
   // since when the latter is destroyed the implementation is closed and joined.
   std::shared_ptr<Impl> impl_;
 
-  friend class CmaChannel;
+  friend class Channel;
 };
 
-class CmaChannel : public Channel {
+class Channel : public channel::Channel {
   // Use the passkey idiom to allow make_shared to call what should be a private
   // constructor. See https://abseil.io/tips/134 for more information.
   struct ConstructorToken {};
 
  public:
-  CmaChannel(
+  Channel(
       ConstructorToken,
-      std::shared_ptr<CmaChannelFactory::PrivateIface>,
+      std::shared_ptr<Context::PrivateIface>,
       std::shared_ptr<transport::Connection> connection);
 
   // Send memory region to peer.
@@ -139,7 +139,7 @@ class CmaChannel : public Channel {
 
   void close() override;
 
-  ~CmaChannel() override;
+  ~Channel() override;
 
  private:
   class Impl : public std::enable_shared_from_this<Impl> {
@@ -149,12 +149,12 @@ class CmaChannel : public Channel {
 
    public:
     static std::shared_ptr<Impl> create(
-        std::shared_ptr<CmaChannelFactory::PrivateIface>,
+        std::shared_ptr<Context::PrivateIface>,
         std::shared_ptr<transport::Connection>);
 
     Impl(
         ConstructorToken,
-        std::shared_ptr<CmaChannelFactory::PrivateIface>,
+        std::shared_ptr<Context::PrivateIface>,
         std::shared_ptr<transport::Connection>);
 
     void send(
@@ -179,7 +179,7 @@ class CmaChannel : public Channel {
     bool inLoop_();
     void deferToLoop_(std::function<void()> fn);
 
-    // Called by factory class after construction.
+    // Called by context class after construction.
     void init_();
     void initFromLoop_();
 
@@ -208,7 +208,7 @@ class CmaChannel : public Channel {
     // Called when protobuf packet is a notification.
     void onNotification_(const proto::Notification& notification);
 
-    std::shared_ptr<CmaChannelFactory::PrivateIface> factory_;
+    std::shared_ptr<Context::PrivateIface> context_;
     std::shared_ptr<transport::Connection> connection_;
     Error error_{Error::kSuccess};
     ClosingReceiver closingReceiver_;
@@ -229,8 +229,8 @@ class CmaChannel : public Channel {
     using TWriteCallback = transport::Connection::write_callback_fn;
 
     // Callback types used in this class (in case of success).
-    using TBoundReadProtoCallback = std::function<void(CmaChannel&)>;
-    using TBoundWriteCallback = std::function<void(CmaChannel&)>;
+    using TBoundReadProtoCallback = std::function<void(Channel&)>;
+    using TBoundWriteCallback = std::function<void(Channel&)>;
 
     DeferringCallbackWrapper<Impl> readPacketCallbackWrapper_{*this};
     DeferringCallbackWrapper<Impl> writePacketCallbackWrapper_{*this};
@@ -251,8 +251,8 @@ class CmaChannel : public Channel {
   // from the public object's one and perform the destruction asynchronously.
   std::shared_ptr<Impl> impl_;
 
-  // Allow factory class to call `init_()`.
-  friend class CmaChannelFactory;
+  // Allow context class to call `init_()`.
+  friend class Context;
 };
 
 } // namespace cma

@@ -13,8 +13,8 @@
 
 class CmaChannelTestHelper : public ChannelTestHelper {
  public:
-  std::shared_ptr<tensorpipe::channel::ChannelFactory> makeFactory() override {
-    return std::make_shared<tensorpipe::channel::cma::CmaChannelFactory>();
+  std::shared_ptr<tensorpipe::channel::Context> makeContext() override {
+    return std::make_shared<tensorpipe::channel::cma::Context>();
   }
 
   std::string getName() override {

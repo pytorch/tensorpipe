@@ -38,10 +38,7 @@ class Context final : public std::enable_shared_from_this<Context> {
       std::string,
       std::shared_ptr<transport::Context>);
 
-  void registerChannelFactory(
-      int64_t,
-      std::string,
-      std::shared_ptr<channel::ChannelFactory>);
+  void registerChannel(int64_t, std::string, std::shared_ptr<channel::Context>);
 
   std::shared_ptr<Listener> listen(const std::vector<std::string>&);
 
@@ -62,23 +59,23 @@ class Context final : public std::enable_shared_from_this<Context> {
    public:
     virtual ClosingEmitter& getClosingEmitter() = 0;
 
-    virtual std::shared_ptr<transport::Context> getContextForTransport(
+    virtual std::shared_ptr<transport::Context> getTransport(
         const std::string&) = 0;
 
-    virtual std::shared_ptr<channel::ChannelFactory> getChannelFactory(
+    virtual std::shared_ptr<channel::Context> getChannel(
         const std::string&) = 0;
 
-    using TOrderedContexts = std::map<
+    using TOrderedTransports = std::map<
         int64_t,
         std::tuple<std::string, std::shared_ptr<transport::Context>>>;
 
-    virtual const TOrderedContexts& getOrderedContexts() = 0;
+    virtual const TOrderedTransports& getOrderedTransports() = 0;
 
-    using TOrderedChannelFactories = std::map<
+    using TOrderedChannels = std::map<
         int64_t,
-        std::tuple<std::string, std::shared_ptr<channel::ChannelFactory>>>;
+        std::tuple<std::string, std::shared_ptr<channel::Context>>>;
 
-    virtual const TOrderedChannelFactories& getOrderedChannelFactories() = 0;
+    virtual const TOrderedChannels& getOrderedChannels() = 0;
 
     virtual ~PrivateIface() = default;
   };

@@ -157,13 +157,13 @@ static void runServer(const Options& options) {
     TP_THROW_ASSERT() << "unknown transport: " << options.transport;
   }
   if (options.channel == "basic") {
-    context->registerChannelFactory(
-        0, "basic", std::make_shared<channel::basic::BasicChannelFactory>());
+    context->registerChannel(
+        0, "basic", std::make_shared<channel::basic::Context>());
   } else
 #ifdef TP_ENABLE_CMA
       if (options.channel == "cma") {
-    context->registerChannelFactory(
-        0, "cma", std::make_shared<channel::cma::CmaChannelFactory>());
+    context->registerChannel(
+        0, "cma", std::make_shared<channel::cma::Context>());
   } else
 #endif // TP_ENABLE_CMA
   {
@@ -288,13 +288,13 @@ static void runClient(const Options& options) {
     TP_THROW_ASSERT() << "unknown transport: " << options.transport;
   }
   if (options.channel == "basic") {
-    context->registerChannelFactory(
-        0, "basic", std::make_shared<channel::basic::BasicChannelFactory>());
+    context->registerChannel(
+        0, "basic", std::make_shared<channel::basic::Context>());
   } else
 #ifdef TP_ENABLE_CMA
       if (options.channel == "cma") {
-    context->registerChannelFactory(
-        0, "cma", std::make_shared<channel::cma::CmaChannelFactory>());
+    context->registerChannel(
+        0, "cma", std::make_shared<channel::cma::Context>());
   } else
 #endif // TP_ENABLE_CMA
   {

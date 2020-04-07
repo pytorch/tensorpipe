@@ -200,8 +200,8 @@ using transport_class_ =
     py::class_<T, tensorpipe::transport::Context, std::shared_ptr<T>>;
 
 template <typename T>
-using channel_factory_class_ =
-    py::class_<T, tensorpipe::channel::ChannelFactory, std::shared_ptr<T>>;
+using channel_class_ =
+    py::class_<T, tensorpipe::channel::Context, std::shared_ptr<T>>;
 
 } // namespace
 
@@ -386,7 +386,7 @@ PYBIND11_MODULE(pytensorpipe, module) {
 
   // Transports and channels
 
-  shared_ptr_class_<tensorpipe::transport::Context> AbstractTransport(
+  shared_ptr_class_<tensorpipe::transport::Context> abstractTransport(
       module, "AbstractTransport");
 
   transport_class_<tensorpipe::transport::uv::Context> uvTransport(
@@ -406,22 +406,22 @@ PYBIND11_MODULE(pytensorpipe, module) {
       py::arg("name"),
       py::arg("transport"));
 
-  shared_ptr_class_<tensorpipe::channel::ChannelFactory> AbstractChannel(
+  shared_ptr_class_<tensorpipe::channel::Context> abstractChannel(
       module, "AbstractChannel");
 
-  channel_factory_class_<tensorpipe::channel::basic::BasicChannelFactory>
-      basicChannel(module, "BasicChannel");
+  channel_class_<tensorpipe::channel::basic::Context> basicChannel(
+      module, "BasicChannel");
   basicChannel.def(py::init<>());
 
 #ifdef TP_ENABLE_CMA
-  channel_factory_class_<tensorpipe::channel::cma::CmaChannelFactory>
-      processVmReadvChannel(module, "CmaChannel");
-  processVmReadvChannel.def(py::init<>());
+  channel_class_<tensorpipe::channel::cma::Context> cmaChannel(
+      module, "CmaChannel");
+  cmaChannel.def(py::init<>());
 #endif // TP_ENABLE_CMA
 
   context.def(
       "register_channel",
-      &tensorpipe::Context::registerChannelFactory,
+      &tensorpipe::Context::registerChannel,
       py::arg("priority"),
       py::arg("name"),
       py::arg("channel"));

@@ -20,43 +20,43 @@ namespace tensorpipe {
 namespace channel {
 namespace basic {
 
-BasicChannelFactory::BasicChannelFactory()
-    : ChannelFactory("basic"), impl_(std::make_shared<Impl>()) {}
+Context::Context()
+    : channel::Context("basic"), impl_(std::make_shared<Impl>()) {}
 
-BasicChannelFactory::Impl::Impl() : domainDescriptor_("any") {}
+Context::Impl::Impl() : domainDescriptor_("any") {}
 
-ClosingEmitter& BasicChannelFactory::Impl::getClosingEmitter() {
+ClosingEmitter& Context::Impl::getClosingEmitter() {
   return closingEmitter_;
 }
 
-const std::string& BasicChannelFactory::domainDescriptor() const {
+const std::string& Context::domainDescriptor() const {
   return impl_->domainDescriptor();
 }
 
-const std::string& BasicChannelFactory::Impl::domainDescriptor() const {
+const std::string& Context::Impl::domainDescriptor() const {
   return domainDescriptor_;
 }
 
-std::shared_ptr<Channel> BasicChannelFactory::createChannel(
+std::shared_ptr<channel::Channel> Context::createChannel(
     std::shared_ptr<transport::Connection> connection,
     Channel::Endpoint endpoint) {
   return impl_->createChannel(std::move(connection), endpoint);
 }
 
-std::shared_ptr<Channel> BasicChannelFactory::Impl::createChannel(
+std::shared_ptr<channel::Channel> Context::Impl::createChannel(
     std::shared_ptr<transport::Connection> connection,
     Channel::Endpoint /* unused */) {
-  return std::make_shared<BasicChannel>(
-      BasicChannel::ConstructorToken(),
+  return std::make_shared<Channel>(
+      Channel::ConstructorToken(),
       std::static_pointer_cast<PrivateIface>(shared_from_this()),
       std::move(connection));
 }
 
-void BasicChannelFactory::close() {
+void Context::close() {
   impl_->close();
 }
 
-void BasicChannelFactory::Impl::close() {
+void Context::Impl::close() {
   bool wasClosed = false;
   closed_.compare_exchange_strong(wasClosed, true);
   if (!wasClosed) {
@@ -64,11 +64,11 @@ void BasicChannelFactory::Impl::close() {
   }
 }
 
-void BasicChannelFactory::join() {
+void Context::join() {
   impl_->join();
 }
 
-void BasicChannelFactory::Impl::join() {
+void Context::Impl::join() {
   close();
 
   bool wasJoined = false;
@@ -78,42 +78,42 @@ void BasicChannelFactory::Impl::join() {
   }
 }
 
-BasicChannelFactory::~BasicChannelFactory() {
+Context::~Context() {
   join();
 }
 
-BasicChannel::BasicChannel(
+Channel::Channel(
     ConstructorToken /* unused */,
-    std::shared_ptr<BasicChannelFactory::PrivateIface> factory,
+    std::shared_ptr<Context::PrivateIface> context,
     std::shared_ptr<transport::Connection> connection)
-    : impl_(Impl::create(std::move(factory), std::move(connection))) {}
+    : impl_(Impl::create(std::move(context), std::move(connection))) {}
 
-std::shared_ptr<BasicChannel::Impl> BasicChannel::Impl::create(
-    std::shared_ptr<BasicChannelFactory::PrivateIface> factory,
+std::shared_ptr<Channel::Impl> Channel::Impl::create(
+    std::shared_ptr<Context::PrivateIface> context,
     std::shared_ptr<transport::Connection> connection) {
   auto impl = std::make_shared<Impl>(
-      ConstructorToken(), std::move(factory), std::move(connection));
+      ConstructorToken(), std::move(context), std::move(connection));
   impl->init_();
   return impl;
 }
 
-BasicChannel::Impl::Impl(
+Channel::Impl::Impl(
     ConstructorToken /* unused */,
-    std::shared_ptr<BasicChannelFactory::PrivateIface> factory,
+    std::shared_ptr<Context::PrivateIface> context,
     std::shared_ptr<transport::Connection> connection)
-    : factory_(std::move(factory)),
+    : context_(std::move(context)),
       connection_(std::move(connection)),
-      closingReceiver_(factory_, factory_->getClosingEmitter()),
+      closingReceiver_(context_, context_->getClosingEmitter()),
       readCallbackWrapper_(*this),
       readProtoCallbackWrapper_(*this),
       writeCallbackWrapper_(*this),
       writeProtoCallbackWrapper_(*this) {}
 
-bool BasicChannel::Impl::inLoop_() {
+bool Channel::Impl::inLoop_() {
   return currentLoop_ == std::this_thread::get_id();
 }
 
-void BasicChannel::Impl::deferToLoop_(std::function<void()> fn) {
+void Channel::Impl::deferToLoop_(std::function<void()> fn) {
   {
     std::unique_lock<std::mutex> lock(mutex_);
     pendingTasks_.push_back(std::move(fn));
@@ -138,7 +138,7 @@ void BasicChannel::Impl::deferToLoop_(std::function<void()> fn) {
   }
 }
 
-void BasicChannel::send(
+void Channel::send(
     const void* ptr,
     size_t length,
     TDescriptorCallback descriptorCallback,
@@ -146,7 +146,7 @@ void BasicChannel::send(
   impl_->send(ptr, length, std::move(descriptorCallback), std::move(callback));
 }
 
-void BasicChannel::Impl::send(
+void Channel::Impl::send(
     const void* ptr,
     size_t length,
     TDescriptorCallback descriptorCallback,
@@ -162,7 +162,7 @@ void BasicChannel::Impl::send(
 }
 
 // Send memory region to peer.
-void BasicChannel::Impl::sendFromLoop_(
+void Channel::Impl::sendFromLoop_(
     const void* ptr,
     size_t length,
     TDescriptorCallback descriptorCallback,
@@ -179,7 +179,7 @@ void BasicChannel::Impl::sendFromLoop_(
 }
 
 // Receive memory region from peer.
-void BasicChannel::recv(
+void Channel::recv(
     TDescriptor descriptor,
     void* ptr,
     size_t length,
@@ -187,7 +187,7 @@ void BasicChannel::recv(
   impl_->recv(std::move(descriptor), ptr, length, std::move(callback));
 }
 
-void BasicChannel::Impl::recv(
+void Channel::Impl::recv(
     TDescriptor descriptor,
     void* ptr,
     size_t length,
@@ -201,7 +201,7 @@ void BasicChannel::Impl::recv(
   });
 }
 
-void BasicChannel::Impl::recvFromLoop_(
+void Channel::Impl::recvFromLoop_(
     TDescriptor descriptor,
     void* ptr,
     size_t length,
@@ -222,29 +222,29 @@ void BasicChannel::Impl::recvFromLoop_(
   return;
 }
 
-void BasicChannel::Impl::init_() {
+void Channel::Impl::init_() {
   deferToLoop_([this]() { initFromLoop_(); });
 }
 
-void BasicChannel::Impl::initFromLoop_() {
+void Channel::Impl::initFromLoop_() {
   TP_DCHECK(inLoop_());
   closingReceiver_.activate(*this);
   readPacket_();
 }
 
-void BasicChannel::close() {
+void Channel::close() {
   impl_->close();
 }
 
-BasicChannel::~BasicChannel() {
+Channel::~Channel() {
   close();
 }
 
-void BasicChannel::Impl::close() {
+void Channel::Impl::close() {
   deferToLoop_([this]() { closeFromLoop_(); });
 }
 
-void BasicChannel::Impl::closeFromLoop_() {
+void Channel::Impl::closeFromLoop_() {
   TP_DCHECK(inLoop_());
   if (!error_) {
     error_ = TP_CREATE_ERROR(ChannelClosedError);
@@ -252,7 +252,7 @@ void BasicChannel::Impl::closeFromLoop_() {
   }
 }
 
-void BasicChannel::Impl::readPacket_() {
+void Channel::Impl::readPacket_() {
   TP_DCHECK(inLoop_());
   auto packet = std::make_shared<proto::Packet>();
   connection_->read(*packet, readProtoCallbackWrapper_([packet](Impl& impl) {
@@ -260,7 +260,7 @@ void BasicChannel::Impl::readPacket_() {
   }));
 }
 
-void BasicChannel::Impl::onPacket_(const proto::Packet& packet) {
+void Channel::Impl::onPacket_(const proto::Packet& packet) {
   TP_DCHECK(inLoop_());
   if (packet.has_request()) {
     onRequest_(packet.request());
@@ -274,7 +274,7 @@ void BasicChannel::Impl::onPacket_(const proto::Packet& packet) {
   readPacket_();
 }
 
-void BasicChannel::Impl::onRequest_(const proto::Request& request) {
+void Channel::Impl::onRequest_(const proto::Request& request) {
   TP_DCHECK(inLoop_());
   // Find the send operation matching the request's operation ID.
   const auto id = request.operation_id();
@@ -302,7 +302,7 @@ void BasicChannel::Impl::onRequest_(const proto::Request& request) {
                      }));
 }
 
-void BasicChannel::Impl::onReply_(const proto::Reply& reply) {
+void Channel::Impl::onReply_(const proto::Reply& reply) {
   TP_DCHECK(inLoop_());
   // Find the recv operation matching the reply's operation ID.
   const auto id = reply.operation_id();
@@ -326,7 +326,7 @@ void BasicChannel::Impl::onReply_(const proto::Reply& reply) {
           }));
 }
 
-void BasicChannel::Impl::sendCompleted(const uint64_t id) {
+void Channel::Impl::sendCompleted(const uint64_t id) {
   TP_DCHECK(inLoop_());
   auto it = std::find_if(
       sendOperations_.begin(), sendOperations_.end(), [id](const auto& op) {
@@ -342,7 +342,7 @@ void BasicChannel::Impl::sendCompleted(const uint64_t id) {
   op.callback(error_);
 }
 
-void BasicChannel::Impl::recvCompleted(const uint64_t id) {
+void Channel::Impl::recvCompleted(const uint64_t id) {
   TP_DCHECK(inLoop_());
   auto it = std::find_if(
       recvOperations_.begin(), recvOperations_.end(), [id](const auto& op) {
@@ -358,7 +358,7 @@ void BasicChannel::Impl::recvCompleted(const uint64_t id) {
   op.callback(error_);
 }
 
-void BasicChannel::Impl::handleError_() {
+void Channel::Impl::handleError_() {
   TP_DCHECK(inLoop_());
   // Close the connection so that all current operations will be aborted. This
   // will cause their callbacks to be invoked, and only then we'll invoke ours.

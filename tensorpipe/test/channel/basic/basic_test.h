@@ -13,8 +13,8 @@
 
 class BasicChannelTestHelper : public ChannelTestHelper {
  public:
-  std::shared_ptr<tensorpipe::channel::ChannelFactory> makeFactory() override {
-    return std::make_shared<tensorpipe::channel::basic::BasicChannelFactory>();
+  std::shared_ptr<tensorpipe::channel::Context> makeContext() override {
+    return std::make_shared<tensorpipe::channel::basic::Context>();
   }
 
   std::string getName() override {

@@ -22,7 +22,7 @@
 // Construction of a channel happens as follows.
 //
 //   1) During initialization of a pipe, the connecting peer sends its
-//      list of channel factories and their domain descriptors. The
+//      list of channel contexts and their domain descriptors. The
 //      domain descriptor is used to determine whether or not a
 //      channel can be used by a pair of peers.
 //   2) The listening side of the pipe compares the list it received
@@ -77,22 +77,22 @@ class Channel {
   virtual ~Channel() = default;
 };
 
-// Abstract base class for channel factory classes.
+// Abstract base class for channel context classes.
 //
 // Instances of these classes are expected to be registered with a
 // context. All registered instances are assumed to be eligible
 // channels for all pairs.
 //
-class ChannelFactory {
+class Context {
  public:
-  explicit ChannelFactory(std::string name);
+  explicit Context(std::string name);
 
-  // Return the factory's name.
+  // Return the context's name.
   const std::string& name() const;
 
   // Return string to describe the domain for this channel.
   //
-  // Two processes with a channel factory of the same type whose
+  // Two processes with a channel context of the same type whose
   // domain descriptors are identical can connect to each other.
   //
   virtual const std::string& domainDescriptor() const = 0;
@@ -109,7 +109,7 @@ class ChannelFactory {
       std::shared_ptr<transport::Connection>,
       Channel::Endpoint) = 0;
 
-  // Put the channel factory in a terminal state, in turn closing all of its
+  // Put the channel context in a terminal state, in turn closing all of its
   // channels, and release its resources. This may be done asynchronously, in
   // background.
   virtual void close() = 0;
@@ -117,7 +117,7 @@ class ChannelFactory {
   // Wait for all resources to be released and all background activity to stop.
   virtual void join() = 0;
 
-  virtual ~ChannelFactory() = default;
+  virtual ~Context() = default;
 
  private:
   std::string name_;

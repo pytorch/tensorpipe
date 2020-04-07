@@ -38,10 +38,7 @@ class Context::Impl : public Context::PrivateIface,
       std::string,
       std::shared_ptr<transport::Context>);
 
-  void registerChannelFactory(
-      int64_t,
-      std::string,
-      std::shared_ptr<channel::ChannelFactory>);
+  void registerChannel(int64_t, std::string, std::shared_ptr<channel::Context>);
 
   std::shared_ptr<Listener> listen(const std::vector<std::string>&);
 
@@ -49,18 +46,16 @@ class Context::Impl : public Context::PrivateIface,
 
   ClosingEmitter& getClosingEmitter() override;
 
-  std::shared_ptr<transport::Context> getContextForTransport(
-      const std::string&) override;
-  std::shared_ptr<channel::ChannelFactory> getChannelFactory(
-      const std::string&) override;
+  std::shared_ptr<transport::Context> getTransport(const std::string&) override;
+  std::shared_ptr<channel::Context> getChannel(const std::string&) override;
 
-  using PrivateIface::TOrderedChannelFactories;
+  using PrivateIface::TOrderedTransports;
 
-  const TOrderedContexts& getOrderedContexts() override;
+  const TOrderedTransports& getOrderedTransports() override;
 
-  using PrivateIface::TOrderedContexts;
+  using PrivateIface::TOrderedChannels;
 
-  const TOrderedChannelFactories& getOrderedChannelFactories() override;
+  const TOrderedChannels& getOrderedChannels() override;
 
   void close();
 
@@ -73,12 +68,11 @@ class Context::Impl : public Context::PrivateIface,
   std::atomic<bool> joined_{false};
 
   std::unordered_map<std::string, std::shared_ptr<transport::Context>>
-      contexts_;
-  std::unordered_map<std::string, std::shared_ptr<channel::ChannelFactory>>
-      channelFactories_;
+      transports_;
+  std::unordered_map<std::string, std::shared_ptr<channel::Context>> channels_;
 
-  TOrderedContexts contextsByPriority_;
-  TOrderedChannelFactories channelFactoriesByPriority_;
+  TOrderedTransports transportsByPriority_;
+  TOrderedChannels channelsByPriority_;
 
   ClosingEmitter closingEmitter_;
 };
@@ -107,37 +101,34 @@ void Context::Impl::registerTransport(
     std::string transport,
     std::shared_ptr<transport::Context> context) {
   TP_THROW_ASSERT_IF(transport.empty());
-  TP_THROW_ASSERT_IF(contexts_.find(transport) != contexts_.end())
+  TP_THROW_ASSERT_IF(transports_.find(transport) != transports_.end())
       << "transport " << transport << " already registered";
   TP_THROW_ASSERT_IF(
-      contextsByPriority_.find(priority) != contextsByPriority_.end())
+      transportsByPriority_.find(priority) != transportsByPriority_.end())
       << "transport with priority " << priority << " already registered";
-  contexts_.emplace(transport, context);
-  contextsByPriority_.emplace(priority, std::make_tuple(transport, context));
+  transports_.emplace(transport, context);
+  transportsByPriority_.emplace(priority, std::make_tuple(transport, context));
 }
 
-void Context::registerChannelFactory(
+void Context::registerChannel(
     int64_t priority,
-    std::string name,
-    std::shared_ptr<channel::ChannelFactory> channelFactory) {
-  impl_->registerChannelFactory(
-      priority, std::move(name), std::move(channelFactory));
+    std::string channel,
+    std::shared_ptr<channel::Context> context) {
+  impl_->registerChannel(priority, std::move(channel), std::move(context));
 }
 
-void Context::Impl::registerChannelFactory(
+void Context::Impl::registerChannel(
     int64_t priority,
-    std::string name,
-    std::shared_ptr<channel::ChannelFactory> channelFactory) {
-  TP_THROW_ASSERT_IF(name.empty());
-  TP_THROW_ASSERT_IF(channelFactories_.find(name) != channelFactories_.end())
-      << "channel factory " << name << " already registered";
+    std::string channel,
+    std::shared_ptr<channel::Context> context) {
+  TP_THROW_ASSERT_IF(channel.empty());
+  TP_THROW_ASSERT_IF(channels_.find(channel) != channels_.end())
+      << "channel " << channel << " already registered";
   TP_THROW_ASSERT_IF(
-      channelFactoriesByPriority_.find(priority) !=
-      channelFactoriesByPriority_.end())
-      << "channel factory with priority " << priority << " already registered";
-  channelFactories_.emplace(name, channelFactory);
-  channelFactoriesByPriority_.emplace(
-      priority, std::make_tuple(name, channelFactory));
+      channelsByPriority_.find(priority) != channelsByPriority_.end())
+      << "channel with priority " << priority << " already registered";
+  channels_.emplace(channel, context);
+  channelsByPriority_.emplace(priority, std::make_tuple(channel, context));
 }
 
 std::shared_ptr<Listener> Context::listen(
@@ -168,31 +159,30 @@ ClosingEmitter& Context::Impl::getClosingEmitter() {
   return closingEmitter_;
 }
 
-std::shared_ptr<transport::Context> Context::Impl::getContextForTransport(
+std::shared_ptr<transport::Context> Context::Impl::getTransport(
     const std::string& transport) {
-  auto iter = contexts_.find(transport);
-  if (iter == contexts_.end()) {
+  auto iter = transports_.find(transport);
+  if (iter == transports_.end()) {
     TP_THROW_EINVAL() << "unsupported transport " << transport;
   }
   return iter->second;
 }
 
-std::shared_ptr<channel::ChannelFactory> Context::Impl::getChannelFactory(
-    const std::string& name) {
-  auto iter = channelFactories_.find(name);
-  if (iter == channelFactories_.end()) {
-    TP_THROW_EINVAL() << "unsupported channel factory " << name;
+std::shared_ptr<channel::Context> Context::Impl::getChannel(
+    const std::string& channel) {
+  auto iter = channels_.find(channel);
+  if (iter == channels_.end()) {
+    TP_THROW_EINVAL() << "unsupported channel " << channel;
   }
   return iter->second;
 }
 
-const Context::Impl::TOrderedContexts& Context::Impl::getOrderedContexts() {
-  return contextsByPriority_;
+const Context::Impl::TOrderedTransports& Context::Impl::getOrderedTransports() {
+  return transportsByPriority_;
 }
 
-const Context::Impl::TOrderedChannelFactories& Context::Impl::
-    getOrderedChannelFactories() {
-  return channelFactoriesByPriority_;
+const Context::Impl::TOrderedChannels& Context::Impl::getOrderedChannels() {
+  return channelsByPriority_;
 }
 
 void Context::close() {
@@ -206,10 +196,10 @@ void Context::Impl::close() {
 
     closingEmitter_.close();
 
-    for (auto& iter : contexts_) {
+    for (auto& iter : transports_) {
       iter.second->close();
     }
-    for (auto& iter : channelFactories_) {
+    for (auto& iter : channels_) {
       iter.second->close();
     }
   }
@@ -226,10 +216,10 @@ void Context::Impl::join() {
   if (joined_.compare_exchange_strong(wasJoined, true)) {
     TP_DCHECK(!wasJoined);
 
-    for (auto& iter : contexts_) {
+    for (auto& iter : transports_) {
       iter.second->join();
     }
-    for (auto& iter : channelFactories_) {
+    for (auto& iter : channels_) {
       iter.second->join();
     }
   }

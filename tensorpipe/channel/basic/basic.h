@@ -19,9 +19,9 @@ namespace tensorpipe {
 namespace channel {
 namespace basic {
 
-class BasicChannelFactory : public ChannelFactory {
+class Context : public channel::Context {
  public:
-  explicit BasicChannelFactory();
+  Context();
 
   const std::string& domainDescriptor() const override;
 
@@ -33,7 +33,7 @@ class BasicChannelFactory : public ChannelFactory {
 
   void join() override;
 
-  ~BasicChannelFactory() override;
+  ~Context() override;
 
  private:
   class PrivateIface {
@@ -74,18 +74,18 @@ class BasicChannelFactory : public ChannelFactory {
   // since when the latter is destroyed the implementation is closed and joined.
   std::shared_ptr<Impl> impl_;
 
-  friend class BasicChannel;
+  friend class Channel;
 };
 
-class BasicChannel : public Channel {
+class Channel : public channel::Channel {
   // Use the passkey idiom to allow make_shared to call what should be a private
   // constructor. See https://abseil.io/tips/134 for more information.
   struct ConstructorToken {};
 
  public:
-  BasicChannel(
+  Channel(
       ConstructorToken,
-      std::shared_ptr<BasicChannelFactory::PrivateIface> factory,
+      std::shared_ptr<Context::PrivateIface> context,
       std::shared_ptr<transport::Connection> connection);
 
   // Send memory region to peer.
@@ -104,7 +104,7 @@ class BasicChannel : public Channel {
 
   void close() override;
 
-  ~BasicChannel() override;
+  ~Channel() override;
 
  private:
   class Impl : public std::enable_shared_from_this<Impl> {
@@ -114,12 +114,12 @@ class BasicChannel : public Channel {
 
    public:
     static std::shared_ptr<Impl> create(
-        std::shared_ptr<BasicChannelFactory::PrivateIface>,
+        std::shared_ptr<Context::PrivateIface>,
         std::shared_ptr<transport::Connection>);
 
     Impl(
         ConstructorToken,
-        std::shared_ptr<BasicChannelFactory::PrivateIface>,
+        std::shared_ptr<Context::PrivateIface>,
         std::shared_ptr<transport::Connection>);
 
     void send(
@@ -161,7 +161,7 @@ class BasicChannel : public Channel {
 
     void closeFromLoop_();
 
-    // Called by factory class after construction.
+    // Called by context class after construction.
     void init_();
 
     // Arm connection to read next protobuf packet.
@@ -176,7 +176,7 @@ class BasicChannel : public Channel {
     // Called when protobuf packet is a reply.
     void onReply_(const proto::Reply& reply);
 
-    std::shared_ptr<BasicChannelFactory::PrivateIface> factory_;
+    std::shared_ptr<Context::PrivateIface> context_;
     std::shared_ptr<transport::Connection> connection_;
     Error error_{Error::kSuccess};
     ClosingReceiver closingReceiver_;
@@ -231,8 +231,8 @@ class BasicChannel : public Channel {
   // from the public object's one and perform the destruction asynchronously.
   std::shared_ptr<Impl> impl_;
 
-  // Allow factory class to call constructor.
-  friend class BasicChannelFactory;
+  // Allow context class to call constructor.
+  friend class Context;
 };
 
 } // namespace basic

@@ -193,7 +193,7 @@ Listener::Impl::Impl(
     std::string address;
     std::tie(transport, address) = splitSchemeOfURL(url);
     std::shared_ptr<transport::Context> context =
-        context_->getContextForTransport(transport);
+        context_->getTransport(transport);
     std::shared_ptr<transport::Listener> listener = context->listen(address);
     addresses_.emplace(transport, listener->addr());
     listeners_.emplace(transport, std::move(listener));

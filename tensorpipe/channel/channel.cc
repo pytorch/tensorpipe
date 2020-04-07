@@ -11,9 +11,9 @@
 namespace tensorpipe {
 namespace channel {
 
-ChannelFactory::ChannelFactory(std::string name) : name_(std::move(name)) {}
+Context::Context(std::string name) : name_(std::move(name)) {}
 
-const std::string& ChannelFactory::name() const {
+const std::string& Context::name() const {
   return name_;
 }
 
