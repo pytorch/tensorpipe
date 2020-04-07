@@ -23,9 +23,7 @@ namespace tensorpipe {
 namespace channel {
 namespace cma {
 
-class CmaChannelFactory
-    : public ChannelFactory,
-      public std::enable_shared_from_this<CmaChannelFactory> {
+class CmaChannelFactory : public ChannelFactory {
   // Use the passkey idiom to allow make_shared to call what should be a private
   // constructor. See https://abseil.io/tips/134 for more information.
   struct ConstructorToken {};
@@ -33,7 +31,7 @@ class CmaChannelFactory
  public:
   static std::shared_ptr<CmaChannelFactory> create();
 
-  explicit CmaChannelFactory(ConstructorToken, int queueCapacity = INT_MAX);
+  explicit CmaChannelFactory(ConstructorToken);
 
   const std::string& domainDescriptor() const override;
 
@@ -48,34 +46,80 @@ class CmaChannelFactory
   ~CmaChannelFactory() override;
 
  private:
-  using copy_request_callback_fn = std::function<void(const Error&)>;
+  class PrivateIface {
+   public:
+    virtual ClosingEmitter& getClosingEmitter() = 0;
 
-  struct CopyRequest {
-    pid_t remotePid;
-    void* remotePtr;
-    void* localPtr;
-    size_t length;
-    copy_request_callback_fn callback;
+    using copy_request_callback_fn = std::function<void(const Error&)>;
+
+    virtual void requestCopy(
+        pid_t remotePid,
+        void* remotePtr,
+        void* localPtr,
+        size_t length,
+        copy_request_callback_fn fn) = 0;
+
+    virtual ~PrivateIface() = default;
   };
 
-  mutable std::mutex mutex_;
-  std::string domainDescriptor_;
-  std::thread thread_;
-  Queue<optional<CopyRequest>> requests_;
-  std::atomic<bool> closed_{false};
-  std::atomic<bool> joined_{false};
-  ClosingEmitter closingEmitter_;
+  class Impl : public PrivateIface, public std::enable_shared_from_this<Impl> {
+    // Use the passkey idiom to allow make_shared to call what should be a
+    // private constructor. See https://abseil.io/tips/134 for more information.
+    struct ConstructorToken {};
 
-  void init_();
+   public:
+    static std::shared_ptr<Impl> create();
 
-  void requestCopy_(
-      pid_t remotePid,
-      void* remotePtr,
-      void* localPtr,
-      size_t length,
-      copy_request_callback_fn fn);
+    explicit Impl(ConstructorToken);
 
-  void handleCopyRequests_();
+    const std::string& domainDescriptor() const;
+
+    std::shared_ptr<Channel> createChannel(
+        std::shared_ptr<transport::Connection>,
+        Channel::Endpoint);
+
+    ClosingEmitter& getClosingEmitter() override;
+
+    using copy_request_callback_fn = std::function<void(const Error&)>;
+
+    void requestCopy(
+        pid_t remotePid,
+        void* remotePtr,
+        void* localPtr,
+        size_t length,
+        copy_request_callback_fn fn) override;
+
+    void close();
+
+    void join();
+
+    ~Impl() override = default;
+
+   private:
+    struct CopyRequest {
+      pid_t remotePid;
+      void* remotePtr;
+      void* localPtr;
+      size_t length;
+      copy_request_callback_fn callback;
+    };
+
+    mutable std::mutex mutex_;
+    std::string domainDescriptor_;
+    std::thread thread_;
+    Queue<optional<CopyRequest>> requests_;
+    std::atomic<bool> closed_{false};
+    std::atomic<bool> joined_{false};
+    ClosingEmitter closingEmitter_;
+
+    void handleCopyRequests_();
+  };
+
+  // The implementation is managed by a shared_ptr because each child object
+  // will also hold a shared_ptr to it (downcast as a shared_ptr to the private
+  // interface). However, its lifetime is tied to the one of this public object,
+  // since when the latter is destroyed the implementation is closed and joined.
+  std::shared_ptr<Impl> impl_;
 
   friend class CmaChannel;
 };
@@ -88,7 +132,7 @@ class CmaChannel : public Channel {
  public:
   CmaChannel(
       ConstructorToken,
-      std::shared_ptr<CmaChannelFactory>,
+      std::shared_ptr<CmaChannelFactory::PrivateIface>,
       std::shared_ptr<transport::Connection> connection);
 
   // Send memory region to peer.
@@ -117,12 +161,12 @@ class CmaChannel : public Channel {
 
    public:
     static std::shared_ptr<Impl> create(
-        std::shared_ptr<CmaChannelFactory>,
+        std::shared_ptr<CmaChannelFactory::PrivateIface>,
         std::shared_ptr<transport::Connection>);
 
     Impl(
         ConstructorToken,
-        std::shared_ptr<CmaChannelFactory>,
+        std::shared_ptr<CmaChannelFactory::PrivateIface>,
         std::shared_ptr<transport::Connection>);
 
     void send(
@@ -176,7 +220,7 @@ class CmaChannel : public Channel {
     // Called when protobuf packet is a notification.
     void onNotification_(const proto::Notification& notification);
 
-    std::shared_ptr<CmaChannelFactory> factory_;
+    std::shared_ptr<CmaChannelFactory::PrivateIface> factory_;
     std::shared_ptr<transport::Connection> connection_;
     Error error_{Error::kSuccess};
     ClosingReceiver closingReceiver_;
@@ -215,6 +259,8 @@ class CmaChannel : public Channel {
     friend class tensorpipe::DeferringTolerantCallbackWrapper;
   };
 
+  // Using a shared_ptr allows us to detach the lifetime of the implementation
+  // from the public object's one and perform the destruction asynchronously.
   std::shared_ptr<Impl> impl_;
 
   // Allow factory class to call `init_()`.

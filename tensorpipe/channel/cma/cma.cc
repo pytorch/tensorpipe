@@ -13,6 +13,7 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <limits>
 
 #include <tensorpipe/channel/error.h>
 #include <tensorpipe/channel/helpers.h>
@@ -57,24 +58,26 @@ std::string generateDomainDescriptor() {
 } // namespace
 
 std::shared_ptr<CmaChannelFactory> CmaChannelFactory::create() {
-  auto factory = std::make_shared<CmaChannelFactory>(ConstructorToken());
-  factory->init_();
-  return factory;
+  return std::make_shared<CmaChannelFactory>(ConstructorToken());
 }
 
-CmaChannelFactory::CmaChannelFactory(
-    ConstructorToken /* unused */,
-    int queueCapacity)
-    : ChannelFactory(kChannelName),
-      domainDescriptor_(generateDomainDescriptor()),
-      requests_(queueCapacity) {}
-
-void CmaChannelFactory::init_() {
-  std::unique_lock<std::mutex> lock(mutex_);
-  thread_ = std::thread(&CmaChannelFactory::handleCopyRequests_, this);
+std::shared_ptr<CmaChannelFactory::Impl> CmaChannelFactory::Impl::create() {
+  return std::make_shared<CmaChannelFactory::Impl>(ConstructorToken());
 }
+
+CmaChannelFactory::CmaChannelFactory(ConstructorToken /* unused */)
+    : ChannelFactory(kChannelName), impl_(Impl::create()) {}
+
+CmaChannelFactory::Impl::Impl(ConstructorToken /* unused */)
+    : domainDescriptor_(generateDomainDescriptor()),
+      thread_(&Impl::handleCopyRequests_, this),
+      requests_(INT_MAX) {}
 
 void CmaChannelFactory::close() {
+  impl_->close();
+}
+
+void CmaChannelFactory::Impl::close() {
   // FIXME Acquiring this lock causes a deadlock when calling join. The solution
   // is avoiding locks by using the event loop approach just like in transports.
   // std::unique_lock<std::mutex> lock(mutex_);
@@ -88,6 +91,10 @@ void CmaChannelFactory::close() {
 }
 
 void CmaChannelFactory::join() {
+  impl_->join();
+}
+
+void CmaChannelFactory::Impl::join() {
   std::unique_lock<std::mutex> lock(mutex_);
 
   close();
@@ -104,22 +111,36 @@ CmaChannelFactory::~CmaChannelFactory() {
   join();
 }
 
+ClosingEmitter& CmaChannelFactory::Impl::getClosingEmitter() {
+  return closingEmitter_;
+}
+
 const std::string& CmaChannelFactory::domainDescriptor() const {
+  return impl_->domainDescriptor();
+}
+
+const std::string& CmaChannelFactory::Impl::domainDescriptor() const {
   std::unique_lock<std::mutex> lock(mutex_);
   return domainDescriptor_;
 }
 
 std::shared_ptr<Channel> CmaChannelFactory::createChannel(
     std::shared_ptr<transport::Connection> connection,
+    Channel::Endpoint endpoint) {
+  return impl_->createChannel(std::move(connection), endpoint);
+}
+
+std::shared_ptr<Channel> CmaChannelFactory::Impl::createChannel(
+    std::shared_ptr<transport::Connection> connection,
     Channel::Endpoint /* unused */) {
   TP_THROW_ASSERT_IF(joined_);
   return std::make_shared<CmaChannel>(
       CmaChannel::ConstructorToken(),
-      shared_from_this(),
+      std::static_pointer_cast<PrivateIface>(shared_from_this()),
       std::move(connection));
 }
 
-void CmaChannelFactory::requestCopy_(
+void CmaChannelFactory::Impl::requestCopy(
     pid_t remotePid,
     void* remotePtr,
     void* localPtr,
@@ -129,7 +150,7 @@ void CmaChannelFactory::requestCopy_(
       CopyRequest{remotePid, remotePtr, localPtr, length, std::move(fn)});
 }
 
-void CmaChannelFactory::handleCopyRequests_() {
+void CmaChannelFactory::Impl::handleCopyRequests_() {
   while (true) {
     auto maybeRequest = requests_.pop();
     if (!maybeRequest.has_value()) {
@@ -158,12 +179,12 @@ void CmaChannelFactory::handleCopyRequests_() {
 
 CmaChannel::CmaChannel(
     ConstructorToken /* unused */,
-    std::shared_ptr<CmaChannelFactory> factory,
+    std::shared_ptr<CmaChannelFactory::PrivateIface> factory,
     std::shared_ptr<transport::Connection> connection)
     : impl_(Impl::create(std::move(factory), std::move(connection))) {}
 
 std::shared_ptr<CmaChannel::Impl> CmaChannel::Impl::create(
-    std::shared_ptr<CmaChannelFactory> factory,
+    std::shared_ptr<CmaChannelFactory::PrivateIface> factory,
     std::shared_ptr<transport::Connection> connection) {
   auto impl = std::make_shared<Impl>(
       ConstructorToken(), std::move(factory), std::move(connection));
@@ -173,11 +194,11 @@ std::shared_ptr<CmaChannel::Impl> CmaChannel::Impl::create(
 
 CmaChannel::Impl::Impl(
     ConstructorToken /* unused */,
-    std::shared_ptr<CmaChannelFactory> factory,
+    std::shared_ptr<CmaChannelFactory::PrivateIface> factory,
     std::shared_ptr<transport::Connection> connection)
     : factory_(std::move(factory)),
       connection_(std::move(connection)),
-      closingReceiver_(factory_, factory_->closingEmitter_) {}
+      closingReceiver_(factory_, factory_->getClosingEmitter()) {}
 
 void CmaChannel::Impl::init_() {
   deferToLoop_([this]() { initFromLoop_(); });
@@ -247,7 +268,7 @@ void CmaChannel::Impl::sendFromLoop_(
     TDescriptorCallback descriptorCallback,
     TSendCallback callback) {
   TP_DCHECK(inLoop_());
-  TP_THROW_ASSERT_IF(factory_->joined_);
+  // TP_THROW_ASSERT_IF(factory_->joined_);
   if (error_) {
     // FIXME Ideally here we should either call the callback with an error (but
     // this may deadlock if we do it inline) or return an error as an additional
@@ -300,7 +321,7 @@ void CmaChannel::Impl::recvFromLoop_(
   pid_t remotePid = pbDescriptor.pid();
   void* remotePtr = reinterpret_cast<void*>(pbDescriptor.ptr());
 
-  factory_->requestCopy_(
+  factory_->requestCopy(
       remotePid,
       remotePtr,
       ptr,
