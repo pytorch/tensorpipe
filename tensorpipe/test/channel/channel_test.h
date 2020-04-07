@@ -12,7 +12,7 @@
 #include <memory>
 #include <thread>
 
-#include <tensorpipe/channel/channel.h>
+#include <tensorpipe/channel/context.h>
 #include <tensorpipe/common/queue.h>
 #include <tensorpipe/transport/uv/context.h>
 

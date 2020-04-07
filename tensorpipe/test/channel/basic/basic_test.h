@@ -8,7 +8,7 @@
 
 #pragma once
 
-#include <tensorpipe/channel/basic/basic.h>
+#include <tensorpipe/channel/basic/context.h>
 #include <tensorpipe/test/channel/channel_test.h>
 
 class BasicChannelTestHelper : public ChannelTestHelper {

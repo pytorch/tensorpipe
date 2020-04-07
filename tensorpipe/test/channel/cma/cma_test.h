@@ -8,7 +8,7 @@
 
 #pragma once
 
-#include <tensorpipe/channel/cma/cma.h>
+#include <tensorpipe/channel/cma/context.h>
 #include <tensorpipe/test/channel/channel_test.h>
 
 class CmaChannelTestHelper : public ChannelTestHelper {

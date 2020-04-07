@@ -8,7 +8,7 @@
 
 #pragma once
 
-#include <tensorpipe/channel/basic/basic.h>
+#include <tensorpipe/channel/basic/context.h>
 #include <tensorpipe/channel/channel.h>
 #include <tensorpipe/channel/helpers.h>
 #include <tensorpipe/common/address.h>
@@ -36,5 +36,5 @@
 #endif // TP_ENABLE_SHM
 
 #ifdef TP_ENABLE_CMA
-#include <tensorpipe/channel/cma/cma.h>
+#include <tensorpipe/channel/cma/context.h>
 #endif // TP_ENABLE_CMA

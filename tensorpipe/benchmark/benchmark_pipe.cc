@@ -10,9 +10,9 @@
 
 #include <tensorpipe/benchmark/measurements.h>
 #include <tensorpipe/benchmark/options.h>
-#include <tensorpipe/channel/basic/basic.h>
+#include <tensorpipe/channel/basic/context.h>
 #ifdef TP_ENABLE_CMA
-#include <tensorpipe/channel/cma/cma.h>
+#include <tensorpipe/channel/cma/context.h>
 #endif // TP_ENABLE_CMA
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/core/context.h>
