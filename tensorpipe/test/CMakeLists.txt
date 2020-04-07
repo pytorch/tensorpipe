@@ -4,28 +4,50 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+add_executable(tensorpipe_test
+  test.cc
+  transport/context_test.cc
+  transport/connection_test.cc
+  transport/uv/uv_test.cc
+  transport/uv/loop_test.cc
+  transport/uv/connection_test.cc
+  transport/uv/sockaddr_test.cc
+  transport/listener_test.cc
+  core/context_test.cc
+  proto/core_test.cc
+  channel/basic/basic_test.cc
+  channel/channel_test.cc
+  common/system_test.cc
+  common/defs_test.cc
+  )
+
+if(TP_ENABLE_SHM)
+  target_sources(tensorpipe_test PRIVATE
+    transport/shm/reactor_test.cc
+    transport/shm/loop_test.cc
+    transport/shm/connection_test.cc
+    transport/shm/sockaddr_test.cc
+    transport/shm/shm_test.cc
+    util/ringbuffer/shm_ringbuffer_test.cc
+    util/ringbuffer/protobuf_streams_test.cc
+    util/ringbuffer/ringbuffer_test.cc
+    util/shm/segment_test.cc
+    )
+endif()
+
+if(TP_ENABLE_CMA)
+  target_sources(tensorpipe_test PRIVATE
+    channel/cma/cma_test.cc
+    )
+endif()
+
+add_subdirectory(${CMAKE_SOURCE_DIR}/third_party/googletest
+  ${CMAKE_BINARY_DIR}/third_party/googletest
+  EXCLUDE_FROM_ALL
+  )
+
+target_link_libraries(tensorpipe_test PRIVATE tensorpipe uv::uv_a gtest_main)
+
 # Defines `gtest_discover_tests()`.
 include(GoogleTest)
-
-add_library(tensorpipe_test OBJECT test.cc)
-
-function(add_tensorpipe_test)
-  add_executable(${ARGV})
-  target_link_libraries(
-    "${ARGV0}"
-    $<TARGET_OBJECTS:tensorpipe_test>
-    tensorpipe
-    gtest_main
-    )
-  gtest_discover_tests(${ARGV0})
-endfunction()
-
-add_subdirectory(channel)
-add_subdirectory(common)
-add_subdirectory(core)
-add_subdirectory(proto)
-add_subdirectory(transport)
-add_subdirectory(util/ringbuffer)
-if(TP_ENABLE_SHM)
-  add_subdirectory(util/shm)
-endif()
+gtest_discover_tests(tensorpipe_test)

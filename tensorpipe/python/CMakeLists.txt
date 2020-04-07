@@ -10,10 +10,4 @@ target_link_libraries(
   pytensorpipe
   PRIVATE
   tensorpipe
-  tensorpipe_basic
-  tensorpipe_uv
   )
-
-if(TP_ENABLE_SHM)
-  target_link_libraries(pytensorpipe PRIVATE tensorpipe_shm)
-endif()
