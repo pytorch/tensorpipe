@@ -19,9 +19,7 @@ namespace tensorpipe {
 namespace channel {
 namespace basic {
 
-class BasicChannelFactory
-    : public ChannelFactory,
-      public std::enable_shared_from_this<BasicChannelFactory> {
+class BasicChannelFactory : public ChannelFactory {
  public:
   explicit BasicChannelFactory();
 
@@ -38,8 +36,43 @@ class BasicChannelFactory
   ~BasicChannelFactory() override;
 
  private:
-  std::string domainDescriptor_;
-  ClosingEmitter closingEmitter_;
+  class PrivateIface {
+   public:
+    virtual ClosingEmitter& getClosingEmitter() = 0;
+
+    virtual ~PrivateIface() = default;
+  };
+
+  class Impl : public PrivateIface, public std::enable_shared_from_this<Impl> {
+   public:
+    Impl();
+
+    const std::string& domainDescriptor() const;
+
+    std::shared_ptr<Channel> createChannel(
+        std::shared_ptr<transport::Connection>,
+        Channel::Endpoint);
+
+    ClosingEmitter& getClosingEmitter() override;
+
+    void close();
+
+    void join();
+
+    ~Impl() override = default;
+
+   private:
+    std::string domainDescriptor_;
+    std::atomic<bool> closed_{false};
+    std::atomic<bool> joined_{false};
+    ClosingEmitter closingEmitter_;
+  };
+
+  // The implementation is managed by a shared_ptr because each child object
+  // will also hold a shared_ptr to it (downcast as a shared_ptr to the private
+  // interface). However, its lifetime is tied to the one of this public object,
+  // since when the latter is destroyed the implementation is closed and joined.
+  std::shared_ptr<Impl> impl_;
 
   friend class BasicChannel;
 };
@@ -52,7 +85,7 @@ class BasicChannel : public Channel {
  public:
   BasicChannel(
       ConstructorToken,
-      std::shared_ptr<BasicChannelFactory> factory,
+      std::shared_ptr<BasicChannelFactory::PrivateIface> factory,
       std::shared_ptr<transport::Connection> connection);
 
   // Send memory region to peer.
@@ -81,12 +114,12 @@ class BasicChannel : public Channel {
 
    public:
     static std::shared_ptr<Impl> create(
-        std::shared_ptr<BasicChannelFactory>,
+        std::shared_ptr<BasicChannelFactory::PrivateIface>,
         std::shared_ptr<transport::Connection>);
 
     Impl(
         ConstructorToken,
-        std::shared_ptr<BasicChannelFactory>,
+        std::shared_ptr<BasicChannelFactory::PrivateIface>,
         std::shared_ptr<transport::Connection>);
 
     void send(
@@ -143,7 +176,7 @@ class BasicChannel : public Channel {
     // Called when protobuf packet is a reply.
     void onReply_(const proto::Reply& reply);
 
-    std::shared_ptr<BasicChannelFactory> factory_;
+    std::shared_ptr<BasicChannelFactory::PrivateIface> factory_;
     std::shared_ptr<transport::Connection> connection_;
     Error error_{Error::kSuccess};
     ClosingReceiver closingReceiver_;
@@ -194,6 +227,8 @@ class BasicChannel : public Channel {
     friend class tensorpipe::DeferringTolerantCallbackWrapper;
   };
 
+  // Using a shared_ptr allows us to detach the lifetime of the implementation
+  // from the public object's one and perform the destruction asynchronously.
   std::shared_ptr<Impl> impl_;
 
   // Allow factory class to call constructor.

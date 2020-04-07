@@ -21,29 +21,61 @@ namespace channel {
 namespace basic {
 
 BasicChannelFactory::BasicChannelFactory()
-    : ChannelFactory("basic"), domainDescriptor_("any") {}
+    : ChannelFactory("basic"), impl_(std::make_shared<Impl>()) {}
+
+BasicChannelFactory::Impl::Impl() : domainDescriptor_("any") {}
+
+ClosingEmitter& BasicChannelFactory::Impl::getClosingEmitter() {
+  return closingEmitter_;
+}
 
 const std::string& BasicChannelFactory::domainDescriptor() const {
+  return impl_->domainDescriptor();
+}
+
+const std::string& BasicChannelFactory::Impl::domainDescriptor() const {
   return domainDescriptor_;
 }
 
 std::shared_ptr<Channel> BasicChannelFactory::createChannel(
     std::shared_ptr<transport::Connection> connection,
+    Channel::Endpoint endpoint) {
+  return impl_->createChannel(std::move(connection), endpoint);
+}
+
+std::shared_ptr<Channel> BasicChannelFactory::Impl::createChannel(
+    std::shared_ptr<transport::Connection> connection,
     Channel::Endpoint /* unused */) {
   return std::make_shared<BasicChannel>(
       BasicChannel::ConstructorToken(),
-      shared_from_this(),
+      std::static_pointer_cast<PrivateIface>(shared_from_this()),
       std::move(connection));
 }
 
 void BasicChannelFactory::close() {
-  closingEmitter_.close();
+  impl_->close();
+}
+
+void BasicChannelFactory::Impl::close() {
+  bool wasClosed = false;
+  closed_.compare_exchange_strong(wasClosed, true);
+  if (!wasClosed) {
+    closingEmitter_.close();
+  }
 }
 
 void BasicChannelFactory::join() {
+  impl_->join();
+}
+
+void BasicChannelFactory::Impl::join() {
   close();
 
-  // Nothing to do?
+  bool wasJoined = false;
+  joined_.compare_exchange_strong(wasJoined, true);
+  if (!wasJoined) {
+    // Nothing to do?
+  }
 }
 
 BasicChannelFactory::~BasicChannelFactory() {
@@ -52,12 +84,12 @@ BasicChannelFactory::~BasicChannelFactory() {
 
 BasicChannel::BasicChannel(
     ConstructorToken /* unused */,
-    std::shared_ptr<BasicChannelFactory> factory,
+    std::shared_ptr<BasicChannelFactory::PrivateIface> factory,
     std::shared_ptr<transport::Connection> connection)
     : impl_(Impl::create(std::move(factory), std::move(connection))) {}
 
 std::shared_ptr<BasicChannel::Impl> BasicChannel::Impl::create(
-    std::shared_ptr<BasicChannelFactory> factory,
+    std::shared_ptr<BasicChannelFactory::PrivateIface> factory,
     std::shared_ptr<transport::Connection> connection) {
   auto impl = std::make_shared<Impl>(
       ConstructorToken(), std::move(factory), std::move(connection));
@@ -67,11 +99,11 @@ std::shared_ptr<BasicChannel::Impl> BasicChannel::Impl::create(
 
 BasicChannel::Impl::Impl(
     ConstructorToken /* unused */,
-    std::shared_ptr<BasicChannelFactory> factory,
+    std::shared_ptr<BasicChannelFactory::PrivateIface> factory,
     std::shared_ptr<transport::Connection> connection)
     : factory_(std::move(factory)),
       connection_(std::move(connection)),
-      closingReceiver_(factory_, factory_->closingEmitter_),
+      closingReceiver_(factory_, factory_->getClosingEmitter()),
       readCallbackWrapper_(*this),
       readProtoCallbackWrapper_(*this),
       writeCallbackWrapper_(*this),
