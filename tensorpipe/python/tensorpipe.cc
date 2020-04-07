@@ -416,8 +416,7 @@ PYBIND11_MODULE(pytensorpipe, module) {
 #ifdef TP_ENABLE_CMA
   channel_factory_class_<tensorpipe::channel::cma::CmaChannelFactory>
       processVmReadvChannel(module, "CmaChannel");
-  processVmReadvChannel.def(
-      py::init(&tensorpipe::channel::cma::CmaChannelFactory::create));
+  processVmReadvChannel.def(py::init<>());
 #endif // TP_ENABLE_CMA
 
   context.def(

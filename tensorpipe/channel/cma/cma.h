@@ -24,14 +24,8 @@ namespace channel {
 namespace cma {
 
 class CmaChannelFactory : public ChannelFactory {
-  // Use the passkey idiom to allow make_shared to call what should be a private
-  // constructor. See https://abseil.io/tips/134 for more information.
-  struct ConstructorToken {};
-
  public:
-  static std::shared_ptr<CmaChannelFactory> create();
-
-  explicit CmaChannelFactory(ConstructorToken);
+  CmaChannelFactory();
 
   const std::string& domainDescriptor() const override;
 
@@ -63,14 +57,8 @@ class CmaChannelFactory : public ChannelFactory {
   };
 
   class Impl : public PrivateIface, public std::enable_shared_from_this<Impl> {
-    // Use the passkey idiom to allow make_shared to call what should be a
-    // private constructor. See https://abseil.io/tips/134 for more information.
-    struct ConstructorToken {};
-
    public:
-    static std::shared_ptr<Impl> create();
-
-    explicit Impl(ConstructorToken);
+    Impl();
 
     const std::string& domainDescriptor() const;
 

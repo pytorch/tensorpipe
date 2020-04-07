@@ -57,18 +57,10 @@ std::string generateDomainDescriptor() {
 
 } // namespace
 
-std::shared_ptr<CmaChannelFactory> CmaChannelFactory::create() {
-  return std::make_shared<CmaChannelFactory>(ConstructorToken());
-}
+CmaChannelFactory::CmaChannelFactory()
+    : ChannelFactory(kChannelName), impl_(std::make_shared<Impl>()) {}
 
-std::shared_ptr<CmaChannelFactory::Impl> CmaChannelFactory::Impl::create() {
-  return std::make_shared<CmaChannelFactory::Impl>(ConstructorToken());
-}
-
-CmaChannelFactory::CmaChannelFactory(ConstructorToken /* unused */)
-    : ChannelFactory(kChannelName), impl_(Impl::create()) {}
-
-CmaChannelFactory::Impl::Impl(ConstructorToken /* unused */)
+CmaChannelFactory::Impl::Impl()
     : domainDescriptor_(generateDomainDescriptor()), requests_(INT_MAX) {
   thread_ = std::thread(&Impl::handleCopyRequests_, this);
 }

@@ -134,7 +134,7 @@ TEST(Context, ClientPingSerial) {
       0, "basic", std::make_shared<channel::basic::BasicChannelFactory>());
 #ifdef TP_ENABLE_CMA
   context->registerChannelFactory(
-      -1, "cma", channel::cma::CmaChannelFactory::create());
+      -1, "cma", std::make_shared<channel::cma::CmaChannelFactory>());
 #endif // TP_ENABLE_CMA
 
   auto listener = context->listen(genUrls());
@@ -217,7 +217,7 @@ TEST(Context, ClientPingInline) {
       0, "basic", std::make_shared<channel::basic::BasicChannelFactory>());
 #ifdef TP_ENABLE_CMA
   context->registerChannelFactory(
-      -1, "cma", channel::cma::CmaChannelFactory::create());
+      -1, "cma", std::make_shared<channel::cma::CmaChannelFactory>());
 #endif // TP_ENABLE_CMA
 
   auto listener = context->listen(genUrls());
@@ -297,7 +297,7 @@ TEST(Context, ServerPingPongTwice) {
       0, "basic", std::make_shared<channel::basic::BasicChannelFactory>());
 #ifdef TP_ENABLE_CMA
   context->registerChannelFactory(
-      -1, "cma", channel::cma::CmaChannelFactory::create());
+      -1, "cma", std::make_shared<channel::cma::CmaChannelFactory>());
 #endif // TP_ENABLE_CMA
 
   auto listener = context->listen(genUrls());
@@ -464,7 +464,7 @@ TEST(Context, MixedTensorMessage) {
       0, "basic", std::make_shared<channel::basic::BasicChannelFactory>());
 #ifdef TP_ENABLE_CMA
   context->registerChannelFactory(
-      -1, "cma", channel::cma::CmaChannelFactory::create());
+      -1, "cma", std::make_shared<channel::cma::CmaChannelFactory>());
 #endif // TP_ENABLE_CMA
 
   auto listener = context->listen(genUrls());

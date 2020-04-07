@@ -163,7 +163,7 @@ static void runServer(const Options& options) {
 #ifdef TP_ENABLE_CMA
       if (options.channel == "cma") {
     context->registerChannelFactory(
-        0, "cma", channel::cma::CmaChannelFactory::create());
+        0, "cma", std::make_shared<channel::cma::CmaChannelFactory>());
   } else
 #endif // TP_ENABLE_CMA
   {
@@ -294,7 +294,7 @@ static void runClient(const Options& options) {
 #ifdef TP_ENABLE_CMA
       if (options.channel == "cma") {
     context->registerChannelFactory(
-        0, "cma", channel::cma::CmaChannelFactory::create());
+        0, "cma", std::make_shared<channel::cma::CmaChannelFactory>());
   } else
 #endif // TP_ENABLE_CMA
   {
