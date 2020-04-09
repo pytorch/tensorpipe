@@ -48,16 +48,14 @@ Context::~Context() {
   join();
 }
 
-std::shared_ptr<transport::Connection> Context::connect(address_t addr) {
-  auto sockaddr = Sockaddr::createAbstractUnixAddr(addr);
-  auto socket = Socket::createForFamily(AF_UNIX);
-  socket->connect(sockaddr);
-  return Connection::create_(loop_, std::move(socket));
+std::shared_ptr<transport::Connection> Context::connect(std::string addr) {
+  return std::make_shared<Connection>(
+      Connection::ConstructorToken(), loop_, std::move(addr));
 }
 
-std::shared_ptr<transport::Listener> Context::listen(address_t addr) {
-  auto sockaddr = Sockaddr::createAbstractUnixAddr(addr);
-  return Listener::create_(loop_, sockaddr);
+std::shared_ptr<transport::Listener> Context::listen(std::string addr) {
+  return std::make_shared<Listener>(
+      Listener::ConstructorToken(), loop_, std::move(addr));
 }
 
 const std::string& Context::domainDescriptor() const {

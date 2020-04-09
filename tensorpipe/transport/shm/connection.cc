@@ -289,7 +289,11 @@ class Connection::Impl : public std::enable_shared_from_this<Connection::Impl>,
   };
 
  public:
+  // Create a connection that is already connected (e.g. from a listener).
   Impl(std::shared_ptr<Loop> loop, std::shared_ptr<Socket> socket);
+
+  // Create a connection that connects to the specified address.
+  Impl(std::shared_ptr<Loop> loop, address_t addr);
 
   // Called to initialize member fields that need `shared_from_this`.
   void initFromLoop();
@@ -353,6 +357,7 @@ class Connection::Impl : public std::enable_shared_from_this<Connection::Impl>,
   std::shared_ptr<Loop> loop_;
   std::shared_ptr<Reactor> reactor_;
   std::shared_ptr<Socket> socket_;
+  optional<Sockaddr> sockaddr_;
   ClosingReceiver closingReceiver_;
 
   // Inbox.
@@ -392,18 +397,19 @@ class Connection::Impl : public std::enable_shared_from_this<Connection::Impl>,
   void failFromLoop(Error&&);
 };
 
-std::shared_ptr<Connection> Connection::create_(
-    std::shared_ptr<Loop> loop,
-    std::shared_ptr<Socket> socket) {
-  return std::make_shared<Connection>(
-      ConstructorToken(), std::move(loop), std::move(socket));
-}
-
 Connection::Connection(
     ConstructorToken /* unused */,
     std::shared_ptr<Loop> loop,
     std::shared_ptr<Socket> socket)
     : loop_(loop), impl_(std::make_shared<Impl>(loop, std::move(socket))) {
+  loop_->deferToLoop([impl{impl_}]() { impl->initFromLoop(); });
+}
+
+Connection::Connection(
+    ConstructorToken /* unused */,
+    std::shared_ptr<Loop> loop,
+    address_t addr)
+    : loop_(loop), impl_(std::make_shared<Impl>(loop, std::move(addr))) {
   loop_->deferToLoop([impl{impl_}]() { impl->initFromLoop(); });
 }
 
@@ -425,16 +431,26 @@ Connection::Impl::Impl(
     : loop_(std::move(loop)),
       reactor_(loop_->reactor()),
       socket_(std::move(socket)),
-      closingReceiver_(loop_, loop_->closingEmitter_) {
-  // Ensure underlying control socket is non-blocking such that it
-  // works well with event driven I/O.
-  socket_->block(false);
-}
+      closingReceiver_(loop_, loop_->closingEmitter_) {}
+
+Connection::Impl::Impl(std::shared_ptr<Loop> loop, address_t addr)
+    : loop_(std::move(loop)),
+      reactor_(loop_->reactor()),
+      socket_(Socket::createForFamily(AF_UNIX)),
+      sockaddr_(Sockaddr::createAbstractUnixAddr(addr)),
+      closingReceiver_(loop_, loop_->closingEmitter_) {}
 
 void Connection::Impl::initFromLoop() {
   TP_DCHECK(loop_->inLoopThread());
 
   closingReceiver_.activate(*this);
+
+  if (sockaddr_.has_value()) {
+    socket_->connect(sockaddr_.value());
+  }
+  // Ensure underlying control socket is non-blocking such that it
+  // works well with event driven I/O.
+  socket_->block(false);
 
   // Create ringbuffer for inbox.
   std::shared_ptr<util::ringbuffer::RingBuffer> inboxRingBuffer;

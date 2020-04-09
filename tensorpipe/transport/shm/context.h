@@ -18,11 +18,11 @@ class Loop;
 
 class Context final : public transport::Context {
  public:
-  explicit Context();
+  Context();
 
-  std::shared_ptr<transport::Connection> connect(address_t addr) override;
+  std::shared_ptr<transport::Connection> connect(std::string addr) override;
 
-  std::shared_ptr<transport::Listener> listen(address_t addr) override;
+  std::shared_ptr<transport::Listener> listen(std::string addr) override;
 
   const std::string& domainDescriptor() const override;
 

@@ -28,7 +28,8 @@ namespace shm {
 class Listener::Impl : public std::enable_shared_from_this<Listener::Impl>,
                        public EventHandler {
  public:
-  Impl(std::shared_ptr<Loop>, const Sockaddr& addr);
+  // Create a listener that listens on the specified address.
+  Impl(std::shared_ptr<Loop>, address_t addr);
 
   // Called to initialize member fields that need `shared_from_this`.
   void initFromLoop();
@@ -47,28 +48,23 @@ class Listener::Impl : public std::enable_shared_from_this<Listener::Impl>,
  private:
   std::shared_ptr<Loop> loop_;
   std::shared_ptr<Socket> socket_;
-  Sockaddr addr_;
+  Sockaddr sockaddr_;
   std::deque<accept_callback_fn> fns_;
   ClosingReceiver closingReceiver_;
 };
 
-std::shared_ptr<Listener> Listener::create_(
-    std::shared_ptr<Loop> loop,
-    const Sockaddr& addr) {
-  return std::make_shared<Listener>(ConstructorToken(), std::move(loop), addr);
-}
-
-Listener::Impl::Impl(std::shared_ptr<Loop> loop, const Sockaddr& addr)
+Listener::Impl::Impl(std::shared_ptr<Loop> loop, address_t addr)
     : loop_(std::move(loop)),
       socket_(Socket::createForFamily(AF_UNIX)),
-      addr_(addr),
+      sockaddr_(Sockaddr::createAbstractUnixAddr(addr)),
       closingReceiver_(loop_, loop_->closingEmitter_) {}
 
 void Listener::Impl::initFromLoop() {
   TP_DCHECK(loop_->inLoopThread());
+
   closingReceiver_.activate(*this);
-  // Bind socket to abstract socket address.
-  socket_->bind(addr_);
+
+  socket_->bind(sockaddr_);
   socket_->block(false);
   socket_->listen(128);
 }
@@ -76,8 +72,8 @@ void Listener::Impl::initFromLoop() {
 Listener::Listener(
     ConstructorToken /* unused */,
     std::shared_ptr<Loop> loop,
-    const Sockaddr& addr)
-    : loop_(loop), impl_(std::make_shared<Impl>(loop, addr)) {
+    address_t addr)
+    : loop_(loop), impl_(std::make_shared<Impl>(loop, std::move(addr))) {
   loop_->deferToLoop([impl{impl_}]() { impl->initFromLoop(); });
 }
 
@@ -129,7 +125,7 @@ address_t Listener::addr() const {
 
 address_t Listener::Impl::addrFromLoop() const {
   TP_DCHECK(loop_->inLoopThread());
-  return addr_.str();
+  return sockaddr_.str();
 }
 
 void Listener::Impl::handleEventsFromLoop(int events) {
@@ -146,7 +142,9 @@ void Listener::Impl::handleEventsFromLoop(int events) {
   }
   auto socket = socket_->accept();
   if (socket) {
-    fn(Error::kSuccess, Connection::create_(loop_, socket));
+    fn(Error::kSuccess,
+       std::make_shared<Connection>(
+           Connection::ConstructorToken(), loop_, std::move(socket)));
   } else {
     fn(TP_CREATE_ERROR(SystemError, "accept", errno),
        std::shared_ptr<Connection>());

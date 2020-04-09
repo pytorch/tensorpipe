@@ -26,7 +26,8 @@ class Listener final : public transport::Listener {
   struct ConstructorToken {};
 
  public:
-  Listener(ConstructorToken, std::shared_ptr<Loop> loop, const Sockaddr& addr);
+  // Create a listener that listens on the specified address.
+  Listener(ConstructorToken, std::shared_ptr<Loop> loop, address_t addr);
 
   using transport::Listener::accept_callback_fn;
 
@@ -39,10 +40,6 @@ class Listener final : public transport::Listener {
   ~Listener() override;
 
  private:
-  static std::shared_ptr<Listener> create_(
-      std::shared_ptr<Loop> loop,
-      const Sockaddr& addr);
-
   class Impl;
 
   std::shared_ptr<Loop> loop_;

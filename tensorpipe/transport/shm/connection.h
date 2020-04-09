@@ -11,6 +11,7 @@
 #include <memory>
 
 #include <tensorpipe/transport/connection.h>
+#include <tensorpipe/transport/defs.h>
 
 namespace tensorpipe {
 namespace transport {
@@ -27,10 +28,14 @@ class Connection final : public transport::Connection {
   struct ConstructorToken {};
 
  public:
+  // Create a connection that is already connected (e.g. from a listener).
   Connection(
       ConstructorToken,
       std::shared_ptr<Loop> loop,
       std::shared_ptr<Socket> socket);
+
+  // Create a connection that connects to the specified address.
+  Connection(ConstructorToken, std::shared_ptr<Loop> loop, address_t addr);
 
   // Implementation of transport::Connection.
   void read(read_callback_fn fn) override;
@@ -55,10 +60,6 @@ class Connection final : public transport::Connection {
   ~Connection() override;
 
  private:
-  static std::shared_ptr<Connection> create_(
-      std::shared_ptr<Loop> loop,
-      std::shared_ptr<Socket> socket);
-
   class Impl;
 
   std::shared_ptr<Loop> loop_;
