@@ -45,6 +45,7 @@ class Listener final : public transport::Listener {
   std::shared_ptr<Loop> loop_;
   std::shared_ptr<Impl> impl_;
 
+  // Allow context to access constructor token.
   friend class Context;
 };
 

@@ -24,19 +24,13 @@ namespace channel {
 namespace basic {
 
 class Channel::Impl : public std::enable_shared_from_this<Channel::Impl> {
-  // Use the passkey idiom to allow make_shared to call what should be a
-  // private constructor. See https://abseil.io/tips/134 for more information.
-  struct ConstructorToken {};
-
  public:
-  static std::shared_ptr<Impl> create(
+  Impl(
       std::shared_ptr<Context::PrivateIface>,
       std::shared_ptr<transport::Connection>);
 
-  Impl(
-      ConstructorToken,
-      std::shared_ptr<Context::PrivateIface>,
-      std::shared_ptr<transport::Connection>);
+  // Called by the channel's constructor.
+  void init();
 
   void send(
       const void* ptr,
@@ -76,9 +70,6 @@ class Channel::Impl : public std::enable_shared_from_this<Channel::Impl> {
   void initFromLoop_();
 
   void closeFromLoop_();
-
-  // Called by context class after construction.
-  void init_();
 
   // Arm connection to read next protobuf packet.
   void readPacket_();
@@ -147,19 +138,11 @@ Channel::Channel(
     ConstructorToken /* unused */,
     std::shared_ptr<Context::PrivateIface> context,
     std::shared_ptr<transport::Connection> connection)
-    : impl_(Impl::create(std::move(context), std::move(connection))) {}
-
-std::shared_ptr<Channel::Impl> Channel::Impl::create(
-    std::shared_ptr<Context::PrivateIface> context,
-    std::shared_ptr<transport::Connection> connection) {
-  auto impl = std::make_shared<Impl>(
-      ConstructorToken(), std::move(context), std::move(connection));
-  impl->init_();
-  return impl;
+    : impl_(std::make_shared<Impl>(std::move(context), std::move(connection))) {
+  impl_->init();
 }
 
 Channel::Impl::Impl(
-    ConstructorToken /* unused */,
     std::shared_ptr<Context::PrivateIface> context,
     std::shared_ptr<transport::Connection> connection)
     : context_(std::move(context)),
@@ -283,7 +266,7 @@ void Channel::Impl::recvFromLoop_(
   return;
 }
 
-void Channel::Impl::init_() {
+void Channel::Impl::init() {
   deferToLoop_([this]() { initFromLoop_(); });
 }
 

@@ -122,7 +122,7 @@ TEST(Context, ClientPingSerial) {
   std::promise<Message> readDescriptorPromise;
   std::promise<Message> readMessagePromise;
 
-  auto context = Context::create();
+  auto context = std::make_shared<Context>();
 
   context->registerTransport(
       0, "uv", std::make_shared<transport::uv::Context>());
@@ -205,7 +205,7 @@ TEST(Context, ClientPingInline) {
   std::promise<void> writeCompletedProm;
   std::promise<void> readCompletedProm;
 
-  auto context = Context::create();
+  auto context = std::make_shared<Context>();
 
   context->registerTransport(
       0, "uv", std::make_shared<transport::uv::Context>());
@@ -285,7 +285,7 @@ TEST(Context, ServerPingPongTwice) {
   std::promise<void> pingCompletedProm;
   std::promise<void> pongCompletedProm;
 
-  auto context = Context::create();
+  auto context = std::make_shared<Context>();
 
   context->registerTransport(
       0, "uv", std::make_shared<transport::uv::Context>());
@@ -452,7 +452,7 @@ TEST(Context, MixedTensorMessage) {
   std::promise<void> readCompletedProm;
   int n = 2;
 
-  auto context = Context::create();
+  auto context = std::make_shared<Context>();
 
   context->registerTransport(
       0, "uv", std::make_shared<transport::uv::Context>());

@@ -255,7 +255,7 @@ PYBIND11_MODULE(pytensorpipe, module) {
 
   // Creators.
 
-  context.def(py::init(&tensorpipe::Context::create));
+  context.def(py::init<>());
   context.def(
       "listen",
       [](std::shared_ptr<tensorpipe::Context> context,

@@ -106,7 +106,9 @@ class Listener final {
   // from the public object's one and perform the destruction asynchronously.
   std::shared_ptr<Impl> impl_;
 
+  // Allow context to access constructor token.
   friend class Context;
+  // Allow pipe to see the private interface.
   friend class Pipe;
 };
 

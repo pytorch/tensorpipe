@@ -50,6 +50,7 @@ class Context : public channel::Context {
   // since when the latter is destroyed the implementation is closed and joined.
   std::shared_ptr<Impl> impl_;
 
+  // Allow channel to see the private interface.
   friend class Channel;
 };
 

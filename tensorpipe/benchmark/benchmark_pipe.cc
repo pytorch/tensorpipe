@@ -142,7 +142,7 @@ static void runServer(const Options& options) {
   Measurements measurements;
   measurements.reserve(options.numRoundTrips);
 
-  std::shared_ptr<Context> context = Context::create();
+  std::shared_ptr<Context> context = std::make_shared<Context>();
 #ifdef TP_ENABLE_SHM
   if (options.transport == "shm") {
     context->registerTransport(
@@ -273,7 +273,7 @@ static void runClient(const Options& options) {
   Measurements measurements;
   measurements.reserve(options.numRoundTrips);
 
-  std::shared_ptr<Context> context = Context::create();
+  std::shared_ptr<Context> context = std::make_shared<Context>();
 #ifdef TP_ENABLE_SHM
   if (options.transport == "shm") {
     context->registerTransport(

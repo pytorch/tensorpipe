@@ -25,33 +25,17 @@
 namespace tensorpipe {
 
 class Pipe::Impl : public std::enable_shared_from_this<Pipe::Impl> {
-  // Use the passkey idiom to allow make_shared to call what should be a
-  // private constructor. See https://abseil.io/tips/134 for more information.
-  struct ConstructorToken {};
-
  public:
-  static std::shared_ptr<Impl> create(
-      std::shared_ptr<Context::PrivateIface>,
-      const std::string&);
+  Impl(std::shared_ptr<Context::PrivateIface>, const std::string&);
 
-  static std::shared_ptr<Impl> create(
+  Impl(
       std::shared_ptr<Context::PrivateIface>,
       std::shared_ptr<Listener::PrivateIface>,
       std::string,
       std::shared_ptr<transport::Connection>);
 
-  Impl(
-      ConstructorToken,
-      std::shared_ptr<Context::PrivateIface>,
-      std::string,
-      std::shared_ptr<transport::Connection>);
-
-  Impl(
-      ConstructorToken,
-      std::shared_ptr<Context::PrivateIface>,
-      std::shared_ptr<Listener::PrivateIface>,
-      std::string,
-      std::shared_ptr<transport::Connection>);
+  // Called by the pipe's constructor.
+  void init();
 
   void readDescriptor(read_descriptor_callback_fn);
   void read(Message, read_callback_fn);
@@ -66,7 +50,7 @@ class Pipe::Impl : public std::enable_shared_from_this<Pipe::Impl> {
 
   void deferToLoop_(std::function<void()> fn);
 
-  void startFromLoop_();
+  void initFromLoop_();
 
   void readDescriptorFromLoop_(read_descriptor_callback_fn);
 
@@ -244,43 +228,13 @@ class Pipe::Impl : public std::enable_shared_from_this<Pipe::Impl> {
 // Initialization
 //
 
-std::shared_ptr<Pipe::Impl> Pipe::Impl::create(
-    std::shared_ptr<Context::PrivateIface> context,
-    const std::string& url) {
-  std::string transport;
-  std::string address;
-  std::tie(transport, address) = splitSchemeOfURL(url);
-  std::shared_ptr<transport::Connection> connection =
-      context->getTransport(transport)->connect(std::move(address));
-  auto impl = std::make_shared<Impl>(
-      ConstructorToken(),
-      std::move(context),
-      std::move(transport),
-      std::move(connection));
-  impl->start_();
-  return impl;
-}
-
-std::shared_ptr<Pipe::Impl> Pipe::Impl::create(
-    std::shared_ptr<Context::PrivateIface> context,
-    std::shared_ptr<Listener::PrivateIface> listener,
-    std::string transport,
-    std::shared_ptr<transport::Connection> connection) {
-  auto impl = std::make_shared<Impl>(
-      ConstructorToken(),
-      std::move(context),
-      std::move(listener),
-      std::move(transport),
-      std::move(connection));
-  impl->start_();
-  return impl;
-}
-
 Pipe::Pipe(
     ConstructorToken /* unused */,
     std::shared_ptr<Context::PrivateIface> context,
     const std::string& url)
-    : impl_(Impl::create(std::move(context), url)) {}
+    : impl_(std::make_shared<Impl>(std::move(context), url)) {
+  impl_->init();
+}
 
 Pipe::Pipe(
     ConstructorToken /* unused */,
@@ -288,21 +242,19 @@ Pipe::Pipe(
     std::shared_ptr<Listener::PrivateIface> listener,
     std::string transport,
     std::shared_ptr<transport::Connection> connection)
-    : impl_(Impl::create(
+    : impl_(std::make_shared<Impl>(
           std::move(context),
           std::move(listener),
           std::move(transport),
-          std::move(connection))) {}
+          std::move(connection))) {
+  impl_->init();
+}
 
 Pipe::Impl::Impl(
-    ConstructorToken /* unused */,
     std::shared_ptr<Context::PrivateIface> context,
-    std::string transport,
-    std::shared_ptr<transport::Connection> connection)
+    const std::string& url)
     : state_(CLIENT_ABOUT_TO_SEND_HELLO_AND_BROCHURE),
       context_(std::move(context)),
-      transport_(std::move(transport)),
-      connection_(std::move(connection)),
       closingReceiver_(context_, context_->getClosingEmitter()),
       readCallbackWrapper_(*this),
       readPacketCallbackWrapper_(*this),
@@ -311,10 +263,13 @@ Pipe::Impl::Impl(
       connectionRequestCallbackWrapper_(*this),
       channelDescriptorCallbackWrapper_(*this),
       channelRecvCallbackWrapper_(*this),
-      channelSendCallbackWrapper_(*this) {}
+      channelSendCallbackWrapper_(*this) {
+  std::string address;
+  std::tie(transport_, address) = splitSchemeOfURL(url);
+  connection_ = context_->getTransport(transport_)->connect(std::move(address));
+}
 
 Pipe::Impl::Impl(
-    ConstructorToken /* unused */,
     std::shared_ptr<Context::PrivateIface> context,
     std::shared_ptr<Listener::PrivateIface> listener,
     std::string transport,
@@ -334,11 +289,11 @@ Pipe::Impl::Impl(
       channelRecvCallbackWrapper_(*this),
       channelSendCallbackWrapper_(*this) {}
 
-void Pipe::Impl::start_() {
-  deferToLoop_([this]() { startFromLoop_(); });
+void Pipe::Impl::init() {
+  deferToLoop_([this]() { initFromLoop_(); });
 }
 
-void Pipe::Impl::startFromLoop_() {
+void Pipe::Impl::initFromLoop_() {
   TP_DCHECK(inLoop_());
   closingReceiver_.activate(*this);
   if (state_ == CLIENT_ABOUT_TO_SEND_HELLO_AND_BROCHURE) {

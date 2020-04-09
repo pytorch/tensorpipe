@@ -33,19 +33,13 @@ namespace channel {
 namespace cma {
 
 class Channel::Impl : public std::enable_shared_from_this<Channel::Impl> {
-  // Use the passkey idiom to allow make_shared to call what should be a
-  // private constructor. See https://abseil.io/tips/134 for more information.
-  struct ConstructorToken {};
-
  public:
-  static std::shared_ptr<Impl> create(
+  Impl(
       std::shared_ptr<Context::PrivateIface>,
       std::shared_ptr<transport::Connection>);
 
-  Impl(
-      ConstructorToken,
-      std::shared_ptr<Context::PrivateIface>,
-      std::shared_ptr<transport::Connection>);
+  // Called by the channel's constructor.
+  void init();
 
   void send(
       const void* ptr,
@@ -69,8 +63,6 @@ class Channel::Impl : public std::enable_shared_from_this<Channel::Impl> {
   bool inLoop_();
   void deferToLoop_(std::function<void()> fn);
 
-  // Called by context class after construction.
-  void init_();
   void initFromLoop_();
 
   // Send memory region to peer.
@@ -141,26 +133,18 @@ Channel::Channel(
     ConstructorToken /* unused */,
     std::shared_ptr<Context::PrivateIface> context,
     std::shared_ptr<transport::Connection> connection)
-    : impl_(Impl::create(std::move(context), std::move(connection))) {}
-
-std::shared_ptr<Channel::Impl> Channel::Impl::create(
-    std::shared_ptr<Context::PrivateIface> context,
-    std::shared_ptr<transport::Connection> connection) {
-  auto impl = std::make_shared<Impl>(
-      ConstructorToken(), std::move(context), std::move(connection));
-  impl->init_();
-  return impl;
+    : impl_(std::make_shared<Impl>(std::move(context), std::move(connection))) {
+  impl_->init();
 }
 
 Channel::Impl::Impl(
-    ConstructorToken /* unused */,
     std::shared_ptr<Context::PrivateIface> context,
     std::shared_ptr<transport::Connection> connection)
     : context_(std::move(context)),
       connection_(std::move(connection)),
       closingReceiver_(context_, context_->getClosingEmitter()) {}
 
-void Channel::Impl::init_() {
+void Channel::Impl::init() {
   deferToLoop_([this]() { initFromLoop_(); });
 }
 

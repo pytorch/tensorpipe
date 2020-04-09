@@ -24,14 +24,8 @@ class Listener;
 class Pipe;
 
 class Context final {
-  // Use the passkey idiom to allow make_shared to call what should be a private
-  // constructor. See https://abseil.io/tips/134 for more information.
-  struct ConstructorToken {};
-
  public:
-  static std::shared_ptr<Context> create();
-
-  explicit Context(ConstructorToken);
+  Context();
 
   void registerTransport(
       int64_t,
@@ -88,7 +82,9 @@ class Context final {
   // since when the latter is destroyed the implementation is closed and joined.
   std::shared_ptr<Impl> impl_;
 
+  // Allow listener to see the private interface.
   friend class Listener;
+  // Allow pipe to see the private interface.
   friend class Pipe;
 };
 

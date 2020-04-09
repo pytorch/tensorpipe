@@ -24,14 +24,8 @@ namespace tensorpipe {
 
 class Context::Impl : public Context::PrivateIface,
                       public std::enable_shared_from_this<Context::Impl> {
-  // Use the passkey idiom to allow make_shared to call what should be a
-  // private constructor. See https://abseil.io/tips/134 for more information.
-  struct ConstructorToken {};
-
  public:
-  static std::shared_ptr<Impl> create();
-
-  Impl(ConstructorToken);
+  Impl();
 
   void registerTransport(
       int64_t,
@@ -77,17 +71,9 @@ class Context::Impl : public Context::PrivateIface,
   ClosingEmitter closingEmitter_;
 };
 
-std::shared_ptr<Context> Context::create() {
-  return std::make_shared<Context>(ConstructorToken());
-}
+Context::Context() : impl_(std::make_shared<Context::Impl>()) {}
 
-Context::Context(ConstructorToken /* unused */) : impl_(Impl::create()) {}
-
-std::shared_ptr<Context::Impl> Context::Impl::create() {
-  return std::make_shared<Context::Impl>(ConstructorToken());
-}
-
-Context::Impl::Impl(ConstructorToken /* unused */) {}
+Context::Impl::Impl() {}
 
 void Context::registerTransport(
     int64_t priority,

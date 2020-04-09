@@ -26,19 +26,11 @@ namespace tensorpipe {
 
 class Listener::Impl : public Listener::PrivateIface,
                        public std::enable_shared_from_this<Listener::Impl> {
-  // Use the passkey idiom to allow make_shared to call what should be a
-  // private constructor. See https://abseil.io/tips/134 for more information.
-  struct ConstructorToken {};
-
  public:
-  static std::shared_ptr<Impl> create(
-      std::shared_ptr<Context::PrivateIface>,
-      const std::vector<std::string>&);
+  Impl(std::shared_ptr<Context::PrivateIface>, const std::vector<std::string>&);
 
-  Impl(
-      ConstructorToken,
-      std::shared_ptr<Context::PrivateIface>,
-      const std::vector<std::string>&);
+  // Called by the listener's constructor.
+  void init();
 
   void accept(accept_callback_fn);
 
@@ -106,9 +98,7 @@ class Listener::Impl : public Listener::PrivateIface,
   // Initialization
   //
 
-  void start_();
-
-  void startFromLoop_();
+  void initFromLoop_();
 
   //
   // Entry points for internal code
@@ -165,23 +155,15 @@ class Listener::Impl : public Listener::PrivateIface,
   friend class DeferringCallbackWrapper;
 };
 
-std::shared_ptr<Listener::Impl> Listener::Impl::create(
-    std::shared_ptr<Context::PrivateIface> context,
-    const std::vector<std::string>& urls) {
-  auto impl = std::make_shared<Listener::Impl>(
-      ConstructorToken(), std::move(context), urls);
-  impl->start_();
-  return impl;
-}
-
 Listener::Listener(
     ConstructorToken /* unused */,
     std::shared_ptr<Context::PrivateIface> context,
     const std::vector<std::string>& urls)
-    : impl_(Impl::create(std::move(context), urls)) {}
+    : impl_(std::make_shared<Listener::Impl>(std::move(context), urls)) {
+  impl_->init();
+}
 
 Listener::Impl::Impl(
-    ConstructorToken /* unused */,
     std::shared_ptr<Context::PrivateIface> context,
     const std::vector<std::string>& urls)
     : context_(std::move(context)),
@@ -200,11 +182,11 @@ Listener::Impl::Impl(
   }
 }
 
-void Listener::Impl::start_() {
-  deferToLoop_([this]() { startFromLoop_(); });
+void Listener::Impl::init() {
+  deferToLoop_([this]() { initFromLoop_(); });
 }
 
-void Listener::Impl::startFromLoop_() {
+void Listener::Impl::initFromLoop_() {
   TP_DCHECK(inLoop_());
   closingReceiver_.activate(*this);
   for (const auto& listener : listeners_) {
