@@ -23,7 +23,7 @@ namespace tensorpipe {
 class Listener;
 class Pipe;
 
-class Context final : public std::enable_shared_from_this<Context> {
+class Context final {
   // Use the passkey idiom to allow make_shared to call what should be a private
   // constructor. See https://abseil.io/tips/134 for more information.
   struct ConstructorToken {};

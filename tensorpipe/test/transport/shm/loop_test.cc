@@ -43,6 +43,34 @@ class Handler : public EventHandler {
   std::deque<int> events_;
 };
 
+// Instantiates an event monitor for the specified fd.
+template <typename T>
+std::shared_ptr<FunctionEventHandler> createMonitor(
+    std::shared_ptr<Loop> loop,
+    std::shared_ptr<T> shared,
+    int fd,
+    int event,
+    std::function<void(T&, FunctionEventHandler&)> fn) {
+  // Note: we capture a shared_ptr to the loop in the lambda below
+  // in order to keep the loop alive from the function event handler
+  // instance. We cannot have the instance store a shared_ptr to the
+  // loop itself, because that would cause a reference cycle when
+  // the loop stores an instance itself.
+  auto handler = std::make_shared<FunctionEventHandler>(
+      loop.get(),
+      fd,
+      event,
+      [loop, weak{std::weak_ptr<T>{shared}}, fn{std::move(fn)}](
+          FunctionEventHandler& handler) {
+        auto shared = weak.lock();
+        if (shared) {
+          fn(*shared, handler);
+        }
+      });
+  handler->start();
+  return handler;
+}
+
 } // namespace
 
 TEST(Loop, Create) {
@@ -86,8 +114,12 @@ TEST(Loop, Monitor) {
 
     // Test if writable (always).
     auto shared = std::make_shared<int>(1338);
-    auto monitor = loop->monitor<int>(
-        shared, efd.fd(), EPOLLOUT, [&](int& i, FunctionEventHandler& handler) {
+    auto monitor = createMonitor<int>(
+        loop,
+        shared,
+        efd.fd(),
+        EPOLLOUT,
+        [&](int& i, FunctionEventHandler& handler) {
           ASSERT_EQ(i, 1338);
           {
             std::unique_lock<std::mutex> lock(mutex);
@@ -113,8 +145,12 @@ TEST(Loop, Monitor) {
 
     // Test if readable (only if previously written to).
     auto shared = std::make_shared<int>(1338);
-    auto monitor = loop->monitor<int>(
-        shared, efd.fd(), EPOLLIN, [&](int& i, FunctionEventHandler& handler) {
+    auto monitor = createMonitor<int>(
+        loop,
+        shared,
+        efd.fd(),
+        EPOLLIN,
+        [&](int& i, FunctionEventHandler& handler) {
           ASSERT_EQ(i, 1338);
           {
             std::unique_lock<std::mutex> lock(mutex);

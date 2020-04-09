@@ -32,7 +32,7 @@ class Pipe;
 // fully established. This means that both its connection and all its
 // side channels have been established.
 //
-class Listener final : public std::enable_shared_from_this<Listener> {
+class Listener final {
   // Use the passkey idiom to allow make_shared to call what should be a private
   // constructor. See https://abseil.io/tips/134 for more information.
   struct ConstructorToken {};

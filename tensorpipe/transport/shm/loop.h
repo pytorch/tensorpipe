@@ -77,7 +77,7 @@ class FunctionEventHandler
   bool cancelled_{false};
 };
 
-class Loop final : public std::enable_shared_from_this<Loop> {
+class Loop final {
   // Use the passkey idiom to allow make_shared to call what should be a private
   // constructor. See https://abseil.io/tips/134 for more information.
   struct ConstructorToken {};
@@ -146,34 +146,6 @@ class Loop final : public std::enable_shared_from_this<Loop> {
   // function still be called.
   //
   void unregisterDescriptor(int fd);
-
-  // Instantiates an event monitor for the specified fd.
-  template <typename T>
-  std::shared_ptr<FunctionEventHandler> monitor(
-      std::shared_ptr<T> shared,
-      int fd,
-      int event,
-      std::function<void(T&, FunctionEventHandler&)> fn) {
-    // Note: we capture a shared_ptr to the loop in the lambda below
-    // in order to keep the loop alive from the function event handler
-    // instance. We cannot have the instance store a shared_ptr to the
-    // loop itself, because that would cause a reference cycle when
-    // the loop stores an instance itself.
-    auto handler = std::make_shared<FunctionEventHandler>(
-        this,
-        fd,
-        event,
-        [loop{shared_from_this()},
-         weak{std::weak_ptr<T>{shared}},
-         fn{std::move(fn)}](FunctionEventHandler& handler) {
-          auto shared = weak.lock();
-          if (shared) {
-            fn(*shared, handler);
-          }
-        });
-    handler->start();
-    return handler;
-  }
 
   void close();
 

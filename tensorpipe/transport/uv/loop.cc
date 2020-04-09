@@ -36,9 +36,10 @@ void Loop::close() {
   closed_.compare_exchange_strong(wasClosed, true);
   if (!wasClosed) {
     closingEmitter_.close();
-    deferToLoop(runIfAlive(*this, std::function<void(Loop&)>([](Loop& loop) {
-      uv_unref(reinterpret_cast<uv_handle_t*>(loop.async_.get()));
-    })));
+    // It's fine to capture this because the loop won't be destroyed until join
+    // has completed, and join won't complete until this operation is performed.
+    deferToLoop(
+        [this]() { uv_unref(reinterpret_cast<uv_handle_t*>(async_.get())); });
   }
 }
 
