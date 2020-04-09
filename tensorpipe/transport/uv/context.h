@@ -18,7 +18,7 @@ class Loop;
 
 class Context final : public transport::Context {
  public:
-  explicit Context();
+  Context();
 
   std::shared_ptr<transport::Connection> connect(address_t addr) override;
 

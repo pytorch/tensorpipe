@@ -186,8 +186,11 @@ void WriteOperation::callbackFromLoop(const Error& error) {
 
 class Connection::Impl : public std::enable_shared_from_this<Connection::Impl> {
  public:
+  // Create a connection that is already connected (e.g. from a listener).
   Impl(std::shared_ptr<Loop>, std::shared_ptr<TCPHandle>);
-  Impl(std::shared_ptr<Loop>, const Sockaddr&);
+
+  // Create a connection that connects to the specified address.
+  Impl(std::shared_ptr<Loop>, address_t);
 
   // Called to initialize member fields that need `shared_from_this`.
   void initFromLoop();
@@ -218,6 +221,7 @@ class Connection::Impl : public std::enable_shared_from_this<Connection::Impl> {
 
   std::shared_ptr<Loop> loop_;
   std::shared_ptr<TCPHandle> handle_;
+  optional<Sockaddr> sockaddr_;
   Error error_{Error::kSuccess};
   ClosingReceiver closingReceiver_;
 
@@ -237,24 +241,26 @@ Connection::Impl::Impl(
       handle_(std::move(handle)),
       closingReceiver_(loop_, loop_->closingEmitter_) {}
 
-Connection::Impl::Impl(std::shared_ptr<Loop> loop, const Sockaddr& addr)
+Connection::Impl::Impl(std::shared_ptr<Loop> loop, address_t addr)
     : loop_(std::move(loop)),
       handle_(TCPHandle::create(loop_)),
-      closingReceiver_(loop_, loop_->closingEmitter_) {
-  loop_->deferToLoop([this, addr]() {
+      sockaddr_(Sockaddr::createInetSockAddr(addr)),
+      closingReceiver_(loop_, loop_->closingEmitter_) {}
+
+void Connection::Impl::initFromLoop() {
+  leak_ = shared_from_this();
+
+  closingReceiver_.activate(*this);
+
+  if (sockaddr_.has_value()) {
     handle_->initFromLoop();
-    handle_->connectFromLoop(addr, [this](int status) {
+    handle_->connectFromLoop(sockaddr_.value(), [this](int status) {
       if (status < 0) {
         error_ = TP_CREATE_ERROR(UVError, status);
         closeFromLoop();
       }
     });
-  });
-}
-
-void Connection::Impl::initFromLoop() {
-  leak_ = shared_from_this();
-  closingReceiver_.activate(*this);
+  }
   handle_->armCloseCallbackFromLoop(
       [this]() { this->closeCallbackFromLoop_(); });
   handle_->armAllocCallbackFromLoop(
@@ -392,20 +398,6 @@ void Connection::Impl::closeCallbackFromLoop_() {
   leak_.reset();
 }
 
-std::shared_ptr<Connection> Connection::create_(
-    std::shared_ptr<Loop> loop,
-    const Sockaddr& addr) {
-  return std::make_shared<Connection>(
-      ConstructorToken(), std::move(loop), addr);
-}
-
-std::shared_ptr<Connection> Connection::create_(
-    std::shared_ptr<Loop> loop,
-    std::shared_ptr<TCPHandle> handle) {
-  return std::make_shared<Connection>(
-      ConstructorToken(), std::move(loop), std::move(handle));
-}
-
 Connection::Connection(
     ConstructorToken /* unused */,
     std::shared_ptr<Loop> loop,
@@ -417,8 +409,8 @@ Connection::Connection(
 Connection::Connection(
     ConstructorToken /* unused */,
     std::shared_ptr<Loop> loop,
-    const Sockaddr& addr)
-    : loop_(loop), impl_(std::make_shared<Impl>(loop, addr)) {
+    address_t addr)
+    : loop_(loop), impl_(std::make_shared<Impl>(loop, std::move(addr))) {
   loop_->deferToLoop([impl{impl_}]() { impl->initFromLoop(); });
 }
 

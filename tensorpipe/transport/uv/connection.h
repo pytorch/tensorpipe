@@ -11,6 +11,7 @@
 #include <memory>
 
 #include <tensorpipe/transport/connection.h>
+#include <tensorpipe/transport/defs.h>
 
 namespace tensorpipe {
 namespace transport {
@@ -28,15 +29,14 @@ class Connection : public transport::Connection {
   struct ConstructorToken {};
 
  public:
+  // Create a connection that is already connected (e.g. from a listener).
   Connection(
       ConstructorToken,
       std::shared_ptr<Loop> loop,
       std::shared_ptr<TCPHandle> handle);
 
-  Connection(
-      ConstructorToken,
-      std::shared_ptr<Loop> loop,
-      const Sockaddr& addr);
+  // Create a connection that connects to the specified address.
+  Connection(ConstructorToken, std::shared_ptr<Loop> loop, address_t addr);
 
   using transport::Connection::read_callback_fn;
 
@@ -53,16 +53,6 @@ class Connection : public transport::Connection {
   ~Connection() override;
 
  private:
-  // Create a connection that connects to the specified address.
-  static std::shared_ptr<Connection> create_(
-      std::shared_ptr<Loop> loop,
-      const Sockaddr& addr);
-
-  // Create a connection that is already connected (e.g. from a listener).
-  static std::shared_ptr<Connection> create_(
-      std::shared_ptr<Loop> loop,
-      std::shared_ptr<TCPHandle> handle);
-
   // All the logic resides in an "implementation" class. The lifetime of these
   // objects is detached from the lifetime of the connection, and is instead
   // attached to the lifetime of the underlying libuv handle. Any operation on

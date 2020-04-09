@@ -46,11 +46,13 @@ Context::~Context() {
 }
 
 std::shared_ptr<transport::Connection> Context::connect(address_t addr) {
-  return Connection::create_(loop_, Sockaddr::createInetSockAddr(addr));
+  return std::make_shared<Connection>(
+      Connection::ConstructorToken(), loop_, std::move(addr));
 }
 
 std::shared_ptr<transport::Listener> Context::listen(address_t addr) {
-  return Listener::create_(loop_, Sockaddr::createInetSockAddr(addr));
+  return std::make_shared<Listener>(
+      Listener::ConstructorToken(), loop_, std::move(addr));
 }
 
 const std::string& Context::domainDescriptor() const {

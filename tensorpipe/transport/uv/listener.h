@@ -10,6 +10,7 @@
 
 #include <memory>
 
+#include <tensorpipe/transport/defs.h>
 #include <tensorpipe/transport/listener.h>
 
 namespace tensorpipe {
@@ -27,10 +28,8 @@ class Listener : public transport::Listener {
   struct ConstructorToken {};
 
  public:
-  Listener(
-      ConstructorToken,
-      std::shared_ptr<Loop> loop,
-      std::shared_ptr<TCPHandle> handle);
+  // Create a listener that listens on the specified address.
+  Listener(ConstructorToken, std::shared_ptr<Loop> loop, address_t addr);
 
   using transport::Listener::accept_callback_fn;
 
@@ -43,11 +42,6 @@ class Listener : public transport::Listener {
   ~Listener() override;
 
  private:
-  // Create a listener that listens on the specified address.
-  static std::shared_ptr<Listener> create_(
-      std::shared_ptr<Loop> loop,
-      const Sockaddr& addr);
-
   // All the logic resides in an "implementation" class. The lifetime of these
   // objects is detached from the lifetime of the listener, and is instead
   // attached to the lifetime of the underlying libuv handle. Any operation on

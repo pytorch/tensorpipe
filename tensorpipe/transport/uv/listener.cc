@@ -22,7 +22,8 @@ namespace uv {
 
 class Listener::Impl : public std::enable_shared_from_this<Listener::Impl> {
  public:
-  Impl(std::shared_ptr<Loop>, std::shared_ptr<TCPHandle>);
+  // Create a listener that listens on the specified address.
+  Impl(std::shared_ptr<Loop>, address_t);
 
   // Called to initialize member fields that need `shared_from_this`.
   void initFromLoop();
@@ -48,6 +49,7 @@ class Listener::Impl : public std::enable_shared_from_this<Listener::Impl> {
 
   std::shared_ptr<Loop> loop_;
   std::shared_ptr<TCPHandle> handle_;
+  Sockaddr sockaddr_;
   // TODO Add proper error handling.
   ClosingReceiver closingReceiver_;
 
@@ -70,16 +72,19 @@ class Listener::Impl : public std::enable_shared_from_this<Listener::Impl> {
   std::shared_ptr<Impl> leak_;
 };
 
-Listener::Impl::Impl(
-    std::shared_ptr<Loop> loop,
-    std::shared_ptr<TCPHandle> handle)
+Listener::Impl::Impl(std::shared_ptr<Loop> loop, address_t addr)
     : loop_(std::move(loop)),
-      handle_(std::move(handle)),
+      handle_(TCPHandle::create(loop_)),
+      sockaddr_(Sockaddr::createInetSockAddr(addr)),
       closingReceiver_(loop_, loop_->closingEmitter_) {}
 
 void Listener::Impl::initFromLoop() {
   leak_ = shared_from_this();
+
   closingReceiver_.activate(*this);
+
+  handle_->initFromLoop();
+  handle_->bindFromLoop(sockaddr_);
   handle_->armCloseCallbackFromLoop(
       [this]() { this->closeCallbackFromLoop_(); });
   handle_->listenFromLoop(
@@ -114,30 +119,20 @@ void Listener::Impl::connectionCallbackFromLoop_(int status) {
   connection->initFromLoop();
   handle_->acceptFromLoop(connection);
   callback_.trigger(
-      Error::kSuccess, Connection::create_(loop_, std::move(connection)));
+      Error::kSuccess,
+      std::make_shared<Connection>(
+          Connection::ConstructorToken(), loop_, std::move(connection)));
 }
 
 void Listener::Impl::closeCallbackFromLoop_() {
   leak_.reset();
 }
 
-std::shared_ptr<Listener> Listener::create_(
-    std::shared_ptr<Loop> loop,
-    const Sockaddr& addr) {
-  auto handle = TCPHandle::create(loop);
-  loop->deferToLoop([handle, addr]() {
-    handle->initFromLoop();
-    handle->bindFromLoop(addr);
-  });
-  return std::make_shared<Listener>(
-      ConstructorToken(), loop, std::move(handle));
-}
-
 Listener::Listener(
     ConstructorToken /* unused */,
     std::shared_ptr<Loop> loop,
-    std::shared_ptr<TCPHandle> handle)
-    : loop_(loop), impl_(std::make_shared<Impl>(loop, std::move(handle))) {
+    address_t addr)
+    : loop_(loop), impl_(std::make_shared<Impl>(loop, std::move(addr))) {
   loop_->deferToLoop([impl{impl_}]() { impl->initFromLoop(); });
 }
 
