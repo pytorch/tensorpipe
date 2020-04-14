@@ -6,10 +6,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <tensorpipe/test/transport/shm/shm_test.h>
-
 #include <tensorpipe/proto/core.pb.h>
-#include <tensorpipe/transport/shm/connection.h>
+#include <tensorpipe/test/transport/transport_test.h>
 
 #include <gtest/gtest.h>
 

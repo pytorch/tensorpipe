@@ -6,8 +6,24 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <tensorpipe/test/channel/cma/cma_test.h>
+#include <tensorpipe/channel/cma/context.h>
+#include <tensorpipe/test/channel/channel_test.h>
+
+namespace {
+
+class CmaChannelTestHelper : public ChannelTestHelper {
+ public:
+  std::shared_ptr<tensorpipe::channel::Context> makeContext() override {
+    return std::make_shared<tensorpipe::channel::cma::Context>();
+  }
+
+  std::string getName() override {
+    return "cma";
+  }
+};
 
 CmaChannelTestHelper helper;
+
+} // namespace
 
 INSTANTIATE_TEST_CASE_P(Cma, ChannelTest, ::testing::Values(&helper));

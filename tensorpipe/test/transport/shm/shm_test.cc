@@ -6,22 +6,31 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <tensorpipe/test/transport/shm/shm_test.h>
+#include <tensorpipe/test/transport/transport_test.h>
+#include <tensorpipe/transport/shm/context.h>
 
 #include <sstream>
 
-#include <sys/types.h>
-#include <unistd.h>
+namespace {
 
-std::string createUniqueShmAddr() {
-  const ::testing::TestInfo* const test_info =
-      ::testing::UnitTest::GetInstance()->current_test_info();
-  std::ostringstream ss;
-  // Once we upgrade googletest, also use test_info->test_suite_name() here.
-  ss << "tensorpipe_test_" << test_info->name() << "_" << getpid();
-  return ss.str();
-}
+class SHMTransportTestHelper : public TransportTestHelper {
+ public:
+  std::shared_ptr<tensorpipe::transport::Context> getContext() override {
+    return std::make_shared<tensorpipe::transport::shm::Context>();
+  }
+
+  std::string defaultAddr() override {
+    const ::testing::TestInfo* const test_info =
+        ::testing::UnitTest::GetInstance()->current_test_info();
+    std::ostringstream ss;
+    // Once we upgrade googletest, also use test_info->test_suite_name() here.
+    ss << "tensorpipe_test_" << test_info->name() << "_" << getpid();
+    return ss.str();
+  }
+};
 
 SHMTransportTestHelper helper;
+
+} // namespace
 
 INSTANTIATE_TEST_CASE_P(Shm, TransportTest, ::testing::Values(&helper));
