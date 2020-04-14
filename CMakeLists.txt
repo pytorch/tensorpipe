@@ -19,18 +19,6 @@ endif()
 option(TP_ENABLE_SHM "Enable shm transport" ${LINUX})
 option(TP_ENABLE_CMA "Enable cma channel" ${LINUX})
 
-# Use CMAKE_<LANG>_COMPILER_LAUNCHER if available.
-find_program(SCCACHE_EXECUTABLE sccache)
-mark_as_advanced(SCCACHE_EXECUTABLE)
-if(SCCACHE_EXECUTABLE)
-  foreach(LANG CXX C)
-    if(NOT DEFINED CMAKE_${LANG}_COMPILER_LAUNCHER AND NOT CMAKE_${LANG}_COMPILER MATCHES ".*/s?ccache$")
-      message(STATUS "Enabling sccache for ${LANG}")
-      set(CMAKE_${LANG}_COMPILER_LAUNCHER ${SCCACHE_EXECUTABLE} CACHE STRING "")
-    endif()
-  endforeach()
-endif()
-
 # Define sanitizer option, if specified.
 if(SANITIZE)
   add_definitions("-fsanitize=${SANITIZE}")
