@@ -10,6 +10,8 @@ cmake_minimum_required(VERSION 3.10 FATAL_ERROR)
 project(tensorpipe C CXX)
 set(CMAKE_CXX_STANDARD 14)
 
+list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
+
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   set(LINUX ON)
 else()
@@ -20,11 +22,7 @@ option(TP_ENABLE_SHM "Enable shm transport" ${LINUX})
 option(TP_ENABLE_CMA "Enable cma channel" ${LINUX})
 
 # Define sanitizer option, if specified.
-if(SANITIZE)
-  add_definitions("-fsanitize=${SANITIZE}")
-  add_definitions("-fno-omit-frame-pointer")
-  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fsanitize=${SANITIZE}")
-endif()
+include(Sanitize)
 
 # We use the [[nodiscard]] attribute, which GCC 5 complains about.
 # Silence this warning if GCC 5 is used.
