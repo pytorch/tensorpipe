@@ -37,8 +37,6 @@ endif()
 # CTest must be included in the top level to enable `make test` target.
 include(CTest)
 
-# Make dependencies available (but don't build by default)
-add_subdirectory(third_party/backward-cpp EXCLUDE_FROM_ALL)
 if(BUILD_TESTING)
   add_subdirectory(third_party/googletest EXCLUDE_FROM_ALL)
 endif()
