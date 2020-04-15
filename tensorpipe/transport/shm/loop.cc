@@ -56,11 +56,7 @@ void FunctionEventHandler::handleEventsFromLoop(int events) {
   }
 }
 
-std::shared_ptr<Loop> Loop::create() {
-  return std::make_shared<Loop>(ConstructorToken());
-}
-
-Loop::Loop(ConstructorToken /* unused */) {
+Loop::Loop() {
   {
     auto rv = epoll_create(1);
     TP_THROW_SYSTEM_IF(rv == -1, errno);
@@ -73,8 +69,7 @@ Loop::Loop(ConstructorToken /* unused */) {
   }
 
   // Create reactor.
-  reactor_ = std::make_shared<Reactor>();
-  epollReactorToken_ = reactor_->add([this] { handleEpollEventsFromLoop(); });
+  epollReactorToken_ = reactor_.add([this] { handleEpollEventsFromLoop(); });
 
   // Start epoll(2) thread.
   thread_ = std::thread(&Loop::loop, this);
@@ -85,7 +80,7 @@ void Loop::close() {
   closed_.compare_exchange_strong(wasClosed, true);
   if (!wasClosed) {
     closingEmitter_.close();
-    reactor_->close();
+    reactor_.close();
     wakeup();
   }
 }
@@ -96,7 +91,7 @@ void Loop::join() {
   bool wasJoined = false;
   joined_.compare_exchange_strong(wasJoined, true);
   if (!wasJoined) {
-    reactor_->join();
+    reactor_.join();
     thread_.join();
   }
 }
@@ -106,10 +101,10 @@ Loop::~Loop() {
 }
 
 void Loop::deferToLoop(TDeferredFunction fn) {
-  reactor_->deferToLoop(std::move(fn));
+  reactor_.deferToLoop(std::move(fn));
 }
 
-const std::shared_ptr<Reactor>& Loop::reactor() {
+Reactor& Loop::reactor() {
   return reactor_;
 }
 
@@ -194,12 +189,12 @@ void Loop::loop() {
     epollEvents_.resize(nfds);
 
     // Trigger reactor and wait for it to process these events.
-    reactor_->trigger(epollReactorToken_);
+    reactor_.trigger(epollReactorToken_);
     while (!epollEvents_.empty()) {
       epollCond_.wait(lock);
     }
   }
-  reactor_->remove(epollReactorToken_);
+  reactor_.remove(epollReactorToken_);
 }
 
 void Loop::handleEpollEventsFromLoop() {

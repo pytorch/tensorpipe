@@ -78,16 +78,10 @@ class FunctionEventHandler
 };
 
 class Loop final {
-  // Use the passkey idiom to allow make_shared to call what should be a private
-  // constructor. See https://abseil.io/tips/134 for more information.
-  struct ConstructorToken {};
-
  public:
-  static std::shared_ptr<Loop> create();
-
   using TDeferredFunction = std::function<void()>;
 
-  explicit Loop(ConstructorToken);
+  Loop();
 
   // Prefer using deferToLoop over runInLoop when you don't need to wait for the
   // result.
@@ -99,7 +93,7 @@ class Loop final {
     // is thread-safe to run it immediately. The danger here however is that it
     // can lead to an inconsistent order between operations run from the event
     // loop, from outside of it, and deferred.
-    if (reactor_->inReactorThread()) {
+    if (reactor_.inReactorThread()) {
       fn();
     } else {
       // Must use a copyable wrapper around std::promise because
@@ -123,7 +117,7 @@ class Loop final {
   void deferToLoop(TDeferredFunction fn);
 
   // Provide access to the underlying reactor.
-  const std::shared_ptr<Reactor>& reactor();
+  Reactor& reactor();
 
   // Register file descriptor with event loop.
   //
@@ -155,14 +149,14 @@ class Loop final {
   ~Loop();
 
   inline bool inLoopThread() {
-    return reactor_->inReactorThread();
+    return reactor_.inReactorThread();
   }
 
  private:
   static constexpr auto kCapacity_ = 64;
 
   // The reactor is used to process events for this loop.
-  std::shared_ptr<Reactor> reactor_;
+  Reactor reactor_;
 
   // Interaction with epoll(7).
   //

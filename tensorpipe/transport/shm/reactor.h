@@ -41,7 +41,7 @@ class Reactor final {
   using TFunction = std::function<void()>;
   using TToken = uint32_t;
 
-  explicit Reactor();
+  Reactor();
 
   using TDeferredFunction = std::function<void()>;
 

@@ -366,7 +366,7 @@ class Connection::Impl : public std::enable_shared_from_this<Connection::Impl>,
   State state_{INITIALIZING};
   Error error_;
   std::shared_ptr<Loop> loop_;
-  std::shared_ptr<Reactor> reactor_;
+  Reactor& reactor_;
   std::shared_ptr<Socket> socket_;
   optional<Sockaddr> sockaddr_;
   ClosingReceiver closingReceiver_;
@@ -474,14 +474,14 @@ void Connection::Impl::initFromLoop() {
   inbox_.emplace(std::move(inboxRingBuffer));
 
   // Register method to be called when our peer writes to our inbox.
-  inboxReactorToken_ = reactor_->add(
-      runIfAlive(*this, std::function<void(Impl&)>([](Impl& impl) {
+  inboxReactorToken_ =
+      reactor_.add(runIfAlive(*this, std::function<void(Impl&)>([](Impl& impl) {
         impl.handleInboxReadableFromLoop();
       })));
 
   // Register method to be called when our peer reads from our outbox.
-  outboxReactorToken_ = reactor_->add(
-      runIfAlive(*this, std::function<void(Impl&)>([](Impl& impl) {
+  outboxReactorToken_ =
+      reactor_.add(runIfAlive(*this, std::function<void(Impl&)>([](Impl& impl) {
         impl.handleOutboxWritableFromLoop();
       })));
 
@@ -745,7 +745,7 @@ void Connection::Impl::handleEventOutFromLoop() {
   if (state_ == SEND_FDS) {
     int reactorHeaderFd;
     int reactorDataFd;
-    std::tie(reactorHeaderFd, reactorDataFd) = reactor_->fds();
+    std::tie(reactorHeaderFd, reactorDataFd) = reactor_.fds();
 
     // Send our reactor token, reactor fds, and inbox fds.
     auto err = socket_->sendPayloadAndFds(
@@ -883,11 +883,11 @@ void Connection::Impl::closeFromLoop() {
 
   failFromLoop(TP_CREATE_ERROR(ConnectionClosedError));
   if (inboxReactorToken_.has_value()) {
-    reactor_->remove(inboxReactorToken_.value());
+    reactor_.remove(inboxReactorToken_.value());
     inboxReactorToken_.reset();
   }
   if (outboxReactorToken_.has_value()) {
-    reactor_->remove(outboxReactorToken_.value());
+    reactor_.remove(outboxReactorToken_.value());
     outboxReactorToken_.reset();
   }
   if (socket_) {

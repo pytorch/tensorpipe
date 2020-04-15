@@ -46,22 +46,17 @@ class Handler : public EventHandler {
 // Instantiates an event monitor for the specified fd.
 template <typename T>
 std::shared_ptr<FunctionEventHandler> createMonitor(
-    std::shared_ptr<Loop> loop,
+    Loop& loop,
     std::shared_ptr<T> shared,
     int fd,
     int event,
     std::function<void(T&, FunctionEventHandler&)> fn) {
-  // Note: we capture a shared_ptr to the loop in the lambda below
-  // in order to keep the loop alive from the function event handler
-  // instance. We cannot have the instance store a shared_ptr to the
-  // loop itself, because that would cause a reference cycle when
-  // the loop stores an instance itself.
   auto handler = std::make_shared<FunctionEventHandler>(
-      loop.get(),
+      &loop,
       fd,
       event,
-      [loop, weak{std::weak_ptr<T>{shared}}, fn{std::move(fn)}](
-          FunctionEventHandler& handler) {
+      [weak{std::weak_ptr<T>{shared}},
+       fn{std::move(fn)}](FunctionEventHandler& handler) {
         auto shared = weak.lock();
         if (shared) {
           fn(*shared, handler);
@@ -73,37 +68,31 @@ std::shared_ptr<FunctionEventHandler> createMonitor(
 
 } // namespace
 
-TEST(Loop, Create) {
-  auto loop = Loop::create();
-  ASSERT_TRUE(loop);
-  loop->join();
-}
-
 TEST(Loop, RegisterUnregister) {
-  auto loop = Loop::create();
+  Loop loop;
   auto handler = std::make_shared<Handler>();
   auto efd = Fd(eventfd(0, EFD_NONBLOCK));
 
   {
     // Test if writable (always).
-    loop->registerDescriptor(efd.fd(), EPOLLOUT | EPOLLONESHOT, handler);
+    loop.registerDescriptor(efd.fd(), EPOLLOUT | EPOLLONESHOT, handler);
     ASSERT_EQ(handler->nextEvents(), EPOLLOUT);
     efd.writeOrThrow<uint64_t>(1337);
 
     // Test if readable (only if previously written to).
-    loop->registerDescriptor(efd.fd(), EPOLLIN | EPOLLONESHOT, handler);
+    loop.registerDescriptor(efd.fd(), EPOLLIN | EPOLLONESHOT, handler);
     ASSERT_EQ(handler->nextEvents(), EPOLLIN);
     ASSERT_EQ(efd.readOrThrow<uint64_t>(), 1337);
 
     // Test if we can unregister the descriptor.
-    loop->unregisterDescriptor(efd.fd());
+    loop.unregisterDescriptor(efd.fd());
   }
 
-  loop->join();
+  loop.join();
 }
 
 TEST(Loop, Monitor) {
-  auto loop = Loop::create();
+  Loop loop;
   auto efd = Fd(eventfd(0, EFD_NONBLOCK));
   constexpr uint64_t kValue = 1337;
 
@@ -171,15 +160,15 @@ TEST(Loop, Monitor) {
     ASSERT_EQ(value, kValue);
   }
 
-  loop->join();
+  loop.join();
 }
 
 TEST(Loop, Defer) {
-  auto loop = Loop::create();
+  Loop loop;
   auto promise = std::make_shared<std::promise<void>>();
   auto future = promise->get_future();
-  loop->deferToLoop([promise]() { promise->set_value(); });
+  loop.deferToLoop([promise]() { promise->set_value(); });
   future.wait();
   ASSERT_TRUE(future.valid());
-  loop->join();
+  loop.join();
 }
