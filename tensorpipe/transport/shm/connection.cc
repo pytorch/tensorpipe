@@ -290,10 +290,12 @@ class Connection::Impl : public std::enable_shared_from_this<Connection::Impl>,
 
  public:
   // Create a connection that is already connected (e.g. from a listener).
-  Impl(std::shared_ptr<Loop> loop, std::shared_ptr<Socket> socket);
+  Impl(
+      std::shared_ptr<Context::PrivateIface> context,
+      std::shared_ptr<Socket> socket);
 
   // Create a connection that connects to the specified address.
-  Impl(std::shared_ptr<Loop> loop, address_t addr);
+  Impl(std::shared_ptr<Context::PrivateIface> context, address_t addr);
 
   // Initialize member fields that need `shared_from_this`.
   void init();
@@ -365,8 +367,7 @@ class Connection::Impl : public std::enable_shared_from_this<Connection::Impl>,
 
   State state_{INITIALIZING};
   Error error_;
-  std::shared_ptr<Loop> loop_;
-  Reactor& reactor_;
+  std::shared_ptr<Context::PrivateIface> context_;
   std::shared_ptr<Socket> socket_;
   optional<Sockaddr> sockaddr_;
   ClosingReceiver closingReceiver_;
@@ -410,22 +411,22 @@ class Connection::Impl : public std::enable_shared_from_this<Connection::Impl>,
 
 Connection::Connection(
     ConstructorToken /* unused */,
-    std::shared_ptr<Loop> loop,
+    std::shared_ptr<Context::PrivateIface> context,
     std::shared_ptr<Socket> socket)
-    : impl_(std::make_shared<Impl>(loop, std::move(socket))) {
+    : impl_(std::make_shared<Impl>(std::move(context), std::move(socket))) {
   impl_->init();
 }
 
 Connection::Connection(
     ConstructorToken /* unused */,
-    std::shared_ptr<Loop> loop,
+    std::shared_ptr<Context::PrivateIface> context,
     address_t addr)
-    : impl_(std::make_shared<Impl>(loop, std::move(addr))) {
+    : impl_(std::make_shared<Impl>(std::move(context), std::move(addr))) {
   impl_->init();
 }
 
 void Connection::Impl::init() {
-  loop_->deferToLoop([impl{shared_from_this()}]() { impl->initFromLoop(); });
+  context_->deferToLoop([impl{shared_from_this()}]() { impl->initFromLoop(); });
 }
 
 void Connection::close() {
@@ -433,7 +434,8 @@ void Connection::close() {
 }
 
 void Connection::Impl::close() {
-  loop_->deferToLoop([impl{shared_from_this()}]() { impl->closeFromLoop(); });
+  context_->deferToLoop(
+      [impl{shared_from_this()}]() { impl->closeFromLoop(); });
 }
 
 Connection::~Connection() {
@@ -441,22 +443,22 @@ Connection::~Connection() {
 }
 
 Connection::Impl::Impl(
-    std::shared_ptr<Loop> loop,
+    std::shared_ptr<Context::PrivateIface> context,
     std::shared_ptr<Socket> socket)
-    : loop_(std::move(loop)),
-      reactor_(loop_->reactor()),
+    : context_(std::move(context)),
       socket_(std::move(socket)),
-      closingReceiver_(loop_, loop_->closingEmitter_) {}
+      closingReceiver_(context_, context_->getClosingEmitter()) {}
 
-Connection::Impl::Impl(std::shared_ptr<Loop> loop, address_t addr)
-    : loop_(std::move(loop)),
-      reactor_(loop_->reactor()),
+Connection::Impl::Impl(
+    std::shared_ptr<Context::PrivateIface> context,
+    address_t addr)
+    : context_(std::move(context)),
       socket_(Socket::createForFamily(AF_UNIX)),
       sockaddr_(Sockaddr::createAbstractUnixAddr(addr)),
-      closingReceiver_(loop_, loop_->closingEmitter_) {}
+      closingReceiver_(context_, context_->getClosingEmitter()) {}
 
 void Connection::Impl::initFromLoop() {
-  TP_DCHECK(loop_->inLoopThread());
+  TP_DCHECK(context_->inLoopThread());
 
   closingReceiver_.activate(*this);
 
@@ -474,20 +476,20 @@ void Connection::Impl::initFromLoop() {
   inbox_.emplace(std::move(inboxRingBuffer));
 
   // Register method to be called when our peer writes to our inbox.
-  inboxReactorToken_ =
-      reactor_.add(runIfAlive(*this, std::function<void(Impl&)>([](Impl& impl) {
+  inboxReactorToken_ = context_->addReaction(
+      runIfAlive(*this, std::function<void(Impl&)>([](Impl& impl) {
         impl.handleInboxReadableFromLoop();
       })));
 
   // Register method to be called when our peer reads from our outbox.
-  outboxReactorToken_ =
-      reactor_.add(runIfAlive(*this, std::function<void(Impl&)>([](Impl& impl) {
+  outboxReactorToken_ = context_->addReaction(
+      runIfAlive(*this, std::function<void(Impl&)>([](Impl& impl) {
         impl.handleOutboxWritableFromLoop();
       })));
 
   // We're sending file descriptors first, so wait for writability.
   state_ = SEND_FDS;
-  loop_->registerDescriptor(socket_->fd(), EPOLLOUT, shared_from_this());
+  context_->registerDescriptor(socket_->fd(), EPOLLOUT, shared_from_this());
 }
 
 void Connection::read(read_callback_fn fn) {
@@ -495,13 +497,14 @@ void Connection::read(read_callback_fn fn) {
 }
 
 void Connection::Impl::read(read_callback_fn fn) {
-  loop_->deferToLoop([impl{shared_from_this()}, fn{std::move(fn)}]() mutable {
-    impl->readFromLoop(std::move(fn));
-  });
+  context_->deferToLoop(
+      [impl{shared_from_this()}, fn{std::move(fn)}]() mutable {
+        impl->readFromLoop(std::move(fn));
+      });
 }
 
 void Connection::Impl::readFromLoop(read_callback_fn fn) {
-  TP_DCHECK(loop_->inLoopThread());
+  TP_DCHECK(context_->inLoopThread());
 
   readOperations_.emplace_back(std::move(fn));
 
@@ -519,7 +522,7 @@ void Connection::read(
 void Connection::Impl::read(
     google::protobuf::MessageLite& message,
     read_proto_callback_fn fn) {
-  loop_->deferToLoop(
+  context_->deferToLoop(
       [impl{shared_from_this()}, &message, fn{std::move(fn)}]() mutable {
         impl->readFromLoop(message, std::move(fn));
       });
@@ -528,7 +531,7 @@ void Connection::Impl::read(
 void Connection::Impl::readFromLoop(
     google::protobuf::MessageLite& message,
     read_proto_callback_fn fn) {
-  TP_DCHECK(loop_->inLoopThread());
+  TP_DCHECK(context_->inLoopThread());
 
   readOperations_.emplace_back(
       [&message](util::ringbuffer::Consumer& inbox) -> ssize_t {
@@ -568,7 +571,7 @@ void Connection::read(void* ptr, size_t length, read_callback_fn fn) {
 }
 
 void Connection::Impl::read(void* ptr, size_t length, read_callback_fn fn) {
-  loop_->deferToLoop(
+  context_->deferToLoop(
       [impl{shared_from_this()}, ptr, length, fn{std::move(fn)}]() mutable {
         impl->readFromLoop(ptr, length, std::move(fn));
       });
@@ -578,7 +581,7 @@ void Connection::Impl::readFromLoop(
     void* ptr,
     size_t length,
     read_callback_fn fn) {
-  TP_DCHECK(loop_->inLoopThread());
+  TP_DCHECK(context_->inLoopThread());
 
   readOperations_.emplace_back(ptr, length, std::move(fn));
 
@@ -595,7 +598,7 @@ void Connection::Impl::write(
     const void* ptr,
     size_t length,
     write_callback_fn fn) {
-  loop_->deferToLoop(
+  context_->deferToLoop(
       [impl{shared_from_this()}, ptr, length, fn{std::move(fn)}]() mutable {
         impl->writeFromLoop(ptr, length, std::move(fn));
       });
@@ -605,7 +608,7 @@ void Connection::Impl::writeFromLoop(
     const void* ptr,
     size_t length,
     write_callback_fn fn) {
-  TP_DCHECK(loop_->inLoopThread());
+  TP_DCHECK(context_->inLoopThread());
 
   writeOperations_.emplace_back(ptr, length, std::move(fn));
   triggerProcessWriteOperations();
@@ -620,7 +623,7 @@ void Connection::write(
 void Connection::Impl::write(
     const google::protobuf::MessageLite& message,
     write_callback_fn fn) {
-  loop_->deferToLoop(
+  context_->deferToLoop(
       [impl{shared_from_this()}, &message, fn{std::move(fn)}]() mutable {
         impl->writeFromLoop(message, std::move(fn));
       });
@@ -629,7 +632,7 @@ void Connection::Impl::write(
 void Connection::Impl::writeFromLoop(
     const google::protobuf::MessageLite& message,
     write_callback_fn fn) {
-  TP_DCHECK(loop_->inLoopThread());
+  TP_DCHECK(context_->inLoopThread());
 
   writeOperations_.emplace_back(
       [&message](util::ringbuffer::Producer& outbox) -> ssize_t {
@@ -657,7 +660,7 @@ void Connection::Impl::writeFromLoop(
 }
 
 void Connection::Impl::handleEventsFromLoop(int events) {
-  TP_DCHECK(loop_->inLoopThread());
+  TP_DCHECK(context_->inLoopThread());
 
   // Handle only one of the events in the mask. Events on the control
   // file descriptor are rare enough for the cost of having epoll call
@@ -684,7 +687,7 @@ void Connection::Impl::handleEventsFromLoop(int events) {
 }
 
 void Connection::Impl::handleEventInFromLoop() {
-  TP_DCHECK(loop_->inLoopThread());
+  TP_DCHECK(context_->inLoopThread());
   if (state_ == RECV_FDS) {
     Fd reactorHeaderFd;
     Fd reactorDataFd;
@@ -741,11 +744,11 @@ void Connection::Impl::handleEventInFromLoop() {
 }
 
 void Connection::Impl::handleEventOutFromLoop() {
-  TP_DCHECK(loop_->inLoopThread());
+  TP_DCHECK(context_->inLoopThread());
   if (state_ == SEND_FDS) {
     int reactorHeaderFd;
     int reactorDataFd;
-    std::tie(reactorHeaderFd, reactorDataFd) = reactor_.fds();
+    std::tie(reactorHeaderFd, reactorDataFd) = context_->reactorFds();
 
     // Send our reactor token, reactor fds, and inbox fds.
     auto err = socket_->sendPayloadAndFds(
@@ -762,7 +765,7 @@ void Connection::Impl::handleEventOutFromLoop() {
 
     // Sent our fds. Wait for fds from peer.
     state_ = RECV_FDS;
-    loop_->registerDescriptor(socket_->fd(), EPOLLIN, shared_from_this());
+    context_->registerDescriptor(socket_->fd(), EPOLLIN, shared_from_this());
     return;
   }
 
@@ -770,36 +773,36 @@ void Connection::Impl::handleEventOutFromLoop() {
 }
 
 void Connection::Impl::handleEventErrFromLoop() {
-  TP_DCHECK(loop_->inLoopThread());
+  TP_DCHECK(context_->inLoopThread());
   error_ = TP_CREATE_ERROR(EOFError);
   closeFromLoop();
   processReadOperationsFromLoop();
 }
 
 void Connection::Impl::handleEventHupFromLoop() {
-  TP_DCHECK(loop_->inLoopThread());
+  TP_DCHECK(context_->inLoopThread());
   error_ = TP_CREATE_ERROR(EOFError);
   closeFromLoop();
   processReadOperationsFromLoop();
 }
 
 void Connection::Impl::handleInboxReadableFromLoop() {
-  TP_DCHECK(loop_->inLoopThread());
+  TP_DCHECK(context_->inLoopThread());
   processReadOperationsFromLoop();
 }
 
 void Connection::Impl::handleOutboxWritableFromLoop() {
-  TP_DCHECK(loop_->inLoopThread());
+  TP_DCHECK(context_->inLoopThread());
   processWriteOperationsFromLoop();
 }
 
 void Connection::Impl::triggerProcessReadOperations() {
-  loop_->deferToLoop(
+  context_->deferToLoop(
       [ptr{shared_from_this()}, this] { processReadOperationsFromLoop(); });
 }
 
 void Connection::Impl::processReadOperationsFromLoop() {
-  TP_DCHECK(loop_->inLoopThread());
+  TP_DCHECK(context_->inLoopThread());
 
   if (error_) {
     std::deque<ReadOperation> operationsToError;
@@ -830,12 +833,12 @@ void Connection::Impl::processReadOperationsFromLoop() {
 }
 
 void Connection::Impl::triggerProcessWriteOperations() {
-  loop_->deferToLoop(
+  context_->deferToLoop(
       [ptr{shared_from_this()}, this] { processWriteOperationsFromLoop(); });
 }
 
 void Connection::Impl::processWriteOperationsFromLoop() {
-  TP_DCHECK(loop_->inLoopThread());
+  TP_DCHECK(context_->inLoopThread());
 
   if (state_ < ESTABLISHED) {
     return;
@@ -864,7 +867,7 @@ void Connection::Impl::processWriteOperationsFromLoop() {
 }
 
 void Connection::Impl::failFromLoop(Error&& error) {
-  TP_DCHECK(loop_->inLoopThread());
+  TP_DCHECK(context_->inLoopThread());
   error_ = std::move(error);
   while (!readOperations_.empty()) {
     auto& readOperation = readOperations_.front();
@@ -879,19 +882,19 @@ void Connection::Impl::failFromLoop(Error&& error) {
 }
 
 void Connection::Impl::closeFromLoop() {
-  TP_DCHECK(loop_->inLoopThread());
+  TP_DCHECK(context_->inLoopThread());
 
   failFromLoop(TP_CREATE_ERROR(ConnectionClosedError));
   if (inboxReactorToken_.has_value()) {
-    reactor_.remove(inboxReactorToken_.value());
+    context_->removeReaction(inboxReactorToken_.value());
     inboxReactorToken_.reset();
   }
   if (outboxReactorToken_.has_value()) {
-    reactor_.remove(outboxReactorToken_.value());
+    context_->removeReaction(outboxReactorToken_.value());
     outboxReactorToken_.reset();
   }
   if (socket_) {
-    loop_->unregisterDescriptor(socket_->fd());
+    context_->unregisterDescriptor(socket_->fd());
     socket_.reset();
   }
 }

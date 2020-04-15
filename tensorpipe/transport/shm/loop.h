@@ -191,7 +191,6 @@ class Loop final {
   std::atomic<bool> joined_{false};
   std::mutex mutex_;
   std::thread thread_;
-  ClosingEmitter closingEmitter_;
 
   // Store weak_ptr for every registered fd.
   std::vector<std::weak_ptr<EventHandler>> handlers_;

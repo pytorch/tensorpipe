@@ -12,12 +12,12 @@
 
 #include <tensorpipe/transport/connection.h>
 #include <tensorpipe/transport/defs.h>
+#include <tensorpipe/transport/shm/context.h>
 
 namespace tensorpipe {
 namespace transport {
 namespace shm {
 
-class Context;
 class Listener;
 class Loop;
 class Socket;
@@ -31,11 +31,14 @@ class Connection final : public transport::Connection {
   // Create a connection that is already connected (e.g. from a listener).
   Connection(
       ConstructorToken,
-      std::shared_ptr<Loop> loop,
+      std::shared_ptr<Context::PrivateIface> context,
       std::shared_ptr<Socket> socket);
 
   // Create a connection that connects to the specified address.
-  Connection(ConstructorToken, std::shared_ptr<Loop> loop, address_t addr);
+  Connection(
+      ConstructorToken,
+      std::shared_ptr<Context::PrivateIface> context,
+      address_t addr);
 
   // Queue a read operation.
   void read(read_callback_fn fn) override;

@@ -11,6 +11,7 @@
 #include <memory>
 
 #include <tensorpipe/transport/listener.h>
+#include <tensorpipe/transport/shm/context.h>
 
 namespace tensorpipe {
 namespace transport {
@@ -27,7 +28,10 @@ class Listener final : public transport::Listener {
 
  public:
   // Create a listener that listens on the specified address.
-  Listener(ConstructorToken, std::shared_ptr<Loop> loop, address_t addr);
+  Listener(
+      ConstructorToken,
+      std::shared_ptr<Context::PrivateIface> context,
+      address_t addr);
 
   // Queue a callback to be called when a connection comes in.
   void accept(accept_callback_fn fn) override;
