@@ -17,3 +17,11 @@ endif()
 if(TP_ENABLE_CMA)
   target_link_libraries(core_context_test tensorpipe_cma)
 endif()
+
+add_tensorpipe_test(core_listener_test listener_test.cc)
+target_link_libraries(
+  core_listener_test
+  tensorpipe
+  tensorpipe_uv
+  tensorpipe_basic
+  )

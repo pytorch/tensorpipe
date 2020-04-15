@@ -330,8 +330,9 @@ void Listener::Impl::unregisterConnectionRequestFromLoop_(
 void Listener::Impl::handleError_() {
   TP_DCHECK(inLoop_());
 
-  acceptCallback_.triggerAll(
-      [&]() { return std::make_tuple(error_, std::shared_ptr<Pipe>()); });
+  acceptCallback_.triggerAll([&]() {
+    return std::make_tuple(std::cref(error_), std::shared_ptr<Pipe>());
+  });
   for (auto& iter : connectionRequestRegistrations_) {
     connection_request_callback_fn fn = std::move(iter.second);
     fn(error_, std::string(), std::shared_ptr<transport::Connection>());
