@@ -29,12 +29,13 @@ class Listener final : public transport::Listener {
   // Create a listener that listens on the specified address.
   Listener(ConstructorToken, std::shared_ptr<Loop> loop, address_t addr);
 
-  using transport::Listener::accept_callback_fn;
-
+  // Queue a callback to be called when a connection comes in.
   void accept(accept_callback_fn fn) override;
 
+  // Obtain the listener's address.
   address_t addr() const override;
 
+  // Shut down the connection and its resources.
   void close() override;
 
   ~Listener() override;
@@ -42,7 +43,8 @@ class Listener final : public transport::Listener {
  private:
   class Impl;
 
-  std::shared_ptr<Loop> loop_;
+  // Using a shared_ptr allows us to detach the lifetime of the implementation
+  // from the public object's one and perform the destruction asynchronously.
   std::shared_ptr<Impl> impl_;
 
   // Allow context to access constructor token.

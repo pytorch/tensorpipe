@@ -37,24 +37,18 @@ class Connection final : public transport::Connection {
   // Create a connection that connects to the specified address.
   Connection(ConstructorToken, std::shared_ptr<Loop> loop, address_t addr);
 
-  // Implementation of transport::Connection.
+  // Queue a read operation.
   void read(read_callback_fn fn) override;
-
-  // Implementation of transport::Connection.
   void read(google::protobuf::MessageLite& message, read_proto_callback_fn fn)
       override;
-
-  // Implementation of transport::Connection.
   void read(void* ptr, size_t length, read_callback_fn fn) override;
 
-  // Implementation of transport::Connection
+  // Perform a write operation.
   void write(const void* ptr, size_t length, write_callback_fn fn) override;
-
-  // Implementation of transport::Connection
   void write(const google::protobuf::MessageLite& message, write_callback_fn fn)
       override;
 
-  // Close connection.
+  // Shut down the connection and its resources.
   void close() override;
 
   ~Connection() override;
@@ -62,7 +56,8 @@ class Connection final : public transport::Connection {
  private:
   class Impl;
 
-  std::shared_ptr<Loop> loop_;
+  // Using a shared_ptr allows us to detach the lifetime of the implementation
+  // from the public object's one and perform the destruction asynchronously.
   std::shared_ptr<Impl> impl_;
 
   // Allow context to access constructor token.

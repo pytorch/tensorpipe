@@ -31,21 +31,34 @@ class Listener::Impl : public std::enable_shared_from_this<Listener::Impl>,
   // Create a listener that listens on the specified address.
   Impl(std::shared_ptr<Loop>, address_t addr);
 
-  // Called to initialize member fields that need `shared_from_this`.
-  void initFromLoop();
+  // Initialize member fields that need `shared_from_this`.
+  void init();
 
-  // Called to queue a callback to be called when a connection comes in.
-  void acceptFromLoop(accept_callback_fn fn);
+  // Queue a callback to be called when a connection comes in.
+  void accept(accept_callback_fn fn);
 
-  // Called to obtain the listener's address.
-  std::string addrFromLoop() const;
+  // Obtain the listener's address.
+  std::string addr() const;
 
+  // Shut down the connection and its resources.
   void close();
-  void closeFromLoop();
 
+  // Implementation of EventHandler.
   void handleEventsFromLoop(int events) override;
 
  private:
+  // Initialize member fields that need `shared_from_this`.
+  void initFromLoop();
+
+  // Queue a callback to be called when a connection comes in.
+  void acceptFromLoop(accept_callback_fn fn);
+
+  // Obtain the listener's address.
+  std::string addrFromLoop() const;
+
+  // Shut down the connection and its resources.
+  void closeFromLoop();
+
   std::shared_ptr<Loop> loop_;
   std::shared_ptr<Socket> socket_;
   Sockaddr sockaddr_;
@@ -73,8 +86,12 @@ Listener::Listener(
     ConstructorToken /* unused */,
     std::shared_ptr<Loop> loop,
     address_t addr)
-    : loop_(loop), impl_(std::make_shared<Impl>(loop, std::move(addr))) {
-  loop_->deferToLoop([impl{impl_}]() { impl->initFromLoop(); });
+    : impl_(std::make_shared<Impl>(std::move(loop), std::move(addr))) {
+  impl_->init();
+}
+
+void Listener::Impl::init() {
+  loop_->deferToLoop([impl{shared_from_this()}]() { impl->initFromLoop(); });
 }
 
 void Listener::Impl::closeFromLoop() {
@@ -100,7 +117,11 @@ Listener::~Listener() {
 }
 
 void Listener::accept(accept_callback_fn fn) {
-  loop_->deferToLoop([impl{impl_}, fn{std::move(fn)}]() mutable {
+  impl_->accept(std::move(fn));
+}
+
+void Listener::Impl::accept(accept_callback_fn fn) {
+  loop_->deferToLoop([impl{shared_from_this()}, fn{std::move(fn)}]() mutable {
     impl->acceptFromLoop(std::move(fn));
   });
 }
@@ -118,8 +139,12 @@ void Listener::Impl::acceptFromLoop(accept_callback_fn fn) {
 }
 
 address_t Listener::addr() const {
+  return impl_->addr();
+}
+
+std::string Listener::Impl::addr() const {
   std::string addr;
-  loop_->runInLoop([this, &addr]() { addr = this->impl_->addrFromLoop(); });
+  loop_->runInLoop([this, &addr]() { addr = addrFromLoop(); });
   return addr;
 }
 

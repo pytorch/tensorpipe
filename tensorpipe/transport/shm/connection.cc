@@ -295,33 +295,45 @@ class Connection::Impl : public std::enable_shared_from_this<Connection::Impl>,
   // Create a connection that connects to the specified address.
   Impl(std::shared_ptr<Loop> loop, address_t addr);
 
-  // Called to initialize member fields that need `shared_from_this`.
+  // Initialize member fields that need `shared_from_this`.
+  void init();
+
+  // Queue a read operation.
+  void read(read_callback_fn fn);
+  void read(google::protobuf::MessageLite& message, read_proto_callback_fn fn);
+  void read(void* ptr, size_t length, read_callback_fn fn);
+
+  // Perform a write operation.
+  void write(const void* ptr, size_t length, write_callback_fn fn);
+  void write(
+      const google::protobuf::MessageLite& message,
+      write_callback_fn fn);
+
+  // Shut down the connection and its resources.
+  void close();
+
+  // Implementation of EventHandler.
+  void handleEventsFromLoop(int events) override;
+
+ private:
+  // Initialize member fields that need `shared_from_this`.
   void initFromLoop();
 
-  void close();
-  void closeFromLoop();
-
-  // Implementation of transport::Connection.
+  // Queue a read operation.
   void readFromLoop(read_callback_fn fn);
-
-  // Implementation of transport::Connection.
   void readFromLoop(
       google::protobuf::MessageLite& message,
       read_proto_callback_fn fn);
-
-  // Implementation of transport::Connection.
   void readFromLoop(void* ptr, size_t length, read_callback_fn fn);
 
-  // Implementation of transport::Connection
+  // Perform a write operation.
   void writeFromLoop(const void* ptr, size_t length, write_callback_fn fn);
-
-  // Implementation of transport::Connection
   void writeFromLoop(
       const google::protobuf::MessageLite& message,
       write_callback_fn fn);
 
-  // Implementation of EventHandler.
-  void handleEventsFromLoop(int events) override;
+  // Shut down the connection and its resources.
+  void closeFromLoop();
 
   // Handle events of type EPOLLIN.
   void handleEventInFromLoop();
@@ -351,7 +363,6 @@ class Connection::Impl : public std::enable_shared_from_this<Connection::Impl>,
   // take care to acquire the connection's lock here.
   void handleOutboxWritableFromLoop();
 
- private:
   State state_{INITIALIZING};
   Error error_;
   std::shared_ptr<Loop> loop_;
@@ -401,16 +412,20 @@ Connection::Connection(
     ConstructorToken /* unused */,
     std::shared_ptr<Loop> loop,
     std::shared_ptr<Socket> socket)
-    : loop_(loop), impl_(std::make_shared<Impl>(loop, std::move(socket))) {
-  loop_->deferToLoop([impl{impl_}]() { impl->initFromLoop(); });
+    : impl_(std::make_shared<Impl>(loop, std::move(socket))) {
+  impl_->init();
 }
 
 Connection::Connection(
     ConstructorToken /* unused */,
     std::shared_ptr<Loop> loop,
     address_t addr)
-    : loop_(loop), impl_(std::make_shared<Impl>(loop, std::move(addr))) {
-  loop_->deferToLoop([impl{impl_}]() { impl->initFromLoop(); });
+    : impl_(std::make_shared<Impl>(loop, std::move(addr))) {
+  impl_->init();
+}
+
+void Connection::Impl::init() {
+  loop_->deferToLoop([impl{shared_from_this()}]() { impl->initFromLoop(); });
 }
 
 void Connection::close() {
@@ -475,9 +490,12 @@ void Connection::Impl::initFromLoop() {
   loop_->registerDescriptor(socket_->fd(), EPOLLOUT, shared_from_this());
 }
 
-// Implementation of transport::Connection.
 void Connection::read(read_callback_fn fn) {
-  loop_->deferToLoop([impl{impl_}, fn{std::move(fn)}]() mutable {
+  impl_->read(std::move(fn));
+}
+
+void Connection::Impl::read(read_callback_fn fn) {
+  loop_->deferToLoop([impl{shared_from_this()}, fn{std::move(fn)}]() mutable {
     impl->readFromLoop(std::move(fn));
   });
 }
@@ -492,13 +510,19 @@ void Connection::Impl::readFromLoop(read_callback_fn fn) {
   triggerProcessReadOperations();
 }
 
-// Implementation of transport::Connection.
 void Connection::read(
     google::protobuf::MessageLite& message,
     read_proto_callback_fn fn) {
-  loop_->deferToLoop([impl{impl_}, &message, fn{std::move(fn)}]() mutable {
-    impl->readFromLoop(message, std::move(fn));
-  });
+  impl_->read(message, std::move(fn));
+}
+
+void Connection::Impl::read(
+    google::protobuf::MessageLite& message,
+    read_proto_callback_fn fn) {
+  loop_->deferToLoop(
+      [impl{shared_from_this()}, &message, fn{std::move(fn)}]() mutable {
+        impl->readFromLoop(message, std::move(fn));
+      });
 }
 
 void Connection::Impl::readFromLoop(
@@ -539,11 +563,15 @@ void Connection::Impl::readFromLoop(
   triggerProcessReadOperations();
 }
 
-// Implementation of transport::Connection.
 void Connection::read(void* ptr, size_t length, read_callback_fn fn) {
-  loop_->deferToLoop([impl{impl_}, ptr, length, fn{std::move(fn)}]() mutable {
-    impl->readFromLoop(ptr, length, std::move(fn));
-  });
+  impl_->read(ptr, length, std::move(fn));
+}
+
+void Connection::Impl::read(void* ptr, size_t length, read_callback_fn fn) {
+  loop_->deferToLoop(
+      [impl{shared_from_this()}, ptr, length, fn{std::move(fn)}]() mutable {
+        impl->readFromLoop(ptr, length, std::move(fn));
+      });
 }
 
 void Connection::Impl::readFromLoop(
@@ -559,11 +587,18 @@ void Connection::Impl::readFromLoop(
   triggerProcessReadOperations();
 }
 
-// Implementation of transport::Connection
 void Connection::write(const void* ptr, size_t length, write_callback_fn fn) {
-  loop_->deferToLoop([impl{impl_}, ptr, length, fn{std::move(fn)}]() mutable {
-    impl->writeFromLoop(ptr, length, std::move(fn));
-  });
+  impl_->write(ptr, length, std::move(fn));
+}
+
+void Connection::Impl::write(
+    const void* ptr,
+    size_t length,
+    write_callback_fn fn) {
+  loop_->deferToLoop(
+      [impl{shared_from_this()}, ptr, length, fn{std::move(fn)}]() mutable {
+        impl->writeFromLoop(ptr, length, std::move(fn));
+      });
 }
 
 void Connection::Impl::writeFromLoop(
@@ -576,13 +611,19 @@ void Connection::Impl::writeFromLoop(
   triggerProcessWriteOperations();
 }
 
-// Implementation of transport::Connection
 void Connection::write(
     const google::protobuf::MessageLite& message,
     write_callback_fn fn) {
-  loop_->deferToLoop([impl{impl_}, &message, fn{std::move(fn)}]() mutable {
-    impl->writeFromLoop(message, std::move(fn));
-  });
+  impl_->write(message, std::move(fn));
+}
+
+void Connection::Impl::write(
+    const google::protobuf::MessageLite& message,
+    write_callback_fn fn) {
+  loop_->deferToLoop(
+      [impl{shared_from_this()}, &message, fn{std::move(fn)}]() mutable {
+        impl->writeFromLoop(message, std::move(fn));
+      });
 }
 
 void Connection::Impl::writeFromLoop(
