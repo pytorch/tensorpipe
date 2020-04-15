@@ -106,15 +106,19 @@ void ReadOperation::readFromLoop(ssize_t nread, const uv_buf_t* buf) {
   if (mode_ == READ_LENGTH) {
     TP_DCHECK_LE(bytesRead_, sizeof(readLength_));
     if (bytesRead_ == sizeof(readLength_)) {
-      if (givenLength_) {
-        TP_DCHECK(ptr_ != nullptr);
+      if (givenLength_.has_value()) {
+        TP_DCHECK(ptr_ != nullptr || givenLength_.value() == 0);
         TP_DCHECK_EQ(readLength_, givenLength_.value());
       } else {
         TP_DCHECK(ptr_ == nullptr);
         buffer_ = std::make_unique<char[]>(readLength_);
         ptr_ = buffer_.get();
       }
-      mode_ = READ_PAYLOAD;
+      if (readLength_ == 0) {
+        mode_ = COMPLETE;
+      } else {
+        mode_ = READ_PAYLOAD;
+      }
       bytesRead_ = 0;
     }
   } else if (mode_ == READ_PAYLOAD) {
@@ -175,7 +179,10 @@ WriteOperation::WriteOperation(
 }
 
 std::tuple<uv_buf_t*, unsigned int> WriteOperation::getBufs() {
-  return std::make_tuple(bufs_.data(), bufs_.size());
+  // Libuv doesn't like when we pass it empty buffers (it fails with ENOBUFS),
+  // so if the second buffer is empty we only pass it the first one.
+  unsigned int numBuffers = length_ == 0 ? 1 : 2;
+  return std::make_tuple(bufs_.data(), numBuffers);
 }
 
 void WriteOperation::callbackFromLoop(const Error& error) {
