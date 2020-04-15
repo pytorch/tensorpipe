@@ -69,13 +69,9 @@ class Listener::Impl : public Listener::PrivateIface,
       listeners_;
   std::map<std::string, transport::address_t> addresses_;
   LocklessRearmableCallback<
-      std::function<void(
-          const Error&,
-          std::string,
-          std::shared_ptr<transport::Connection>)>,
+      accept_callback_fn,
       const Error&,
-      std::string,
-      std::shared_ptr<transport::Connection>>
+      std::shared_ptr<Pipe>>
       acceptCallback_;
 
   // Needed to keep them alive.
@@ -117,22 +113,6 @@ class Listener::Impl : public Listener::PrivateIface,
   DeferringCallbackWrapper<Impl> readPacketCallbackWrapper_;
   DeferringCallbackWrapper<Impl, std::shared_ptr<transport::Connection>>
       acceptCallbackWrapper_;
-
-  //
-  // Helpers to schedule our callbacks into user code
-  //
-
-  void triggerAcceptCallback_(
-      accept_callback_fn,
-      const Error&,
-      std::string,
-      std::shared_ptr<transport::Connection>);
-
-  void triggerConnectionRequestCallback_(
-      connection_request_callback_fn,
-      const Error&,
-      std::string,
-      std::shared_ptr<transport::Connection>);
 
   //
   // Error handling
@@ -261,32 +241,11 @@ void Listener::Impl::acceptFromLoop_(accept_callback_fn fn) {
   TP_DCHECK(inLoop_());
 
   if (error_) {
-    triggerAcceptCallback_(
-        std::move(fn),
-        error_,
-        std::string(),
-        std::shared_ptr<transport::Connection>());
+    fn(error_, std::shared_ptr<Pipe>());
     return;
   }
 
-  acceptCallback_.arm(runIfAlive(
-      *this,
-      std::function<void(
-          Impl&,
-          const Error&,
-          std::string,
-          std::shared_ptr<transport::Connection>)>(
-          [fn{std::move(fn)}](
-              Impl& impl,
-              const Error& error,
-              std::string transport,
-              std::shared_ptr<transport::Connection> connection) mutable {
-            impl.triggerAcceptCallback_(
-                std::move(fn),
-                error,
-                std::move(transport),
-                std::move(connection));
-          })));
+  acceptCallback_.arm(std::move(fn));
 }
 
 const std::map<std::string, std::string>& Listener::addresses() const {
@@ -346,11 +305,7 @@ void Listener::Impl::registerConnectionRequestFromLoop_(
   TP_DCHECK(inLoop_());
 
   if (error_) {
-    triggerConnectionRequestCallback_(
-        std::move(fn),
-        error_,
-        std::string(),
-        std::shared_ptr<transport::Connection>());
+    fn(error_, std::string(), std::shared_ptr<transport::Connection>());
   } else {
     connectionRequestRegistrations_.emplace(registrationId, std::move(fn));
   }
@@ -369,58 +324,17 @@ void Listener::Impl::unregisterConnectionRequestFromLoop_(
 }
 
 //
-// Helpers to schedule our callbacks into user code
-//
-
-void Listener::Impl::triggerAcceptCallback_(
-    accept_callback_fn fn,
-    const Error& error,
-    std::string transport,
-    std::shared_ptr<transport::Connection> connection) {
-  TP_DCHECK(inLoop_());
-  // Create the pipe here, without holding the lock, as otherwise TSAN would
-  // report a false positive lock order inversion.
-  // FIXME Simplify this now that we don't use locks anymore.
-  std::shared_ptr<Pipe> pipe;
-  if (!error) {
-    pipe = std::make_shared<Pipe>(
-        Pipe::ConstructorToken(),
-        context_,
-        std::static_pointer_cast<PrivateIface>(shared_from_this()),
-        std::move(transport),
-        std::move(connection));
-  }
-  fn(error, std::move(pipe));
-}
-
-void Listener::Impl::triggerConnectionRequestCallback_(
-    connection_request_callback_fn fn,
-    const Error& error,
-    std::string transport,
-    std::shared_ptr<transport::Connection> connection) {
-  TP_DCHECK(inLoop_());
-  // FIXME Avoid this function now that we don't use locks anymore.
-  fn(error, std::move(transport), std::move(connection));
-}
-
-//
 // Error handling
 //
 
 void Listener::Impl::handleError_() {
   TP_DCHECK(inLoop_());
 
-  acceptCallback_.triggerAll([&]() {
-    return std::make_tuple(
-        error_, std::string(), std::shared_ptr<transport::Connection>());
-  });
+  acceptCallback_.triggerAll(
+      [&]() { return std::make_tuple(error_, std::shared_ptr<Pipe>()); });
   for (auto& iter : connectionRequestRegistrations_) {
     connection_request_callback_fn fn = std::move(iter.second);
-    triggerConnectionRequestCallback_(
-        std::move(fn),
-        error_,
-        std::string(),
-        std::shared_ptr<transport::Connection>());
+    fn(error_, std::string(), std::shared_ptr<transport::Connection>());
   }
   connectionRequestRegistrations_.clear();
 
@@ -477,19 +391,20 @@ void Listener::Impl::onConnectionHelloRead_(
     const proto::Packet& pbPacketIn) {
   TP_DCHECK(inLoop_());
   if (pbPacketIn.has_spontaneous_connection()) {
-    acceptCallback_.trigger(
-        Error::kSuccess, std::move(transport), std::move(connection));
+    auto pipe = std::make_shared<Pipe>(
+        Pipe::ConstructorToken(),
+        context_,
+        std::static_pointer_cast<PrivateIface>(shared_from_this()),
+        std::move(transport),
+        std::move(connection));
+    acceptCallback_.trigger(Error::kSuccess, std::move(pipe));
   } else if (pbPacketIn.has_requested_connection()) {
     const proto::RequestedConnection& pbRequestedConnection =
         pbPacketIn.requested_connection();
     uint64_t registrationId = pbRequestedConnection.registration_id();
     auto fn = std::move(connectionRequestRegistrations_.at(registrationId));
     connectionRequestRegistrations_.erase(registrationId);
-    triggerConnectionRequestCallback_(
-        std::move(fn),
-        Error::kSuccess,
-        std::move(transport),
-        std::move(connection));
+    fn(Error::kSuccess, std::move(transport), std::move(connection));
   } else {
     TP_LOG_ERROR() << "packet contained unknown content: "
                    << pbPacketIn.type_case();
