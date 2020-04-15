@@ -100,7 +100,6 @@ class Context::Impl : public Context::PrivateIface,
     copy_request_callback_fn callback;
   };
 
-  mutable std::mutex mutex_;
   std::string domainDescriptor_;
   std::thread thread_;
   Queue<optional<CopyRequest>> requests_;
@@ -125,10 +124,6 @@ void Context::close() {
 }
 
 void Context::Impl::close() {
-  // FIXME Acquiring this lock causes a deadlock when calling join. The solution
-  // is avoiding locks by using the event loop approach just like in transports.
-  // std::unique_lock<std::mutex> lock(mutex_);
-
   bool wasClosed = false;
   closed_.compare_exchange_strong(wasClosed, true);
   if (!wasClosed) {
@@ -142,8 +137,6 @@ void Context::join() {
 }
 
 void Context::Impl::join() {
-  std::unique_lock<std::mutex> lock(mutex_);
-
   close();
 
   bool wasJoined = false;
@@ -167,7 +160,6 @@ const std::string& Context::domainDescriptor() const {
 }
 
 const std::string& Context::Impl::domainDescriptor() const {
-  std::unique_lock<std::mutex> lock(mutex_);
   return domainDescriptor_;
 }
 
