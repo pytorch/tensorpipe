@@ -26,6 +26,15 @@
 #   The version of libuv found.
 #
 
+# If libuv was already added with add_subdirectory() from a parent project,
+# simply alias the existing target.
+if(TARGET uv_a)
+  if(NOT (TARGET uv::uv_a))
+    add_library(uv::uv_a ALIAS uv_a)
+  endif()
+  return()
+endif()
+
 find_package(PkgConfig QUIET)
 
 if((NOT TP_BUILD_LIBUV) AND PkgConfig_FOUND)
