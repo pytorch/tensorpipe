@@ -36,8 +36,13 @@ class CMakeBuild(build_ext):
             "-DCMAKE_C_COMPILER=clang-6.0",
             "-DCMAKE_CXX_COMPILER=clang++-6.0",
             "-DCMAKE_POSITION_INDEPENDENT_CODE=true",
-            "-DBUILD_PYTHON_MODULE=true",
+            "-DTP_BUILD_PYTHON=true",
         ]
+
+        for opt in os.environ:
+            if opt.startswith("TP_"):
+                cmake_cmd.append(f"-D{opt}={os.environ[opt]}")
+
         make_cmd = ["make", "-j", "pytensorpipe"]
 
         subprocess.check_call(cmake_cmd, cwd=self.build_temp)

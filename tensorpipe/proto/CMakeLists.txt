@@ -11,7 +11,7 @@ protobuf_generate_cpp(
   ${CMAKE_CURRENT_SOURCE_DIR}/core.proto
   )
 add_library(tensorpipe_proto ${PROTOBUF_SOURCES})
-target_include_directories(tensorpipe_proto PUBLIC ${CMAKE_BINARY_DIR})
+target_include_directories(tensorpipe_proto PUBLIC $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}>)
 target_include_directories(tensorpipe_proto PUBLIC ${Protobuf_INCLUDE_DIRS})
 target_link_libraries(tensorpipe_proto PUBLIC ${Protobuf_LIBRARIES})
 

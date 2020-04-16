@@ -7,23 +7,23 @@
 # CMake 3.10 is the version available in Ubuntu 18.04.
 cmake_minimum_required(VERSION 3.10 FATAL_ERROR)
 
-project(tensorpipe C CXX)
+project(tensorpipe
+  DESCRIPTION "A tensor-aware point-to-point communication library for machine learning"
+  LANGUAGES C CXX
+  )
+
 set(CMAKE_CXX_STANDARD 14)
 
 list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
 
-if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-  set(LINUX ON)
-else()
-  set(LINUX OFF)
-endif()
-
-option(TP_ENABLE_SHM "Enable shm transport" ${LINUX})
-option(TP_ENABLE_CMA "Enable cma channel" ${LINUX})
-option(TP_BUILD_LIBUV "Build libuv from source" OFF)
+# Expose build options.
+include(Options)
 
 # Define sanitizer option, if specified.
 include(Sanitize)
+
+# CTest must be included in the top level to enable `make test` target.
+include(CTest)
 
 # We use the [[nodiscard]] attribute, which GCC 5 complains about.
 # Silence this warning if GCC 5 is used.
@@ -31,17 +31,6 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS 6)
     add_definitions("-Wno-attributes")
   endif()
-endif()
-
-# CTest must be included in the top level to enable `make test` target.
-include(CTest)
-
-if(BUILD_TESTING)
-  add_subdirectory(third_party/googletest EXCLUDE_FROM_ALL)
-endif()
-
-if(BUILD_PYTHON_MODULE)
-  add_subdirectory(third_party/pybind11 EXCLUDE_FROM_ALL)
 endif()
 
 add_subdirectory(tensorpipe)

@@ -7,7 +7,7 @@
  */
 
 #include <tensorpipe/proto/core.pb.h>
-#include <tensorpipe/test/transport/transport_test.h>
+#include <tensorpipe/test/transport/shm/shm_test.h>
 
 #include <gtest/gtest.h>
 
@@ -16,12 +16,16 @@ using namespace tensorpipe::transport;
 
 namespace {
 
+class ShmTransportTest : public TransportTest {};
+
+SHMTransportTestHelper helper;
+
 // This value is defined in tensorpipe/transport/shm/connection.h
 static constexpr auto kBufferSize = 2 * 1024 * 1024;
 
 } // namespace
 
-TEST_P(TransportTest, Chunking) {
+TEST_P(ShmTransportTest, Chunking) {
   // This is larger than the default ring buffer size.
   const int kMsgSize = 5 * kBufferSize;
   std::string srcBuf(kMsgSize, 0x42);
@@ -63,7 +67,7 @@ TEST_P(TransportTest, Chunking) {
       });
 }
 
-TEST_P(TransportTest, ChunkingImplicitRead) {
+TEST_P(ShmTransportTest, ChunkingImplicitRead) {
   // This is larger than the default ring buffer size.
   const size_t kMsgSize = 5 * kBufferSize;
   std::string msg(kMsgSize, 0x42);
@@ -97,7 +101,7 @@ TEST_P(TransportTest, ChunkingImplicitRead) {
       });
 }
 
-TEST_P(TransportTest, QueueWrites) {
+TEST_P(ShmTransportTest, QueueWrites) {
   // This is large enough that two of those will not fit in the ring buffer at
   // the same time.
   constexpr int numMsg = 2;
@@ -145,7 +149,7 @@ TEST_P(TransportTest, QueueWrites) {
       });
 }
 
-TEST_P(TransportTest, ProtobufWriteWrapAround) {
+TEST_P(ShmTransportTest, ProtobufWriteWrapAround) {
   constexpr int numMsg = 2;
   constexpr size_t kSize = (3 * kBufferSize) / 4;
   std::promise<void> writeCompletedProm;
@@ -185,3 +189,5 @@ TEST_P(TransportTest, ProtobufWriteWrapAround) {
         readCompletedFuture.wait();
       });
 }
+
+INSTANTIATE_TEST_CASE_P(Shm, ShmTransportTest, ::testing::Values(&helper));
