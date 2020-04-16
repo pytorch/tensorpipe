@@ -6,14 +6,22 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <tensorpipe/test/transport/transport_test.h>
+#include <tensorpipe/test/transport/uv/uv_test.h>
 
 #include <gtest/gtest.h>
+
+namespace {
+
+class UVTransportTest : public TransportTest {};
+
+UVTransportTestHelper helper;
+
+} // namespace
 
 using namespace tensorpipe;
 using namespace tensorpipe::transport;
 
-TEST_P(TransportTest, LargeWrite) {
+TEST_P(UVTransportTest, LargeWrite) {
   constexpr int kMsgSize = 16 * 1024 * 1024;
   std::string msg(kMsgSize, 0x42);
   std::promise<void> writeCompletedProm;
@@ -48,3 +56,5 @@ TEST_P(TransportTest, LargeWrite) {
         readCompletedFuture.wait();
       });
 }
+
+INSTANTIATE_TEST_CASE_P(Uv, UVTransportTest, ::testing::Values(&helper));

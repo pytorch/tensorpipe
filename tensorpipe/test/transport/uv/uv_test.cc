@@ -6,21 +6,9 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <tensorpipe/test/transport/transport_test.h>
-#include <tensorpipe/transport/uv/context.h>
+#include <tensorpipe/test/transport/uv/uv_test.h>
 
 namespace {
-
-class UVTransportTestHelper : public TransportTestHelper {
- public:
-  std::shared_ptr<tensorpipe::transport::Context> getContext() override {
-    return std::make_shared<tensorpipe::transport::uv::Context>();
-  }
-
-  std::string defaultAddr() override {
-    return "127.0.0.1";
-  }
-};
 
 UVTransportTestHelper helper;
 
