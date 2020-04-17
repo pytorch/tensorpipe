@@ -88,10 +88,6 @@ endif()
 # Python bindings
 
 if(TP_BUILD_PYTHON)
-  add_subdirectory(
-    ${PROJECT_SOURCE_DIR}/third_party/pybind11
-    ${PROJECT_BINARY_DIR}/third_party/pybind11
-    EXCLUDE_FROM_ALL)
   add_subdirectory(python)
 endif()
 

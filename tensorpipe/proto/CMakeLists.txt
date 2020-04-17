@@ -4,7 +4,10 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-find_package(Protobuf 3 REQUIRED)
+if(NOT (COMMAND protobuf_generate_cpp))
+  find_package(Protobuf 3 REQUIRED)
+endif()
+
 protobuf_generate_cpp(
   PROTOBUF_SOURCES
   PROTOBUF_HEADERS
