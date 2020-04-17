@@ -85,7 +85,7 @@ class Listener::Impl : public std::enable_shared_from_this<Listener::Impl> {
 
 Listener::Impl::Impl(std::shared_ptr<Loop> loop, address_t addr)
     : loop_(std::move(loop)),
-      handle_(TCPHandle::create(loop_)),
+      handle_(TCPHandle::create(*loop_)),
       sockaddr_(Sockaddr::createInetSockAddr(addr)),
       closingReceiver_(loop_, loop_->closingEmitter_) {}
 
@@ -126,7 +126,7 @@ void Listener::Impl::connectionCallbackFromLoop_(int status) {
     return;
   }
 
-  auto connection = TCPHandle::create(loop_);
+  auto connection = TCPHandle::create(*loop_);
   connection->initFromLoop();
   handle_->acceptFromLoop(connection);
   callback_.trigger(

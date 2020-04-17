@@ -17,19 +17,19 @@ namespace transport {
 namespace uv {
 
 void TCPHandle::initFromLoop() {
-  TP_DCHECK(this->loop_->inLoopThread());
+  TP_DCHECK(this->loop_.inLoopThread());
   leak();
-  uv_tcp_init(loop_->ptr(), this->ptr());
+  uv_tcp_init(loop_.ptr(), this->ptr());
 }
 
 void TCPHandle::bindFromLoop(const Sockaddr& addr) {
-  TP_DCHECK(this->loop_->inLoopThread());
+  TP_DCHECK(this->loop_.inLoopThread());
   auto rv = uv_tcp_bind(ptr(), addr.addr(), 0);
   TP_THROW_UV_IF(rv < 0, rv);
 }
 
 Sockaddr TCPHandle::sockNameFromLoop() {
-  TP_DCHECK(this->loop_->inLoopThread());
+  TP_DCHECK(this->loop_.inLoopThread());
   struct sockaddr_storage addr;
   int addrlen = sizeof(addr);
   auto rv = uv_tcp_getsockname(
@@ -41,7 +41,7 @@ Sockaddr TCPHandle::sockNameFromLoop() {
 void TCPHandle::connectFromLoop(
     const Sockaddr& addr,
     ConnectRequest::TConnectCallback fn) {
-  TP_DCHECK(this->loop_->inLoopThread());
+  TP_DCHECK(this->loop_.inLoopThread());
   auto request = ConnectRequest::create(loop_, std::move(fn));
   auto rv =
       uv_tcp_connect(request->ptr(), ptr(), addr.addr(), request->callback());

@@ -262,7 +262,7 @@ Connection::Impl::Impl(
 
 Connection::Impl::Impl(std::shared_ptr<Loop> loop, address_t addr)
     : loop_(std::move(loop)),
-      handle_(TCPHandle::create(loop_)),
+      handle_(TCPHandle::create(*loop_)),
       sockaddr_(Sockaddr::createInetSockAddr(addr)),
       closingReceiver_(loop_, loop_->closingEmitter_) {}
 

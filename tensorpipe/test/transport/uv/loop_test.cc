@@ -16,23 +16,17 @@ namespace test {
 namespace transport {
 namespace uv {
 
-TEST(Loop, Create) {
-  auto loop = Loop::create();
-  ASSERT_TRUE(loop);
-  loop->join();
-}
-
 TEST(Loop, Defer) {
-  auto loop = Loop::create();
+  Loop loop;
 
   {
     // Defer function on event loop thread.
     std::promise<std::thread::id> prom;
-    loop->deferToLoop([&] { prom.set_value(std::this_thread::get_id()); });
+    loop.deferToLoop([&] { prom.set_value(std::this_thread::get_id()); });
     ASSERT_NE(std::this_thread::get_id(), prom.get_future().get());
   }
 
-  loop->join();
+  loop.join();
 }
 
 } // namespace uv

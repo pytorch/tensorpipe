@@ -30,7 +30,8 @@ std::string generateDomainDescriptor() {
 } // namespace
 
 Context::Context()
-    : loop_(Loop::create()), domainDescriptor_(generateDomainDescriptor()) {}
+    : loop_(std::make_shared<Loop>()),
+      domainDescriptor_(generateDomainDescriptor()) {}
 
 void Context::close() {
   loop_->close();
