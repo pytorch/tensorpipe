@@ -31,7 +31,6 @@ void Loop::close() {
   bool wasClosed = false;
   closed_.compare_exchange_strong(wasClosed, true);
   if (!wasClosed) {
-    closingEmitter_.close();
     // It's fine to capture this because the loop won't be destroyed until join
     // has completed, and join won't complete until this operation is performed.
     deferToLoop(

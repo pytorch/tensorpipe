@@ -24,9 +24,6 @@ namespace tensorpipe {
 namespace transport {
 namespace uv {
 
-class Connection;
-class Listener;
-
 class Loop final {
  public:
   Loop();
@@ -83,7 +80,6 @@ class Loop final {
   std::unique_ptr<uv_async_t> async_;
   std::atomic<bool> closed_{false};
   std::atomic<bool> joined_{false};
-  ClosingEmitter closingEmitter_;
 
   // Wake up the event loop.
   void wakeup();
@@ -101,9 +97,6 @@ class Loop final {
   // Companion function to uv__async_cb as member function
   // on the loop class.
   void runFunctionsFromLoop();
-
-  friend class Connection;
-  friend class Listener;
 };
 
 } // namespace uv

@@ -194,10 +194,10 @@ void WriteOperation::callbackFromLoop(const Error& error) {
 class Connection::Impl : public std::enable_shared_from_this<Connection::Impl> {
  public:
   // Create a connection that is already connected (e.g. from a listener).
-  Impl(std::shared_ptr<Loop>, std::shared_ptr<TCPHandle>);
+  Impl(std::shared_ptr<Context::PrivateIface>, std::shared_ptr<TCPHandle>);
 
   // Create a connection that connects to the specified address.
-  Impl(std::shared_ptr<Loop>, address_t);
+  Impl(std::shared_ptr<Context::PrivateIface>, address_t);
 
   // Initialize member fields that need `shared_from_this`.
   void init();
@@ -238,7 +238,7 @@ class Connection::Impl : public std::enable_shared_from_this<Connection::Impl> {
   // Called when libuv has closed the handle.
   void closeCallbackFromLoop_();
 
-  std::shared_ptr<Loop> loop_;
+  std::shared_ptr<Context::PrivateIface> context_;
   std::shared_ptr<TCPHandle> handle_;
   optional<Sockaddr> sockaddr_;
   Error error_{Error::kSuccess};
@@ -254,17 +254,19 @@ class Connection::Impl : public std::enable_shared_from_this<Connection::Impl> {
 };
 
 Connection::Impl::Impl(
-    std::shared_ptr<Loop> loop,
+    std::shared_ptr<Context::PrivateIface> context,
     std::shared_ptr<TCPHandle> handle)
-    : loop_(std::move(loop)),
+    : context_(std::move(context)),
       handle_(std::move(handle)),
-      closingReceiver_(loop_, loop_->closingEmitter_) {}
+      closingReceiver_(context_, context_->getClosingEmitter()) {}
 
-Connection::Impl::Impl(std::shared_ptr<Loop> loop, address_t addr)
-    : loop_(std::move(loop)),
-      handle_(TCPHandle::create(*loop_)),
+Connection::Impl::Impl(
+    std::shared_ptr<Context::PrivateIface> context,
+    address_t addr)
+    : context_(std::move(context)),
+      handle_(context_->createHandle()),
       sockaddr_(Sockaddr::createInetSockAddr(addr)),
-      closingReceiver_(loop_, loop_->closingEmitter_) {}
+      closingReceiver_(context_, context_->getClosingEmitter()) {}
 
 void Connection::Impl::initFromLoop() {
   leak_ = shared_from_this();
@@ -290,7 +292,7 @@ void Connection::Impl::initFromLoop() {
 }
 
 void Connection::Impl::readFromLoop(read_callback_fn fn) {
-  TP_DCHECK(loop_->inLoopThread());
+  TP_DCHECK(context_->inLoopThread());
 
   if (error_) {
     fn(error_, nullptr, 0);
@@ -309,7 +311,7 @@ void Connection::Impl::readFromLoop(
     void* ptr,
     size_t length,
     read_callback_fn fn) {
-  TP_DCHECK(loop_->inLoopThread());
+  TP_DCHECK(context_->inLoopThread());
 
   if (error_) {
     fn(error_, ptr, length);
@@ -328,7 +330,7 @@ void Connection::Impl::writeFromLoop(
     const void* ptr,
     size_t length,
     write_callback_fn fn) {
-  TP_DCHECK(loop_->inLoopThread());
+  TP_DCHECK(context_->inLoopThread());
 
   if (error_) {
     fn(error_);
@@ -347,16 +349,17 @@ void Connection::Impl::writeFromLoop(
 }
 
 void Connection::Impl::close() {
-  loop_->deferToLoop([impl{shared_from_this()}]() { impl->closeFromLoop(); });
+  context_->deferToLoop(
+      [impl{shared_from_this()}]() { impl->closeFromLoop(); });
 }
 
 void Connection::Impl::closeFromLoop() {
-  TP_DCHECK(loop_->inLoopThread());
+  TP_DCHECK(context_->inLoopThread());
   handle_->closeFromLoop();
 }
 
 void Connection::Impl::allocCallbackFromLoop_(uv_buf_t* buf) {
-  TP_DCHECK(loop_->inLoopThread());
+  TP_DCHECK(context_->inLoopThread());
   TP_THROW_ASSERT_IF(readOperations_.empty());
   readOperations_.front().allocFromLoop(buf);
 }
@@ -364,7 +367,7 @@ void Connection::Impl::allocCallbackFromLoop_(uv_buf_t* buf) {
 void Connection::Impl::readCallbackFromLoop_(
     ssize_t nread,
     const uv_buf_t* buf) {
-  TP_DCHECK(loop_->inLoopThread());
+  TP_DCHECK(context_->inLoopThread());
   if (nread < 0) {
     if (!error_) {
       error_ = TP_CREATE_ERROR(UVError, nread);
@@ -389,7 +392,7 @@ void Connection::Impl::readCallbackFromLoop_(
 }
 
 void Connection::Impl::writeCallbackFromLoop_(int status) {
-  TP_DCHECK(loop_->inLoopThread());
+  TP_DCHECK(context_->inLoopThread());
   TP_DCHECK(!writeOperations_.empty());
 
   if (status < 0 && !error_) {
@@ -403,7 +406,7 @@ void Connection::Impl::writeCallbackFromLoop_(int status) {
 }
 
 void Connection::Impl::closeCallbackFromLoop_() {
-  TP_DCHECK(loop_->inLoopThread());
+  TP_DCHECK(context_->inLoopThread());
   if (!error_) {
     error_ = TP_CREATE_ERROR(UVError, UV_ECANCELED);
   }
@@ -419,22 +422,22 @@ void Connection::Impl::closeCallbackFromLoop_() {
 
 Connection::Connection(
     ConstructorToken /* unused */,
-    std::shared_ptr<Loop> loop,
+    std::shared_ptr<Context::PrivateIface> context,
     std::shared_ptr<TCPHandle> handle)
-    : impl_(std::make_shared<Impl>(std::move(loop), std::move(handle))) {
+    : impl_(std::make_shared<Impl>(std::move(context), std::move(handle))) {
   impl_->init();
 }
 
 Connection::Connection(
     ConstructorToken /* unused */,
-    std::shared_ptr<Loop> loop,
+    std::shared_ptr<Context::PrivateIface> context,
     address_t addr)
-    : impl_(std::make_shared<Impl>(std::move(loop), std::move(addr))) {
+    : impl_(std::make_shared<Impl>(std::move(context), std::move(addr))) {
   impl_->init();
 }
 
 void Connection::Impl::init() {
-  loop_->deferToLoop([impl{shared_from_this()}]() { impl->initFromLoop(); });
+  context_->deferToLoop([impl{shared_from_this()}]() { impl->initFromLoop(); });
 }
 
 void Connection::read(read_callback_fn fn) {
@@ -442,9 +445,10 @@ void Connection::read(read_callback_fn fn) {
 }
 
 void Connection::Impl::read(read_callback_fn fn) {
-  loop_->deferToLoop([impl{shared_from_this()}, fn{std::move(fn)}]() mutable {
-    impl->readFromLoop(std::move(fn));
-  });
+  context_->deferToLoop(
+      [impl{shared_from_this()}, fn{std::move(fn)}]() mutable {
+        impl->readFromLoop(std::move(fn));
+      });
 }
 
 void Connection::read(void* ptr, size_t length, read_callback_fn fn) {
@@ -452,7 +456,7 @@ void Connection::read(void* ptr, size_t length, read_callback_fn fn) {
 }
 
 void Connection::Impl::read(void* ptr, size_t length, read_callback_fn fn) {
-  loop_->deferToLoop(
+  context_->deferToLoop(
       [impl{shared_from_this()}, ptr, length, fn{std::move(fn)}]() mutable {
         impl->readFromLoop(ptr, length, std::move(fn));
       });
@@ -466,7 +470,7 @@ void Connection::Impl::write(
     const void* ptr,
     size_t length,
     write_callback_fn fn) {
-  loop_->deferToLoop(
+  context_->deferToLoop(
       [impl{shared_from_this()}, ptr, length, fn{std::move(fn)}]() mutable {
         impl->writeFromLoop(ptr, length, std::move(fn));
       });

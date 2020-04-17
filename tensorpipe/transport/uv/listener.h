@@ -12,12 +12,12 @@
 
 #include <tensorpipe/transport/defs.h>
 #include <tensorpipe/transport/listener.h>
+#include <tensorpipe/transport/uv/context.h>
 
 namespace tensorpipe {
 namespace transport {
 namespace uv {
 
-class Context;
 class Loop;
 class Sockaddr;
 class TCPHandle;
@@ -29,7 +29,10 @@ class Listener : public transport::Listener {
 
  public:
   // Create a listener that listens on the specified address.
-  Listener(ConstructorToken, std::shared_ptr<Loop> loop, address_t addr);
+  Listener(
+      ConstructorToken,
+      std::shared_ptr<Context::PrivateIface> context,
+      address_t addr);
 
   // Queue a callback to be called when a connection comes in.
   void accept(accept_callback_fn fn) override;

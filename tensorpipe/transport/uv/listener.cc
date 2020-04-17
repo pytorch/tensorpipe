@@ -23,7 +23,7 @@ namespace uv {
 class Listener::Impl : public std::enable_shared_from_this<Listener::Impl> {
  public:
   // Create a listener that listens on the specified address.
-  Impl(std::shared_ptr<Loop>, address_t);
+  Impl(std::shared_ptr<Context::PrivateIface>, address_t);
 
   // Initialize member fields that need `shared_from_this`.
   void init();
@@ -58,7 +58,7 @@ class Listener::Impl : public std::enable_shared_from_this<Listener::Impl> {
   // Called when libuv has closed the handle.
   void closeCallbackFromLoop_();
 
-  std::shared_ptr<Loop> loop_;
+  std::shared_ptr<Context::PrivateIface> context_;
   std::shared_ptr<TCPHandle> handle_;
   Sockaddr sockaddr_;
   // TODO Add proper error handling.
@@ -83,11 +83,13 @@ class Listener::Impl : public std::enable_shared_from_this<Listener::Impl> {
   std::shared_ptr<Impl> leak_;
 };
 
-Listener::Impl::Impl(std::shared_ptr<Loop> loop, address_t addr)
-    : loop_(std::move(loop)),
-      handle_(TCPHandle::create(*loop_)),
+Listener::Impl::Impl(
+    std::shared_ptr<Context::PrivateIface> context,
+    address_t addr)
+    : context_(std::move(context)),
+      handle_(context_->createHandle()),
       sockaddr_(Sockaddr::createInetSockAddr(addr)),
-      closingReceiver_(loop_, loop_->closingEmitter_) {}
+      closingReceiver_(context_, context_->getClosingEmitter()) {}
 
 void Listener::Impl::initFromLoop() {
   leak_ = shared_from_this();
@@ -111,7 +113,8 @@ std::string Listener::Impl::addrFromLoop() const {
 }
 
 void Listener::Impl::close() {
-  loop_->deferToLoop([impl{shared_from_this()}]() { impl->closeFromLoop(); });
+  context_->deferToLoop(
+      [impl{shared_from_this()}]() { impl->closeFromLoop(); });
 }
 
 void Listener::Impl::closeFromLoop() {
@@ -119,20 +122,20 @@ void Listener::Impl::closeFromLoop() {
 }
 
 void Listener::Impl::connectionCallbackFromLoop_(int status) {
-  TP_DCHECK(loop_->inLoopThread());
+  TP_DCHECK(context_->inLoopThread());
   if (status != 0) {
     callback_.trigger(
         TP_CREATE_ERROR(UVError, status), std::shared_ptr<Connection>());
     return;
   }
 
-  auto connection = TCPHandle::create(*loop_);
+  auto connection = context_->createHandle();
   connection->initFromLoop();
   handle_->acceptFromLoop(connection);
   callback_.trigger(
       Error::kSuccess,
       std::make_shared<Connection>(
-          Connection::ConstructorToken(), loop_, std::move(connection)));
+          Connection::ConstructorToken(), context_, std::move(connection)));
 }
 
 void Listener::Impl::closeCallbackFromLoop_() {
@@ -141,14 +144,14 @@ void Listener::Impl::closeCallbackFromLoop_() {
 
 Listener::Listener(
     ConstructorToken /* unused */,
-    std::shared_ptr<Loop> loop,
+    std::shared_ptr<Context::PrivateIface> context,
     address_t addr)
-    : impl_(std::make_shared<Impl>(std::move(loop), std::move(addr))) {
+    : impl_(std::make_shared<Impl>(std::move(context), std::move(addr))) {
   impl_->init();
 }
 
 void Listener::Impl::init() {
-  loop_->deferToLoop([impl{shared_from_this()}]() { impl->initFromLoop(); });
+  context_->deferToLoop([impl{shared_from_this()}]() { impl->initFromLoop(); });
 }
 
 void Listener::accept(accept_callback_fn fn) {
@@ -156,9 +159,10 @@ void Listener::accept(accept_callback_fn fn) {
 }
 
 void Listener::Impl::accept(accept_callback_fn fn) {
-  loop_->deferToLoop([impl{shared_from_this()}, fn{std::move(fn)}]() mutable {
-    impl->acceptFromLoop(std::move(fn));
-  });
+  context_->deferToLoop(
+      [impl{shared_from_this()}, fn{std::move(fn)}]() mutable {
+        impl->acceptFromLoop(std::move(fn));
+      });
 }
 
 address_t Listener::addr() const {
@@ -167,7 +171,7 @@ address_t Listener::addr() const {
 
 address_t Listener::Impl::addr() const {
   std::string addr;
-  loop_->runInLoop([this, &addr]() { addr = addrFromLoop(); });
+  context_->runInLoop([this, &addr]() { addr = addrFromLoop(); });
   return addr;
 }
 
