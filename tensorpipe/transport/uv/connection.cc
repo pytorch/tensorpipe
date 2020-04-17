@@ -199,21 +199,33 @@ class Connection::Impl : public std::enable_shared_from_this<Connection::Impl> {
   // Create a connection that connects to the specified address.
   Impl(std::shared_ptr<Loop>, address_t);
 
-  // Called to initialize member fields that need `shared_from_this`.
+  // Initialize member fields that need `shared_from_this`.
+  void init();
+
+  // Queue a read operation.
+  void read(read_callback_fn fn);
+  void read(void* ptr, size_t length, read_callback_fn fn);
+
+  // Perform a write operation.
+  void write(const void* ptr, size_t length, write_callback_fn fn);
+
+  // Shut down the connection and its resources.
+  void close();
+
+ private:
+  // Initialize member fields that need `shared_from_this`.
   void initFromLoop();
 
-  // Called to queue a read operation.
+  // Queue a read operation.
   void readFromLoop(read_callback_fn fn);
   void readFromLoop(void* ptr, size_t length, read_callback_fn fn);
 
-  // Called to perform a write operation.
+  // Perform a write operation.
   void writeFromLoop(const void* ptr, size_t length, write_callback_fn fn);
 
-  // Called to shut down the connection and its resources.
-  void close();
+  // Shut down the connection and its resources.
   void closeFromLoop();
 
- private:
   // Called when libuv is about to read data from connection.
   void allocCallbackFromLoop_(uv_buf_t* buf);
 
@@ -409,38 +421,59 @@ Connection::Connection(
     ConstructorToken /* unused */,
     std::shared_ptr<Loop> loop,
     std::shared_ptr<TCPHandle> handle)
-    : loop_(loop), impl_(std::make_shared<Impl>(loop, std::move(handle))) {
-  loop_->deferToLoop([impl{impl_}]() { impl->initFromLoop(); });
+    : impl_(std::make_shared<Impl>(std::move(loop), std::move(handle))) {
+  impl_->init();
 }
 
 Connection::Connection(
     ConstructorToken /* unused */,
     std::shared_ptr<Loop> loop,
     address_t addr)
-    : loop_(loop), impl_(std::make_shared<Impl>(loop, std::move(addr))) {
-  loop_->deferToLoop([impl{impl_}]() { impl->initFromLoop(); });
+    : impl_(std::make_shared<Impl>(std::move(loop), std::move(addr))) {
+  impl_->init();
+}
+
+void Connection::Impl::init() {
+  loop_->deferToLoop([impl{shared_from_this()}]() { impl->initFromLoop(); });
 }
 
 void Connection::read(read_callback_fn fn) {
-  loop_->deferToLoop([impl{impl_}, fn{std::move(fn)}]() mutable {
+  impl_->read(std::move(fn));
+}
+
+void Connection::Impl::read(read_callback_fn fn) {
+  loop_->deferToLoop([impl{shared_from_this()}, fn{std::move(fn)}]() mutable {
     impl->readFromLoop(std::move(fn));
   });
 }
 
 void Connection::read(void* ptr, size_t length, read_callback_fn fn) {
-  loop_->deferToLoop([impl{impl_}, ptr, length, fn{std::move(fn)}]() mutable {
-    impl->readFromLoop(ptr, length, std::move(fn));
-  });
+  impl_->read(ptr, length, std::move(fn));
+}
+
+void Connection::Impl::read(void* ptr, size_t length, read_callback_fn fn) {
+  loop_->deferToLoop(
+      [impl{shared_from_this()}, ptr, length, fn{std::move(fn)}]() mutable {
+        impl->readFromLoop(ptr, length, std::move(fn));
+      });
 }
 
 void Connection::write(const void* ptr, size_t length, write_callback_fn fn) {
-  loop_->deferToLoop([impl{impl_}, ptr, length, fn{std::move(fn)}]() mutable {
-    impl->writeFromLoop(ptr, length, std::move(fn));
-  });
+  impl_->write(ptr, length, std::move(fn));
+}
+
+void Connection::Impl::write(
+    const void* ptr,
+    size_t length,
+    write_callback_fn fn) {
+  loop_->deferToLoop(
+      [impl{shared_from_this()}, ptr, length, fn{std::move(fn)}]() mutable {
+        impl->writeFromLoop(ptr, length, std::move(fn));
+      });
 }
 
 void Connection::close() {
-  loop_->deferToLoop([impl{impl_}]() { impl->closeFromLoop(); });
+  impl_->close();
 }
 
 Connection::~Connection() {

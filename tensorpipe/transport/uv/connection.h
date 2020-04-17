@@ -38,16 +38,14 @@ class Connection : public transport::Connection {
   // Create a connection that connects to the specified address.
   Connection(ConstructorToken, std::shared_ptr<Loop> loop, address_t addr);
 
-  using transport::Connection::read_callback_fn;
-
+  // Queue a read operation.
   void read(read_callback_fn fn) override;
-
   void read(void* ptr, size_t length, read_callback_fn fn) override;
 
-  using transport::Connection::write_callback_fn;
-
+  // Perform a write operation.
   void write(const void* ptr, size_t length, write_callback_fn fn) override;
 
+  // Shut down the connection and its resources.
   void close() override;
 
   ~Connection() override;
@@ -61,7 +59,8 @@ class Connection : public transport::Connection {
   // equivalent call on the implementation by deferring to the loop.
   class Impl;
 
-  std::shared_ptr<Loop> loop_;
+  // Using a shared_ptr allows us to detach the lifetime of the implementation
+  // from the public object's one and perform the destruction asynchronously.
   std::shared_ptr<Impl> impl_;
 
   // Allow context to access constructor token.

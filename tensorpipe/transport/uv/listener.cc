@@ -25,23 +25,34 @@ class Listener::Impl : public std::enable_shared_from_this<Listener::Impl> {
   // Create a listener that listens on the specified address.
   Impl(std::shared_ptr<Loop>, address_t);
 
-  // Called to initialize member fields that need `shared_from_this`.
-  void initFromLoop();
+  // Initialize member fields that need `shared_from_this`.
+  void init();
 
-  // Called to queue a callback to be called when a connection comes in.
-  void acceptFromLoop(accept_callback_fn fn);
+  // Queue a callback to be called when a connection comes in.
+  void accept(accept_callback_fn fn);
 
-  // Called to obtain the listener's address.
-  std::string addrFromLoop() const;
+  // Obtain the listener's address.
+  std::string addr() const;
 
-  // Called to shut down the connection and its resources.
+  // Shut down the connection and its resources.
   void close();
-  void closeFromLoop();
 
  private:
-  // This function is called by the event loop if the listening socket can
-  // accept a new connection. Status is 0 in case of success, < 0
-  // otherwise. See `uv_connection_cb` for more information.
+  // Initialize member fields that need `shared_from_this`.
+  void initFromLoop();
+
+  // Queue a callback to be called when a connection comes in.
+  void acceptFromLoop(accept_callback_fn fn);
+
+  // Obtain the listener's address.
+  std::string addrFromLoop() const;
+
+  // Shut down the connection and its resources.
+  void closeFromLoop();
+
+  // Called by libuv if the listening socket can accept a new connection. Status
+  // is 0 in case of success, < 0 otherwise. See `uv_connection_cb` for more
+  // information.
   void connectionCallbackFromLoop_(int status);
 
   // Called when libuv has closed the handle.
@@ -132,24 +143,36 @@ Listener::Listener(
     ConstructorToken /* unused */,
     std::shared_ptr<Loop> loop,
     address_t addr)
-    : loop_(loop), impl_(std::make_shared<Impl>(loop, std::move(addr))) {
-  loop_->deferToLoop([impl{impl_}]() { impl->initFromLoop(); });
+    : impl_(std::make_shared<Impl>(std::move(loop), std::move(addr))) {
+  impl_->init();
+}
+
+void Listener::Impl::init() {
+  loop_->deferToLoop([impl{shared_from_this()}]() { impl->initFromLoop(); });
 }
 
 void Listener::accept(accept_callback_fn fn) {
-  loop_->deferToLoop([impl{impl_}, fn{std::move(fn)}]() mutable {
+  impl_->accept(std::move(fn));
+}
+
+void Listener::Impl::accept(accept_callback_fn fn) {
+  loop_->deferToLoop([impl{shared_from_this()}, fn{std::move(fn)}]() mutable {
     impl->acceptFromLoop(std::move(fn));
   });
 }
 
 address_t Listener::addr() const {
+  return impl_->addr();
+}
+
+address_t Listener::Impl::addr() const {
   std::string addr;
-  loop_->runInLoop([this, &addr]() { addr = this->impl_->addrFromLoop(); });
+  loop_->runInLoop([this, &addr]() { addr = addrFromLoop(); });
   return addr;
 }
 
 void Listener::close() {
-  loop_->deferToLoop([impl{impl_}]() { impl->closeFromLoop(); });
+  impl_->close();
 }
 
 Listener::~Listener() {
