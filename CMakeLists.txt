@@ -4,13 +4,12 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# CMake 3.10 is the version available in Ubuntu 18.04.
-cmake_minimum_required(VERSION 3.10 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.17 FATAL_ERROR)
 
 project(tensorpipe
   DESCRIPTION "A tensor-aware point-to-point communication library for machine learning"
-  LANGUAGES C CXX
-  )
+  HOMEPAGE_URL "https://github.com/pytorch/tensorpipe"
+  LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 14)
 
