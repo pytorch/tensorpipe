@@ -25,7 +25,10 @@ class Pipe;
 
 class Context final {
  public:
-  Context();
+  // The name should be a semantically meaningful description of this context.
+  // It will only be used for logging and debugging purposes, to identify the
+  // endpoints of a pipe.
+  explicit Context(std::string name = "N/A");
 
   void registerTransport(
       int64_t,
@@ -36,7 +39,7 @@ class Context final {
 
   std::shared_ptr<Listener> listen(const std::vector<std::string>&);
 
-  std::shared_ptr<Pipe> connect(const std::string&);
+  std::shared_ptr<Pipe> connect(const std::string&, std::string name = "N/A");
 
   // Put the context in a terminal state, in turn closing all of its pipes and
   // listeners, and release its resources. This may be done asynchronously, in
@@ -70,6 +73,10 @@ class Context final {
         std::tuple<std::string, std::shared_ptr<channel::Context>>>;
 
     virtual const TOrderedChannels& getOrderedChannels() = 0;
+
+    // Return the name given to the context's constructor. It will be retrieved
+    // by the pipes and listener in order to attach it to logged messages.
+    virtual const std::string& getName() = 0;
 
     virtual ~PrivateIface() = default;
   };

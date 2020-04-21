@@ -315,7 +315,9 @@ void Pipe::Impl::initFromLoop_() {
   if (state_ == CLIENT_ABOUT_TO_SEND_HELLO_AND_BROCHURE) {
     auto pbPacketOut = std::make_shared<proto::Packet>();
     // This makes the packet contain a SpontaneousConnection message.
-    pbPacketOut->mutable_spontaneous_connection();
+    proto::SpontaneousConnection* pbSpontaneousConnection =
+        pbPacketOut->mutable_spontaneous_connection();
+    pbSpontaneousConnection->set_context_name(context_->getName());
     TP_VLOG() << "Pipe " << id_ << " writing proto (spontaneous connection)";
     connection_->write(
         *pbPacketOut, writePacketCallbackWrapper_([pbPacketOut](Impl& impl) {

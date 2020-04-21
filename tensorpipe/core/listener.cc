@@ -438,8 +438,12 @@ void Listener::Impl::onConnectionHelloRead_(
     const proto::Packet& pbPacketIn) {
   TP_DCHECK(inLoop_());
   if (pbPacketIn.has_spontaneous_connection()) {
+    const proto::SpontaneousConnection& pbSpontaneousConnection =
+        pbPacketIn.spontaneous_connection();
     std::string pipeId = id_ + ".p" + std::to_string(pipeCounter_++);
-    TP_VLOG() << "Listener " << id_ << " is opening pipe " << pipeId;
+    TP_VLOG() << "Listener " << id_ << " is opening pipe " << pipeId
+              << " (from " << pbSpontaneousConnection.context_name() << " to "
+              << context_->getName() << ")";
     auto pipe = std::make_shared<Pipe>(
         Pipe::ConstructorToken(),
         context_,

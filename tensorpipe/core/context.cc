@@ -44,7 +44,7 @@ std::string createContextId() {
 class Context::Impl : public Context::PrivateIface,
                       public std::enable_shared_from_this<Context::Impl> {
  public:
-  Impl();
+  explicit Impl(std::string name);
 
   void registerTransport(
       int64_t,
@@ -55,7 +55,7 @@ class Context::Impl : public Context::PrivateIface,
 
   std::shared_ptr<Listener> listen(const std::vector<std::string>&);
 
-  std::shared_ptr<Pipe> connect(const std::string&);
+  std::shared_ptr<Pipe> connect(const std::string&, std::string name);
 
   ClosingEmitter& getClosingEmitter() override;
 
@@ -69,6 +69,8 @@ class Context::Impl : public Context::PrivateIface,
   using PrivateIface::TOrderedChannels;
 
   const TOrderedChannels& getOrderedChannels() override;
+
+  const std::string& getName() override;
 
   void close();
 
@@ -92,6 +94,11 @@ class Context::Impl : public Context::PrivateIface,
   uint64_t listenerCounter_{0};
   uint64_t pipeCounter_{0};
 
+  // A user-provided name for this context which should be semantically
+  // meaningful. It will only be used for logging and debugging purposes, to
+  // identify the endpoints of a pipe.
+  std::string name_;
+
   std::unordered_map<std::string, std::shared_ptr<transport::Context>>
       transports_;
   std::unordered_map<std::string, std::shared_ptr<channel::Context>> channels_;
@@ -102,9 +109,13 @@ class Context::Impl : public Context::PrivateIface,
   ClosingEmitter closingEmitter_;
 };
 
-Context::Context() : impl_(std::make_shared<Context::Impl>()) {}
+Context::Context(std::string name)
+    : impl_(std::make_shared<Context::Impl>(std::move(name))) {}
 
-Context::Impl::Impl() : id_(createContextId()) {}
+Context::Impl::Impl(std::string name)
+    : id_(createContextId()), name_(std::move(name)) {
+  TP_VLOG() << "Context " << id_ << " corresponds to " << name_;
+}
 
 void Context::registerTransport(
     int64_t priority,
@@ -164,13 +175,18 @@ std::shared_ptr<Listener> Context::Impl::listen(
       urls);
 }
 
-std::shared_ptr<Pipe> Context::connect(const std::string& url) {
-  return impl_->connect(url);
+std::shared_ptr<Pipe> Context::connect(
+    const std::string& url,
+    std::string name) {
+  return impl_->connect(url, std::move(name));
 }
 
-std::shared_ptr<Pipe> Context::Impl::connect(const std::string& url) {
+std::shared_ptr<Pipe> Context::Impl::connect(
+    const std::string& url,
+    std::string name) {
   std::string pipeId = id_ + ".p" + std::to_string(pipeCounter_++);
-  TP_VLOG() << "Context " << id_ << " is opening pipe " << pipeId;
+  TP_VLOG() << "Context " << id_ << " is opening pipe " << pipeId << " (from "
+            << name_ << " to " << std::move(name) << ")";
   return std::make_shared<Pipe>(
       Pipe::ConstructorToken(),
       std::static_pointer_cast<PrivateIface>(shared_from_this()),
@@ -206,6 +222,10 @@ const Context::Impl::TOrderedTransports& Context::Impl::getOrderedTransports() {
 
 const Context::Impl::TOrderedChannels& Context::Impl::getOrderedChannels() {
   return channelsByPriority_;
+}
+
+const std::string& Context::Impl::getName() {
+  return name_;
 }
 
 void Context::close() {
