@@ -106,7 +106,13 @@ inline std::error_code toErrorCode(ssize_t e) {
 class LogEntry final {
  public:
   ~LogEntry() noexcept {
-    std::cerr << oss_.str() << std::endl;
+    // Multiple threads or processes writing to the same log (e.g., stderr)
+    // might lead to interleaved text and thus garbled output. It seems that a
+    // single write syscall is "rather" atomic so instead of issuing a separate
+    // write for the trailing newline we append it to the message and write them
+    // together.
+    oss_ << std::endl;
+    std::cerr << oss_.str();
   }
 
   std::ostream& getStream() {
