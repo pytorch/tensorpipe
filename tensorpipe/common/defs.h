@@ -194,6 +194,30 @@ class LogEntry final {
 #define TP_DCHECK_GE(a, b) _TP_DCHECK_CMP(a, b, >=)
 
 //
+// Verbose logging.
+// Some logging is helpful to diagnose tricky production issues but is too
+// verbose to keep on all the time. It also should not be controlled by the
+// debug flags, as we want to allow it to be enabled in production builds.
+// Eventually we may even want this to make this a runtime flag.
+//
+
+// Expand macro only when TP_VERBOSE_LOGGING is set.
+#ifdef TP_VERBOSE_LOGGING
+
+#define _TP_VLOG() TP_LOG_DEBUG()
+
+#else
+
+#define _TP_VLOG() \
+  while (false)    \
+  TP_LOG_DEBUG()
+
+#endif
+
+// Public API for verbose logging.
+#define TP_VLOG() _TP_VLOG()
+
+//
 // Argument checks
 //
 #define TP_ARG_CHECK(a) \

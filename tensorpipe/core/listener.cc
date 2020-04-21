@@ -27,7 +27,10 @@ namespace tensorpipe {
 class Listener::Impl : public Listener::PrivateIface,
                        public std::enable_shared_from_this<Listener::Impl> {
  public:
-  Impl(std::shared_ptr<Context::PrivateIface>, const std::vector<std::string>&);
+  Impl(
+      std::shared_ptr<Context::PrivateIface>,
+      std::string id,
+      const std::vector<std::string>& urls);
 
   // Called by the listener's constructor.
   void init();
@@ -65,9 +68,28 @@ class Listener::Impl : public Listener::PrivateIface,
   Error error_;
 
   std::shared_ptr<Context::PrivateIface> context_;
+
+  // An identifier for the listener, composed of the identifier for the context,
+  // combined with an increasing sequence number. It will be used as a prefix
+  // for the identifiers of pipes. All of them will only be used for logging and
+  // debugging purposes.
+  std::string id_;
+
+  // Sequence numbers for the pipes created by this listener, used to create
+  // their identifiers based off this listener's identifier. They will only be
+  // used for logging and debugging.
+  uint64_t pipeCounter_{0};
+
   std::unordered_map<std::string, std::shared_ptr<transport::Listener>>
       listeners_;
   std::map<std::string, transport::address_t> addresses_;
+
+  // A sequence number for the calls to accept.
+  int64_t nextPipeBeingAccepted_{0};
+
+  // A sequence number for the invocations of the callbacks of accept.
+  int64_t nextAcceptCallbackToCall_{0};
+
   LocklessRearmableCallback<
       accept_callback_fn,
       const Error&,
@@ -138,15 +160,21 @@ class Listener::Impl : public Listener::PrivateIface,
 Listener::Listener(
     ConstructorToken /* unused */,
     std::shared_ptr<Context::PrivateIface> context,
+    std::string id,
     const std::vector<std::string>& urls)
-    : impl_(std::make_shared<Listener::Impl>(std::move(context), urls)) {
+    : impl_(std::make_shared<Listener::Impl>(
+          std::move(context),
+          std::move(id),
+          urls)) {
   impl_->init();
 }
 
 Listener::Impl::Impl(
     std::shared_ptr<Context::PrivateIface> context,
+    std::string id,
     const std::vector<std::string>& urls)
     : context_(std::move(context)),
+      id_(std::move(id)),
       closingReceiver_(context_, context_->getClosingEmitter()),
       readPacketCallbackWrapper_(*this),
       acceptCallbackWrapper_(*this) {
@@ -215,6 +243,7 @@ void Listener::Impl::closeFromLoop_() {
   TP_DCHECK(inLoop_());
 
   if (!error_) {
+    TP_VLOG() << "Listener " << id_ << " is closing";
     error_ = TP_CREATE_ERROR(ListenerClosedError);
     handleError_();
   }
@@ -240,12 +269,29 @@ void Listener::Impl::accept(accept_callback_fn fn) {
 void Listener::Impl::acceptFromLoop_(accept_callback_fn fn) {
   TP_DCHECK(inLoop_());
 
+  uint64_t sequenceNumber = nextPipeBeingAccepted_++;
+  TP_VLOG() << "Listener " << id_ << " received an accept request (#"
+            << sequenceNumber << ")";
+
   if (error_) {
+    TP_DCHECK_EQ(sequenceNumber, nextAcceptCallbackToCall_++);
+    TP_VLOG() << "Listener " << id_ << " calling an accept callback (#"
+              << sequenceNumber << ")";
     fn(error_, std::shared_ptr<Pipe>());
+    TP_VLOG() << "Listener " << id_ << " done calling an accept callback (#"
+              << sequenceNumber << ")";
     return;
   }
 
-  acceptCallback_.arm(std::move(fn));
+  acceptCallback_.arm([this, sequenceNumber, fn{std::move(fn)}](
+                          const Error& error, std::shared_ptr<Pipe> pipe) {
+    TP_DCHECK_EQ(sequenceNumber, nextAcceptCallbackToCall_++);
+    TP_VLOG() << "Listener " << id_ << " is calling an accept callback (#"
+              << sequenceNumber << ")";
+    fn(error, std::move(pipe));
+    TP_VLOG() << "Listener " << id_ << " done calling an accept callback (#"
+              << sequenceNumber << ")";
+  });
 }
 
 const std::map<std::string, std::string>& Listener::addresses() const {
@@ -392,10 +438,13 @@ void Listener::Impl::onConnectionHelloRead_(
     const proto::Packet& pbPacketIn) {
   TP_DCHECK(inLoop_());
   if (pbPacketIn.has_spontaneous_connection()) {
+    std::string pipeId = id_ + ".p" + std::to_string(pipeCounter_++);
+    TP_VLOG() << "Listener " << id_ << " is opening pipe " << pipeId;
     auto pipe = std::make_shared<Pipe>(
         Pipe::ConstructorToken(),
         context_,
         std::static_pointer_cast<PrivateIface>(shared_from_this()),
+        std::move(pipeId),
         std::move(transport),
         std::move(connection));
     acceptCallback_.trigger(Error::kSuccess, std::move(pipe));

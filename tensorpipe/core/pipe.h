@@ -46,15 +46,17 @@ class Pipe final {
 
   Pipe(
       ConstructorToken,
-      std::shared_ptr<Context::PrivateIface>,
-      const std::string&);
+      std::shared_ptr<Context::PrivateIface> context,
+      std::string id,
+      const std::string& url);
 
   Pipe(
       ConstructorToken,
-      std::shared_ptr<Context::PrivateIface>,
-      std::shared_ptr<Listener::PrivateIface>,
-      std::string,
-      std::shared_ptr<transport::Connection>);
+      std::shared_ptr<Context::PrivateIface> context,
+      std::shared_ptr<Listener::PrivateIface> listener,
+      std::string id,
+      std::string transport,
+      std::shared_ptr<transport::Connection> connection);
 
   //
   // Entry points for user code

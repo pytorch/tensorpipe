@@ -40,8 +40,9 @@ class Listener final {
  public:
   Listener(
       ConstructorToken,
-      std::shared_ptr<Context::PrivateIface>,
-      const std::vector<std::string>&);
+      std::shared_ptr<Context::PrivateIface> context,
+      std::string id,
+      const std::vector<std::string>& urls);
 
   //
   // Entry points for user code

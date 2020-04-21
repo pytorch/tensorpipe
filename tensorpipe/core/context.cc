@@ -8,6 +8,9 @@
 
 #include <tensorpipe/core/context.h>
 
+#include <sys/types.h>
+#include <unistd.h>
+
 #include <atomic>
 #include <thread>
 #include <unordered_map>
@@ -21,6 +24,22 @@
 #include <tensorpipe/transport/connection.h>
 
 namespace tensorpipe {
+
+namespace {
+
+uint64_t contextCouter{0};
+
+std::string createContextId() {
+  // Should we use argv[0] instead of the PID? It may be more semantically
+  // meaningful and consistent across runs, but it may not be unique...
+  // Also, should we add the hostname/the IP address in case the logs from
+  // different hosts are merged into a single stream?
+  // Eventually we'll have to replace getpid with something more portable.
+  // Libuv offers a cross-platform function to get the process ID.
+  return std::to_string(getpid()) + ":c" + std::to_string(contextCouter++);
+}
+
+} // namespace
 
 class Context::Impl : public Context::PrivateIface,
                       public std::enable_shared_from_this<Context::Impl> {
@@ -61,6 +80,18 @@ class Context::Impl : public Context::PrivateIface,
   std::atomic<bool> closed_{false};
   std::atomic<bool> joined_{false};
 
+  // An identifier for the context, composed of unique information about the
+  // host and process, combined with an increasing sequence number. It will be
+  // used as a prefix for the identifiers of listeners and pipes. All of them
+  // will only be used for logging and debugging purposes.
+  std::string id_;
+
+  // Sequence numbers for the listeners and pipes created by this context, used
+  // to create their identifiers based off this context's identifier. They will
+  // only be used for logging and debugging.
+  uint64_t listenerCounter_{0};
+  uint64_t pipeCounter_{0};
+
   std::unordered_map<std::string, std::shared_ptr<transport::Context>>
       transports_;
   std::unordered_map<std::string, std::shared_ptr<channel::Context>> channels_;
@@ -73,7 +104,7 @@ class Context::Impl : public Context::PrivateIface,
 
 Context::Context() : impl_(std::make_shared<Context::Impl>()) {}
 
-Context::Impl::Impl() {}
+Context::Impl::Impl() : id_(createContextId()) {}
 
 void Context::registerTransport(
     int64_t priority,
@@ -124,9 +155,12 @@ std::shared_ptr<Listener> Context::listen(
 
 std::shared_ptr<Listener> Context::Impl::listen(
     const std::vector<std::string>& urls) {
+  std::string listenerId = id_ + ".l" + std::to_string(listenerCounter_++);
+  TP_VLOG() << "Context " << id_ << " is opening listener " << listenerId;
   return std::make_shared<Listener>(
       Listener::ConstructorToken(),
       std::static_pointer_cast<PrivateIface>(shared_from_this()),
+      std::move(listenerId),
       urls);
 }
 
@@ -135,9 +169,12 @@ std::shared_ptr<Pipe> Context::connect(const std::string& url) {
 }
 
 std::shared_ptr<Pipe> Context::Impl::connect(const std::string& url) {
+  std::string pipeId = id_ + ".p" + std::to_string(pipeCounter_++);
+  TP_VLOG() << "Context " << id_ << " is opening pipe " << pipeId;
   return std::make_shared<Pipe>(
       Pipe::ConstructorToken(),
       std::static_pointer_cast<PrivateIface>(shared_from_this()),
+      std::move(pipeId),
       url);
 }
 
@@ -179,6 +216,8 @@ void Context::Impl::close() {
   bool wasClosed = false;
   if (closed_.compare_exchange_strong(wasClosed, true)) {
     TP_DCHECK(!wasClosed);
+
+    TP_VLOG() << "Context " << id_ << " is closing";
 
     closingEmitter_.close();
 
