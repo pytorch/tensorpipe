@@ -8,6 +8,7 @@
 
 #include <tensorpipe/transport/uv/loop.h>
 
+#include <tensorpipe/common/system.h>
 #include <tensorpipe/transport/uv/macros.h>
 #include <tensorpipe/transport/uv/uv.h>
 
@@ -72,6 +73,8 @@ void Loop::wakeup() {
 }
 
 void Loop::loop() {
+  setThreadName("TP_UV_loop");
+
   int rv;
 
   rv = uv_run(loop_.get(), UV_RUN_DEFAULT);

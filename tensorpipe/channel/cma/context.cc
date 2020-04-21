@@ -190,6 +190,7 @@ void Context::Impl::requestCopy(
 }
 
 void Context::Impl::handleCopyRequests_() {
+  setThreadName("TP_CMA_loop");
   while (true) {
     auto maybeRequest = requests_.pop();
     if (!maybeRequest.has_value()) {

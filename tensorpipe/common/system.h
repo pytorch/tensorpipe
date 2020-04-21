@@ -89,4 +89,7 @@ constexpr uint64_t maxPow2LessEqualThan(uint64_t n) noexcept {
 // Return contents of /proc/sys/kernel/random/boot_id.
 optional<std::string> getBootID();
 
+// Set the name of the current thread, if possible. Use only for debugging.
+void setThreadName(std::string name);
+
 } // namespace tensorpipe

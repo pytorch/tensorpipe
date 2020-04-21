@@ -8,6 +8,10 @@
 
 #include <tensorpipe/common/system.h>
 
+#ifdef __linux__
+#include <pthread.h>
+#endif
+
 #include <cstring>
 #include <fstream>
 #include <iomanip>
@@ -61,6 +65,12 @@ optional<std::string> getBootID() {
   getline(f, v);
   f.close();
   return v;
+}
+
+void setThreadName(std::string name) {
+#ifdef __linux__
+  pthread_setname_np(pthread_self(), name.c_str());
+#endif
 }
 
 } // namespace tensorpipe

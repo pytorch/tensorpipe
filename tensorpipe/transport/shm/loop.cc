@@ -11,6 +11,7 @@
 #include <sys/eventfd.h>
 
 #include <tensorpipe/common/defs.h>
+#include <tensorpipe/common/system.h>
 
 namespace tensorpipe {
 namespace transport {
@@ -157,6 +158,7 @@ void Loop::wakeup() {
 }
 
 void Loop::loop() {
+  setThreadName("TP_SHM_loop");
   // Monitor eventfd for readability. Always read from the eventfd so
   // that it is no longer readable on the next call to epoll_wait(2).
   // Note: this is allocated on the stack so that we destroy it upon

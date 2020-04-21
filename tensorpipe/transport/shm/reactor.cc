@@ -8,6 +8,7 @@
 
 #include <tensorpipe/transport/shm/reactor.h>
 
+#include <tensorpipe/common/system.h>
 #include <tensorpipe/util/ringbuffer/shm.h>
 
 namespace tensorpipe {
@@ -109,6 +110,7 @@ std::tuple<int, int> Reactor::fds() const {
 }
 
 void Reactor::run() {
+  setThreadName("TP_SHM_reactor");
   // Stop when another thread has asked the reactor the close and when
   // all functions have been removed except for the one used to defer.
   while (!closed_ || functionCount_ > 1) {
