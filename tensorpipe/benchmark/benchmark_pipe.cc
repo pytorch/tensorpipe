@@ -18,10 +18,7 @@
 #include <tensorpipe/core/context.h>
 #include <tensorpipe/core/listener.h>
 #include <tensorpipe/core/pipe.h>
-#ifdef TP_ENABLE_SHM
-#include <tensorpipe/transport/shm/context.h>
-#endif // TP_ENABLE_SHM
-#include <tensorpipe/transport/uv/context.h>
+#include <tensorpipe/transport/registry.h>
 
 using namespace tensorpipe;
 using namespace tensorpipe::benchmark;
@@ -143,19 +140,11 @@ static void runServer(const Options& options) {
   measurements.reserve(options.numRoundTrips);
 
   std::shared_ptr<Context> context = std::make_shared<Context>();
-#ifdef TP_ENABLE_SHM
-  if (options.transport == "shm") {
-    context->registerTransport(
-        0, "shm", std::make_shared<transport::shm::Context>());
-  } else
-#endif // TP_ENABLE_SHM
-      if (options.transport == "uv") {
-    context->registerTransport(
-        0, "uv", std::make_shared<transport::uv::Context>());
-  } else {
-    // Should never be here
-    TP_THROW_ASSERT() << "unknown transport: " << options.transport;
-  }
+  auto transportContext =
+      TensorpipeTransportRegistry().create(options.transport);
+  validateContext(transportContext);
+  context->registerTransport(0, options.transport, transportContext);
+
   if (options.channel == "basic") {
     context->registerChannel(
         0, "basic", std::make_shared<channel::basic::Context>());
@@ -274,19 +263,11 @@ static void runClient(const Options& options) {
   measurements.reserve(options.numRoundTrips);
 
   std::shared_ptr<Context> context = std::make_shared<Context>();
-#ifdef TP_ENABLE_SHM
-  if (options.transport == "shm") {
-    context->registerTransport(
-        0, "shm", std::make_shared<transport::shm::Context>());
-  } else
-#endif // TP_ENABLE_SHM
-      if (options.transport == "uv") {
-    context->registerTransport(
-        0, "uv", std::make_shared<transport::uv::Context>());
-  } else {
-    // Should never be here
-    TP_THROW_ASSERT() << "unknown transport: " << options.transport;
-  }
+  auto transportContext =
+      TensorpipeTransportRegistry().create(options.transport);
+  validateContext(transportContext);
+  context->registerTransport(0, options.transport, transportContext);
+
   if (options.channel == "basic") {
     context->registerChannel(
         0, "basic", std::make_shared<channel::basic::Context>());
