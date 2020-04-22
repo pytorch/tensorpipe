@@ -13,8 +13,23 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <tensorpipe/transport/registry.h>
+
 namespace tensorpipe {
 namespace benchmark {
+
+void validateContext(std::shared_ptr<transport::Context> context) {
+  if (!context) {
+    auto keys = TensorpipeTransportRegistry().keys();
+    std::cout
+        << "The transport you passed in is not supported. The following transports are valid: ";
+    for (const auto& key : keys) {
+      std::cout << key << ", ";
+    }
+    std::cout << "\n";
+    exit(EXIT_FAILURE);
+  }
+}
 
 static void usage(int status, const char* argv0) {
   if (status != EXIT_SUCCESS) {
