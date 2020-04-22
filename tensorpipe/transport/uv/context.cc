@@ -8,6 +8,7 @@
 
 #include <tensorpipe/transport/uv/context.h>
 
+#include <tensorpipe/transport/registry.h>
 #include <tensorpipe/transport/uv/connection.h>
 #include <tensorpipe/transport/uv/listener.h>
 #include <tensorpipe/transport/uv/loop.h>
@@ -17,6 +18,16 @@
 namespace tensorpipe {
 namespace transport {
 namespace uv {
+
+namespace {
+
+std::shared_ptr<Context> makeUvContext() {
+  return std::make_shared<Context>();
+}
+
+TP_REGISTER_CREATOR(TensorpipeTransportRegistry, uv, makeUvContext);
+
+} // namespace
 
 namespace {
 
