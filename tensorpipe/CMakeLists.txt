@@ -23,6 +23,7 @@ target_sources(tensorpipe PRIVATE
   core/pipe.cc
   transport/connection.cc
   transport/error.cc
+  transport/registry.cc
   )
 
 
