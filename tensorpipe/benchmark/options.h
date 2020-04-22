@@ -10,6 +10,8 @@
 
 #include <string>
 
+#include <tensorpipe/transport/context.h>
+
 namespace tensorpipe {
 namespace benchmark {
 
@@ -25,6 +27,8 @@ struct Options {
 };
 
 struct Options parseOptions(int argc, char** argv);
+
+void validateContext(std::shared_ptr<transport::Context> context);
 
 } // namespace benchmark
 } // namespace tensorpipe

@@ -11,10 +11,7 @@
 #include <tensorpipe/benchmark/measurements.h>
 #include <tensorpipe/benchmark/options.h>
 #include <tensorpipe/common/defs.h>
-#ifdef TP_ENABLE_SHM
-#include <tensorpipe/transport/shm/context.h>
-#endif // TP_ENABLE_SHM
-#include <tensorpipe/transport/uv/context.h>
+#include <tensorpipe/transport/registry.h>
 
 using namespace tensorpipe;
 using namespace tensorpipe::benchmark;
@@ -100,17 +97,8 @@ static void runServer(const Options& options) {
   measurements.reserve(options.numRoundTrips);
 
   std::shared_ptr<Context> context;
-#ifdef TP_ENABLE_SHM
-  if (options.transport == "shm") {
-    context = std::make_shared<shm::Context>();
-  } else
-#endif // TP_ENABLE_SHM
-      if (options.transport == "uv") {
-    context = std::make_shared<uv::Context>();
-  } else {
-    // Should never be here
-    TP_THROW_ASSERT() << "unknown transport: " << options.transport;
-  }
+  context = TensorpipeTransportRegistry().create(options.transport);
+  validateContext(context);
 
   std::promise<std::shared_ptr<Connection>> connProm;
   std::shared_ptr<Listener> listener = context->listen(addr);
@@ -172,17 +160,8 @@ static void runClient(const Options& options) {
   measurements.reserve(options.numRoundTrips);
 
   std::shared_ptr<Context> context;
-#ifdef TP_ENABLE_SHM
-  if (options.transport == "shm") {
-    context = std::make_shared<shm::Context>();
-  } else
-#endif // TP_ENABLE_SHM
-      if (options.transport == "uv") {
-    context = std::make_shared<uv::Context>();
-  } else {
-    // Should never be here
-    TP_THROW_ASSERT() << "unknown transport: " << options.transport;
-  }
+  context = TensorpipeTransportRegistry().create(options.transport);
+  validateContext(context);
   std::shared_ptr<Connection> conn = context->connect(addr);
 
   std::promise<void> doneProm;
