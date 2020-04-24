@@ -13,6 +13,8 @@
 #include <deque>
 #include <vector>
 
+#include <google/protobuf/message_lite.h>
+
 #include <tensorpipe/common/callback.h>
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/error_macros.h>

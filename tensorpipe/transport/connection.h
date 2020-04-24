@@ -10,9 +10,15 @@
 
 #include <functional>
 
-#include <google/protobuf/message_lite.h>
-
 #include <tensorpipe/common/error.h>
+
+namespace google {
+namespace protobuf {
+
+class MessageLite;
+
+} // namespace protobuf
+} // namespace google
 
 namespace tensorpipe {
 namespace transport {

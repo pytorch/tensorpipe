@@ -6,6 +6,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <cstring>
+
 #include <future>
 
 #include <tensorpipe/benchmark/measurements.h>

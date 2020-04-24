@@ -46,7 +46,14 @@ add_subdirectory(${CMAKE_SOURCE_DIR}/third_party/googletest
   EXCLUDE_FROM_ALL
   )
 
-target_link_libraries(tensorpipe_test PRIVATE tensorpipe uv::uv_a gtest_main)
+# Support `#include <tensorpipe/proto/foo.pb.h>`
+target_include_directories(tensorpipe_test PRIVATE ${PROJECT_BINARY_DIR})
+
+target_link_libraries(tensorpipe_test PRIVATE
+  tensorpipe
+  uv::uv_a
+  protobuf::libprotobuf-lite
+  gtest_main)
 
 # Defines `gtest_discover_tests()`.
 include(GoogleTest)
