@@ -115,7 +115,12 @@ endif()
 
 ## Protobufs
 
-find_package(Protobuf 3 REQUIRED)
+if(Protobuf_DIR)
+  find_package(Protobuf 3 REQUIRED HINTS "${Protobuf_DIR}")
+else()
+  find_package(Protobuf 3 REQUIRED)
+endif()
+
 target_link_libraries(tensorpipe PRIVATE protobuf::libprotobuf)
 
 # Support `#include <tensorpipe/proto/foo.pb.h>`.
