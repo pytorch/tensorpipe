@@ -55,6 +55,11 @@ jobs:
           command: |
             cd build
             CTEST_OUTPUT_ON_FAILURE=1 make test
+      - run:
+          name: Install
+          command: |
+            cd build
+            make install
   build_osx:
     macos:
       xcode: 11.3.1
@@ -83,6 +88,11 @@ jobs:
           command: |
             cd build
             CTEST_OUTPUT_ON_FAILURE=1 make test
+      - run:
+          name: Install
+          command: |
+            cd build
+            make install
   python:
     parameters:
       docker_image:
