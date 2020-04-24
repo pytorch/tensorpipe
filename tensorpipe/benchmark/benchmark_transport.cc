@@ -100,7 +100,7 @@ static void runServer(const Options& options) {
 
   std::shared_ptr<Context> context;
   context = TensorpipeTransportRegistry().create(options.transport);
-  validateContext(context);
+  validateTransportContext(context);
 
   std::promise<std::shared_ptr<Connection>> connProm;
   std::shared_ptr<Listener> listener = context->listen(addr);
@@ -163,7 +163,7 @@ static void runClient(const Options& options) {
 
   std::shared_ptr<Context> context;
   context = TensorpipeTransportRegistry().create(options.transport);
-  validateContext(context);
+  validateTransportContext(context);
   std::shared_ptr<Connection> conn = context->connect(addr);
 
   std::promise<void> doneProm;

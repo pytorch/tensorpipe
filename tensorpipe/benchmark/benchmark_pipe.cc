@@ -12,10 +12,7 @@
 
 #include <tensorpipe/benchmark/measurements.h>
 #include <tensorpipe/benchmark/options.h>
-#include <tensorpipe/channel/basic/context.h>
-#ifdef TP_ENABLE_CMA
-#include <tensorpipe/channel/cma/context.h>
-#endif // TP_ENABLE_CMA
+#include <tensorpipe/channel/registry.h>
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/core/context.h>
 #include <tensorpipe/core/listener.h>
@@ -144,23 +141,12 @@ static void runServer(const Options& options) {
   std::shared_ptr<Context> context = std::make_shared<Context>();
   auto transportContext =
       TensorpipeTransportRegistry().create(options.transport);
-  validateContext(transportContext);
+  validateTransportContext(transportContext);
   context->registerTransport(0, options.transport, transportContext);
 
-  if (options.channel == "basic") {
-    context->registerChannel(
-        0, "basic", std::make_shared<channel::basic::Context>());
-  } else
-#ifdef TP_ENABLE_CMA
-      if (options.channel == "cma") {
-    context->registerChannel(
-        0, "cma", std::make_shared<channel::cma::Context>());
-  } else
-#endif // TP_ENABLE_CMA
-  {
-    // Should never be here
-    TP_THROW_ASSERT() << "unknown channel: " << options.channel;
-  }
+  auto channelContext = TensorpipeChannelRegistry().create(options.channel);
+  validateChannelContext(channelContext);
+  context->registerChannel(0, options.channel, channelContext);
 
   std::promise<std::shared_ptr<Pipe>> pipeProm;
   std::shared_ptr<Listener> listener = context->listen({addr});
@@ -267,23 +253,12 @@ static void runClient(const Options& options) {
   std::shared_ptr<Context> context = std::make_shared<Context>();
   auto transportContext =
       TensorpipeTransportRegistry().create(options.transport);
-  validateContext(transportContext);
+  validateTransportContext(transportContext);
   context->registerTransport(0, options.transport, transportContext);
 
-  if (options.channel == "basic") {
-    context->registerChannel(
-        0, "basic", std::make_shared<channel::basic::Context>());
-  } else
-#ifdef TP_ENABLE_CMA
-      if (options.channel == "cma") {
-    context->registerChannel(
-        0, "cma", std::make_shared<channel::cma::Context>());
-  } else
-#endif // TP_ENABLE_CMA
-  {
-    // Should never be here
-    TP_THROW_ASSERT() << "unknown channel: " << options.channel;
-  }
+  auto channelContext = TensorpipeChannelRegistry().create(options.channel);
+  validateChannelContext(channelContext);
+  context->registerChannel(0, options.channel, channelContext);
 
   std::shared_ptr<Pipe> pipe = context->connect(addr);
 
