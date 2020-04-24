@@ -52,7 +52,7 @@ target_include_directories(tensorpipe_test PRIVATE ${PROJECT_BINARY_DIR})
 
 target_link_libraries(tensorpipe_test PRIVATE
   tensorpipe
-  uv::uv_a
+  uv::uv
   protobuf::libprotobuf-lite
   gtest_main)
 

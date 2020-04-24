@@ -92,7 +92,7 @@ target_sources(tensorpipe PRIVATE
   )
 
 find_package(uv REQUIRED)
-target_link_libraries(tensorpipe PRIVATE uv::uv_a)
+target_link_libraries(tensorpipe PRIVATE uv::uv)
 
 ### shm
 
