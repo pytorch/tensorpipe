@@ -20,6 +20,7 @@
 #include <tensorpipe/channel/cma/channel.h>
 #include <tensorpipe/channel/error.h>
 #include <tensorpipe/channel/helpers.h>
+#include <tensorpipe/channel/registry.h>
 #include <tensorpipe/common/callback.h>
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/error_macros.h>
@@ -60,6 +61,12 @@ std::string generateDomainDescriptor() {
   oss << "/" << getegid();
   return oss.str();
 }
+
+std::shared_ptr<Context> makeCmaChannel() {
+  return std::make_shared<Context>();
+}
+
+TP_REGISTER_CREATOR(TensorpipeChannelRegistry, cma, makeCmaChannel);
 
 } // namespace
 
