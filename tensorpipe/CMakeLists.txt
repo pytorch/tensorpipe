@@ -7,9 +7,36 @@
 add_library(tensorpipe)
 
 # Support `#include <tensorpipe/foo.h>`.
-target_include_directories(tensorpipe PUBLIC
-  $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}>
-  )
+target_include_directories(tensorpipe PUBLIC $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}>)
+
+## Core
+
+set(TENSORPIPE_PUBLIC_HEADERS
+  core/error.h
+  core/listener.h
+  core/context.h
+  core/message.h
+  core/pipe.h
+  channel/error.h
+  channel/channel.h
+  channel/context.h
+  channel/helpers.h
+  common/error_macros.h
+  common/error.h
+  common/defs.h
+  common/address.h
+  common/optional.h
+  common/system.h
+  common/callback.h
+  common/queue.h
+  transport/connection.h
+  transport/context.h
+  transport/defs.h
+  transport/error.h
+  transport/listener.h
+  transport/registry.h
+  util/registry/registry.h
+  tensorpipe.h)
 
 target_sources(tensorpipe PRIVATE
   channel/context.cc
@@ -23,8 +50,7 @@ target_sources(tensorpipe PRIVATE
   core/pipe.cc
   transport/connection.cc
   transport/error.cc
-  transport/registry.cc
-  )
+  transport/registry.cc)
 
 
 ## Protobufs
@@ -37,6 +63,7 @@ target_link_libraries(tensorpipe PUBLIC tensorpipe_proto)
 
 ### basic
 
+list(APPEND TENSORPIPE_PUBLIC_HEADERS channel/basic/context.h)
 target_sources(tensorpipe PRIVATE
   channel/basic/channel.cc
   channel/basic/context.cc)
@@ -44,6 +71,7 @@ target_sources(tensorpipe PRIVATE
 ### cma
 
 if(TP_ENABLE_CMA)
+  list(APPEND TENSORPIPE_PUBLIC_HEADERS channel/cma/context.h)
   target_sources(tensorpipe PRIVATE
     channel/cma/channel.cc
     channel/cma/context.cc)
@@ -55,8 +83,7 @@ endif()
 
 ### uv
 
-find_package(uv REQUIRED)
-
+list(APPEND TENSORPIPE_PUBLIC_HEADERS transport/uv/context.h)
 target_sources(tensorpipe PRIVATE
   transport/uv/connection.cc
   transport/uv/context.cc
@@ -66,11 +93,14 @@ target_sources(tensorpipe PRIVATE
   transport/uv/sockaddr.cc
   transport/uv/uv.cc
   )
+
+find_package(uv REQUIRED)
 target_link_libraries(tensorpipe PRIVATE uv::uv_a)
 
 ### shm
 
 if(TP_ENABLE_SHM)
+  list(APPEND TENSORPIPE_PUBLIC_HEADERS transport/shm/context.h)
   target_sources(tensorpipe PRIVATE
     transport/shm/context.cc
     transport/shm/connection.cc
@@ -86,20 +116,33 @@ if(TP_ENABLE_SHM)
 endif()
 
 
-# Python bindings
+## Python bindings
 
 if(TP_BUILD_PYTHON)
   add_subdirectory(python)
 endif()
 
 
-# Benchmarks
+## Benchmarks
 
 add_subdirectory(benchmark)
 
 
-# Tests
+## Tests
 
 if(BUILD_TESTING)
   add_subdirectory(test)
 endif()
+
+
+## Installing
+
+include(GNUInstallDirs)
+foreach (file ${TENSORPIPE_PUBLIC_HEADERS})
+  get_filename_component(dir ${file} DIRECTORY)
+  install(FILES ${file}
+          DESTINATION ${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_INCLUDEDIR}/tensorpipe/${dir})
+endforeach()
+install(TARGETS tensorpipe
+        LIBRARY DESTINATION ${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR})
