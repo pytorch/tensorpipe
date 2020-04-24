@@ -8,6 +8,8 @@
 
 #include <tensorpipe/transport/connection.h>
 
+#include <google/protobuf/message_lite.h>
+
 #include <tensorpipe/common/defs.h>
 
 namespace tensorpipe {
