@@ -71,7 +71,7 @@ class ChannelTest : public ::testing::TestWithParam<ChannelTestHelper*> {
       const void* ptr,
       size_t length) {
     auto descriptorPromise = std::make_shared<
-        std::promise<std::tuple<tensorpipe::Error, std::vector<uint8_t>>>>();
+        std::promise<std::tuple<tensorpipe::Error, std::string>>>();
     auto promise = std::make_shared<std::promise<tensorpipe::Error>>();
     auto descriptorFuture = descriptorPromise->get_future();
     auto future = promise->get_future();
@@ -79,7 +79,7 @@ class ChannelTest : public ::testing::TestWithParam<ChannelTestHelper*> {
         ptr,
         length,
         [descriptorPromise{std::move(descriptorPromise)}](
-            const tensorpipe::Error& error, std::vector<uint8_t> descriptor) {
+            const tensorpipe::Error& error, std::string descriptor) {
           descriptorPromise->set_value(
               std::make_tuple(error, std::move(descriptor)));
         },

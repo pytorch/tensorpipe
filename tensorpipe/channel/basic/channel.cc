@@ -251,7 +251,8 @@ void Channel::Impl::recvFromLoop_(
     size_t length,
     TRecvCallback callback) {
   TP_DCHECK(inLoop_());
-  const auto pbDescriptor = loadDescriptor<proto::Descriptor>(descriptor);
+  proto::Descriptor pbDescriptor;
+  loadDescriptor(pbDescriptor, descriptor);
   const auto id = pbDescriptor.operation_id();
 
   recvOperations_.emplace_back(

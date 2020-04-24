@@ -260,7 +260,8 @@ void Channel::Impl::recvFromLoop_(
     TRecvCallback callback) {
   TP_DCHECK(inLoop_());
   // TODO Short cut this if we're already in an error state.
-  const auto pbDescriptor = loadDescriptor<proto::Descriptor>(descriptor);
+  proto::Descriptor pbDescriptor;
+  loadDescriptor(pbDescriptor, descriptor);
   const uint64_t id = pbDescriptor.operation_id();
   pid_t remotePid = pbDescriptor.pid();
   void* remotePtr = reinterpret_cast<void*>(pbDescriptor.ptr());

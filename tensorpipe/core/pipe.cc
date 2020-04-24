@@ -834,9 +834,8 @@ void Pipe::Impl::writeMessage_(MessageBeingWritten& messageBeingWritten) {
     pbTensorDescriptor->set_size_in_bytes(tensor.length);
     pbTensorDescriptor->set_metadata(tensor.metadata);
     pbTensorDescriptor->set_channel_name(otherTensor.channelName);
-    // FIXME This makes a copy
-    pbTensorDescriptor->set_channel_descriptor(
-        otherTensor.descriptor.data(), otherTensor.descriptor.size());
+    // FIXME In principle we could move here.
+    pbTensorDescriptor->set_channel_descriptor(otherTensor.descriptor);
   }
 
   TP_VLOG() << "Pipe " << id_ << " writing proto (message descriptor)";
@@ -1170,10 +1169,8 @@ void Pipe::Impl::onReadOfMessageDescriptor_(const proto::Packet& pbPacketIn) {
     tensorBeingAllocated.length = tensor.length;
     tensor.metadata = pbTensorDescriptor.metadata();
     tensorBeingAllocated.channelName = pbTensorDescriptor.channel_name();
-    tensorBeingAllocated.descriptor = std::vector<uint8_t>(
-        pbTensorDescriptor.channel_descriptor().data(),
-        pbTensorDescriptor.channel_descriptor().data() +
-            pbTensorDescriptor.channel_descriptor().size());
+    // FIXME If the protobuf wasn't const we could move the string out...
+    tensorBeingAllocated.descriptor = pbTensorDescriptor.channel_descriptor();
     message.tensors.push_back(std::move(tensor));
     messageBeingAllocated.tensors.push_back(std::move(tensorBeingAllocated));
   }

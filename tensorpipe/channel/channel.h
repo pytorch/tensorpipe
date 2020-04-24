@@ -48,7 +48,7 @@ namespace channel {
 // Abstract base class for channel classes.
 class Channel {
  public:
-  using TDescriptor = std::vector<uint8_t>;
+  using TDescriptor = std::string;
   using TDescriptorCallback = std::function<void(const Error&, TDescriptor)>;
   using TSendCallback = std::function<void(const Error&)>;
   using TRecvCallback = std::function<void(const Error&)>;
