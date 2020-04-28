@@ -35,18 +35,12 @@ endif()
 
 if(NOT uv_FOUND)
   set(uv_VERSION "1.37.0")
-  set(uv_LIBRARY_DIRS "downloaded")
+  set(uv_LIBRARY_DIRS "submodule")
 
-  include(FetchContent)
-  FetchContent_Declare(libuv
-    URL "https://github.com/libuv/libuv/archive/v${uv_VERSION}.tar.gz")
-  FetchContent_MakeAvailable(libuv)
+  add_subdirectory(${PROJECT_SOURCE_DIR}/third_party/libuv
+    ${PROJECT_BINARY_DIR}/third_party/libuv)
 
   add_library(uv::uv ALIAS uv_a)
-
-  install(TARGETS uv_a
-    EXPORT libuv-targets
-    ARCHIVE DESTINATION ${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR})
 endif()
 
 include(FindPackageHandleStandardArgs)

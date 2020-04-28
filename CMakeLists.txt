@@ -4,6 +4,11 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+if(PYTORCH_BUILD)
+  include(cmake/pytorch.cmake)
+  return()
+endif()
+
 cmake_minimum_required(VERSION 3.17 FATAL_ERROR)
 
 project(tensorpipe
