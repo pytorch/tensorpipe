@@ -131,9 +131,7 @@ target_link_libraries(tensorpipe PRIVATE uv::uv)
 # Support `#include <tensorpipe/foo.h>`.
 target_include_directories(tensorpipe PUBLIC $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}>)
 
-if(Protobuf_DIR)
-  find_package(Protobuf 3 REQUIRED HINTS "${Protobuf_DIR}")
-else()
+if(NOT TARGET protobuf::libprotobuf)
   find_package(Protobuf 3 REQUIRED)
 endif()
 
