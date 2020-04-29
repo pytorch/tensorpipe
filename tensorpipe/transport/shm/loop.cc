@@ -77,9 +77,7 @@ Loop::Loop() {
 }
 
 void Loop::close() {
-  bool wasClosed = false;
-  closed_.compare_exchange_strong(wasClosed, true);
-  if (!wasClosed) {
+  if (!closed_.exchange(true)) {
     reactor_.close();
     wakeup();
   }
@@ -88,9 +86,7 @@ void Loop::close() {
 void Loop::join() {
   close();
 
-  bool wasJoined = false;
-  joined_.compare_exchange_strong(wasJoined, true);
-  if (!wasJoined) {
+  if (!joined_.exchange(true)) {
     reactor_.join();
     thread_.join();
   }

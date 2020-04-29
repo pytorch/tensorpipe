@@ -29,9 +29,7 @@ Loop::Loop()
 }
 
 void Loop::close() {
-  bool wasClosed = false;
-  closed_.compare_exchange_strong(wasClosed, true);
-  if (!wasClosed) {
+  if (!closed_.exchange(true)) {
     // It's fine to capture this because the loop won't be destroyed until join
     // has completed, and join won't complete until this operation is performed.
     deferToLoop(
@@ -42,9 +40,7 @@ void Loop::close() {
 void Loop::join() {
   close();
 
-  bool wasJoined = false;
-  joined_.compare_exchange_strong(wasJoined, true);
-  if (!wasJoined) {
+  if (!joined_.exchange(true)) {
     // Wait for event loop thread to terminate.
     thread_.join();
 

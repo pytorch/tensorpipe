@@ -234,7 +234,6 @@ void Context::close() {
 
 void Context::Impl::close() {
   if (!closed_.exchange(true)) {
-
     TP_VLOG() << "Context " << id_ << " is closing";
 
     closingEmitter_.close();
