@@ -157,8 +157,8 @@ foreach (file ${TENSORPIPE_PUBLIC_HEADERS})
 endforeach()
 install(TARGETS tensorpipe
         EXPORT tensorpipe-targets
-        LIBRARY DESTINATION ${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}
-        ARCHIVE DESTINATION ${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR})
+        LIBRARY DESTINATION ${CMAKE_INSTALL_PREFIX}/lib
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_PREFIX}/lib)
 install(EXPORT tensorpipe-targets
         DESTINATION share/cmake/tensorpipe
         FILE TensorpipeTargets.cmake)
