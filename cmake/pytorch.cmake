@@ -129,11 +129,9 @@ find_package(uv REQUIRED)
 target_link_libraries(tensorpipe PRIVATE uv::uv)
 
 # Support `#include <tensorpipe/foo.h>`.
-target_include_directories(tensorpipe PUBLIC $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}>)
+target_include_directories(tensorpipe PUBLIC $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}>)
 
-if(Protobuf_DIR)
-  find_package(Protobuf 3 REQUIRED HINTS "${Protobuf_DIR}")
-else()
+if(NOT TARGET protobuf::libprotobuf)
   find_package(Protobuf 3 REQUIRED)
 endif()
 
@@ -158,5 +156,9 @@ foreach (file ${TENSORPIPE_PUBLIC_HEADERS})
           DESTINATION ${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_INCLUDEDIR}/${dir})
 endforeach()
 install(TARGETS tensorpipe
-        LIBRARY DESTINATION ${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}
-        ARCHIVE DESTINATION ${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR})
+        EXPORT tensorpipe-targets
+        LIBRARY DESTINATION ${CMAKE_INSTALL_PREFIX}/lib
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_PREFIX}/lib)
+install(EXPORT tensorpipe-targets
+        DESTINATION share/cmake/tensorpipe
+        FILE TensorpipeTargets.cmake)
