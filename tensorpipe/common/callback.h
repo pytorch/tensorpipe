@@ -68,60 +68,8 @@ auto cb_apply(F&& f, T&& t) {
 // A wrapper for a callback that "burns out" after it fires and thus needs to be
 // rearmed every time. Invocations that are triggered while the callback is
 // unarmed are stashed and will be delayed until a callback is provided again.
-// (This version of the class has its own lock which it uses to be thread safe)
 template <typename F, typename... Args>
-class RearmableCallbackWithOwnLock {
-  using TStoredArgs = std::tuple<typename std::remove_reference<Args>::type...>;
-
- public:
-  void arm(F&& f) {
-    std::unique_lock<std::mutex> lock(mutex_);
-    if (!args_.empty()) {
-      TStoredArgs args{std::move(args_.front())};
-      args_.pop_front();
-      lock.unlock();
-      cb_apply(std::move(f), std::move(args));
-    } else {
-      callbacks_.push_back(std::move(f));
-    }
-  };
-
-  void trigger(Args... args) {
-    std::unique_lock<std::mutex> lock(mutex_);
-    if (!callbacks_.empty()) {
-      F f{std::move(callbacks_.front())};
-      callbacks_.pop_front();
-      lock.unlock();
-      cb_apply(std::move(f), std::tuple<Args...>(std::forward<Args>(args)...));
-    } else {
-      args_.emplace_back(std::forward<Args>(args)...);
-    }
-  }
-
-  // This method is intended for "flushing" the callback, for example when an
-  // error condition is reached which means that no more callbacks will be
-  // processed but the current ones still must be honored.
-  void triggerAll(std::function<std::tuple<Args...>()> fn) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    while (!callbacks_.empty()) {
-      F f{std::move(callbacks_.front())};
-      callbacks_.pop_front();
-      cb_apply(std::move(f), fn());
-    }
-  }
-
- private:
-  std::mutex mutex_;
-  std::deque<F> callbacks_;
-  std::deque<TStoredArgs> args_;
-};
-
-// A wrapper for a callback that "burns out" after it fires and thus needs to be
-// rearmed every time. Invocations that are triggered while the callback is
-// unarmed are stashed and will be delayed until a callback is provided again.
-// (This version of the class forwards a user-provided lock to the callback)
-template <typename F, typename... Args>
-class LocklessRearmableCallback {
+class RearmableCallback {
   using TStoredArgs = std::tuple<typename std::remove_reference<Args>::type...>;
 
  public:
@@ -133,7 +81,7 @@ class LocklessRearmableCallback {
     } else {
       callbacks_.push_back(std::move(f));
     }
-  };
+  }
 
   void trigger(Args... args) {
     if (!callbacks_.empty()) {
