@@ -131,9 +131,7 @@ void Context::close() {
 }
 
 void Context::Impl::close() {
-  bool wasClosed = false;
-  closed_.compare_exchange_strong(wasClosed, true);
-  if (!wasClosed) {
+  if (!closed_.exchange(true)) {
     closingEmitter_.close();
     requests_.push(nullopt);
   }
@@ -146,9 +144,7 @@ void Context::join() {
 void Context::Impl::join() {
   close();
 
-  bool wasJoined = false;
-  joined_.compare_exchange_strong(wasJoined, true);
-  if (!wasJoined) {
+  if (!joined_.exchange(true)) {
     thread_.join();
     // TP_DCHECK(requests_.empty());
   }

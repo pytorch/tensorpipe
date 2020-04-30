@@ -233,10 +233,7 @@ void Context::close() {
 }
 
 void Context::Impl::close() {
-  bool wasClosed = false;
-  if (closed_.compare_exchange_strong(wasClosed, true)) {
-    TP_DCHECK(!wasClosed);
-
+  if (!closed_.exchange(true)) {
     TP_VLOG() << "Context " << id_ << " is closing";
 
     closingEmitter_.close();
@@ -257,10 +254,7 @@ void Context::join() {
 void Context::Impl::join() {
   close();
 
-  bool wasJoined = false;
-  if (joined_.compare_exchange_strong(wasJoined, true)) {
-    TP_DCHECK(!wasJoined);
-
+  if (!joined_.exchange(true)) {
     for (auto& iter : transports_) {
       iter.second->join();
     }
