@@ -68,26 +68,27 @@ auto cb_apply(F&& f, T&& t) {
 // A wrapper for a callback that "burns out" after it fires and thus needs to be
 // rearmed every time. Invocations that are triggered while the callback is
 // unarmed are stashed and will be delayed until a callback is provided again.
-template <typename F, typename... Args>
+template <typename... Args>
 class RearmableCallback {
+  using TFn = std::function<void(Args...)>;
   using TStoredArgs = std::tuple<typename std::remove_reference<Args>::type...>;
 
  public:
-  void arm(F&& f) {
+  void arm(TFn fn) {
     if (!args_.empty()) {
       TStoredArgs args{std::move(args_.front())};
       args_.pop_front();
-      cb_apply(std::move(f), std::move(args));
+      cb_apply(std::move(fn), std::move(args));
     } else {
-      callbacks_.push_back(std::move(f));
+      callbacks_.push_back(std::move(fn));
     }
   }
 
   void trigger(Args... args) {
     if (!callbacks_.empty()) {
-      F f{std::move(callbacks_.front())};
+      TFn fn{std::move(callbacks_.front())};
       callbacks_.pop_front();
-      cb_apply(std::move(f), std::tuple<Args...>(std::forward<Args>(args)...));
+      cb_apply(std::move(fn), std::tuple<Args...>(std::forward<Args>(args)...));
     } else {
       args_.emplace_back(std::forward<Args>(args)...);
     }
@@ -96,16 +97,16 @@ class RearmableCallback {
   // This method is intended for "flushing" the callback, for example when an
   // error condition is reached which means that no more callbacks will be
   // processed but the current ones still must be honored.
-  void triggerAll(std::function<std::tuple<Args...>()> fn) {
+  void triggerAll(std::function<std::tuple<Args...>()> generator) {
     while (!callbacks_.empty()) {
-      F f{std::move(callbacks_.front())};
+      TFn fn{std::move(callbacks_.front())};
       callbacks_.pop_front();
-      cb_apply(std::move(f), fn());
+      cb_apply(std::move(fn), generator());
     }
   }
 
  private:
-  std::deque<F> callbacks_;
+  std::deque<TFn> callbacks_;
   std::deque<TStoredArgs> args_;
 };
 

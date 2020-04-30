@@ -71,11 +71,7 @@ class Listener::Impl : public std::enable_shared_from_this<Listener::Impl> {
   // So we'll keep getting notified of new connections even if we don't know
   // what to do with them and don't want them. Thus we must store them
   // somewhere. This is what RearmableCallback is for.
-  RearmableCallback<
-      accept_callback_fn,
-      const Error&,
-      std::shared_ptr<Connection>>
-      callback_;
+  RearmableCallback<const Error&, std::shared_ptr<Connection>> callback_;
 
   // By having the instance store a shared_ptr to itself we create a reference
   // cycle which will "leak" the instance. This allows us to detach its

@@ -90,8 +90,7 @@ class Listener::Impl : public Listener::PrivateIface,
   // A sequence number for the invocations of the callbacks of accept.
   int64_t nextAcceptCallbackToCall_{0};
 
-  RearmableCallback<accept_callback_fn, const Error&, std::shared_ptr<Pipe>>
-      acceptCallback_;
+  RearmableCallback<const Error&, std::shared_ptr<Pipe>> acceptCallback_;
 
   // Needed to keep them alive.
   std::unordered_set<std::shared_ptr<transport::Connection>>
