@@ -163,16 +163,8 @@ class Pipe::Impl : public std::enable_shared_from_this<Pipe::Impl> {
   // Helpers to prepare callbacks from transports and listener
   //
 
-  EagerCallbackWrapper<Impl, const void*, size_t> readCallbackWrapper_;
-  LazyCallbackWrapper<Impl> readPacketCallbackWrapper_;
-  EagerCallbackWrapper<Impl> writeCallbackWrapper_;
-  LazyCallbackWrapper<Impl> writePacketCallbackWrapper_;
-  LazyCallbackWrapper<Impl, std::string, std::shared_ptr<transport::Connection>>
-      connectionRequestCallbackWrapper_;
-  EagerCallbackWrapper<Impl, channel::Channel::TDescriptor>
-      channelDescriptorCallbackWrapper_;
-  EagerCallbackWrapper<Impl> channelRecvCallbackWrapper_;
-  EagerCallbackWrapper<Impl> channelSendCallbackWrapper_;
+  LazyCallbackWrapper<Impl> lazyCallbackWrapper_{*this};
+  EagerCallbackWrapper<Impl> eagerCallbackWrapper_{*this};
 
   //
   // Helpers to schedule our callbacks into user code
@@ -223,9 +215,9 @@ class Pipe::Impl : public std::enable_shared_from_this<Pipe::Impl> {
 
   void checkForMessagesDoneCollectingTensorDescriptors_();
 
-  template <typename T, typename... Args>
+  template <typename T>
   friend class LazyCallbackWrapper;
-  template <typename T, typename... Args>
+  template <typename T>
   friend class EagerCallbackWrapper;
 };
 
@@ -265,15 +257,7 @@ Pipe::Impl::Impl(
     : state_(CLIENT_ABOUT_TO_SEND_HELLO_AND_BROCHURE),
       context_(std::move(context)),
       id_(std::move(id)),
-      closingReceiver_(context_, context_->getClosingEmitter()),
-      readCallbackWrapper_(*this),
-      readPacketCallbackWrapper_(*this),
-      writeCallbackWrapper_(*this),
-      writePacketCallbackWrapper_(*this),
-      connectionRequestCallbackWrapper_(*this),
-      channelDescriptorCallbackWrapper_(*this),
-      channelRecvCallbackWrapper_(*this),
-      channelSendCallbackWrapper_(*this) {
+      closingReceiver_(context_, context_->getClosingEmitter()) {
   std::string address;
   std::tie(transport_, address) = splitSchemeOfURL(url);
   connection_ = context_->getTransport(transport_)->connect(std::move(address));
@@ -291,15 +275,7 @@ Pipe::Impl::Impl(
       id_(std::move(id)),
       transport_(std::move(transport)),
       connection_(std::move(connection)),
-      closingReceiver_(context_, context_->getClosingEmitter()),
-      readCallbackWrapper_(*this),
-      readPacketCallbackWrapper_(*this),
-      writeCallbackWrapper_(*this),
-      writePacketCallbackWrapper_(*this),
-      connectionRequestCallbackWrapper_(*this),
-      channelDescriptorCallbackWrapper_(*this),
-      channelRecvCallbackWrapper_(*this),
-      channelSendCallbackWrapper_(*this) {}
+      closingReceiver_(context_, context_->getClosingEmitter()) {}
 
 void Pipe::Impl::init() {
   deferToLoop_([this]() { initFromLoop_(); });
@@ -316,7 +292,7 @@ void Pipe::Impl::initFromLoop_() {
     pbSpontaneousConnection->set_context_name(context_->getName());
     TP_VLOG() << "Pipe " << id_ << " writing proto (spontaneous connection)";
     connection_->write(
-        *pbPacketOut, writePacketCallbackWrapper_([pbPacketOut](Impl& impl) {
+        *pbPacketOut, lazyCallbackWrapper_([pbPacketOut](Impl& impl) {
           TP_VLOG() << "Pipe " << impl.id_
                     << " done writing proto (spontaneous connection)";
         }));
@@ -348,14 +324,14 @@ void Pipe::Impl::initFromLoop_() {
     }
     TP_VLOG() << "Pipe " << id_ << " writing proto (brochure)";
     connection_->write(
-        *pbPacketOut2, writePacketCallbackWrapper_([pbPacketOut2](Impl& impl) {
+        *pbPacketOut2, lazyCallbackWrapper_([pbPacketOut2](Impl& impl) {
           TP_VLOG() << "Pipe " << impl.id_ << " done writing proto (brochure)";
         }));
     state_ = CLIENT_WAITING_FOR_BROCHURE_ANSWER;
     auto pbPacketIn = std::make_shared<proto::Packet>();
     TP_VLOG() << "Pipe " << id_ << " reading proto (brochure answer)";
     connection_->read(
-        *pbPacketIn, readPacketCallbackWrapper_([pbPacketIn](Impl& impl) {
+        *pbPacketIn, lazyCallbackWrapper_([pbPacketIn](Impl& impl) {
           TP_VLOG() << "Pipe " << impl.id_
                     << " done reading proto (brochure answer)";
           impl.onReadWhileClientWaitingForBrochureAnswer_(*pbPacketIn);
@@ -365,7 +341,7 @@ void Pipe::Impl::initFromLoop_() {
     auto pbPacketIn = std::make_shared<proto::Packet>();
     TP_VLOG() << "Pipe " << id_ << " reading proto (brochure)";
     connection_->read(
-        *pbPacketIn, readPacketCallbackWrapper_([pbPacketIn](Impl& impl) {
+        *pbPacketIn, lazyCallbackWrapper_([pbPacketIn](Impl& impl) {
           TP_VLOG() << "Pipe " << impl.id_ << " done reading proto (brochure)";
           impl.onReadWhileServerWaitingForBrochure_(*pbPacketIn);
         }));
@@ -469,7 +445,7 @@ void Pipe::Impl::readDescriptorFromLoop_(read_descriptor_callback_fn fn) {
     auto pbPacketIn = std::make_shared<proto::Packet>();
     TP_VLOG() << "Pipe " << id_ << " reading proto (message descriptor)";
     connection_->read(
-        *pbPacketIn, readPacketCallbackWrapper_([pbPacketIn](Impl& impl) {
+        *pbPacketIn, lazyCallbackWrapper_([pbPacketIn](Impl& impl) {
           TP_VLOG() << "Pipe " << impl.id_
                     << " done reading proto (message descriptor)";
           impl.onReadOfMessageDescriptor_(*pbPacketIn);
@@ -535,7 +511,7 @@ void Pipe::Impl::readFromLoop_(Message message, read_callback_fn fn) {
   connection_->read(
       messageBeingRead.message.data,
       messageBeingRead.message.length,
-      readCallbackWrapper_(
+      eagerCallbackWrapper_(
           [sequenceNumber](
               Impl& impl, const void* /* unused */, size_t /* unused */) {
             TP_VLOG() << "Pipe " << impl.id_ << " done reading payload";
@@ -555,7 +531,7 @@ void Pipe::Impl::readFromLoop_(Message message, read_callback_fn fn) {
         std::move(tensorBeingAllocated.descriptor),
         tensor.data,
         tensor.length,
-        channelRecvCallbackWrapper_([sequenceNumber](Impl& impl) {
+        eagerCallbackWrapper_([sequenceNumber](Impl& impl) {
           TP_VLOG() << "Pipe " << impl.id_ << " done receiving tensor";
           impl.onRecvOfTensorData_(sequenceNumber);
         }));
@@ -567,7 +543,7 @@ void Pipe::Impl::readFromLoop_(Message message, read_callback_fn fn) {
     auto pbPacketIn = std::make_shared<proto::Packet>();
     TP_VLOG() << "Pipe " << id_ << " reading proto (message descriptor)";
     connection_->read(
-        *pbPacketIn, readPacketCallbackWrapper_([pbPacketIn](Impl& impl) {
+        *pbPacketIn, lazyCallbackWrapper_([pbPacketIn](Impl& impl) {
           TP_VLOG() << "Pipe " << impl.id_
                     << " done reading proto (message descriptor)";
           impl.onReadOfMessageDescriptor_(*pbPacketIn);
@@ -780,14 +756,14 @@ void Pipe::Impl::sendTensorsOfMessage_(
       channel.send(
           tensor.data,
           tensor.length,
-          channelDescriptorCallbackWrapper_(
+          eagerCallbackWrapper_(
               [sequenceNumber{messageBeingWritten.sequenceNumber}, tensorIdx](
                   Impl& impl, channel::Channel::TDescriptor descriptor) {
                 TP_VLOG() << "Pipe " << impl.id_ << " got tensor descriptor";
                 impl.onDescriptorOfTensor_(
                     sequenceNumber, tensorIdx, std::move(descriptor));
               }),
-          channelSendCallbackWrapper_(
+          eagerCallbackWrapper_(
               [sequenceNumber{messageBeingWritten.sequenceNumber}](Impl& impl) {
                 TP_VLOG() << "Pipe " << impl.id_ << " done sending tensor";
                 impl.onSendOfTensorData_(sequenceNumber);
@@ -836,7 +812,7 @@ void Pipe::Impl::writeMessage_(MessageBeingWritten& messageBeingWritten) {
 
   TP_VLOG() << "Pipe " << id_ << " writing proto (message descriptor)";
   connection_->write(
-      *pbPacketOut, writePacketCallbackWrapper_([pbPacketOut](Impl& impl) {
+      *pbPacketOut, lazyCallbackWrapper_([pbPacketOut](Impl& impl) {
         TP_VLOG() << "Pipe " << impl.id_
                   << " done writing proto (message descriptor)";
       }));
@@ -845,7 +821,7 @@ void Pipe::Impl::writeMessage_(MessageBeingWritten& messageBeingWritten) {
   connection_->write(
       messageBeingWritten.message.data,
       messageBeingWritten.message.length,
-      writeCallbackWrapper_(
+      eagerCallbackWrapper_(
           [sequenceNumber{messageBeingWritten.sequenceNumber}](Impl& impl) {
             TP_VLOG() << "Pipe " << impl.id_ << " done writing payload";
             impl.onWriteOfMessageData_(sequenceNumber);
@@ -901,8 +877,8 @@ void Pipe::Impl::onReadWhileServerWaitingForBrochure_(
       transport_ = transportName;
       TP_DCHECK(!registrationId_.has_value());
       TP_VLOG() << "Pipe " << id_ << " requesting connection (as replacement)";
-      uint64_t token = listener_->registerConnectionRequest(
-          connectionRequestCallbackWrapper_(
+      uint64_t token =
+          listener_->registerConnectionRequest(lazyCallbackWrapper_(
               [](Impl& impl,
                  std::string transport,
                  std::shared_ptr<transport::Connection> connection) {
@@ -942,17 +918,16 @@ void Pipe::Impl::onReadWhileServerWaitingForBrochure_(
     }
 
     TP_VLOG() << "Pipe " << id_ << " requesting connection (for channel)";
-    uint64_t token =
-        listener_->registerConnectionRequest(connectionRequestCallbackWrapper_(
-            [channelName](
-                Impl& impl,
-                std::string transport,
-                std::shared_ptr<transport::Connection> connection) {
-              TP_VLOG() << "Pipe " << impl.id_
-                        << " done requesting connection (for channel)";
-              impl.onAcceptWhileServerWaitingForChannel_(
-                  channelName, std::move(transport), std::move(connection));
-            }));
+    uint64_t token = listener_->registerConnectionRequest(lazyCallbackWrapper_(
+        [channelName](
+            Impl& impl,
+            std::string transport,
+            std::shared_ptr<transport::Connection> connection) {
+          TP_VLOG() << "Pipe " << impl.id_
+                    << " done requesting connection (for channel)";
+          impl.onAcceptWhileServerWaitingForChannel_(
+              channelName, std::move(transport), std::move(connection));
+        }));
     channelRegistrationIds_[channelName] = token;
     needToWaitForConnections = true;
     proto::ChannelSelection* pbChannelSelection =
@@ -962,7 +937,7 @@ void Pipe::Impl::onReadWhileServerWaitingForBrochure_(
 
   TP_VLOG() << "Pipe " << id_ << " writing proto (brochure answer)";
   connection_->write(
-      *pbPacketOut, writePacketCallbackWrapper_([pbPacketOut](Impl& impl) {
+      *pbPacketOut, lazyCallbackWrapper_([pbPacketOut](Impl& impl) {
         TP_VLOG() << "Pipe " << impl.id_
                   << " done writing proto (brochure answer)";
       }));
@@ -975,7 +950,7 @@ void Pipe::Impl::onReadWhileServerWaitingForBrochure_(
       auto pbPacketIn = std::make_shared<proto::Packet>();
       TP_VLOG() << "Pipe " << id_ << " reading proto (message descriptor)";
       connection_->read(
-          *pbPacketIn, readPacketCallbackWrapper_([pbPacketIn](Impl& impl) {
+          *pbPacketIn, lazyCallbackWrapper_([pbPacketIn](Impl& impl) {
             TP_VLOG() << "Pipe " << impl.id_
                       << " done reading proto (message descriptor)";
             impl.onReadOfMessageDescriptor_(*pbPacketIn);
@@ -1010,7 +985,7 @@ void Pipe::Impl::onReadWhileClientWaitingForBrochureAnswer_(
     pbRequestedConnection->set_registration_id(token);
     TP_VLOG() << "Pipe " << id_ << " writing proto (requested connection)";
     connection->write(
-        *pbPacketOut, writePacketCallbackWrapper_([pbPacketOut](Impl& impl) {
+        *pbPacketOut, lazyCallbackWrapper_([pbPacketOut](Impl& impl) {
           TP_VLOG() << "Pipe " << impl.id_
                     << " done writing proto (requested connection)";
         }));
@@ -1039,7 +1014,7 @@ void Pipe::Impl::onReadWhileClientWaitingForBrochureAnswer_(
     pbRequestedConnection->set_registration_id(token);
     TP_VLOG() << "Pipe " << id_ << " writing proto (requested connection)";
     connection->write(
-        *pbPacketOut, writePacketCallbackWrapper_([pbPacketOut](Impl& impl) {
+        *pbPacketOut, lazyCallbackWrapper_([pbPacketOut](Impl& impl) {
           TP_VLOG() << "Pipe " << impl.id_
                     << " done writing proto (requested connection)";
         }));
@@ -1057,7 +1032,7 @@ void Pipe::Impl::onReadWhileClientWaitingForBrochureAnswer_(
     auto pbPacketIn2 = std::make_shared<proto::Packet>();
     TP_VLOG() << "Pipe " << id_ << " reading proto (message descriptor)";
     connection_->read(
-        *pbPacketIn2, readPacketCallbackWrapper_([pbPacketIn2](Impl& impl) {
+        *pbPacketIn2, lazyCallbackWrapper_([pbPacketIn2](Impl& impl) {
           TP_VLOG() << "Pipe " << impl.id_
                     << " done reading proto (message descriptor)";
           impl.onReadOfMessageDescriptor_(*pbPacketIn2);
@@ -1086,7 +1061,7 @@ void Pipe::Impl::onAcceptWhileServerWaitingForConnection_(
       auto pbPacketIn = std::make_shared<proto::Packet>();
       TP_VLOG() << "Pipe " << id_ << " reading proto (message descriptor)";
       connection_->read(
-          *pbPacketIn, readPacketCallbackWrapper_([pbPacketIn](Impl& impl) {
+          *pbPacketIn, lazyCallbackWrapper_([pbPacketIn](Impl& impl) {
             TP_VLOG() << "Pipe " << impl.id_
                       << " done reading proto (message descriptor)";
             impl.onReadOfMessageDescriptor_(*pbPacketIn);
@@ -1127,7 +1102,7 @@ void Pipe::Impl::onAcceptWhileServerWaitingForChannel_(
       auto pbPacketIn = std::make_shared<proto::Packet>();
       TP_VLOG() << "Pipe " << id_ << " reading proto (message descriptor)";
       connection_->read(
-          *pbPacketIn, readPacketCallbackWrapper_([pbPacketIn](Impl& impl) {
+          *pbPacketIn, lazyCallbackWrapper_([pbPacketIn](Impl& impl) {
             TP_VLOG() << "Pipe " << impl.id_
                       << " done reading proto (message descriptor)";
             impl.onReadOfMessageDescriptor_(*pbPacketIn);

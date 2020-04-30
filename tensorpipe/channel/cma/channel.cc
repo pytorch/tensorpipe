@@ -106,26 +106,17 @@ class Channel::Impl : public std::enable_shared_from_this<Channel::Impl> {
 
   std::list<SendOperation> sendOperations_;
 
-  // Callback types used by the transport.
-  using TReadProtoCallback = transport::Connection::read_proto_callback_fn;
-  using TWriteCallback = transport::Connection::write_callback_fn;
-
-  // Callback types used in this class (in case of success).
-  using TBoundReadProtoCallback = std::function<void(Channel&)>;
-  using TBoundWriteCallback = std::function<void(Channel&)>;
-
-  LazyCallbackWrapper<Impl> readPacketCallbackWrapper_{*this};
-  LazyCallbackWrapper<Impl> writePacketCallbackWrapper_{*this};
-  EagerCallbackWrapper<Impl> copyCallbackWrapper_{*this};
+  LazyCallbackWrapper<Impl> lazyCallbackWrapper_{*this};
+  EagerCallbackWrapper<Impl> eagerCallbackWrapper_{*this};
 
   // Helper function to process transport error.
   // Shared between read and write callback entry points.
   void handleError_();
 
   // For some odd reason it seems we need to use a qualified name here...
-  template <typename T, typename... Args>
+  template <typename T>
   friend class tensorpipe::LazyCallbackWrapper;
-  template <typename T, typename... Args>
+  template <typename T>
   friend class tensorpipe::EagerCallbackWrapper;
 };
 
@@ -271,7 +262,7 @@ void Channel::Impl::recvFromLoop_(
       remotePtr,
       ptr,
       length,
-      copyCallbackWrapper_([id, callback{std::move(callback)}](Impl& impl) {
+      eagerCallbackWrapper_([id, callback{std::move(callback)}](Impl& impl) {
         // Let peer know we've completed the copy.
         auto pbPacketOut = std::make_shared<proto::Packet>();
         proto::Notification* pbNotification =
@@ -279,8 +270,7 @@ void Channel::Impl::recvFromLoop_(
         pbNotification->set_operation_id(id);
         impl.connection_->write(
             *pbPacketOut,
-            impl.writePacketCallbackWrapper_(
-                [pbPacketOut](Impl& /* unused */) {}));
+            impl.lazyCallbackWrapper_([pbPacketOut](Impl& /* unused */) {}));
         callback(impl.error_);
       }));
 }
@@ -308,10 +298,9 @@ void Channel::Impl::closeFromLoop_() {
 void Channel::Impl::readPacket_() {
   TP_DCHECK(inLoop_());
   auto pbPacketIn = std::make_shared<proto::Packet>();
-  connection_->read(
-      *pbPacketIn, readPacketCallbackWrapper_([pbPacketIn](Impl& impl) {
-        impl.onPacket_(*pbPacketIn);
-      }));
+  connection_->read(*pbPacketIn, lazyCallbackWrapper_([pbPacketIn](Impl& impl) {
+    impl.onPacket_(*pbPacketIn);
+  }));
 }
 
 void Channel::Impl::onPacket_(const proto::Packet& pbPacketIn) {

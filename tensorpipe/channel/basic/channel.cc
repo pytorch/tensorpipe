@@ -117,19 +117,17 @@ class Channel::Impl : public std::enable_shared_from_this<Channel::Impl> {
   void recvCompleted(const uint64_t);
 
   // Helpers to prepare callbacks from transports
-  EagerCallbackWrapper<Impl, const void*, size_t> readCallbackWrapper_;
-  LazyCallbackWrapper<Impl> readProtoCallbackWrapper_;
-  EagerCallbackWrapper<Impl> writeCallbackWrapper_;
-  LazyCallbackWrapper<Impl> writeProtoCallbackWrapper_;
+  LazyCallbackWrapper<Impl> lazyCallbackWrapper_{*this};
+  EagerCallbackWrapper<Impl> eagerCallbackWrapper_{*this};
 
   // Helper function to process transport error.
   // Shared between read and write callback entry points.
   void handleError_();
 
   // For some odd reason it seems we need to use a qualified name here...
-  template <typename T, typename... Args>
+  template <typename T>
   friend class tensorpipe::LazyCallbackWrapper;
-  template <typename T, typename... Args>
+  template <typename T>
   friend class tensorpipe::EagerCallbackWrapper;
 };
 
@@ -146,11 +144,7 @@ Channel::Impl::Impl(
     std::shared_ptr<transport::Connection> connection)
     : context_(std::move(context)),
       connection_(std::move(connection)),
-      closingReceiver_(context_, context_->getClosingEmitter()),
-      readCallbackWrapper_(*this),
-      readProtoCallbackWrapper_(*this),
-      writeCallbackWrapper_(*this),
-      writeProtoCallbackWrapper_(*this) {}
+      closingReceiver_(context_, context_->getClosingEmitter()) {}
 
 bool Channel::Impl::inLoop_() {
   return currentLoop_ == std::this_thread::get_id();
@@ -262,7 +256,7 @@ void Channel::Impl::recvFromLoop_(
   proto::Request* pbRequest = packet->mutable_request();
   pbRequest->set_operation_id(id);
   connection_->write(
-      *packet, writeProtoCallbackWrapper_([packet](Impl& /* unused */) {}));
+      *packet, lazyCallbackWrapper_([packet](Impl& /* unused */) {}));
   return;
 }
 
@@ -299,7 +293,7 @@ void Channel::Impl::closeFromLoop_() {
 void Channel::Impl::readPacket_() {
   TP_DCHECK(inLoop_());
   auto packet = std::make_shared<proto::Packet>();
-  connection_->read(*packet, readProtoCallbackWrapper_([packet](Impl& impl) {
+  connection_->read(*packet, lazyCallbackWrapper_([packet](Impl& impl) {
     impl.onPacket_(*packet);
   }));
 }
@@ -337,11 +331,10 @@ void Channel::Impl::onRequest_(const proto::Request& request) {
   proto::Reply* pbReply = pbPacketOut->mutable_reply();
   pbReply->set_operation_id(id);
   connection_->write(
-      *pbPacketOut,
-      writeProtoCallbackWrapper_([pbPacketOut](Impl& /* unused */) {}));
+      *pbPacketOut, lazyCallbackWrapper_([pbPacketOut](Impl& /* unused */) {}));
 
   // Write payload.
-  connection_->write(op.ptr, op.length, writeCallbackWrapper_([id](Impl& impl) {
+  connection_->write(op.ptr, op.length, eagerCallbackWrapper_([id](Impl& impl) {
                        impl.sendCompleted(id);
                      }));
 }
@@ -364,7 +357,7 @@ void Channel::Impl::onReply_(const proto::Reply& reply) {
   connection_->read(
       op.ptr,
       op.length,
-      readCallbackWrapper_(
+      eagerCallbackWrapper_(
           [id](Impl& impl, const void* /* unused */, size_t /* unused */) {
             impl.recvCompleted(id);
           }));

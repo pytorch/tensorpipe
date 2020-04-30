@@ -478,16 +478,12 @@ void Connection::Impl::initFromLoop() {
   inbox_.emplace(std::move(inboxRingBuffer));
 
   // Register method to be called when our peer writes to our inbox.
-  inboxReactorToken_ = context_->addReaction(
-      runIfAlive(*this, std::function<void(Impl&)>([](Impl& impl) {
-        impl.handleInboxReadableFromLoop();
-      })));
+  inboxReactorToken_ = context_->addReaction(runIfAlive(
+      *this, [](Impl& impl) { impl.handleInboxReadableFromLoop(); }));
 
   // Register method to be called when our peer reads from our outbox.
-  outboxReactorToken_ = context_->addReaction(
-      runIfAlive(*this, std::function<void(Impl&)>([](Impl& impl) {
-        impl.handleOutboxWritableFromLoop();
-      })));
+  outboxReactorToken_ = context_->addReaction(runIfAlive(
+      *this, [](Impl& impl) { impl.handleOutboxWritableFromLoop(); }));
 
   // We're sending file descriptors first, so wait for writability.
   state_ = SEND_FDS;

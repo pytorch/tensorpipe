@@ -132,9 +132,7 @@ class Listener::Impl : public Listener::PrivateIface,
   // Helpers to prepare callbacks from transports
   //
 
-  LazyCallbackWrapper<Impl> readPacketCallbackWrapper_;
-  LazyCallbackWrapper<Impl, std::shared_ptr<transport::Connection>>
-      acceptCallbackWrapper_;
+  LazyCallbackWrapper<Impl> lazyCallbackWrapper_{*this};
 
   //
   // Error handling
@@ -153,7 +151,7 @@ class Listener::Impl : public Listener::PrivateIface,
       std::shared_ptr<transport::Connection>,
       const proto::Packet&);
 
-  template <typename T, typename... Args>
+  template <typename T>
   friend class LazyCallbackWrapper;
 };
 
@@ -175,9 +173,7 @@ Listener::Impl::Impl(
     const std::vector<std::string>& urls)
     : context_(std::move(context)),
       id_(std::move(id)),
-      closingReceiver_(context_, context_->getClosingEmitter()),
-      readPacketCallbackWrapper_(*this),
-      acceptCallbackWrapper_(*this) {
+      closingReceiver_(context_, context_->getClosingEmitter()) {
   for (const auto& url : urls) {
     std::string transport;
     std::string address;
@@ -403,18 +399,17 @@ void Listener::Impl::onAccept_(
   auto pbPacketIn = std::make_shared<proto::Packet>();
   connection->read(
       *pbPacketIn,
-      readPacketCallbackWrapper_(
-          [pbPacketIn,
-           transport{std::move(transport)},
-           weakConnection{std::weak_ptr<transport::Connection>(connection)}](
-              Impl& impl) mutable {
-            std::shared_ptr<transport::Connection> connection =
-                weakConnection.lock();
-            TP_DCHECK(connection);
-            impl.connectionsWaitingForHello_.erase(connection);
-            impl.onConnectionHelloRead_(
-                std::move(transport), std::move(connection), *pbPacketIn);
-          }));
+      lazyCallbackWrapper_([pbPacketIn,
+                            transport{std::move(transport)},
+                            weakConnection{std::weak_ptr<transport::Connection>(
+                                connection)}](Impl& impl) mutable {
+        std::shared_ptr<transport::Connection> connection =
+            weakConnection.lock();
+        TP_DCHECK(connection);
+        impl.connectionsWaitingForHello_.erase(connection);
+        impl.onConnectionHelloRead_(
+            std::move(transport), std::move(connection), *pbPacketIn);
+      }));
 }
 
 void Listener::Impl::armListener_(std::string transport) {
@@ -424,7 +419,7 @@ void Listener::Impl::armListener_(std::string transport) {
     TP_THROW_EINVAL() << "unsupported transport " << transport;
   }
   auto transportListener = iter->second;
-  transportListener->accept(acceptCallbackWrapper_(
+  transportListener->accept(lazyCallbackWrapper_(
       [transport](
           Impl& impl, std::shared_ptr<transport::Connection> connection) {
         impl.onAccept_(transport, std::move(connection));

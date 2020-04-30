@@ -21,19 +21,28 @@
 
 namespace tensorpipe {
 
-// Wrap std::function such that it is only invoked if the object of type T is
-// still alive when the function is called. If T has been destructed in the mean
-// time, the std::function does not run.
-template <typename T, typename... Args>
-std::function<void(Args...)> runIfAlive(
-    std::enable_shared_from_this<T>& subject,
-    std::function<void(T&, Args...)> fn) {
+// Given an object (actually, something that can produce a shared_ptr of that
+// object) and a callable that takes a reference to such an object as its first
+// argument, return another callable that does three things:
+// - It holds a weak_ptr to the object, to avoid it being artificially kept
+//   alive by the mere existence of the returned callable.
+// - Once the returned callable is executed, it attempts to reacquire a
+//   shared_ptr and if it fails (meaning the object has been destroyed) it does
+//   not run the original callable (this feature is where this function takes
+//   its name from).
+// - It calls the original callable with a reference to object while holding on
+//   to the shared_ptr to make sure the object doesn't get destroyed while the
+//   callable is running.
+template <typename TSubject, typename TBoundFn>
+auto runIfAlive(
+    std::enable_shared_from_this<TSubject>& subject,
+    TBoundFn&& fn) {
   // In C++17 use weak_from_this().
-  return [weak{std::weak_ptr<T>(subject.shared_from_this())},
-          fn{std::move(fn)}](Args... args) {
-    auto shared = weak.lock();
+  return [weak{std::weak_ptr<TSubject>(subject.shared_from_this())},
+          fn{std::move(fn)}](auto&&... args) mutable {
+    std::shared_ptr<TSubject> shared = weak.lock();
     if (shared) {
-      fn(*shared, std::forward<Args>(args)...);
+      fn(*shared, std::forward<decltype(args)>(args)...);
     }
   };
 }
@@ -158,58 +167,58 @@ class LocklessRearmableCallback {
 // (thus allowing the object to be destroyed without the callback having fired)
 // and because in case of error it will deal with it on its own and won't end up
 // invoking the actual callback.
-template <typename T, typename... Args>
+template <typename TSubject>
 class LazyCallbackWrapper {
  public:
-  using TCallback = std::function<void(const Error&, Args...)>;
-  using TBoundCallback = std::function<void(T&, Args...)>;
-
-  LazyCallbackWrapper(std::enable_shared_from_this<T>& subject)
+  LazyCallbackWrapper(std::enable_shared_from_this<TSubject>& subject)
       : subject_(subject){};
 
-  TCallback operator()(TBoundCallback fn) {
+  template <typename TBoundFn>
+  auto operator()(TBoundFn&& fn) {
     return runIfAlive(
         subject_,
-        std::function<void(T&, const Error&, Args...)>(
-            [this, fn{std::move(fn)}](
-                T& subject, const Error& error, Args... args) mutable {
-              this->entryPoint_(
-                  subject, std::move(fn), error, std::move(args)...);
-            }));
+        [this, fn{std::move(fn)}](
+            TSubject& subject, const Error& error, auto&&... args) mutable {
+          this->entryPoint_(
+              subject,
+              std::move(fn),
+              error,
+              std::forward<decltype(args)>(args)...);
+        });
   }
 
  private:
-  std::enable_shared_from_this<T>& subject_;
+  std::enable_shared_from_this<TSubject>& subject_;
 
+  template <typename TBoundFn, typename... Args>
   void entryPoint_(
-      T& subject,
-      TBoundCallback fn,
+      TSubject& subject,
+      TBoundFn&& fn,
       const Error& error,
-      Args... args) {
+      Args&&... args) {
     // FIXME We're copying the args here...
     subject.deferToLoop_(
         [this, &subject, fn{std::move(fn)}, error, args...]() mutable {
           entryPointFromLoop_(
-              subject, std::move(fn), error, std::move(args)...);
+              subject, std::move(fn), error, std::forward<Args>(args)...);
         });
   }
 
+  template <typename TBoundFn, typename... Args>
   void entryPointFromLoop_(
-      T& subject,
-      TBoundCallback fn,
+      TSubject& subject,
+      TBoundFn fn,
       const Error& error,
-      Args... args) {
+      Args&&... args) {
     TP_DCHECK(subject.inLoop_());
 
     if (processError_(subject, error)) {
       return;
     }
-    if (fn) {
-      fn(subject, std::move(args)...);
-    }
+    fn(subject, std::forward<Args>(args)...);
   }
 
-  bool processError_(T& subject, const Error& error) {
+  bool processError_(TSubject& subject, const Error& error) {
     TP_DCHECK(subject.inLoop_());
 
     // Nothing to do if we already were in an error state or if there is no
@@ -239,54 +248,55 @@ class LazyCallbackWrapper {
 // invoking the actual callback.
 // The use case for this class is when a resource was "acquired" (e.g., a buffer
 // was passed to a transport) and it will be "released" by calling the callback.
-template <typename T, typename... Args>
+template <typename TSubject>
 class EagerCallbackWrapper {
  public:
-  using TCallback = std::function<void(const Error&, Args...)>;
-  using TBoundCallback = std::function<void(T&, Args...)>;
-
-  EagerCallbackWrapper(std::enable_shared_from_this<T>& subject)
+  EagerCallbackWrapper(std::enable_shared_from_this<TSubject>& subject)
       : subject_(subject){};
 
-  TCallback operator()(TBoundCallback fn) {
-    return std::function<void(const Error&, Args...)>(
-        [this, subject{subject_.shared_from_this()}, fn{std::move(fn)}](
-            const Error& error, Args... args) mutable {
-          this->entryPoint_(*subject, std::move(fn), error, std::move(args)...);
-        });
+  template <typename TBoundFn>
+  auto operator()(TBoundFn&& fn) {
+    return [this, subject{subject_.shared_from_this()}, fn{std::move(fn)}](
+               const Error& error, auto&&... args) mutable {
+      this->entryPoint_(
+          *subject,
+          std::move(fn),
+          error,
+          std::forward<decltype(args)>(args)...);
+    };
   }
 
  private:
-  std::enable_shared_from_this<T>& subject_;
+  std::enable_shared_from_this<TSubject>& subject_;
 
+  template <typename TBoundFn, typename... Args>
   void entryPoint_(
-      T& subject,
-      TBoundCallback fn,
+      TSubject& subject,
+      TBoundFn&& fn,
       const Error& error,
-      Args... args) {
+      Args&&... args) {
     // FIXME We're copying the args here...
     subject.deferToLoop_(
         [this, &subject, fn{std::move(fn)}, error, args...]() mutable {
           entryPointFromLoop_(
-              subject, std::move(fn), error, std::move(args)...);
+              subject, std::move(fn), error, std::forward<Args>(args)...);
         });
   }
 
+  template <typename TBoundFn, typename... Args>
   void entryPointFromLoop_(
-      T& subject,
-      TBoundCallback fn,
+      TSubject& subject,
+      TBoundFn fn,
       const Error& error,
-      Args... args) {
+      Args&&... args) {
     TP_DCHECK(subject.inLoop_());
 
     processError_(subject, error);
     // Proceed regardless of any error: this is why it's called "eager".
-    if (fn) {
-      fn(subject, std::move(args)...);
-    }
+    fn(subject, std::forward<Args>(args)...);
   }
 
-  void processError_(T& subject, const Error& error) {
+  void processError_(TSubject& subject, const Error& error) {
     TP_DCHECK(subject.inLoop_());
 
     // Nothing to do if we already were in an error state or if there is no
@@ -351,9 +361,7 @@ class ClosingReceiver {
     token_ = reinterpret_cast<uint64_t>(&subject);
     TP_DCHECK_GT(token_, 0);
     emitter_->subscribe(
-        token_, runIfAlive(subject, std::function<void(T&)>([](T& subject) {
-                             subject.close();
-                           })));
+        token_, runIfAlive(subject, [](T& subject) { subject.close(); }));
   }
 
   ~ClosingReceiver() {
