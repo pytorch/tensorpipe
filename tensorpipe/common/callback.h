@@ -153,77 +153,18 @@ class LocklessRearmableCallback {
 };
 
 // This class provides some boilerplate that is used by the pipe, the listener
-// and others when passing a callback to some lower-level component. It wraps
-// the callback in runIfAlive, and adds locking and error handling.
+// and others when passing a callback to some lower-level component.
+// It is called "lazy" because it will only acquire a weak_ptr to the object
+// (thus allowing the object to be destroyed without the callback having fired)
+// and because in case of error it will deal with it on its own and won't end up
+// invoking the actual callback.
 template <typename T, typename... Args>
-class CallbackWrapper {
- public:
-  using TLock = std::unique_lock<std::mutex>&;
-  using TCallback = std::function<void(const Error&, Args...)>;
-  using TBoundCallback = std::function<void(T&, Args..., TLock)>;
-
-  CallbackWrapper(std::enable_shared_from_this<T>& subject)
-      : subject_(subject){};
-
-  TCallback operator()(TBoundCallback callback) {
-    return runIfAlive(
-        subject_,
-        std::function<void(T&, const Error&, Args...)>(
-            [this, callback{std::move(callback)}](
-                T& subject, const Error& error, Args... args) mutable {
-              this->entryPoint_(
-                  subject, std::move(callback), error, std::move(args)...);
-            }));
-  }
-
- private:
-  std::enable_shared_from_this<T>& subject_;
-
-  void entryPoint_(
-      T& subject,
-      TBoundCallback callback,
-      const Error& error,
-      Args... args) {
-    std::unique_lock<std::mutex> lock(subject.mutex_);
-    if (processError_(subject, error, lock)) {
-      return;
-    }
-    if (callback) {
-      callback(subject, std::move(args)..., lock);
-    }
-  }
-
-  bool processError_(T& subject, const Error& error, TLock lock) {
-    TP_DCHECK(lock.owns_lock() && lock.mutex() == &subject.mutex_);
-
-    // Nothing to do if we already were in an error state or if there is no
-    // error.
-    if (subject.error_) {
-      return true;
-    }
-    if (!error) {
-      return false;
-    }
-
-    // Otherwise enter the error state and do the cleanup.
-    subject.error_ = error;
-
-    subject.handleError_(lock);
-
-    return true;
-  }
-};
-
-// This class has been copied from the above one, to convert it to the new
-// approach we're adopting in the pipe. If this approach proves successful we'll
-// adopt it everywhere and merge this class back into the original one.
-template <typename T, typename... Args>
-class DeferringCallbackWrapper {
+class LazyCallbackWrapper {
  public:
   using TCallback = std::function<void(const Error&, Args...)>;
   using TBoundCallback = std::function<void(T&, Args...)>;
 
-  DeferringCallbackWrapper(std::enable_shared_from_this<T>& subject)
+  LazyCallbackWrapper(std::enable_shared_from_this<T>& subject)
       : subject_(subject){};
 
   TCallback operator()(TBoundCallback fn) {
@@ -289,18 +230,22 @@ class DeferringCallbackWrapper {
   }
 };
 
-// This class is very similar to the above one, with the difference that the
-// callbacks wrapped by this class will *always* be called: the class will be
-// kept alive by the callback, and they will be called even in case of errors.
+// This class is very similar to the above one: it provides some boilerplate
+// that is used by the pipe, the listener and others when passing a callback to
+// some lower-level component.
+// It is called "eager" because it will acquire a shared_ptr to the object (thus
+// preventing the object from being destroyed until the callback has been fired)
+// and because in case of error it will deal with it but it will still end up
+// invoking the actual callback.
 // The use case for this class is when a resource was "acquired" (e.g., a buffer
 // was passed to a transport) and it will be "released" by calling the callback.
 template <typename T, typename... Args>
-class DeferringTolerantCallbackWrapper {
+class EagerCallbackWrapper {
  public:
   using TCallback = std::function<void(const Error&, Args...)>;
   using TBoundCallback = std::function<void(T&, Args...)>;
 
-  DeferringTolerantCallbackWrapper(std::enable_shared_from_this<T>& subject)
+  EagerCallbackWrapper(std::enable_shared_from_this<T>& subject)
       : subject_(subject){};
 
   TCallback operator()(TBoundCallback fn) {
@@ -335,7 +280,7 @@ class DeferringTolerantCallbackWrapper {
     TP_DCHECK(subject.inLoop_());
 
     processError_(subject, error);
-    // Proceed regardless of any error: this is why it's called "tolerant".
+    // Proceed regardless of any error: this is why it's called "eager".
     if (fn) {
       fn(subject, std::move(args)...);
     }

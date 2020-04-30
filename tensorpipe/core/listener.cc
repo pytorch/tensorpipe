@@ -132,8 +132,8 @@ class Listener::Impl : public Listener::PrivateIface,
   // Helpers to prepare callbacks from transports
   //
 
-  DeferringCallbackWrapper<Impl> readPacketCallbackWrapper_;
-  DeferringCallbackWrapper<Impl, std::shared_ptr<transport::Connection>>
+  LazyCallbackWrapper<Impl> readPacketCallbackWrapper_;
+  LazyCallbackWrapper<Impl, std::shared_ptr<transport::Connection>>
       acceptCallbackWrapper_;
 
   //
@@ -154,7 +154,7 @@ class Listener::Impl : public Listener::PrivateIface,
       const proto::Packet&);
 
   template <typename T, typename... Args>
-  friend class DeferringCallbackWrapper;
+  friend class LazyCallbackWrapper;
 };
 
 Listener::Listener(

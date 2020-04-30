@@ -114,9 +114,9 @@ class Channel::Impl : public std::enable_shared_from_this<Channel::Impl> {
   using TBoundReadProtoCallback = std::function<void(Channel&)>;
   using TBoundWriteCallback = std::function<void(Channel&)>;
 
-  DeferringCallbackWrapper<Impl> readPacketCallbackWrapper_{*this};
-  DeferringCallbackWrapper<Impl> writePacketCallbackWrapper_{*this};
-  DeferringTolerantCallbackWrapper<Impl> copyCallbackWrapper_{*this};
+  LazyCallbackWrapper<Impl> readPacketCallbackWrapper_{*this};
+  LazyCallbackWrapper<Impl> writePacketCallbackWrapper_{*this};
+  EagerCallbackWrapper<Impl> copyCallbackWrapper_{*this};
 
   // Helper function to process transport error.
   // Shared between read and write callback entry points.
@@ -124,9 +124,9 @@ class Channel::Impl : public std::enable_shared_from_this<Channel::Impl> {
 
   // For some odd reason it seems we need to use a qualified name here...
   template <typename T, typename... Args>
-  friend class tensorpipe::DeferringCallbackWrapper;
+  friend class tensorpipe::LazyCallbackWrapper;
   template <typename T, typename... Args>
-  friend class tensorpipe::DeferringTolerantCallbackWrapper;
+  friend class tensorpipe::EagerCallbackWrapper;
 };
 
 Channel::Channel(

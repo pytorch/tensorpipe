@@ -117,11 +117,10 @@ class Channel::Impl : public std::enable_shared_from_this<Channel::Impl> {
   void recvCompleted(const uint64_t);
 
   // Helpers to prepare callbacks from transports
-  DeferringTolerantCallbackWrapper<Impl, const void*, size_t>
-      readCallbackWrapper_;
-  DeferringCallbackWrapper<Impl> readProtoCallbackWrapper_;
-  DeferringTolerantCallbackWrapper<Impl> writeCallbackWrapper_;
-  DeferringCallbackWrapper<Impl> writeProtoCallbackWrapper_;
+  EagerCallbackWrapper<Impl, const void*, size_t> readCallbackWrapper_;
+  LazyCallbackWrapper<Impl> readProtoCallbackWrapper_;
+  EagerCallbackWrapper<Impl> writeCallbackWrapper_;
+  LazyCallbackWrapper<Impl> writeProtoCallbackWrapper_;
 
   // Helper function to process transport error.
   // Shared between read and write callback entry points.
@@ -129,9 +128,9 @@ class Channel::Impl : public std::enable_shared_from_this<Channel::Impl> {
 
   // For some odd reason it seems we need to use a qualified name here...
   template <typename T, typename... Args>
-  friend class tensorpipe::DeferringCallbackWrapper;
+  friend class tensorpipe::LazyCallbackWrapper;
   template <typename T, typename... Args>
-  friend class tensorpipe::DeferringTolerantCallbackWrapper;
+  friend class tensorpipe::EagerCallbackWrapper;
 };
 
 Channel::Channel(

@@ -163,20 +163,16 @@ class Pipe::Impl : public std::enable_shared_from_this<Pipe::Impl> {
   // Helpers to prepare callbacks from transports and listener
   //
 
-  DeferringTolerantCallbackWrapper<Impl, const void*, size_t>
-      readCallbackWrapper_;
-  DeferringCallbackWrapper<Impl> readPacketCallbackWrapper_;
-  DeferringTolerantCallbackWrapper<Impl> writeCallbackWrapper_;
-  DeferringCallbackWrapper<Impl> writePacketCallbackWrapper_;
-  DeferringCallbackWrapper<
-      Impl,
-      std::string,
-      std::shared_ptr<transport::Connection>>
+  EagerCallbackWrapper<Impl, const void*, size_t> readCallbackWrapper_;
+  LazyCallbackWrapper<Impl> readPacketCallbackWrapper_;
+  EagerCallbackWrapper<Impl> writeCallbackWrapper_;
+  LazyCallbackWrapper<Impl> writePacketCallbackWrapper_;
+  LazyCallbackWrapper<Impl, std::string, std::shared_ptr<transport::Connection>>
       connectionRequestCallbackWrapper_;
-  DeferringTolerantCallbackWrapper<Impl, channel::Channel::TDescriptor>
+  EagerCallbackWrapper<Impl, channel::Channel::TDescriptor>
       channelDescriptorCallbackWrapper_;
-  DeferringTolerantCallbackWrapper<Impl> channelRecvCallbackWrapper_;
-  DeferringTolerantCallbackWrapper<Impl> channelSendCallbackWrapper_;
+  EagerCallbackWrapper<Impl> channelRecvCallbackWrapper_;
+  EagerCallbackWrapper<Impl> channelSendCallbackWrapper_;
 
   //
   // Helpers to schedule our callbacks into user code
@@ -228,9 +224,9 @@ class Pipe::Impl : public std::enable_shared_from_this<Pipe::Impl> {
   void checkForMessagesDoneCollectingTensorDescriptors_();
 
   template <typename T, typename... Args>
-  friend class DeferringCallbackWrapper;
+  friend class LazyCallbackWrapper;
   template <typename T, typename... Args>
-  friend class DeferringTolerantCallbackWrapper;
+  friend class EagerCallbackWrapper;
 };
 
 //
