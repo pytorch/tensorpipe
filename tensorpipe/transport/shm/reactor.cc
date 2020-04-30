@@ -45,9 +45,7 @@ Reactor::Reactor() {
 }
 
 void Reactor::close() {
-  bool wasClosed = false;
-  closed_.compare_exchange_strong(wasClosed, true);
-  if (!wasClosed) {
+  if (!closed_.exchange(true)) {
     // No need to wake up the reactor, since it is busy-waiting.
   }
 }
@@ -55,9 +53,7 @@ void Reactor::close() {
 void Reactor::join() {
   close();
 
-  bool wasJoined = false;
-  joined_.compare_exchange_strong(wasJoined, true);
-  if (!wasJoined) {
+  if (!joined_.exchange(true)) {
     thread_.join();
   }
 }
