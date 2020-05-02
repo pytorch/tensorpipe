@@ -94,7 +94,7 @@ endif()
 ### uv
 
 list(APPEND TENSORPIPE_PUBLIC_HEADERS tensorpipe/transport/uv/context.h)
-list(APPEND TENSORPIIPE_SRC
+list(APPEND TENSORPIPE_SRC
   tensorpipe/transport/uv/connection.cc
   tensorpipe/transport/uv/context.cc
   tensorpipe/transport/uv/error.cc
