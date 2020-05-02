@@ -542,7 +542,7 @@ void Pipe::Impl::readFromLoop_(Message message, read_callback_fn fn) {
     connection_->read(
         payload.data,
         payload.length,
-        readCallbackWrapper_(
+        eagerCallbackWrapper_(
             [sequenceNumber](
                 Impl& impl, const void* /* unused */, size_t /* unused */) {
               TP_VLOG() << "Pipe " << impl.id_ << " done reading payload";
@@ -877,7 +877,7 @@ void Pipe::Impl::writeMessage_(MessageBeingWritten& messageBeingWritten) {
     connection_->write(
         payload.data,
         payload.length,
-        writeCallbackWrapper_(
+        eagerCallbackWrapper_(
             [sequenceNumber{messageBeingWritten.sequenceNumber}](Impl& impl) {
               TP_VLOG() << "Pipe " << impl.id_ << " done writing payload";
               impl.onWriteOfPayload_(sequenceNumber);
