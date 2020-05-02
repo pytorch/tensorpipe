@@ -160,12 +160,6 @@ class Pipe::Impl : public std::enable_shared_from_this<Pipe::Impl> {
   Error error_;
 
   //
-  // Initialization
-  //
-
-  void start_();
-
-  //
   // Helpers to prepare callbacks from transports and listener
   //
 
