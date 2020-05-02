@@ -79,6 +79,15 @@ class BufferWrapper {
   Py_buffer buffer_;
 };
 
+class OutgoingPayload {
+ public:
+  BufferWrapper buffer;
+  BufferWrapper metadata;
+
+  OutgoingPayload(const py::buffer& buffer, const py::buffer& metadata)
+      : buffer(buffer, PyBUF_SIMPLE), metadata(metadata, PyBUF_SIMPLE) {}
+};
+
 class OutgoingTensor {
  public:
   BufferWrapper buffer;
@@ -92,14 +101,17 @@ class OutgoingMessage {
  public:
   BufferWrapper buffer;
   BufferWrapper metadata;
+  std::vector<std::shared_ptr<OutgoingPayload>> payloads;
   std::vector<std::shared_ptr<OutgoingTensor>> tensors;
 
   OutgoingMessage(
       const py::buffer& buffer,
       const py::buffer& metadata,
+      const std::vector<std::shared_ptr<OutgoingPayload>>& payloads,
       const std::vector<std::shared_ptr<OutgoingTensor>>& tensors)
       : buffer(buffer, PyBUF_SIMPLE),
         metadata(metadata, PyBUF_SIMPLE),
+        payloads(payloads),
         tensors(tensors) {}
 };
 
@@ -109,6 +121,15 @@ tensorpipe::Message prepareToWrite(std::shared_ptr<OutgoingMessage> pyMessage) {
       pyMessage->buffer.length(),
       {reinterpret_cast<char*>(pyMessage->metadata.ptr()),
        pyMessage->metadata.length()}};
+  tpMessage.payloads.reserve(pyMessage->payloads.size());
+  for (const auto& pyPayload : pyMessage->payloads) {
+    tensorpipe::Message::Payload tpPayload{
+        pyPayload->buffer.ptr(),
+        pyPayload->buffer.length(),
+        {reinterpret_cast<char*>(pyPayload->metadata.ptr()),
+         pyPayload->metadata.length()}};
+    tpMessage.payloads.push_back(std::move(tpPayload));
+  }
   tpMessage.tensors.reserve(pyMessage->tensors.size());
   for (const auto& pyTensor : pyMessage->tensors) {
     tensorpipe::Message::Tensor tpTensor{
@@ -120,6 +141,25 @@ tensorpipe::Message prepareToWrite(std::shared_ptr<OutgoingMessage> pyMessage) {
   }
   return tpMessage;
 }
+
+class IncomingPayload {
+ public:
+  size_t length;
+  optional<BufferWrapper> buffer;
+  py::bytes metadata;
+
+  IncomingPayload(size_t length, py::bytes metadata)
+      : length(length), metadata(metadata) {}
+
+  void set_buffer(const py::buffer& pyBuffer) {
+    TP_THROW_ASSERT_IF(buffer.has_value()) << "Buffer already set";
+    buffer.emplace(pyBuffer, PyBUF_SIMPLE | PyBUF_WRITABLE);
+    if (buffer->length() != length) {
+      buffer.reset();
+      TP_THROW_ASSERT() << "Bad length";
+    }
+  }
+};
 
 class IncomingTensor {
  public:
@@ -145,13 +185,18 @@ class IncomingMessage {
   size_t length;
   optional<BufferWrapper> buffer;
   py::bytes metadata;
+  std::vector<std::shared_ptr<IncomingPayload>> payloads;
   std::vector<std::shared_ptr<IncomingTensor>> tensors;
 
   IncomingMessage(
       size_t length,
       py::bytes metadata,
+      std::vector<std::shared_ptr<IncomingPayload>> payloads,
       std::vector<std::shared_ptr<IncomingTensor>> tensors)
-      : length(length), metadata(metadata), tensors(tensors) {}
+      : length(length),
+        metadata(metadata),
+        payloads(payloads),
+        tensors(tensors) {}
 
   void set_buffer(const py::buffer& pyBuffer) {
     TP_THROW_ASSERT_IF(buffer.has_value()) << "Buffer already set";
@@ -165,6 +210,13 @@ class IncomingMessage {
 
 std::shared_ptr<IncomingMessage> prepareToAllocate(
     const tensorpipe::Message& tpMessage) {
+  std::vector<std::shared_ptr<IncomingPayload>> pyPayloads;
+  pyPayloads.reserve(tpMessage.payloads.size());
+  for (const auto& tpPayload : tpMessage.payloads) {
+    TP_DCHECK(tpPayload.data == nullptr);
+    pyPayloads.push_back(std::make_shared<IncomingPayload>(
+        tpPayload.length, tpPayload.metadata));
+  }
   std::vector<std::shared_ptr<IncomingTensor>> pyTensors;
   pyTensors.reserve(tpMessage.tensors.size());
   for (const auto& tpTensor : tpMessage.tensors) {
@@ -174,7 +226,10 @@ std::shared_ptr<IncomingMessage> prepareToAllocate(
   }
   TP_DCHECK(tpMessage.data == nullptr);
   auto pyMessage = std::make_shared<IncomingMessage>(
-      tpMessage.length, tpMessage.metadata, std::move(pyTensors));
+      tpMessage.length,
+      tpMessage.metadata,
+      std::move(pyPayloads),
+      std::move(pyTensors));
   return pyMessage;
 }
 
@@ -182,6 +237,13 @@ tensorpipe::Message prepareToRead(std::shared_ptr<IncomingMessage> pyMessage) {
   TP_THROW_ASSERT_IF(!pyMessage->buffer.has_value()) << "No buffer";
   tensorpipe::Message tpMessage{pyMessage->buffer.value().ptr(),
                                 pyMessage->buffer.value().length()};
+  tpMessage.payloads.reserve(pyMessage->payloads.size());
+  for (const auto& pyPayload : pyMessage->payloads) {
+    TP_THROW_ASSERT_IF(!pyPayload->buffer.has_value()) << "No buffer";
+    tensorpipe::Message::Payload tpPayload{pyPayload->buffer.value().ptr(),
+                                           pyPayload->buffer.value().length()};
+    tpMessage.payloads.push_back(std::move(tpPayload));
+  }
   tpMessage.tensors.reserve(pyMessage->tensors.size());
   for (const auto& pyTensor : pyMessage->tensors) {
     TP_THROW_ASSERT_IF(!pyTensor->buffer.has_value()) << "No buffer";
@@ -214,6 +276,11 @@ PYBIND11_MODULE(pytensorpipe, module) {
   shared_ptr_class_<tensorpipe::Listener> listener(module, "Listener");
   shared_ptr_class_<tensorpipe::Pipe> pipe(module, "Pipe");
 
+  shared_ptr_class_<OutgoingPayload> outgoingPayload(module, "OutgoingPayload");
+  outgoingPayload.def(
+      py::init<py::buffer, py::buffer>(),
+      py::arg("buffer"),
+      py::arg("metadata"));
   shared_ptr_class_<OutgoingTensor> outgoingTensor(module, "OutgoingTensor");
   outgoingTensor.def(
       py::init<py::buffer, py::buffer>(),
@@ -224,11 +291,24 @@ PYBIND11_MODULE(pytensorpipe, module) {
       py::init<
           py::buffer,
           py::buffer,
+          const std::vector<std::shared_ptr<OutgoingPayload>>,
           const std::vector<std::shared_ptr<OutgoingTensor>>>(),
       py::arg("buffer"),
       py::arg("metadata"),
+      py::arg("payloads"),
       py::arg("tensors"));
 
+  shared_ptr_class_<IncomingPayload> incomingPayload(
+      module, "IncomingPayload", py::buffer_protocol());
+  incomingPayload.def_readonly("length", &IncomingPayload::length);
+  incomingPayload.def_readonly("metadata", &IncomingPayload::metadata);
+  incomingPayload.def_property(
+      "buffer",
+      [](IncomingPayload& pyPayload) -> py::buffer_info {
+        TP_THROW_ASSERT_IF(!pyPayload.buffer.has_value()) << "No buffer";
+        return pyPayload.buffer->getBuffer();
+      },
+      &IncomingPayload::set_buffer);
   shared_ptr_class_<IncomingTensor> incomingTensor(
       module, "IncomingTensor", py::buffer_protocol());
   incomingTensor.def_readonly("length", &IncomingTensor::length);
@@ -244,6 +324,7 @@ PYBIND11_MODULE(pytensorpipe, module) {
       module, "IncomingMessage", py::buffer_protocol());
   incomingMessage.def_readonly("length", &IncomingMessage::length);
   incomingMessage.def_readonly("metadata", &IncomingMessage::metadata);
+  incomingMessage.def_readonly("payloads", &IncomingMessage::payloads);
   incomingMessage.def_readonly("tensors", &IncomingMessage::tensors);
   incomingMessage.def_property(
       "buffer",

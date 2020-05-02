@@ -109,7 +109,8 @@ TEST_P(TransportTest, Connection_ProtobufWrite) {
 
   this->testConnection(
       [&](std::shared_ptr<Connection> conn) {
-        auto message = std::make_shared<tensorpipe::proto::MessageDescriptor>();
+        auto message = std::make_shared<
+            tensorpipe::proto::MessageDescriptor::PayloadDescriptor>();
         conn->read(*message, [&, conn, message](const Error& error) {
           ASSERT_FALSE(error) << error.what();
           ASSERT_EQ(message->size_in_bytes(), kSize);
@@ -119,7 +120,8 @@ TEST_P(TransportTest, Connection_ProtobufWrite) {
         readCompletedFuture.wait();
       },
       [&](std::shared_ptr<Connection> conn) {
-        auto message = std::make_shared<tensorpipe::proto::MessageDescriptor>();
+        auto message = std::make_shared<
+            tensorpipe::proto::MessageDescriptor::PayloadDescriptor>();
         message->set_size_in_bytes(kSize);
         conn->write(*message, [&, conn, message](const Error& error) {
           ASSERT_FALSE(error) << error.what();

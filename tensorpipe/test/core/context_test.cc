@@ -60,10 +60,22 @@ namespace {
     const Message& m1,
     const Message& m2) {
   EXPECT_TRUE(buffersAreEqual(m1.data, m1.length, m2.data, m2.length));
+  if (m1.payloads.size() != m2.payloads.size()) {
+    return ::testing::AssertionFailure()
+        << "first message has " << m1.payloads.size()
+        << " payloads but second has " << m2.payloads.size();
+  }
+  for (size_t idx = 0; idx < m1.payloads.size(); idx++) {
+    EXPECT_TRUE(buffersAreEqual(
+        m1.payloads[idx].data,
+        m1.payloads[idx].length,
+        m2.payloads[idx].data,
+        m2.payloads[idx].length));
+  }
   if (m1.tensors.size() != m2.tensors.size()) {
     return ::testing::AssertionFailure()
-        << "first message has " << m1.tensors.size() << " but second has "
-        << m2.tensors.size();
+        << "first message has " << m1.tensors.size()
+        << " tensors but second has " << m2.tensors.size();
   }
   for (size_t idx = 0; idx < m1.tensors.size(); idx++) {
     EXPECT_TRUE(buffersAreEqual(
@@ -76,13 +88,21 @@ namespace {
 }
 
 std::string kMessageData = "I'm a message";
+std::string kPayloadData = "I'm a payload";
 std::string kTensorData = "And I'm a tensor";
 
-Message makeMessage(int numTensors) {
+Message makeMessage(int numPayloads, int numTensors) {
   Message message;
   message.data =
       reinterpret_cast<void*>(const_cast<char*>(kMessageData.data()));
   message.length = kMessageData.length();
+  for (int i = 0; i < numPayloads; i++) {
+    Message::Payload payload;
+    payload.data =
+        reinterpret_cast<void*>(const_cast<char*>(kPayloadData.data()));
+    payload.length = kPayloadData.length();
+    message.payloads.push_back(std::move(payload));
+  }
   for (int i = 0; i < numTensors; i++) {
     Message::Tensor tensor;
     tensor.data =
@@ -151,14 +171,15 @@ TEST(Context, ClientPingSerial) {
   });
   std::shared_ptr<Pipe> serverPipe = serverPipePromise.get_future().get();
 
-  clientPipe->write(makeMessage(1), [&](const Error& error, Message message) {
-    if (error) {
-      writtenMessagePromise.set_exception(
-          std::make_exception_ptr(std::runtime_error(error.what())));
-    } else {
-      writtenMessagePromise.set_value(std::move(message));
-    }
-  });
+  clientPipe->write(
+      makeMessage(1, 1), [&](const Error& error, Message message) {
+        if (error) {
+          writtenMessagePromise.set_exception(
+              std::make_exception_ptr(std::runtime_error(error.what())));
+        } else {
+          writtenMessagePromise.set_value(std::move(message));
+        }
+      });
 
   serverPipe->readDescriptor([&](const Error& error, Message message) {
     if (error) {
@@ -173,6 +194,11 @@ TEST(Context, ClientPingSerial) {
   auto messageData = std::make_unique<uint8_t[]>(message.length);
   message.data = messageData.get();
   buffers.push_back(std::move(messageData));
+  for (auto& payload : message.payloads) {
+    auto payloadData = std::make_unique<uint8_t[]>(payload.length);
+    payload.data = payloadData.get();
+    buffers.push_back(std::move(payloadData));
+  }
   for (auto& tensor : message.tensors) {
     auto tensorData = std::make_unique<uint8_t[]>(tensor.length);
     tensor.data = tensorData.get();
@@ -189,10 +215,10 @@ TEST(Context, ClientPingSerial) {
         }
       });
 
-  EXPECT_TRUE(
-      messagesAreEqual(readMessagePromise.get_future().get(), makeMessage(1)));
   EXPECT_TRUE(messagesAreEqual(
-      writtenMessagePromise.get_future().get(), makeMessage(1)));
+      readMessagePromise.get_future().get(), makeMessage(1, 1)));
+  EXPECT_TRUE(messagesAreEqual(
+      writtenMessagePromise.get_future().get(), makeMessage(1, 1)));
 
   serverPipe.reset();
   listener.reset();
@@ -241,6 +267,11 @@ TEST(Context, ClientPingInline) {
       auto messageData = std::make_unique<uint8_t[]>(message.length);
       message.data = messageData.get();
       buffers.push_back(std::move(messageData));
+      for (auto& payload : message.payloads) {
+        auto payloadData = std::make_unique<uint8_t[]>(payload.length);
+        payload.data = payloadData.get();
+        buffers.push_back(std::move(payloadData));
+      }
       for (auto& tensor : message.tensors) {
         auto tensorData = std::make_unique<uint8_t[]>(tensor.length);
         tensor.data = tensorData.get();
@@ -255,21 +286,22 @@ TEST(Context, ClientPingInline) {
               readCompletedProm.set_value();
               return;
             }
-            EXPECT_TRUE(messagesAreEqual(message, makeMessage(1)));
+            EXPECT_TRUE(messagesAreEqual(message, makeMessage(1, 1)));
             readCompletedProm.set_value();
           });
     });
   });
 
   auto clientPipe = context->connect(listener->url("uv"));
-  clientPipe->write(makeMessage(1), [&](const Error& error, Message message) {
-    if (error) {
-      ADD_FAILURE() << error.what();
-      writeCompletedProm.set_value();
-      return;
-    }
-    writeCompletedProm.set_value();
-  });
+  clientPipe->write(
+      makeMessage(1, 1), [&](const Error& error, Message /* unused */) {
+        if (error) {
+          ADD_FAILURE() << error.what();
+          writeCompletedProm.set_value();
+          return;
+        }
+        writeCompletedProm.set_value();
+      });
 
   readCompletedProm.get_future().get();
   writeCompletedProm.get_future().get();
@@ -317,9 +349,9 @@ TEST(Context, ServerPingPongTwice) {
     serverPipe = std::move(pipe);
     for (int i = 0; i < 2; i++) {
       serverPipe->write(
-          makeMessage(1),
+          makeMessage(1, 1),
           [&serverPipe, &pingCompletedProm, &buffers, &numPingsGoneThrough, i](
-              const Error& error, Message message) {
+              const Error& error, Message /* unused */) {
             if (error) {
               ADD_FAILURE() << error.what();
               pingCompletedProm.set_value();
@@ -339,6 +371,11 @@ TEST(Context, ServerPingPongTwice) {
               auto messageData = std::make_unique<uint8_t[]>(message.length);
               message.data = messageData.get();
               buffers.push_back(std::move(messageData));
+              for (auto& payload : message.payloads) {
+                auto payloadData = std::make_unique<uint8_t[]>(payload.length);
+                payload.data = payloadData.get();
+                buffers.push_back(std::move(payloadData));
+              }
               for (auto& tensor : message.tensors) {
                 auto tensorData = std::make_unique<uint8_t[]>(tensor.length);
                 tensor.data = tensorData.get();
@@ -353,7 +390,7 @@ TEST(Context, ServerPingPongTwice) {
                       pingCompletedProm.set_value();
                       return;
                     }
-                    EXPECT_TRUE(messagesAreEqual(message, makeMessage(1)));
+                    EXPECT_TRUE(messagesAreEqual(message, makeMessage(1, 1)));
                     EXPECT_EQ(numPingsGoneThrough, i);
                     numPingsGoneThrough++;
                     if (numPingsGoneThrough == 2) {
@@ -381,6 +418,11 @@ TEST(Context, ServerPingPongTwice) {
       auto messageData = std::make_unique<uint8_t[]>(message.length);
       message.data = messageData.get();
       buffers.push_back(std::move(messageData));
+      for (auto& payload : message.payloads) {
+        auto payloadData = std::make_unique<uint8_t[]>(payload.length);
+        payload.data = payloadData.get();
+        buffers.push_back(std::move(payloadData));
+      }
       for (auto& tensor : message.tensors) {
         auto tensorData = std::make_unique<uint8_t[]>(tensor.length);
         tensor.data = tensorData.get();
@@ -398,7 +440,7 @@ TEST(Context, ServerPingPongTwice) {
             clientPipe->write(
                 std::move(message),
                 [&pongCompletedProm, &buffers, &numPongsGoneThrough, i](
-                    const Error& error, Message message) {
+                    const Error& error, Message /* unused */) {
                   if (error) {
                     ADD_FAILURE() << error.what();
                     pongCompletedProm.set_value();
@@ -433,6 +475,11 @@ static void pipeRead(
     auto messageData = std::make_unique<uint8_t[]>(message.length);
     message.data = messageData.get();
     buffers.push_back(std::move(messageData));
+    for (auto& payload : message.payloads) {
+      auto payloadData = std::make_unique<uint8_t[]>(payload.length);
+      payload.data = payloadData.get();
+      buffers.push_back(std::move(payloadData));
+    }
     for (auto& tensor : message.tensors) {
       auto tensorData = std::make_unique<uint8_t[]>(tensor.length);
       tensor.data = tensorData.get();
@@ -477,14 +524,14 @@ TEST(Context, MixedTensorMessage) {
     serverPipe = std::move(pipe);
     pipeRead(serverPipe, buffers, [&](const Error& error, Message message) {
       ASSERT_FALSE(error);
-      EXPECT_TRUE(messagesAreEqual(message, makeMessage(1)));
+      EXPECT_TRUE(messagesAreEqual(message, makeMessage(1, 1)));
       if (--readNum == 0) {
         readCompletedProm.set_value();
       }
     });
     pipeRead(serverPipe, buffers, [&](const Error& error, Message message) {
       ASSERT_FALSE(error);
-      EXPECT_TRUE(messagesAreEqual(message, makeMessage(0)));
+      EXPECT_TRUE(messagesAreEqual(message, makeMessage(0, 0)));
       if (--readNum == 0) {
         readCompletedProm.set_value();
       }
@@ -493,18 +540,20 @@ TEST(Context, MixedTensorMessage) {
 
   auto clientPipe = context->connect(listener->url("uv"));
   std::atomic<int> writeNum(n);
-  clientPipe->write(makeMessage(1), [&](const Error& error, Message message) {
-    ASSERT_FALSE(error);
-    if (--writeNum == 0) {
-      writeCompletedProm.set_value();
-    }
-  });
-  clientPipe->write(makeMessage(0), [&](const Error& error, Message message) {
-    ASSERT_FALSE(error);
-    if (--writeNum == 0) {
-      writeCompletedProm.set_value();
-    }
-  });
+  clientPipe->write(
+      makeMessage(1, 1), [&](const Error& error, Message /* unused */) {
+        ASSERT_FALSE(error);
+        if (--writeNum == 0) {
+          writeCompletedProm.set_value();
+        }
+      });
+  clientPipe->write(
+      makeMessage(0, 0), [&](const Error& error, Message /* unused */) {
+        ASSERT_FALSE(error);
+        if (--writeNum == 0) {
+          writeCompletedProm.set_value();
+        }
+      });
 
   readCompletedProm.get_future().get();
   writeCompletedProm.get_future().get();

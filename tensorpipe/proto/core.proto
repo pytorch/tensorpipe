@@ -49,6 +49,11 @@ enum DeviceType {
 }
 
 message MessageDescriptor {
+  message PayloadDescriptor {
+    int64 size_in_bytes = 1;
+    bytes metadata = 2;
+  }
+
   message TensorDescriptor {
     int64 size_in_bytes = 1;
     bytes metadata = 2;
@@ -58,9 +63,11 @@ message MessageDescriptor {
     bytes channel_descriptor = 5;
   }
 
+  // FIXME Remove this once we remove the singleton payload
   int64 size_in_bytes = 1;
   bytes metadata = 2;
-  repeated TensorDescriptor tensor_descriptors = 3;
+  repeated PayloadDescriptor payload_descriptors = 3;
+  repeated TensorDescriptor tensor_descriptors = 4;
 }
 
 message Packet {

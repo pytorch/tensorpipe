@@ -108,6 +108,10 @@ class Pipe::Impl : public std::enable_shared_from_this<Pipe::Impl> {
   struct MessageBeingAllocated {
     int64_t sequenceNumber{-1};
     ssize_t length{-1};
+    struct Payload {
+      ssize_t length{-1};
+    };
+    std::vector<Payload> payloads;
     struct Tensor {
       ssize_t length{-1};
       std::string channelName;
@@ -121,7 +125,8 @@ class Pipe::Impl : public std::enable_shared_from_this<Pipe::Impl> {
     Message message;
     read_callback_fn callback;
     bool dataStillBeingRead{false};
-    int64_t numTensorDataStillBeingReceived{0};
+    int64_t numPayloadsStillBeingRead{0};
+    int64_t numTensorsStillBeingReceived{0};
   };
 
   struct MessageBeingWritten {
@@ -131,8 +136,9 @@ class Pipe::Impl : public std::enable_shared_from_this<Pipe::Impl> {
     bool startedWritingData{false};
     bool startedSendingTensors{false};
     bool dataStillBeingWritten{false};
+    int64_t numPayloadsStillBeingWritten{0};
     int64_t numTensorDescriptorsStillBeingCollected{0};
-    int64_t numTensorDataStillBeingSent{0};
+    int64_t numTensorsStillBeingSent{0};
     struct Tensor {
       std::string channelName;
       channel::Channel::TDescriptor descriptor;
@@ -209,9 +215,11 @@ class Pipe::Impl : public std::enable_shared_from_this<Pipe::Impl> {
   void onReadOfMessageDescriptor_(const proto::Packet&);
   void onDescriptorOfTensor_(int64_t, int64_t, channel::Channel::TDescriptor);
   void onReadOfMessageData_(int64_t);
-  void onRecvOfTensorData_(int64_t);
+  void onReadOfPayload_(int64_t);
+  void onRecvOfTensor_(int64_t);
   void onWriteOfMessageData_(int64_t);
-  void onSendOfTensorData_(int64_t);
+  void onWriteOfPayload_(int64_t);
+  void onSendOfTensor_(int64_t);
 
   void checkForMessagesDoneCollectingTensorDescriptors_();
 
@@ -483,6 +491,15 @@ void Pipe::Impl::readFromLoop_(Message message, read_callback_fn fn) {
   // Other sanity checks that must pass unless the user really messed up.
   TP_DCHECK_GE(messageBeingAllocated.length, 0);
   TP_THROW_ASSERT_IF(message.length != messageBeingAllocated.length);
+  size_t numPayloads = message.payloads.size();
+  TP_THROW_ASSERT_IF(numPayloads != messageBeingAllocated.payloads.size());
+  for (size_t payloadIdx = 0; payloadIdx < numPayloads; payloadIdx++) {
+    Message::Payload& payload = message.payloads[payloadIdx];
+    MessageBeingAllocated::Payload& payloadBeingAllocated =
+        messageBeingAllocated.payloads[payloadIdx];
+    TP_DCHECK_GE(payloadBeingAllocated.length, 0);
+    TP_THROW_ASSERT_IF(payload.length != payloadBeingAllocated.length);
+  }
   size_t numTensors = message.tensors.size();
   TP_THROW_ASSERT_IF(numTensors != messageBeingAllocated.tensors.size());
   for (size_t tensorIdx = 0; tensorIdx < numTensors; tensorIdx++) {
@@ -507,18 +524,33 @@ void Pipe::Impl::readFromLoop_(Message message, read_callback_fn fn) {
   }
 
   TP_DCHECK_EQ(connectionState_, NEXT_UP_IS_DATA);
-  TP_VLOG() << "Pipe " << id_ << " reading payload";
+  TP_VLOG() << "Pipe " << id_ << " reading (singleton) payload";
   connection_->read(
       messageBeingRead.message.data,
       messageBeingRead.message.length,
       eagerCallbackWrapper_(
           [sequenceNumber](
               Impl& impl, const void* /* unused */, size_t /* unused */) {
-            TP_VLOG() << "Pipe " << impl.id_ << " done reading payload";
+            TP_VLOG() << "Pipe " << impl.id_
+                      << " done reading (singleton) payload";
             impl.onReadOfMessageData_(sequenceNumber);
           }));
-  connectionState_ = NEXT_UP_IS_DESCRIPTOR;
   messageBeingRead.dataStillBeingRead = true;
+  for (size_t payloadIdx = 0; payloadIdx < numPayloads; payloadIdx++) {
+    Message::Payload& payload = messageBeingRead.message.payloads[payloadIdx];
+    TP_VLOG() << "Pipe " << id_ << " reading payload";
+    connection_->read(
+        payload.data,
+        payload.length,
+        readCallbackWrapper_(
+            [sequenceNumber](
+                Impl& impl, const void* /* unused */, size_t /* unused */) {
+              TP_VLOG() << "Pipe " << impl.id_ << " done reading payload";
+              impl.onReadOfPayload_(sequenceNumber);
+            }));
+    ++messageBeingRead.numPayloadsStillBeingRead;
+  }
+  connectionState_ = NEXT_UP_IS_DESCRIPTOR;
 
   for (size_t tensorIdx = 0; tensorIdx < numTensors; tensorIdx++) {
     Message::Tensor& tensor = messageBeingRead.message.tensors[tensorIdx];
@@ -533,9 +565,9 @@ void Pipe::Impl::readFromLoop_(Message message, read_callback_fn fn) {
         tensor.length,
         eagerCallbackWrapper_([sequenceNumber](Impl& impl) {
           TP_VLOG() << "Pipe " << impl.id_ << " done receiving tensor";
-          impl.onRecvOfTensorData_(sequenceNumber);
+          impl.onRecvOfTensor_(sequenceNumber);
         }));
-    ++messageBeingRead.numTensorDataStillBeingReceived;
+    ++messageBeingRead.numTensorsStillBeingReceived;
   }
 
   TP_DCHECK_EQ(connectionState_, NEXT_UP_IS_DESCRIPTOR);
@@ -656,8 +688,8 @@ void Pipe::Impl::triggerReadyCallbacks_() {
       // We don't check for error, because even in case of error we still must
       // wait for all transport/channel callbacks to return to be sure that no
       // other thread is working on the data.
-      if (!mRef.dataStillBeingRead &&
-          mRef.numTensorDataStillBeingReceived == 0) {
+      if (!mRef.dataStillBeingRead && mRef.numPayloadsStillBeingRead == 0 &&
+          mRef.numTensorsStillBeingReceived == 0) {
         MessageBeingRead mVal = std::move(messagesBeingRead_.front());
         messagesBeingRead_.pop_front();
         triggerReadCallback_(
@@ -674,18 +706,16 @@ void Pipe::Impl::triggerReadyCallbacks_() {
       // because even in case of error we still must wait for all transport/
       // channel callbacks to return to be sure that no other thread is working
       // on the data.
-      bool doneWritingData =
-          mRef.startedWritingData && !mRef.dataStillBeingWritten;
-      bool blockedWritingData =
-          mRef.startedWritingData && mRef.dataStillBeingWritten;
+      bool doneWritingData = mRef.startedWritingData &&
+          !mRef.dataStillBeingWritten && mRef.numPayloadsStillBeingWritten == 0;
+      bool blockedWritingData = mRef.startedWritingData &&
+          (mRef.dataStillBeingWritten || mRef.numPayloadsStillBeingWritten > 0);
       bool doneSendingTensors = mRef.startedSendingTensors &&
-          mRef.numTensorDescriptorsStillBeingCollected +
-                  mRef.numTensorDataStillBeingSent ==
-              0;
+          mRef.numTensorDescriptorsStillBeingCollected == 0 &&
+          mRef.numTensorsStillBeingSent == 0;
       bool blockedWritingTensors = mRef.startedSendingTensors &&
-          mRef.numTensorDescriptorsStillBeingCollected +
-                  mRef.numTensorDataStillBeingSent >
-              0;
+          (mRef.numTensorDescriptorsStillBeingCollected > 0 ||
+           mRef.numTensorsStillBeingSent > 0);
       if ((error_ && !blockedWritingData && !blockedWritingTensors) ||
           (doneWritingData && doneSendingTensors)) {
         MessageBeingWritten mVal = std::move(messagesBeingWritten_.front());
@@ -766,12 +796,12 @@ void Pipe::Impl::sendTensorsOfMessage_(
           eagerCallbackWrapper_(
               [sequenceNumber{messageBeingWritten.sequenceNumber}](Impl& impl) {
                 TP_VLOG() << "Pipe " << impl.id_ << " done sending tensor";
-                impl.onSendOfTensorData_(sequenceNumber);
+                impl.onSendOfTensor_(sequenceNumber);
               }));
       messageBeingWritten.tensors.push_back(
           MessageBeingWritten::Tensor{channelName});
       ++messageBeingWritten.numTensorDescriptorsStillBeingCollected;
-      ++messageBeingWritten.numTensorDataStillBeingSent;
+      ++messageBeingWritten.numTensorsStillBeingSent;
 
       foundAChannel = true;
       break;
@@ -792,6 +822,16 @@ void Pipe::Impl::writeMessage_(MessageBeingWritten& messageBeingWritten) {
 
   pbMessageDescriptor->set_size_in_bytes(messageBeingWritten.message.length);
   pbMessageDescriptor->set_metadata(messageBeingWritten.message.metadata);
+
+  for (int payloadIdx = 0;
+       payloadIdx < messageBeingWritten.message.payloads.size();
+       ++payloadIdx) {
+    const auto& payload = messageBeingWritten.message.payloads[payloadIdx];
+    proto::MessageDescriptor::PayloadDescriptor* pbPayloadDescriptor =
+        pbMessageDescriptor->add_payload_descriptors();
+    pbPayloadDescriptor->set_size_in_bytes(payload.length);
+    pbPayloadDescriptor->set_metadata(payload.metadata);
+  }
 
   TP_DCHECK_EQ(
       messageBeingWritten.message.tensors.size(),
@@ -817,16 +857,33 @@ void Pipe::Impl::writeMessage_(MessageBeingWritten& messageBeingWritten) {
                   << " done writing proto (message descriptor)";
       }));
 
-  TP_VLOG() << "Pipe " << id_ << " writing payload";
+  TP_VLOG() << "Pipe " << id_ << " writing (singleton) payload";
   connection_->write(
       messageBeingWritten.message.data,
       messageBeingWritten.message.length,
       eagerCallbackWrapper_(
           [sequenceNumber{messageBeingWritten.sequenceNumber}](Impl& impl) {
-            TP_VLOG() << "Pipe " << impl.id_ << " done writing payload";
+            TP_VLOG() << "Pipe " << impl.id_
+                      << " done writing (singleton) payload";
             impl.onWriteOfMessageData_(sequenceNumber);
           }));
   messageBeingWritten.dataStillBeingWritten = true;
+  for (size_t payloadIdx = 0;
+       payloadIdx < messageBeingWritten.message.payloads.size();
+       payloadIdx++) {
+    Message::Payload& payload =
+        messageBeingWritten.message.payloads[payloadIdx];
+    TP_VLOG() << "Pipe " << id_ << " writing payload";
+    connection_->write(
+        payload.data,
+        payload.length,
+        writeCallbackWrapper_(
+            [sequenceNumber{messageBeingWritten.sequenceNumber}](Impl& impl) {
+              TP_VLOG() << "Pipe " << impl.id_ << " done writing payload";
+              impl.onWriteOfPayload_(sequenceNumber);
+            }));
+    ++messageBeingWritten.numPayloadsStillBeingWritten;
+  }
 }
 
 void Pipe::Impl::onReadWhileServerWaitingForBrochure_(
@@ -1132,6 +1189,16 @@ void Pipe::Impl::onReadOfMessageDescriptor_(const proto::Packet& pbPacketIn) {
   message.length = pbMessageDescriptor.size_in_bytes();
   messageBeingAllocated.length = message.length;
   message.metadata = pbMessageDescriptor.metadata();
+  for (const auto& pbPayloadDescriptor :
+       pbMessageDescriptor.payload_descriptors()) {
+    Message::Payload payload;
+    MessageBeingAllocated::Payload payloadBeingAllocated;
+    payload.length = pbPayloadDescriptor.size_in_bytes();
+    payloadBeingAllocated.length = payload.length;
+    payload.metadata = pbPayloadDescriptor.metadata();
+    message.payloads.push_back(std::move(payload));
+    messageBeingAllocated.payloads.push_back(std::move(payloadBeingAllocated));
+  }
   for (const auto& pbTensorDescriptor :
        pbMessageDescriptor.tensor_descriptors()) {
     Message::Tensor tensor;
@@ -1188,7 +1255,7 @@ void Pipe::Impl::onReadOfMessageData_(int64_t sequenceNumber) {
   triggerReadyCallbacks_();
 }
 
-void Pipe::Impl::onRecvOfTensorData_(int64_t sequenceNumber) {
+void Pipe::Impl::onReadOfPayload_(int64_t sequenceNumber) {
   TP_DCHECK(inLoop_());
   auto iter = std::find_if(
       messagesBeingRead_.begin(), messagesBeingRead_.end(), [&](const auto& m) {
@@ -1196,7 +1263,19 @@ void Pipe::Impl::onRecvOfTensorData_(int64_t sequenceNumber) {
       });
   TP_DCHECK(iter != messagesBeingRead_.end());
   MessageBeingRead& messageBeingRead = *iter;
-  messageBeingRead.numTensorDataStillBeingReceived--;
+  messageBeingRead.numPayloadsStillBeingRead--;
+  triggerReadyCallbacks_();
+}
+
+void Pipe::Impl::onRecvOfTensor_(int64_t sequenceNumber) {
+  TP_DCHECK(inLoop_());
+  auto iter = std::find_if(
+      messagesBeingRead_.begin(), messagesBeingRead_.end(), [&](const auto& m) {
+        return m.sequenceNumber == sequenceNumber;
+      });
+  TP_DCHECK(iter != messagesBeingRead_.end());
+  MessageBeingRead& messageBeingRead = *iter;
+  messageBeingRead.numTensorsStillBeingReceived--;
   triggerReadyCallbacks_();
 }
 
@@ -1212,7 +1291,7 @@ void Pipe::Impl::onWriteOfMessageData_(int64_t sequenceNumber) {
   triggerReadyCallbacks_();
 }
 
-void Pipe::Impl::onSendOfTensorData_(int64_t sequenceNumber) {
+void Pipe::Impl::onWriteOfPayload_(int64_t sequenceNumber) {
   TP_DCHECK(inLoop_());
   auto iter = std::find_if(
       messagesBeingWritten_.begin(),
@@ -1220,7 +1299,19 @@ void Pipe::Impl::onSendOfTensorData_(int64_t sequenceNumber) {
       [&](const auto& m) { return m.sequenceNumber == sequenceNumber; });
   TP_DCHECK(iter != messagesBeingWritten_.end());
   MessageBeingWritten& messageBeingWritten = *iter;
-  messageBeingWritten.numTensorDataStillBeingSent--;
+  messageBeingWritten.numPayloadsStillBeingWritten--;
+  triggerReadyCallbacks_();
+}
+
+void Pipe::Impl::onSendOfTensor_(int64_t sequenceNumber) {
+  TP_DCHECK(inLoop_());
+  auto iter = std::find_if(
+      messagesBeingWritten_.begin(),
+      messagesBeingWritten_.end(),
+      [&](const auto& m) { return m.sequenceNumber == sequenceNumber; });
+  TP_DCHECK(iter != messagesBeingWritten_.end());
+  MessageBeingWritten& messageBeingWritten = *iter;
+  messageBeingWritten.numTensorsStillBeingSent--;
   triggerReadyCallbacks_();
 }
 

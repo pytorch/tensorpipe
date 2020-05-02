@@ -32,8 +32,9 @@ class TestTensorpipe(unittest.TestCase):
 
         def on_connection(pipe: tp.Pipe) -> None:
             global server_pipe
-            tensor = tp.OutgoingTensor(b"World!", b"")
-            message = tp.OutgoingMessage(b"Hello ", b"", [tensor])
+            payload = tp.OutgoingPayload(b"Hello ", b"a greeting")
+            tensor = tp.OutgoingTensor(b"World!", b"a place")
+            message = tp.OutgoingMessage(b"singleton", b"metadata", [payload], [tensor])
             pipe.write(message, on_write)
             server_pipe = pipe
 
@@ -45,15 +46,23 @@ class TestTensorpipe(unittest.TestCase):
         client_pipe: tp.Pipe = context.connect(listener.get_url("tcp"))
 
         received_message = None
+        received_payloads = None
         received_tensors = None
         read_completed = threading.Event()
 
         def on_read_descriptor(message: tp.IncomingMessage) -> None:
-            nonlocal received_message, received_tensors
+            nonlocal received_message, received_payloads, received_tensors
+            self.assertEqual(message.metadata, bytearray(b"metadata"))
             received_message = bytearray(message.length)
             message.buffer = received_message
+            received_payloads = []
+            for payload in message.payloads:
+                self.assertEqual(payload.metadata, bytearray(b"a greeting"))
+                received_payloads.append(bytearray(payload.length))
+                payload.buffer = received_payloads[-1]
             received_tensors = []
             for tensor in message.tensors:
+                self.assertEqual(tensor.metadata, bytearray(b"a place"))
                 received_tensors.append(bytearray(tensor.length))
                 tensor.buffer = received_tensors[-1]
             client_pipe.read(message, on_read)
@@ -66,7 +75,8 @@ class TestTensorpipe(unittest.TestCase):
         write_completed.wait()
         read_completed.wait()
 
-        self.assertEqual(received_message, bytearray(b"Hello "))
+        self.assertEqual(received_message, bytearray(b"singleton"))
+        self.assertEqual(received_payloads, [bytearray(b"Hello ")])
         self.assertEqual(received_tensors, [bytearray(b"World!")])
 
         # Due to a current limitation we're not releasing the GIL when calling
