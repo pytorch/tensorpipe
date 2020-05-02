@@ -40,7 +40,11 @@ if(NOT uv_FOUND)
   add_subdirectory(${PROJECT_SOURCE_DIR}/third_party/libuv
     ${PROJECT_BINARY_DIR}/third_party/libuv)
 
-  add_library(uv::uv ALIAS uv_a)
+  if (BUILD_SHARED_LIBS)
+    add_library(uv::uv ALIAS uv)
+  else()
+    add_library(uv::uv ALIAS uv_a)
+  endif()
 endif()
 
 include(FindPackageHandleStandardArgs)
