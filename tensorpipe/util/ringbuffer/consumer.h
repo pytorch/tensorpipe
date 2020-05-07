@@ -154,6 +154,10 @@ class Consumer : public RingBufferWrapper {
     return static_cast<ssize_t>(size);
   }
 
+  void semWaitData() {
+    semWait_();
+  }
+
  protected:
   bool inTx_{false};
 

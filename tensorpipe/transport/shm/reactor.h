@@ -83,6 +83,7 @@ class Reactor final {
   std::atomic<bool> closed_{false};
   std::atomic<bool> joined_{false};
 
+  TToken wakeUpToken_;
   TToken deferredFunctionToken_;
   std::mutex deferredFunctionMutex_;
   std::list<TDeferredFunction> deferredFunctionList_;

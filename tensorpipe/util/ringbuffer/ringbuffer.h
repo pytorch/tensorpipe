@@ -8,6 +8,7 @@
 
 #pragma once
 
+#include <semaphore.h>
 #include <sys/types.h>
 
 #include <atomic>
@@ -76,6 +77,12 @@ class RingBufferHeader {
            " buffer to ever be larger than what an int can hold";
     in_write_tx.clear();
     in_read_tx.clear();
+
+    // Init semaphore to work on shared memory.
+    int ret = sem_init(&sem_, 1, 0);
+    if (ret != 0) {
+      TP_THROW_SYSTEM(errno);
+    }
   }
 
   // Get size that is only guaranteed to be correct when producers and consumers
@@ -107,6 +114,14 @@ class RingBufferHeader {
     atomicTail_.store(atomicHead_.load());
   }
 
+  void semWait() {
+    sem_wait(&sem_);
+  }
+
+  void semPost() {
+    sem_post(&sem_);
+  }
+
   // acquired by producers.
   std::atomic_flag in_write_tx;
   // acquired by consumers.
@@ -117,6 +132,8 @@ class RingBufferHeader {
   std::atomic<uint64_t> atomicHead_{0};
   // Written by consumer.
   std::atomic<uint64_t> atomicTail_{0};
+
+  sem_t sem_;
 
   // http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2007/n2427.html#atomics.lockfree
   // static_assert(
@@ -194,6 +211,14 @@ class RingBufferWrapper {
   }
 
  protected:
+  void semWait_() {
+    header_.semWait();
+  }
+
+  void semPost_() {
+    header_.semPost();
+  }
+
   std::shared_ptr<RingBuffer> rb_;
   RingBufferHeader& header_;
   uint8_t* const data_;
