@@ -59,7 +59,6 @@ namespace {
 ::testing::AssertionResult messagesAreEqual(
     const Message& m1,
     const Message& m2) {
-  EXPECT_TRUE(buffersAreEqual(m1.data, m1.length, m2.data, m2.length));
   if (m1.payloads.size() != m2.payloads.size()) {
     return ::testing::AssertionFailure()
         << "first message has " << m1.payloads.size()
@@ -87,15 +86,11 @@ namespace {
   return ::testing::AssertionSuccess();
 }
 
-std::string kMessageData = "I'm a message";
 std::string kPayloadData = "I'm a payload";
 std::string kTensorData = "And I'm a tensor";
 
 Message makeMessage(int numPayloads, int numTensors) {
   Message message;
-  message.data =
-      reinterpret_cast<void*>(const_cast<char*>(kMessageData.data()));
-  message.length = kMessageData.length();
   for (int i = 0; i < numPayloads; i++) {
     Message::Payload payload;
     payload.data =
@@ -191,9 +186,6 @@ TEST(Context, ClientPingSerial) {
   });
 
   Message message(readDescriptorPromise.get_future().get());
-  auto messageData = std::make_unique<uint8_t[]>(message.length);
-  message.data = messageData.get();
-  buffers.push_back(std::move(messageData));
   for (auto& payload : message.payloads) {
     auto payloadData = std::make_unique<uint8_t[]>(payload.length);
     payload.data = payloadData.get();
@@ -264,9 +256,6 @@ TEST(Context, ClientPingInline) {
         readCompletedProm.set_value();
         return;
       }
-      auto messageData = std::make_unique<uint8_t[]>(message.length);
-      message.data = messageData.get();
-      buffers.push_back(std::move(messageData));
       for (auto& payload : message.payloads) {
         auto payloadData = std::make_unique<uint8_t[]>(payload.length);
         payload.data = payloadData.get();
@@ -368,9 +357,6 @@ TEST(Context, ServerPingPongTwice) {
                 pingCompletedProm.set_value();
                 return;
               }
-              auto messageData = std::make_unique<uint8_t[]>(message.length);
-              message.data = messageData.get();
-              buffers.push_back(std::move(messageData));
               for (auto& payload : message.payloads) {
                 auto payloadData = std::make_unique<uint8_t[]>(payload.length);
                 payload.data = payloadData.get();
@@ -415,9 +401,6 @@ TEST(Context, ServerPingPongTwice) {
         pongCompletedProm.set_value();
         return;
       }
-      auto messageData = std::make_unique<uint8_t[]>(message.length);
-      message.data = messageData.get();
-      buffers.push_back(std::move(messageData));
       for (auto& payload : message.payloads) {
         auto payloadData = std::make_unique<uint8_t[]>(payload.length);
         payload.data = payloadData.get();
@@ -472,9 +455,6 @@ static void pipeRead(
   pipe->readDescriptor([&pipe, &buffers, fn{std::move(fn)}](
                            const Error& error, Message message) mutable {
     ASSERT_FALSE(error);
-    auto messageData = std::make_unique<uint8_t[]>(message.length);
-    message.data = messageData.get();
-    buffers.push_back(std::move(messageData));
     for (auto& payload : message.payloads) {
       auto payloadData = std::make_unique<uint8_t[]>(payload.length);
       payload.data = payloadData.get();

@@ -63,11 +63,9 @@ message MessageDescriptor {
     bytes channel_descriptor = 5;
   }
 
-  // FIXME Remove this once we remove the singleton payload
-  int64 size_in_bytes = 1;
-  bytes metadata = 2;
-  repeated PayloadDescriptor payload_descriptors = 3;
-  repeated TensorDescriptor tensor_descriptors = 4;
+  bytes metadata = 1;
+  repeated PayloadDescriptor payload_descriptors = 2;
+  repeated TensorDescriptor tensor_descriptors = 3;
 }
 
 message Packet {

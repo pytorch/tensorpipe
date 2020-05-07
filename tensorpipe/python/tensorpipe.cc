@@ -99,26 +99,21 @@ class OutgoingTensor {
 
 class OutgoingMessage {
  public:
-  BufferWrapper buffer;
   BufferWrapper metadata;
   std::vector<std::shared_ptr<OutgoingPayload>> payloads;
   std::vector<std::shared_ptr<OutgoingTensor>> tensors;
 
   OutgoingMessage(
-      const py::buffer& buffer,
       const py::buffer& metadata,
       const std::vector<std::shared_ptr<OutgoingPayload>>& payloads,
       const std::vector<std::shared_ptr<OutgoingTensor>>& tensors)
-      : buffer(buffer, PyBUF_SIMPLE),
-        metadata(metadata, PyBUF_SIMPLE),
+      : metadata(metadata, PyBUF_SIMPLE),
         payloads(payloads),
         tensors(tensors) {}
 };
 
 tensorpipe::Message prepareToWrite(std::shared_ptr<OutgoingMessage> pyMessage) {
   tensorpipe::Message tpMessage{
-      pyMessage->buffer.ptr(),
-      pyMessage->buffer.length(),
       {reinterpret_cast<char*>(pyMessage->metadata.ptr()),
        pyMessage->metadata.length()}};
   tpMessage.payloads.reserve(pyMessage->payloads.size());
@@ -182,30 +177,15 @@ class IncomingTensor {
 
 class IncomingMessage {
  public:
-  size_t length;
-  optional<BufferWrapper> buffer;
   py::bytes metadata;
   std::vector<std::shared_ptr<IncomingPayload>> payloads;
   std::vector<std::shared_ptr<IncomingTensor>> tensors;
 
   IncomingMessage(
-      size_t length,
       py::bytes metadata,
       std::vector<std::shared_ptr<IncomingPayload>> payloads,
       std::vector<std::shared_ptr<IncomingTensor>> tensors)
-      : length(length),
-        metadata(metadata),
-        payloads(payloads),
-        tensors(tensors) {}
-
-  void set_buffer(const py::buffer& pyBuffer) {
-    TP_THROW_ASSERT_IF(buffer.has_value()) << "Buffer already set";
-    buffer.emplace(pyBuffer, PyBUF_SIMPLE | PyBUF_WRITABLE);
-    if (buffer->length() != length) {
-      buffer.reset();
-      TP_THROW_ASSERT() << "Bad length";
-    }
-  }
+      : metadata(metadata), payloads(payloads), tensors(tensors) {}
 };
 
 std::shared_ptr<IncomingMessage> prepareToAllocate(
@@ -224,19 +204,13 @@ std::shared_ptr<IncomingMessage> prepareToAllocate(
     pyTensors.push_back(
         std::make_shared<IncomingTensor>(tpTensor.length, tpTensor.metadata));
   }
-  TP_DCHECK(tpMessage.data == nullptr);
   auto pyMessage = std::make_shared<IncomingMessage>(
-      tpMessage.length,
-      tpMessage.metadata,
-      std::move(pyPayloads),
-      std::move(pyTensors));
+      tpMessage.metadata, std::move(pyPayloads), std::move(pyTensors));
   return pyMessage;
 }
 
 tensorpipe::Message prepareToRead(std::shared_ptr<IncomingMessage> pyMessage) {
-  TP_THROW_ASSERT_IF(!pyMessage->buffer.has_value()) << "No buffer";
-  tensorpipe::Message tpMessage{pyMessage->buffer.value().ptr(),
-                                pyMessage->buffer.value().length()};
+  tensorpipe::Message tpMessage;
   tpMessage.payloads.reserve(pyMessage->payloads.size());
   for (const auto& pyPayload : pyMessage->payloads) {
     TP_THROW_ASSERT_IF(!pyPayload->buffer.has_value()) << "No buffer";
@@ -290,10 +264,8 @@ PYBIND11_MODULE(pytensorpipe, module) {
   outgoingMessage.def(
       py::init<
           py::buffer,
-          py::buffer,
           const std::vector<std::shared_ptr<OutgoingPayload>>,
           const std::vector<std::shared_ptr<OutgoingTensor>>>(),
-      py::arg("buffer"),
       py::arg("metadata"),
       py::arg("payloads"),
       py::arg("tensors"));
@@ -322,17 +294,9 @@ PYBIND11_MODULE(pytensorpipe, module) {
       &IncomingTensor::set_buffer);
   shared_ptr_class_<IncomingMessage> incomingMessage(
       module, "IncomingMessage", py::buffer_protocol());
-  incomingMessage.def_readonly("length", &IncomingMessage::length);
   incomingMessage.def_readonly("metadata", &IncomingMessage::metadata);
   incomingMessage.def_readonly("payloads", &IncomingMessage::payloads);
   incomingMessage.def_readonly("tensors", &IncomingMessage::tensors);
-  incomingMessage.def_property(
-      "buffer",
-      [](IncomingMessage& pyMessage) -> py::buffer_info {
-        TP_THROW_ASSERT_IF(!pyMessage.buffer.has_value()) << "No buffer";
-        return pyMessage.buffer->getBuffer();
-      },
-      &IncomingMessage::set_buffer);
 
   // Creators.
 

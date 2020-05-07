@@ -34,7 +34,7 @@ class TestTensorpipe(unittest.TestCase):
             global server_pipe
             payload = tp.OutgoingPayload(b"Hello ", b"a greeting")
             tensor = tp.OutgoingTensor(b"World!", b"a place")
-            message = tp.OutgoingMessage(b"singleton", b"metadata", [payload], [tensor])
+            message = tp.OutgoingMessage(b"metadata", [payload], [tensor])
             pipe.write(message, on_write)
             server_pipe = pipe
 
@@ -45,16 +45,13 @@ class TestTensorpipe(unittest.TestCase):
 
         client_pipe: tp.Pipe = context.connect(listener.get_url("tcp"))
 
-        received_message = None
         received_payloads = None
         received_tensors = None
         read_completed = threading.Event()
 
         def on_read_descriptor(message: tp.IncomingMessage) -> None:
-            nonlocal received_message, received_payloads, received_tensors
+            nonlocal received_payloads, received_tensors
             self.assertEqual(message.metadata, bytearray(b"metadata"))
-            received_message = bytearray(message.length)
-            message.buffer = received_message
             received_payloads = []
             for payload in message.payloads:
                 self.assertEqual(payload.metadata, bytearray(b"a greeting"))
@@ -75,7 +72,6 @@ class TestTensorpipe(unittest.TestCase):
         write_completed.wait()
         read_completed.wait()
 
-        self.assertEqual(received_message, bytearray(b"singleton"))
         self.assertEqual(received_payloads, [bytearray(b"Hello ")])
         self.assertEqual(received_tensors, [bytearray(b"World!")])
 
