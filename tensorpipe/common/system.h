@@ -15,8 +15,6 @@
 #include <sstream>
 #include <string>
 
-#include <x86intrin.h>
-
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/optional.h>
 
