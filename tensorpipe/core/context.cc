@@ -44,7 +44,7 @@ std::string createContextId() {
 class Context::Impl : public Context::PrivateIface,
                       public std::enable_shared_from_this<Context::Impl> {
  public:
-  explicit Impl(std::string name);
+  explicit Impl(ContextOptions opts);
 
   void registerTransport(
       int64_t,
@@ -55,7 +55,7 @@ class Context::Impl : public Context::PrivateIface,
 
   std::shared_ptr<Listener> listen(const std::vector<std::string>&);
 
-  std::shared_ptr<Pipe> connect(const std::string&, std::string name);
+  std::shared_ptr<Pipe> connect(const std::string&, PipeOptions opts);
 
   ClosingEmitter& getClosingEmitter() override;
 
@@ -109,11 +109,11 @@ class Context::Impl : public Context::PrivateIface,
   ClosingEmitter closingEmitter_;
 };
 
-Context::Context(std::string name)
-    : impl_(std::make_shared<Context::Impl>(std::move(name))) {}
+Context::Context(ContextOptions opts)
+    : impl_(std::make_shared<Context::Impl>(std::move(opts))) {}
 
-Context::Impl::Impl(std::string name)
-    : id_(createContextId()), name_(std::move(name)) {
+Context::Impl::Impl(ContextOptions opts)
+    : id_(createContextId()), name_(std::move(opts.name_)) {
   TP_VLOG() << "Context " << id_ << " corresponds to " << name_;
 }
 
@@ -177,16 +177,16 @@ std::shared_ptr<Listener> Context::Impl::listen(
 
 std::shared_ptr<Pipe> Context::connect(
     const std::string& url,
-    std::string name) {
-  return impl_->connect(url, std::move(name));
+    PipeOptions opts) {
+  return impl_->connect(url, std::move(opts));
 }
 
 std::shared_ptr<Pipe> Context::Impl::connect(
     const std::string& url,
-    std::string name) {
+    PipeOptions opts) {
   std::string pipeId = id_ + ".p" + std::to_string(pipeCounter_++);
   TP_VLOG() << "Context " << id_ << " is opening pipe " << pipeId << " (from "
-            << name_ << " to " << std::move(name) << ")";
+            << name_ << " to " << std::move(opts.name_) << ")";
   return std::make_shared<Pipe>(
       Pipe::ConstructorToken(),
       std::static_pointer_cast<PrivateIface>(shared_from_this()),

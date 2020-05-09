@@ -23,12 +23,35 @@ namespace tensorpipe {
 class Listener;
 class Pipe;
 
-class Context final {
+class ContextOptions {
  public:
+  std::string name_ = "N/A";
+
   // The name should be a semantically meaningful description of this context.
   // It will only be used for logging and debugging purposes, to identify the
   // endpoints of a pipe.
-  explicit Context(std::string name = "N/A");
+  ContextOptions&& name(std::string name) && {
+    name_ = std::move(name);
+    return std::move(*this);
+  }
+};
+
+class PipeOptions {
+ public:
+  std::string name_ = "N/A";
+
+  // The name should be a semantically meaningful description of the context
+  // that the pipe is connecting to. It will only be used for logging and
+  // debugging purposes, to identify the endpoints of a pipe.
+  PipeOptions&& name(std::string name) && {
+    name_ = std::move(name);
+    return std::move(*this);
+  }
+};
+
+class Context final {
+ public:
+  explicit Context(ContextOptions opts = ContextOptions());
 
   void registerTransport(
       int64_t,
@@ -39,7 +62,9 @@ class Context final {
 
   std::shared_ptr<Listener> listen(const std::vector<std::string>&);
 
-  std::shared_ptr<Pipe> connect(const std::string&, std::string name = "N/A");
+  std::shared_ptr<Pipe> connect(
+      const std::string&,
+      PipeOptions opts = PipeOptions());
 
   // Put the context in a terminal state, in turn closing all of its pipes and
   // listeners, and release its resources. This may be done asynchronously, in
