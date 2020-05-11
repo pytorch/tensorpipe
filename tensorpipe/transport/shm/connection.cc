@@ -287,7 +287,6 @@ class Connection::Impl : public std::enable_shared_from_this<Connection::Impl>,
     SEND_FDS,
     RECV_FDS,
     ESTABLISHED,
-    DESTROYING,
   };
 
  public:
@@ -339,33 +338,19 @@ class Connection::Impl : public std::enable_shared_from_this<Connection::Impl>,
   // Shut down the connection and its resources.
   void closeFromLoop();
 
-  // Handle events of type EPOLLIN.
+  // Handle events of type EPOLLIN on the UNIX domain socket.
+  //
+  // The only data that is expected on that socket is the file descriptors for
+  // the other side's inbox (which is this side's outbox) and its reactor, plus
+  // the reactor tokens to trigger the other side to read or write.
   void handleEventInFromLoop();
 
-  // Handle events of type EPOLLOUT.
+  // Handle events of type EPOLLOUT on the UNIX domain socket.
+  //
+  // Once the socket is writable we send the file descriptors for this side's
+  // inbox (which the other side's outbox) and our reactor, plus the reactor
+  // tokens to trigger this connection to read or write.
   void handleEventOutFromLoop();
-
-  // Handle events of type EPOLLERR.
-  void handleEventErrFromLoop();
-
-  // Handle events of type EPOLLHUP.
-  void handleEventHupFromLoop();
-
-  // Handle inbox being readable.
-  //
-  // This is triggered from the reactor loop when this connection's
-  // peer has written an entry into our inbox. It is called once per
-  // message. Because it's called from another thread, we must always
-  // take care to acquire the connection's lock here.
-  void handleInboxReadableFromLoop();
-
-  // Handle outbox being writable.
-  //
-  // This is triggered from the reactor loop when this connection's
-  // peer has read an entry from our outbox. It is called once per
-  // message. Because it's called from another thread, we must always
-  // take care to acquire the connection's lock here.
-  void handleOutboxWritableFromLoop();
 
   State state_{INITIALIZING};
   Error error_;
@@ -395,16 +380,26 @@ class Connection::Impl : public std::enable_shared_from_this<Connection::Impl>,
   // Pending write operations.
   std::deque<WriteOperation> writeOperations_;
 
-  // Defer execution of processReadOperations to loop thread.
-  void triggerProcessReadOperations();
-
-  // Process pending read operations if in an operational or error state.
+  // Process pending read operations if in an operational state.
+  //
+  // This may be triggered by the other side of the connection (by pushing this
+  // side's inbox token to the reactor) when it has written some new data to its
+  // outbox (which is this side's inbox). It is also called by this connection
+  // when it moves into an established state or when a new read operation is
+  // queued, in case data was already available before this connection was ready
+  // to consume it.
   void processReadOperationsFromLoop();
 
-  // Defer execution of processWriteOperations to loop thread.
-  void triggerProcessWriteOperations();
-
   // Process pending write operations if in an operational state.
+  //
+  // This may be triggered by the other side of the connection (by pushing this
+  // side's outbox token to the reactor) when it has read some data from its
+  // inbox (which is this side's outbox). This is important when some of this
+  // side's writes couldn't complete because the outbox was full, and thus they
+  // needed to wait for some of its data to be read. This method is also called
+  // by this connection when it moves into an established state, in case some
+  // writes were queued before the connection was ready to process them, or when
+  // a new write operation is queued.
   void processWriteOperationsFromLoop();
 
   // Fail with error.
@@ -479,11 +474,11 @@ void Connection::Impl::initFromLoop() {
 
   // Register method to be called when our peer writes to our inbox.
   inboxReactorToken_ = context_->addReaction(runIfAlive(
-      *this, [](Impl& impl) { impl.handleInboxReadableFromLoop(); }));
+      *this, [](Impl& impl) { impl.processReadOperationsFromLoop(); }));
 
   // Register method to be called when our peer reads from our outbox.
   outboxReactorToken_ = context_->addReaction(runIfAlive(
-      *this, [](Impl& impl) { impl.handleOutboxWritableFromLoop(); }));
+      *this, [](Impl& impl) { impl.processWriteOperationsFromLoop(); }));
 
   // We're sending file descriptors first, so wait for writability.
   state_ = SEND_FDS;
@@ -506,9 +501,9 @@ void Connection::Impl::readFromLoop(read_callback_fn fn) {
 
   readOperations_.emplace_back(std::move(fn));
 
-  // If there are pending read operations, make sure the event loop
-  // processes them, now that we have an additional callback.
-  triggerProcessReadOperations();
+  // If the inbox already contains some data, we may be able to process this
+  // operation right away.
+  processReadOperationsFromLoop();
 }
 
 void Connection::read(
@@ -559,9 +554,9 @@ void Connection::Impl::readFromLoop(
         fn(error);
       });
 
-  // If there are pending read operations, make sure the event loop
-  // processes them, now that we have an additional callback.
-  triggerProcessReadOperations();
+  // If the inbox already contains some data, we may be able to process this
+  // operation right away.
+  processReadOperationsFromLoop();
 }
 
 void Connection::read(void* ptr, size_t length, read_callback_fn fn) {
@@ -583,9 +578,9 @@ void Connection::Impl::readFromLoop(
 
   readOperations_.emplace_back(ptr, length, std::move(fn));
 
-  // If there are pending read operations, make sure the event loop
-  // processes them, now that we have an additional callback.
-  triggerProcessReadOperations();
+  // If the inbox already contains some data, we may be able to process this
+  // operation right away.
+  processReadOperationsFromLoop();
 }
 
 void Connection::write(const void* ptr, size_t length, write_callback_fn fn) {
@@ -609,7 +604,10 @@ void Connection::Impl::writeFromLoop(
   TP_DCHECK(context_->inLoopThread());
 
   writeOperations_.emplace_back(ptr, length, std::move(fn));
-  triggerProcessWriteOperations();
+
+  // If the outbox has some free space, we may be able to process this operation
+  // right away.
+  processWriteOperationsFromLoop();
 }
 
 void Connection::write(
@@ -654,7 +652,10 @@ void Connection::Impl::writeFromLoop(
         return os.ByteCount();
       },
       std::move(fn));
-  triggerProcessWriteOperations();
+
+  // If the outbox has some free space, we may be able to process this operation
+  // right away.
+  processWriteOperationsFromLoop();
 }
 
 void Connection::Impl::handleEventsFromLoop(int events) {
@@ -666,20 +667,22 @@ void Connection::Impl::handleEventsFromLoop(int events) {
   // that every handler can close and unregister the control file
   // descriptor from the event loop, without worrying about the next
   // handler trying to do so as well.
+  // In some cases the socket could be in a state where it's both in an error
+  // state and readable/writable. If we checked for EPOLLIN or EPOLLOUT first
+  // and then returned after handling them, we would keep doing so forever and
+  // never reach the error handling. So we should keep those checks first.
+  if (events & EPOLLERR || events & EPOLLHUP) {
+    error_ = TP_CREATE_ERROR(EOFError);
+    closeFromLoop();
+    processReadOperationsFromLoop();
+    return;
+  }
   if (events & EPOLLIN) {
     handleEventInFromLoop();
     return;
   }
   if (events & EPOLLOUT) {
     handleEventOutFromLoop();
-    return;
-  }
-  if (events & EPOLLERR) {
-    handleEventErrFromLoop();
-    return;
-  }
-  if (events & EPOLLHUP) {
-    handleEventHupFromLoop();
     return;
   }
 }
@@ -770,35 +773,6 @@ void Connection::Impl::handleEventOutFromLoop() {
   TP_LOG_WARNING() << "handleEventOut not handled";
 }
 
-void Connection::Impl::handleEventErrFromLoop() {
-  TP_DCHECK(context_->inLoopThread());
-  error_ = TP_CREATE_ERROR(EOFError);
-  closeFromLoop();
-  processReadOperationsFromLoop();
-}
-
-void Connection::Impl::handleEventHupFromLoop() {
-  TP_DCHECK(context_->inLoopThread());
-  error_ = TP_CREATE_ERROR(EOFError);
-  closeFromLoop();
-  processReadOperationsFromLoop();
-}
-
-void Connection::Impl::handleInboxReadableFromLoop() {
-  TP_DCHECK(context_->inLoopThread());
-  processReadOperationsFromLoop();
-}
-
-void Connection::Impl::handleOutboxWritableFromLoop() {
-  TP_DCHECK(context_->inLoopThread());
-  processWriteOperationsFromLoop();
-}
-
-void Connection::Impl::triggerProcessReadOperations() {
-  context_->deferToLoop(
-      [ptr{shared_from_this()}, this] { processReadOperationsFromLoop(); });
-}
-
 void Connection::Impl::processReadOperationsFromLoop() {
   TP_DCHECK(context_->inLoopThread());
 
@@ -828,11 +802,6 @@ void Connection::Impl::processReadOperationsFromLoop() {
       break;
     }
   }
-}
-
-void Connection::Impl::triggerProcessWriteOperations() {
-  context_->deferToLoop(
-      [ptr{shared_from_this()}, this] { processWriteOperationsFromLoop(); });
 }
 
 void Connection::Impl::processWriteOperationsFromLoop() {
