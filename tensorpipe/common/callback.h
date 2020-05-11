@@ -303,28 +303,37 @@ class EagerCallbackWrapper {
 class ClosingEmitter {
  public:
   void subscribe(uintptr_t token, std::function<void()> fn) {
-    std::unique_lock<std::mutex> lock(mutex_);
-    receivers_.emplace(token, std::move(fn));
+    loop_.deferToLoop([this, token, fn{std::move(fn)}]() mutable {
+      subscribeFromLoop_(token, std::move(fn));
+    });
   }
 
   void unsubscribe(uintptr_t token) {
-    std::unique_lock<std::mutex> lock(mutex_);
-    receivers_.erase(token);
+    loop_.deferToLoop([this, token]() { unsubscribeFromLoop_(token); });
   }
 
   void close() {
-    std::unique_lock<std::mutex> lock(mutex_);
+    loop_.deferToLoop([this]() { closeFromLoop_(); });
+  }
+
+ private:
+  // FIXME We should share the on-demand loop with the object owning the emitter
+  OnDemandLoop loop_;
+  std::unordered_map<uintptr_t, std::function<void()>> receivers_;
+
+  void subscribeFromLoop_(uintptr_t token, std::function<void()> fn) {
+    receivers_.emplace(token, std::move(fn));
+  }
+
+  void unsubscribeFromLoop_(uintptr_t token) {
+    receivers_.erase(token);
+  }
+
+  void closeFromLoop_() {
     for (auto& it : receivers_) {
       it.second();
     }
   }
-
- private:
-  // We need a mutex because at the moment the users of this class are accessing
-  // it directly, without being proxied through a method of the object hosting
-  // the emitter, and thus not being channeled through its event loop.
-  std::mutex mutex_;
-  std::unordered_map<uintptr_t, std::function<void()>> receivers_;
 };
 
 // This class is designed to be installed on objects that need to become closed
