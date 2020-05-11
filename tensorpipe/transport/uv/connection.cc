@@ -238,6 +238,11 @@ class Connection::Impl : public std::enable_shared_from_this<Connection::Impl> {
   // Called when libuv has closed the handle.
   void closeCallbackFromLoop_();
 
+  void setError_(Error error);
+
+  // Deal with an error.
+  void handleError_();
+
   std::shared_ptr<Context::PrivateIface> context_;
   std::shared_ptr<TCPHandle> handle_;
   optional<Sockaddr> sockaddr_;
@@ -277,8 +282,7 @@ void Connection::Impl::initFromLoop() {
     handle_->initFromLoop();
     handle_->connectFromLoop(sockaddr_.value(), [this](int status) {
       if (status < 0) {
-        error_ = TP_CREATE_ERROR(UVError, status);
-        closeFromLoop();
+        setError_(TP_CREATE_ERROR(UVError, status));
       }
     });
   }
@@ -355,7 +359,7 @@ void Connection::Impl::close() {
 
 void Connection::Impl::closeFromLoop() {
   TP_DCHECK(context_->inLoopThread());
-  handle_->closeFromLoop();
+  setError_(TP_CREATE_ERROR(ConnectionClosedError));
 }
 
 void Connection::Impl::allocCallbackFromLoop_(uv_buf_t* buf) {
@@ -368,11 +372,9 @@ void Connection::Impl::readCallbackFromLoop_(
     ssize_t nread,
     const uv_buf_t* buf) {
   TP_DCHECK(context_->inLoopThread());
+
   if (nread < 0) {
-    if (!error_) {
-      error_ = TP_CREATE_ERROR(UVError, nread);
-      closeFromLoop();
-    }
+    setError_(TP_CREATE_ERROR(UVError, nread));
     return;
   }
 
@@ -380,7 +382,7 @@ void Connection::Impl::readCallbackFromLoop_(
   auto& readOperation = readOperations_.front();
   readOperation.readFromLoop(nread, buf);
   if (readOperation.completeFromLoop()) {
-    readOperation.callbackFromLoop(error_);
+    readOperation.callbackFromLoop(Error::kSuccess);
     // Remove the completed operation.
     // If this was the final pending operation, this instance should
     // no longer receive allocation and read callbacks.
@@ -393,13 +395,18 @@ void Connection::Impl::readCallbackFromLoop_(
 
 void Connection::Impl::writeCallbackFromLoop_(int status) {
   TP_DCHECK(context_->inLoopThread());
-  TP_DCHECK(!writeOperations_.empty());
 
-  if (status < 0 && !error_) {
-    error_ = TP_CREATE_ERROR(UVError, status);
-    closeFromLoop();
+  if (status < 0) {
+    setError_(TP_CREATE_ERROR(UVError, status));
+    // Do NOT return, because the error handler method will only fire the
+    // callbacks of the read operations, because we can only fire the callbacks
+    // of the write operations after their corresponding UV requests complete
+    // (or else the user may deallocate the buffers while the loop is still
+    // processing them), therefore we must fire the write operation callbacks in
+    // this method, both in case of success and of error.
   }
 
+  TP_THROW_ASSERT_IF(writeOperations_.empty());
   auto& writeOperation = writeOperations_.front();
   writeOperation.callbackFromLoop(error_);
   writeOperations_.pop_front();
@@ -407,17 +414,30 @@ void Connection::Impl::writeCallbackFromLoop_(int status) {
 
 void Connection::Impl::closeCallbackFromLoop_() {
   TP_DCHECK(context_->inLoopThread());
-  if (!error_) {
-    error_ = TP_CREATE_ERROR(UVError, UV_ECANCELED);
-  }
-  while (!readOperations_.empty()) {
-    auto& readOperation = readOperations_.front();
-    readOperation.callbackFromLoop(error_);
-    // Remove the completed operation.
-    readOperations_.pop_front();
-  }
   TP_DCHECK(writeOperations_.empty());
   leak_.reset();
+}
+
+void Connection::Impl::setError_(Error error) {
+  // Don't overwrite an error that's already set.
+  if (error_ || !error) {
+    return;
+  }
+
+  error_ = std::move(error);
+
+  handleError_();
+}
+
+void Connection::Impl::handleError_() {
+  for (auto& readOperation : readOperations_) {
+    readOperation.callbackFromLoop(error_);
+  }
+  readOperations_.clear();
+  // Do NOT fire the callbacks of the write operations, because we must wait for
+  // their corresponding UV write requests to complete (or else the user may
+  // deallocate the buffers while the loop is still processing them).
+  handle_->closeFromLoop();
 }
 
 Connection::Connection(

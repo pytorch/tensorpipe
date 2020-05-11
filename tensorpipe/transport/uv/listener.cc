@@ -58,10 +58,15 @@ class Listener::Impl : public std::enable_shared_from_this<Listener::Impl> {
   // Called when libuv has closed the handle.
   void closeCallbackFromLoop_();
 
+  void setError_(Error error);
+
+  // Deal with an error.
+  void handleError_();
+
   std::shared_ptr<Context::PrivateIface> context_;
   std::shared_ptr<TCPHandle> handle_;
   Sockaddr sockaddr_;
-  // TODO Add proper error handling.
+  Error error_{Error::kSuccess};
   ClosingReceiver closingReceiver_;
 
   // Once an accept callback fires, it becomes disarmed and must be rearmed.
@@ -101,10 +106,18 @@ void Listener::Impl::initFromLoop() {
 }
 
 void Listener::Impl::acceptFromLoop(accept_callback_fn fn) {
+  TP_DCHECK(context_->inLoopThread());
+
+  if (error_) {
+    fn(error_, std::shared_ptr<Connection>());
+    return;
+  }
+
   callback_.arm(std::move(fn));
 }
 
 std::string Listener::Impl::addrFromLoop() const {
+  TP_DCHECK(context_->inLoopThread());
   return handle_->sockNameFromLoop().str();
 }
 
@@ -114,14 +127,14 @@ void Listener::Impl::close() {
 }
 
 void Listener::Impl::closeFromLoop() {
-  handle_->closeFromLoop();
+  setError_(TP_CREATE_ERROR(ListenerClosedError));
 }
 
 void Listener::Impl::connectionCallbackFromLoop_(int status) {
   TP_DCHECK(context_->inLoopThread());
+
   if (status != 0) {
-    callback_.trigger(
-        TP_CREATE_ERROR(UVError, status), std::shared_ptr<Connection>());
+    setError_(TP_CREATE_ERROR(UVError, status));
     return;
   }
 
@@ -136,6 +149,24 @@ void Listener::Impl::connectionCallbackFromLoop_(int status) {
 
 void Listener::Impl::closeCallbackFromLoop_() {
   leak_.reset();
+}
+
+void Listener::Impl::setError_(Error error) {
+  // Don't overwrite an error that's already set.
+  if (error_ || !error) {
+    return;
+  }
+
+  error_ = std::move(error);
+
+  handleError_();
+}
+
+void Listener::Impl::handleError_() {
+  callback_.triggerAll([&]() {
+    return std::make_tuple(std::cref(error_), std::shared_ptr<Connection>());
+  });
+  handle_->closeFromLoop();
 }
 
 Listener::Listener(
