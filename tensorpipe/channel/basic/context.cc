@@ -46,6 +46,8 @@ class Context::Impl : public Context::PrivateIface,
       std::shared_ptr<transport::Connection>,
       Channel::Endpoint);
 
+  void setId(std::string id);
+
   ClosingEmitter& getClosingEmitter() override;
 
   void close();
@@ -59,6 +61,11 @@ class Context::Impl : public Context::PrivateIface,
   std::atomic<bool> closed_{false};
   std::atomic<bool> joined_{false};
   ClosingEmitter closingEmitter_;
+
+  // An identifier for the context, composed of the identifier for the context,
+  // combined with the channel's name. It will only be used for logging and
+  // debugging purposes.
+  std::string id_{"N/A"};
 };
 
 Context::Context() : impl_(std::make_shared<Impl>()) {}
@@ -116,6 +123,14 @@ void Context::Impl::join() {
 
 Context::~Context() {
   join();
+}
+
+void Context::setId(std::string id) {
+  impl_->setId(std::move(id));
+}
+
+void Context::Impl::setId(std::string id) {
+  id_ = std::move(id);
 }
 
 } // namespace basic

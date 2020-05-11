@@ -54,6 +54,8 @@ class Context::Impl : public Context::PrivateIface,
 
   std::shared_ptr<transport::Listener> listen(address_t addr);
 
+  void setId(std::string id);
+
   ClosingEmitter& getClosingEmitter() override;
 
   bool inLoopThread() override;
@@ -86,6 +88,11 @@ class Context::Impl : public Context::PrivateIface,
   ClosingEmitter closingEmitter_;
 
   std::string domainDescriptor_;
+
+  // An identifier for the context, composed of the identifier for the context,
+  // combined with the transport's name. It will only be used for logging and
+  // debugging purposes.
+  std::string id_{"N/A"};
 };
 Context::Context() : impl_(std::make_shared<Impl>()) {}
 
@@ -147,6 +154,14 @@ const std::string& Context::domainDescriptor() const {
 
 const std::string& Context::Impl::domainDescriptor() const {
   return domainDescriptor_;
+}
+
+void Context::setId(std::string id) {
+  impl_->setId(std::move(id));
+}
+
+void Context::Impl::setId(std::string id) {
+  id_ = std::move(id);
 }
 
 ClosingEmitter& Context::Impl::getClosingEmitter() {

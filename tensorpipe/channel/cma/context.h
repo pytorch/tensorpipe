@@ -30,6 +30,8 @@ class Context : public channel::Context {
       std::shared_ptr<transport::Connection>,
       Channel::Endpoint) override;
 
+  void setId(std::string id) override;
+
   void close() override;
 
   void join() override;

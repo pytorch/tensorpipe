@@ -29,6 +29,8 @@ class Context final : public transport::Context {
 
   const std::string& domainDescriptor() const override;
 
+  void setId(std::string id) override;
+
   void close() override;
 
   void join() override;

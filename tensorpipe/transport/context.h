@@ -36,6 +36,12 @@ class Context {
   //
   virtual const std::string& domainDescriptor() const = 0;
 
+  // Tell the context what its identifier is.
+  //
+  // This is only supposed to be called from the high-level context or from
+  // channel contexts. It will only used for logging and debugging purposes.
+  virtual void setId(std::string id) = 0;
+
   virtual void close() = 0;
 
   virtual void join() = 0;

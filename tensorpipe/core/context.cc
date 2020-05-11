@@ -134,6 +134,8 @@ void Context::Impl::registerTransport(
   TP_THROW_ASSERT_IF(
       transportsByPriority_.find(priority) != transportsByPriority_.end())
       << "transport with priority " << priority << " already registered";
+  TP_VLOG() << "Context " << id_ << " is registering transport " << transport;
+  context->setId(id_ + ".tr_" + transport);
   transports_.emplace(transport, context);
   transportsByPriority_.emplace(priority, std::make_tuple(transport, context));
 }
@@ -155,6 +157,8 @@ void Context::Impl::registerChannel(
   TP_THROW_ASSERT_IF(
       channelsByPriority_.find(priority) != channelsByPriority_.end())
       << "channel with priority " << priority << " already registered";
+  TP_VLOG() << "Context " << id_ << " is registering channel " << channel;
+  context->setId(id_ + ".ch_" + channel);
   channels_.emplace(channel, context);
   channelsByPriority_.emplace(priority, std::make_tuple(channel, context));
 }

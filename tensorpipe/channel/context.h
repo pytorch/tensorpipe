@@ -46,6 +46,12 @@ class Context {
       std::shared_ptr<transport::Connection>,
       Channel::Endpoint) = 0;
 
+  // Tell the context what its identifier is.
+  //
+  // This is only supposed to be called from the high-level context. It will
+  // only used for logging and debugging purposes.
+  virtual void setId(std::string id) = 0;
+
   // Put the channel context in a terminal state, in turn closing all of its
   // channels, and release its resources. This may be done asynchronously, in
   // background.
