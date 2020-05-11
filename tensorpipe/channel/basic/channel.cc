@@ -83,6 +83,18 @@ class Channel::Impl : public std::enable_shared_from_this<Channel::Impl> {
   // Called when protobuf packet is a reply.
   void onReply_(const proto::Reply& reply);
 
+  // Called if send operation was successful.
+  void sendCompleted(const uint64_t);
+
+  // Called if recv operation was successful.
+  void recvCompleted(const uint64_t);
+
+  void setError_(Error error);
+
+  // Helper function to process transport error.
+  // Shared between read and write callback entry points.
+  void handleError_();
+
   std::shared_ptr<Context::PrivateIface> context_;
   std::shared_ptr<transport::Connection> connection_;
   Error error_{Error::kSuccess};
@@ -110,19 +122,9 @@ class Channel::Impl : public std::enable_shared_from_this<Channel::Impl> {
   std::list<SendOperation> sendOperations_;
   std::list<RecvOperation> recvOperations_;
 
-  // Called if send operation was successful.
-  void sendCompleted(const uint64_t);
-
-  // Called if recv operation was successful.
-  void recvCompleted(const uint64_t);
-
   // Helpers to prepare callbacks from transports
   LazyCallbackWrapper<Impl> lazyCallbackWrapper_{*this};
   EagerCallbackWrapper<Impl> eagerCallbackWrapper_{*this};
-
-  // Helper function to process transport error.
-  // Shared between read and write callback entry points.
-  void handleError_();
 
   // For some odd reason it seems we need to use a qualified name here...
   template <typename T>
@@ -205,6 +207,13 @@ void Channel::Impl::sendFromLoop_(
     TDescriptorCallback descriptorCallback,
     TSendCallback callback) {
   TP_DCHECK(inLoop_());
+
+  if (error_) {
+    descriptorCallback(error_, std::string());
+    callback(error_);
+    return;
+  }
+
   proto::Descriptor pbDescriptor;
 
   const auto id = id_++;
@@ -244,6 +253,12 @@ void Channel::Impl::recvFromLoop_(
     size_t length,
     TRecvCallback callback) {
   TP_DCHECK(inLoop_());
+
+  if (error_) {
+    callback(error_);
+    return;
+  }
+
   proto::Descriptor pbDescriptor;
   loadDescriptor(pbDescriptor, descriptor);
   const auto id = pbDescriptor.operation_id();
@@ -284,10 +299,7 @@ void Channel::Impl::close() {
 
 void Channel::Impl::closeFromLoop_() {
   TP_DCHECK(inLoop_());
-  if (!error_) {
-    error_ = TP_CREATE_ERROR(ChannelClosedError);
-    handleError_();
-  }
+  setError_(TP_CREATE_ERROR(ChannelClosedError));
 }
 
 void Channel::Impl::readPacket_() {
@@ -395,8 +407,20 @@ void Channel::Impl::recvCompleted(const uint64_t id) {
   op.callback(error_);
 }
 
+void Channel::Impl::setError_(Error error) {
+  // Don't overwrite an error that's already set.
+  if (error_ || !error) {
+    return;
+  }
+
+  error_ = std::move(error);
+
+  handleError_();
+}
+
 void Channel::Impl::handleError_() {
   TP_DCHECK(inLoop_());
+
   // Close the connection so that all current operations will be aborted. This
   // will cause their callbacks to be invoked, and only then we'll invoke ours.
   connection_->close();

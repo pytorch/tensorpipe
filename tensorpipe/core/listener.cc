@@ -65,7 +65,7 @@ class Listener::Impl : public Listener::PrivateIface,
 
   void closeFromLoop_();
 
-  Error error_;
+  Error error_{Error::kSuccess};
 
   std::shared_ptr<Context::PrivateIface> context_;
 
@@ -133,6 +133,8 @@ class Listener::Impl : public Listener::PrivateIface,
   //
   // Error handling
   //
+
+  void setError_(Error error);
 
   void handleError_();
 
@@ -233,12 +235,8 @@ void Listener::Impl::close() {
 
 void Listener::Impl::closeFromLoop_() {
   TP_DCHECK(inLoop_());
-
-  if (!error_) {
-    TP_VLOG() << "Listener " << id_ << " is closing";
-    error_ = TP_CREATE_ERROR(ListenerClosedError);
-    handleError_();
-  }
+  TP_VLOG() << "Listener " << id_ << " is closing";
+  setError_(TP_CREATE_ERROR(ListenerClosedError));
 }
 
 Listener::~Listener() {
@@ -364,6 +362,17 @@ void Listener::Impl::unregisterConnectionRequestFromLoop_(
 //
 // Error handling
 //
+
+void Listener::Impl::setError_(Error error) {
+  // Don't overwrite an error that's already set.
+  if (error_ || !error) {
+    return;
+  }
+
+  error_ = std::move(error);
+
+  handleError_();
+}
 
 void Listener::Impl::handleError_() {
   TP_DCHECK(inLoop_());

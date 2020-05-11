@@ -154,7 +154,7 @@ class Pipe::Impl : public std::enable_shared_from_this<Pipe::Impl> {
   std::deque<MessageBeingWritten> messagesBeingWritten_;
   int64_t nextWriteCallbackToCall_{0};
 
-  Error error_;
+  Error error_{Error::kSuccess};
 
   //
   // Helpers to prepare callbacks from transports and listener
@@ -184,6 +184,8 @@ class Pipe::Impl : public std::enable_shared_from_this<Pipe::Impl> {
   //
   // Error handling
   //
+
+  void setError_(Error error);
 
   void handleError_();
 
@@ -359,19 +361,8 @@ void Pipe::Impl::close() {
 
 void Pipe::Impl::closeFromLoop_() {
   TP_DCHECK(inLoop_());
-
   TP_VLOG() << "Pipe " << id_ << " is closing";
-  // TODO Make a RAII wrapper so that this isn't necessary.
-  if (registrationId_.has_value()) {
-    listener_->unregisterConnectionRequest(registrationId_.value());
-    registrationId_.reset();
-  }
-  for (const auto& iter : channelRegistrationIds_) {
-    listener_->unregisterConnectionRequest(iter.second);
-  }
-  channelRegistrationIds_.clear();
-  error_ = TP_CREATE_ERROR(PipeClosedError);
-  handleError_();
+  setError_(TP_CREATE_ERROR(PipeClosedError));
 }
 
 bool Pipe::Impl::inLoop_() {
@@ -714,8 +705,31 @@ void Pipe::Impl::triggerReadyCallbacks_() {
 // Error handling
 //
 
+void Pipe::Impl::setError_(Error error) {
+  // Don't overwrite an error that's already set.
+  if (error_ || !error) {
+    return;
+  }
+
+  error_ = std::move(error);
+
+  handleError_();
+}
+
 void Pipe::Impl::handleError_() {
   TP_DCHECK(inLoop_());
+
+  // TODO Close all connections and channels.
+
+  if (registrationId_.has_value()) {
+    listener_->unregisterConnectionRequest(registrationId_.value());
+    registrationId_.reset();
+  }
+  for (const auto& iter : channelRegistrationIds_) {
+    listener_->unregisterConnectionRequest(iter.second);
+  }
+  channelRegistrationIds_.clear();
+
   triggerReadyCallbacks_();
 }
 

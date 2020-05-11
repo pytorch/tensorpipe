@@ -90,9 +90,16 @@ class Channel::Impl : public std::enable_shared_from_this<Channel::Impl> {
   // Called when protobuf packet is a notification.
   void onNotification_(const proto::Notification& notification);
 
+  void setError_(Error error);
+
+  // Helper function to process transport error.
+  // Shared between read and write callback entry points.
+  void handleError_();
+
   std::shared_ptr<Context::PrivateIface> context_;
   std::shared_ptr<transport::Connection> connection_;
   Error error_{Error::kSuccess};
+
   ClosingReceiver closingReceiver_;
 
   // Increasing identifier for send operations.
@@ -108,10 +115,6 @@ class Channel::Impl : public std::enable_shared_from_this<Channel::Impl> {
 
   LazyCallbackWrapper<Impl> lazyCallbackWrapper_{*this};
   EagerCallbackWrapper<Impl> eagerCallbackWrapper_{*this};
-
-  // Helper function to process transport error.
-  // Shared between read and write callback entry points.
-  void handleError_();
 
   // For some odd reason it seems we need to use a qualified name here...
   template <typename T>
@@ -203,13 +206,13 @@ void Channel::Impl::sendFromLoop_(
     TDescriptorCallback descriptorCallback,
     TSendCallback callback) {
   TP_DCHECK(inLoop_());
-  // TP_THROW_ASSERT_IF(context_->joined_);
+
   if (error_) {
-    // FIXME Ideally here we should either call the callback with an error (but
-    // this may deadlock if we do it inline) or return an error as an additional
-    // return value.
-    TP_THROW_ASSERT();
+    descriptorCallback(error_, std::string());
+    callback(error_);
+    return;
   }
+
   proto::Descriptor pbDescriptor;
 
   const auto id = id_++;
@@ -250,7 +253,12 @@ void Channel::Impl::recvFromLoop_(
     size_t length,
     TRecvCallback callback) {
   TP_DCHECK(inLoop_());
-  // TODO Short cut this if we're already in an error state.
+
+  if (error_) {
+    callback(error_);
+    return;
+  }
+
   proto::Descriptor pbDescriptor;
   loadDescriptor(pbDescriptor, descriptor);
   const uint64_t id = pbDescriptor.operation_id();
@@ -289,10 +297,7 @@ void Channel::Impl::close() {
 
 void Channel::Impl::closeFromLoop_() {
   TP_DCHECK(inLoop_());
-  if (!error_) {
-    error_ = TP_CREATE_ERROR(ChannelClosedError);
-    handleError_();
-  }
+  setError_(TP_CREATE_ERROR(ChannelClosedError));
 }
 
 void Channel::Impl::readPacket_() {
@@ -331,6 +336,17 @@ void Channel::Impl::onNotification_(const proto::Notification& pbNotification) {
 
   // Execute send completion callback.
   op.callback(Error::kSuccess);
+}
+
+void Channel::Impl::setError_(Error error) {
+  // Don't overwrite an error that's already set.
+  if (error_ || !error) {
+    return;
+  }
+
+  error_ = std::move(error);
+
+  handleError_();
 }
 
 void Channel::Impl::handleError_() {

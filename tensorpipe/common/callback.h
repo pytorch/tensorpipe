@@ -161,30 +161,11 @@ class LazyCallbackWrapper {
       Args&&... args) {
     TP_DCHECK(subject.inLoop_());
 
-    if (processError_(subject, error)) {
-      return;
+    subject.setError_(error);
+    // Proceed only in case of success: this is why it's called "lazy".
+    if (!subject.error_) {
+      fn(subject, std::forward<Args>(args)...);
     }
-    fn(subject, std::forward<Args>(args)...);
-  }
-
-  bool processError_(TSubject& subject, const Error& error) {
-    TP_DCHECK(subject.inLoop_());
-
-    // Nothing to do if we already were in an error state or if there is no
-    // error.
-    if (subject.error_) {
-      return true;
-    }
-    if (!error) {
-      return false;
-    }
-
-    // Otherwise enter the error state and do the cleanup.
-    subject.error_ = error;
-
-    subject.handleError_();
-
-    return true;
   }
 };
 
@@ -240,24 +221,9 @@ class EagerCallbackWrapper {
       Args&&... args) {
     TP_DCHECK(subject.inLoop_());
 
-    processError_(subject, error);
+    subject.setError_(error);
     // Proceed regardless of any error: this is why it's called "eager".
     fn(subject, std::forward<Args>(args)...);
-  }
-
-  void processError_(TSubject& subject, const Error& error) {
-    TP_DCHECK(subject.inLoop_());
-
-    // Nothing to do if we already were in an error state or if there is no
-    // error.
-    if (subject.error_ || !error) {
-      return;
-    }
-
-    // Otherwise enter the error state and do the cleanup.
-    subject.error_ = error;
-
-    subject.handleError_();
   }
 };
 
