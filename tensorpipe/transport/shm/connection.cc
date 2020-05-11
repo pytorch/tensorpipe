@@ -353,7 +353,7 @@ class Connection::Impl : public std::enable_shared_from_this<Connection::Impl>,
   void handleEventOutFromLoop();
 
   State state_{INITIALIZING};
-  Error error_;
+  Error error_{Error::kSuccess};
   std::shared_ptr<Context::PrivateIface> context_;
   std::shared_ptr<Socket> socket_;
   optional<Sockaddr> sockaddr_;
@@ -402,8 +402,10 @@ class Connection::Impl : public std::enable_shared_from_this<Connection::Impl>,
   // a new write operation is queued.
   void processWriteOperationsFromLoop();
 
-  // Fail with error.
-  void failFromLoop(Error&&);
+  void setError_(Error error);
+
+  // Deal with an error.
+  void handleError();
 };
 
 Connection::Connection(
@@ -499,6 +501,11 @@ void Connection::Impl::read(read_callback_fn fn) {
 void Connection::Impl::readFromLoop(read_callback_fn fn) {
   TP_DCHECK(context_->inLoopThread());
 
+  if (error_) {
+    fn(error_, nullptr, 0);
+    return;
+  }
+
   readOperations_.emplace_back(std::move(fn));
 
   // If the inbox already contains some data, we may be able to process this
@@ -525,6 +532,11 @@ void Connection::Impl::readFromLoop(
     google::protobuf::MessageLite& message,
     read_proto_callback_fn fn) {
   TP_DCHECK(context_->inLoopThread());
+
+  if (error_) {
+    fn(error_);
+    return;
+  }
 
   readOperations_.emplace_back(
       [&message](util::ringbuffer::Consumer& inbox) -> ssize_t {
@@ -576,6 +588,11 @@ void Connection::Impl::readFromLoop(
     read_callback_fn fn) {
   TP_DCHECK(context_->inLoopThread());
 
+  if (error_) {
+    fn(error_, ptr, length);
+    return;
+  }
+
   readOperations_.emplace_back(ptr, length, std::move(fn));
 
   // If the inbox already contains some data, we may be able to process this
@@ -603,6 +620,11 @@ void Connection::Impl::writeFromLoop(
     write_callback_fn fn) {
   TP_DCHECK(context_->inLoopThread());
 
+  if (error_) {
+    fn(error_);
+    return;
+  }
+
   writeOperations_.emplace_back(ptr, length, std::move(fn));
 
   // If the outbox has some free space, we may be able to process this operation
@@ -629,6 +651,11 @@ void Connection::Impl::writeFromLoop(
     const google::protobuf::MessageLite& message,
     write_callback_fn fn) {
   TP_DCHECK(context_->inLoopThread());
+
+  if (error_) {
+    fn(error_);
+    return;
+  }
 
   writeOperations_.emplace_back(
       [&message](util::ringbuffer::Producer& outbox) -> ssize_t {
@@ -672,9 +699,7 @@ void Connection::Impl::handleEventsFromLoop(int events) {
   // and then returned after handling them, we would keep doing so forever and
   // never reach the error handling. So we should keep those checks first.
   if (events & EPOLLERR || events & EPOLLHUP) {
-    error_ = TP_CREATE_ERROR(EOFError);
-    closeFromLoop();
-    processReadOperationsFromLoop();
+    setError_(TP_CREATE_ERROR(EOFError));
     return;
   }
   if (events & EPOLLIN) {
@@ -706,7 +731,7 @@ void Connection::Impl::handleEventInFromLoop() {
         outboxHeaderFd,
         outboxDataFd);
     if (err) {
-      failFromLoop(std::move(err));
+      setError_(std::move(err));
       return;
     }
 
@@ -735,9 +760,7 @@ void Connection::Impl::handleEventInFromLoop() {
     // We don't expect to read anything on this socket once the
     // connection has been established. If we do, assume it's a
     // zero-byte read indicating EOF.
-    error_ = TP_CREATE_ERROR(EOFError);
-    closeFromLoop();
-    processReadOperationsFromLoop();
+    setError_(TP_CREATE_ERROR(EOFError));
     return;
   }
 
@@ -760,7 +783,7 @@ void Connection::Impl::handleEventOutFromLoop() {
         inboxHeaderFd_,
         inboxDataFd_);
     if (err) {
-      failFromLoop(std::move(err));
+      setError_(std::move(err));
       return;
     }
 
@@ -775,15 +798,6 @@ void Connection::Impl::handleEventOutFromLoop() {
 
 void Connection::Impl::processReadOperationsFromLoop() {
   TP_DCHECK(context_->inLoopThread());
-
-  if (error_) {
-    std::deque<ReadOperation> operationsToError;
-    std::swap(operationsToError, readOperations_);
-    for (auto& readOperation : operationsToError) {
-      readOperation.handleError(error_);
-    }
-    return;
-  }
 
   // Process all read read operations that we can immediately serve, only
   // when connection is established.
@@ -807,16 +821,7 @@ void Connection::Impl::processReadOperationsFromLoop() {
 void Connection::Impl::processWriteOperationsFromLoop() {
   TP_DCHECK(context_->inLoopThread());
 
-  if (state_ < ESTABLISHED) {
-    return;
-  }
-
-  if (error_) {
-    std::deque<WriteOperation> operationsToError;
-    std::swap(operationsToError, writeOperations_);
-    for (auto& writeOperation : operationsToError) {
-      writeOperation.handleError(error_);
-    }
+  if (state_ != ESTABLISHED) {
     return;
   }
 
@@ -833,37 +838,38 @@ void Connection::Impl::processWriteOperationsFromLoop() {
   }
 }
 
-void Connection::Impl::failFromLoop(Error&& error) {
-  TP_DCHECK(context_->inLoopThread());
+void Connection::Impl::setError_(Error error) {
+  // Don't overwrite an error that's already set.
+  if (error_ || !error) {
+    return;
+  }
+
   error_ = std::move(error);
-  while (!readOperations_.empty()) {
-    auto& readOperation = readOperations_.front();
+
+  handleError();
+}
+
+void Connection::Impl::handleError() {
+  TP_DCHECK(context_->inLoopThread());
+  for (auto& readOperation : readOperations_) {
     readOperation.handleError(error_);
-    readOperations_.pop_front();
   }
-  while (!writeOperations_.empty()) {
-    auto& writeOperation = writeOperations_.front();
+  readOperations_.clear();
+  for (auto& writeOperation : writeOperations_) {
     writeOperation.handleError(error_);
-    writeOperations_.pop_front();
   }
+  writeOperations_.clear();
+  context_->removeReaction(inboxReactorToken_.value());
+  inboxReactorToken_.reset();
+  context_->removeReaction(outboxReactorToken_.value());
+  outboxReactorToken_.reset();
+  context_->unregisterDescriptor(socket_->fd());
+  socket_.reset();
 }
 
 void Connection::Impl::closeFromLoop() {
   TP_DCHECK(context_->inLoopThread());
-
-  failFromLoop(TP_CREATE_ERROR(ConnectionClosedError));
-  if (inboxReactorToken_.has_value()) {
-    context_->removeReaction(inboxReactorToken_.value());
-    inboxReactorToken_.reset();
-  }
-  if (outboxReactorToken_.has_value()) {
-    context_->removeReaction(outboxReactorToken_.value());
-    outboxReactorToken_.reset();
-  }
-  if (socket_) {
-    context_->unregisterDescriptor(socket_->fd());
-    socket_.reset();
-  }
+  setError_(TP_CREATE_ERROR(ConnectionClosedError));
 }
 
 } // namespace shm

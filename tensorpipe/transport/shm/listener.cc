@@ -59,9 +59,15 @@ class Listener::Impl : public std::enable_shared_from_this<Listener::Impl>,
   // Shut down the connection and its resources.
   void closeFromLoop();
 
+  void setError_(Error error);
+
+  // Deal with an error.
+  void handleError();
+
   std::shared_ptr<Context::PrivateIface> context_;
   std::shared_ptr<Socket> socket_;
   Sockaddr sockaddr_;
+  Error error_{Error::kSuccess};
   std::deque<accept_callback_fn> fns_;
   ClosingReceiver closingReceiver_;
 };
@@ -98,12 +104,29 @@ void Listener::Impl::init() {
 
 void Listener::Impl::closeFromLoop() {
   TP_DCHECK(context_->inLoopThread());
-  if (socket_) {
-    if (!fns_.empty()) {
-      context_->unregisterDescriptor(socket_->fd());
-    }
-    socket_.reset();
+  setError_(TP_CREATE_ERROR(ListenerClosedError));
+}
+
+void Listener::Impl::setError_(Error error) {
+  // Don't overwrite an error that's already set.
+  if (error_ || !error) {
+    return;
   }
+
+  error_ = std::move(error);
+
+  handleError();
+}
+
+void Listener::Impl::handleError() {
+  if (!fns_.empty()) {
+    context_->unregisterDescriptor(socket_->fd());
+  }
+  socket_.reset();
+  for (auto& fn : fns_) {
+    fn(error_, std::shared_ptr<Connection>());
+  }
+  fns_.clear();
 }
 
 void Listener::close() {
@@ -132,6 +155,12 @@ void Listener::Impl::accept(accept_callback_fn fn) {
 
 void Listener::Impl::acceptFromLoop(accept_callback_fn fn) {
   TP_DCHECK(context_->inLoopThread());
+
+  if (error_) {
+    fn(error_, std::shared_ptr<Connection>());
+    return;
+  }
+
   fns_.push_back(std::move(fn));
 
   // Only register if we go from 0 to 1 pending callbacks. In other cases we
@@ -159,25 +188,31 @@ address_t Listener::Impl::addrFromLoop() const {
 
 void Listener::Impl::handleEventsFromLoop(int events) {
   TP_DCHECK(context_->inLoopThread());
+
+  if (events & EPOLLERR || events & EPOLLHUP) {
+    // FIXME Should we try to figure out what error it is, e.g., its errno?
+    setError_(TP_CREATE_ERROR(EOFError));
+    return;
+  }
   TP_ARG_CHECK_EQ(events, EPOLLIN);
+
+  auto socket = socket_->accept();
+  if (!socket) {
+    setError_(TP_CREATE_ERROR(SystemError, "accept", errno));
+    return;
+  }
+
   TP_DCHECK(!fns_.empty())
       << "when the callback is disarmed the listener's descriptor is supposed "
       << "to be unregistered";
-
   auto fn = std::move(fns_.front());
   fns_.pop_front();
   if (fns_.empty()) {
     context_->unregisterDescriptor(socket_->fd());
   }
-  auto socket = socket_->accept();
-  if (socket) {
-    fn(Error::kSuccess,
-       std::make_shared<Connection>(
-           Connection::ConstructorToken(), context_, std::move(socket)));
-  } else {
-    fn(TP_CREATE_ERROR(SystemError, "accept", errno),
-       std::shared_ptr<Connection>());
-  }
+  fn(Error::kSuccess,
+     std::make_shared<Connection>(
+         Connection::ConstructorToken(), context_, std::move(socket)));
 }
 
 } // namespace shm

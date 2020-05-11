@@ -38,6 +38,10 @@ std::string EOFError::what() const {
   return "eof";
 }
 
+std::string ListenerClosedError::what() const {
+  return "listener closed";
+}
+
 std::string ConnectionClosedError::what() const {
   return "connection closed";
 }

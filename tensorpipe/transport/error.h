@@ -58,6 +58,13 @@ class EOFError final : public BaseError {
   std::string what() const override;
 };
 
+class ListenerClosedError final : public BaseError {
+ public:
+  ListenerClosedError() {}
+
+  std::string what() const override;
+};
+
 class ConnectionClosedError final : public BaseError {
  public:
   ConnectionClosedError() {}
