@@ -45,6 +45,9 @@ class Channel::Impl : public std::enable_shared_from_this<Channel::Impl> {
       size_t length,
       TRecvCallback callback);
 
+  // Tell the channel what its identifier is.
+  void setId(std::string id);
+
   void close();
 
  private:
@@ -261,6 +264,16 @@ void Channel::Impl::initFromLoop_() {
   TP_DCHECK(loop_.inLoop());
   closingReceiver_.activate(*this);
   readPacket_();
+}
+
+void Channel::setId(std::string id) {
+  impl_->setId(std::move(id));
+}
+
+void Channel::Impl::setId(std::string id) {
+  TP_VLOG() << "Channel " << id_ << " was renamed to " << id;
+  // FIXME Should we defer this to the loop?
+  id_ = std::move(id);
 }
 
 void Channel::close() {

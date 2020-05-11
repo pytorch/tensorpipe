@@ -69,6 +69,12 @@ class Channel {
       size_t length,
       TRecvCallback callback) = 0;
 
+  // Tell the channel what its identifier is.
+  //
+  // This is only supposed to be called from the high-level pipe. It will only
+  // used for logging and debugging purposes.
+  virtual void setId(std::string id) = 0;
+
   // Put the channel in a terminal state, aborting pending operations and
   // rejecting future ones, and release its resources. This may be carried out
   // asynchronously, in background.

@@ -43,6 +43,9 @@ class Channel : public channel::Channel {
       size_t length,
       TRecvCallback callback) override;
 
+  // Tell the channel what its identifier is.
+  void setId(std::string id) override;
+
   void close() override;
 
   ~Channel() override;
