@@ -254,6 +254,7 @@ Pipe::Impl::Impl(
   std::string address;
   std::tie(transport_, address) = splitSchemeOfURL(url);
   connection_ = context_->getTransport(transport_)->connect(std::move(address));
+  connection_->setId(id_ + ".tr_" + transport_);
 }
 
 Pipe::Impl::Impl(
@@ -268,7 +269,9 @@ Pipe::Impl::Impl(
       id_(std::move(id)),
       transport_(std::move(transport)),
       connection_(std::move(connection)),
-      closingReceiver_(context_, context_->getClosingEmitter()) {}
+      closingReceiver_(context_, context_->getClosingEmitter()) {
+  connection_->setId(id_ + ".tr_" + transport_);
+}
 
 void Pipe::Impl::init() {
   loop_.deferToLoop([this]() { initFromLoop_(); });
@@ -975,6 +978,7 @@ void Pipe::Impl::onReadWhileClientWaitingForBrochureAnswer_(
     TP_VLOG() << "Pipe " << id_ << " opening connection (as replacement)";
     std::shared_ptr<transport::Connection> connection =
         transportContext->connect(address);
+    connection->setId(id_ + ".tr_" + transport);
     auto pbPacketOut = std::make_shared<proto::Packet>();
     proto::RequestedConnection* pbRequestedConnection =
         pbPacketOut->mutable_requested_connection();
@@ -1003,6 +1007,7 @@ void Pipe::Impl::onReadWhileClientWaitingForBrochureAnswer_(
     TP_VLOG() << "Pipe " << id_ << " opening connection (for channel)";
     std::shared_ptr<transport::Connection> connection =
         transportContext->connect(address);
+    connection->setId(id_ + ".ch_" + channelName);
 
     auto pbPacketOut = std::make_shared<proto::Packet>();
     proto::RequestedConnection* pbRequestedConnection =
@@ -1016,10 +1021,10 @@ void Pipe::Impl::onReadWhileClientWaitingForBrochureAnswer_(
                     << " done writing proto (requested connection)";
         }));
 
-    channels_.emplace(
-        channelName,
-        channelContext->createChannel(
-            std::move(connection), channel::Channel::Endpoint::kConnect));
+    std::shared_ptr<channel::Channel> channel = channelContext->createChannel(
+        std::move(connection), channel::Channel::Endpoint::kConnect);
+    channel->setId(id_ + ".ch_" + channelName);
+    channels_.emplace(channelName, std::move(channel));
   }
 
   state_ = ESTABLISHED;
@@ -1046,6 +1051,7 @@ void Pipe::Impl::onAcceptWhileServerWaitingForConnection_(
   TP_DCHECK(registrationId_.has_value());
   listener_->unregisterConnectionRequest(registrationId_.value());
   registrationId_.reset();
+  receivedConnection->setId(id_ + ".tr_" + receivedTransport);
   TP_DCHECK_EQ(transport_, receivedTransport);
   connection_.reset();
   connection_ = std::move(receivedConnection);
@@ -1078,6 +1084,7 @@ void Pipe::Impl::onAcceptWhileServerWaitingForChannel_(
   TP_DCHECK(channelRegistrationIdIter != channelRegistrationIds_.end());
   listener_->unregisterConnectionRequest(channelRegistrationIdIter->second);
   channelRegistrationIds_.erase(channelRegistrationIdIter);
+  receivedConnection->setId(id_ + ".ch_" + channelName);
 
   TP_DCHECK_EQ(transport_, receivedTransport);
   auto channelIter = channels_.find(channelName);
@@ -1086,10 +1093,10 @@ void Pipe::Impl::onAcceptWhileServerWaitingForChannel_(
   std::shared_ptr<channel::Context> channelContext =
       context_->getChannel(channelName);
 
-  channels_.emplace(
-      channelName,
-      channelContext->createChannel(
-          std::move(receivedConnection), channel::Channel::Endpoint::kListen));
+  std::shared_ptr<channel::Channel> channel = channelContext->createChannel(
+      std::move(receivedConnection), channel::Channel::Endpoint::kListen);
+  channel->setId(id_ + ".ch_" + channelName);
+  channels_.emplace(channelName, std::move(channel));
 
   if (!registrationId_.has_value() && channelRegistrationIds_.empty()) {
     state_ = ESTABLISHED;

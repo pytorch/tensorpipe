@@ -173,6 +173,7 @@ Listener::Impl::Impl(
     std::shared_ptr<transport::Context> context =
         context_->getTransport(transport);
     std::shared_ptr<transport::Listener> listener = context->listen(address);
+    listener->setId(id_ + ".tr_" + transport);
     addresses_.emplace(transport, listener->addr());
     listeners_.emplace(transport, std::move(listener));
   }
