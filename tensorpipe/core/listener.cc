@@ -53,13 +53,7 @@ class Listener::Impl : public Listener::PrivateIface,
   ~Impl() override = default;
 
  private:
-  mutable std::mutex mutex_;
-  std::thread::id currentLoop_{std::thread::id()};
-  std::deque<std::function<void()>> pendingTasks_;
-
-  bool inLoop_();
-
-  void deferToLoop_(std::function<void()> fn);
+  OnDemandLoop loop_;
 
   void acceptFromLoop_(accept_callback_fn);
 
@@ -128,7 +122,7 @@ class Listener::Impl : public Listener::PrivateIface,
   // Helpers to prepare callbacks from transports
   //
 
-  LazyCallbackWrapper<Impl> lazyCallbackWrapper_{*this};
+  LazyCallbackWrapper<Impl> lazyCallbackWrapper_{*this, this->loop_};
 
   //
   // Error handling
@@ -185,43 +179,14 @@ Listener::Impl::Impl(
 }
 
 void Listener::Impl::init() {
-  deferToLoop_([this]() { initFromLoop_(); });
+  loop_.deferToLoop([this]() { initFromLoop_(); });
 }
 
 void Listener::Impl::initFromLoop_() {
-  TP_DCHECK(inLoop_());
+  TP_DCHECK(loop_.inLoop());
   closingReceiver_.activate(*this);
   for (const auto& listener : listeners_) {
     armListener_(listener.first);
-  }
-}
-
-bool Listener::Impl::inLoop_() {
-  return currentLoop_ == std::this_thread::get_id();
-}
-
-void Listener::Impl::deferToLoop_(std::function<void()> fn) {
-  {
-    std::unique_lock<std::mutex> lock(mutex_);
-    pendingTasks_.push_back(std::move(fn));
-    if (currentLoop_ != std::thread::id()) {
-      return;
-    }
-    currentLoop_ = std::this_thread::get_id();
-  }
-
-  while (true) {
-    std::function<void()> task;
-    {
-      std::unique_lock<std::mutex> lock(mutex_);
-      if (pendingTasks_.empty()) {
-        currentLoop_ = std::thread::id();
-        return;
-      }
-      task = std::move(pendingTasks_.front());
-      pendingTasks_.pop_front();
-    }
-    task();
   }
 }
 
@@ -230,11 +195,11 @@ void Listener::close() {
 }
 
 void Listener::Impl::close() {
-  deferToLoop_([this]() { closeFromLoop_(); });
+  loop_.deferToLoop([this]() { closeFromLoop_(); });
 }
 
 void Listener::Impl::closeFromLoop_() {
-  TP_DCHECK(inLoop_());
+  TP_DCHECK(loop_.inLoop());
   TP_VLOG() << "Listener " << id_ << " is closing";
   setError_(TP_CREATE_ERROR(ListenerClosedError));
 }
@@ -252,12 +217,12 @@ void Listener::accept(accept_callback_fn fn) {
 }
 
 void Listener::Impl::accept(accept_callback_fn fn) {
-  deferToLoop_(
+  loop_.deferToLoop(
       [this, fn{std::move(fn)}]() mutable { acceptFromLoop_(std::move(fn)); });
 }
 
 void Listener::Impl::acceptFromLoop_(accept_callback_fn fn) {
-  TP_DCHECK(inLoop_());
+  TP_DCHECK(loop_.inLoop());
 
   uint64_t sequenceNumber = nextPipeBeingAccepted_++;
   TP_VLOG() << "Listener " << id_ << " received an accept request (#"
@@ -329,7 +294,7 @@ uint64_t Listener::Impl::registerConnectionRequest(
   // FIXME Avoid this hack by doing like we did with the channels' recv: have
   // this accept a callback that is called with the registration ID.
   uint64_t registrationId = nextConnectionRequestRegistrationId_++;
-  deferToLoop_([this, registrationId, fn{std::move(fn)}]() mutable {
+  loop_.deferToLoop([this, registrationId, fn{std::move(fn)}]() mutable {
     registerConnectionRequestFromLoop_(registrationId, std::move(fn));
   });
   return registrationId;
@@ -338,7 +303,7 @@ uint64_t Listener::Impl::registerConnectionRequest(
 void Listener::Impl::registerConnectionRequestFromLoop_(
     uint64_t registrationId,
     connection_request_callback_fn fn) {
-  TP_DCHECK(inLoop_());
+  TP_DCHECK(loop_.inLoop());
 
   if (error_) {
     fn(error_, std::string(), std::shared_ptr<transport::Connection>());
@@ -348,14 +313,14 @@ void Listener::Impl::registerConnectionRequestFromLoop_(
 }
 
 void Listener::Impl::unregisterConnectionRequest(uint64_t registrationId) {
-  deferToLoop_([this, registrationId]() {
+  loop_.deferToLoop([this, registrationId]() {
     unregisterConnectionRequestFromLoop_(registrationId);
   });
 }
 
 void Listener::Impl::unregisterConnectionRequestFromLoop_(
     uint64_t registrationId) {
-  TP_DCHECK(inLoop_());
+  TP_DCHECK(loop_.inLoop());
   connectionRequestRegistrations_.erase(registrationId);
 }
 
@@ -375,7 +340,7 @@ void Listener::Impl::setError_(Error error) {
 }
 
 void Listener::Impl::handleError_() {
-  TP_DCHECK(inLoop_());
+  TP_DCHECK(loop_.inLoop());
 
   acceptCallback_.triggerAll([&]() {
     return std::make_tuple(std::cref(error_), std::shared_ptr<Pipe>());
@@ -398,7 +363,7 @@ void Listener::Impl::handleError_() {
 void Listener::Impl::onAccept_(
     std::string transport,
     std::shared_ptr<transport::Connection> connection) {
-  TP_DCHECK(inLoop_());
+  TP_DCHECK(loop_.inLoop());
   // Keep it alive until we figure out what to do with it.
   connectionsWaitingForHello_.insert(connection);
   auto pbPacketIn = std::make_shared<proto::Packet>();
@@ -418,7 +383,7 @@ void Listener::Impl::onAccept_(
 }
 
 void Listener::Impl::armListener_(std::string transport) {
-  TP_DCHECK(inLoop_());
+  TP_DCHECK(loop_.inLoop());
   auto iter = listeners_.find(transport);
   if (iter == listeners_.end()) {
     TP_THROW_EINVAL() << "unsupported transport " << transport;
@@ -436,7 +401,7 @@ void Listener::Impl::onConnectionHelloRead_(
     std::string transport,
     std::shared_ptr<transport::Connection> connection,
     const proto::Packet& pbPacketIn) {
-  TP_DCHECK(inLoop_());
+  TP_DCHECK(loop_.inLoop());
   if (pbPacketIn.has_spontaneous_connection()) {
     const proto::SpontaneousConnection& pbSpontaneousConnection =
         pbPacketIn.spontaneous_connection();

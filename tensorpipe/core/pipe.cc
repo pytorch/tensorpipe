@@ -48,11 +48,7 @@ class Pipe::Impl : public std::enable_shared_from_this<Pipe::Impl> {
   void close();
 
  private:
-  std::mutex mutex_;
-  std::atomic<std::thread::id> currentLoop_{std::thread::id()};
-  std::deque<std::function<void()>> pendingTasks_;
-
-  void deferToLoop_(std::function<void()> fn);
+  OnDemandLoop loop_;
 
   void initFromLoop_();
 
@@ -61,8 +57,6 @@ class Pipe::Impl : public std::enable_shared_from_this<Pipe::Impl> {
   void readFromLoop_(Message, read_callback_fn);
 
   void writeFromLoop_(Message, write_callback_fn);
-
-  bool inLoop_();
 
   void closeFromLoop_();
 
@@ -160,8 +154,8 @@ class Pipe::Impl : public std::enable_shared_from_this<Pipe::Impl> {
   // Helpers to prepare callbacks from transports and listener
   //
 
-  LazyCallbackWrapper<Impl> lazyCallbackWrapper_{*this};
-  EagerCallbackWrapper<Impl> eagerCallbackWrapper_{*this};
+  LazyCallbackWrapper<Impl> lazyCallbackWrapper_{*this, this->loop_};
+  EagerCallbackWrapper<Impl> eagerCallbackWrapper_{*this, this->loop_};
 
   //
   // Helpers to schedule our callbacks into user code
@@ -277,11 +271,11 @@ Pipe::Impl::Impl(
       closingReceiver_(context_, context_->getClosingEmitter()) {}
 
 void Pipe::Impl::init() {
-  deferToLoop_([this]() { initFromLoop_(); });
+  loop_.deferToLoop([this]() { initFromLoop_(); });
 }
 
 void Pipe::Impl::initFromLoop_() {
-  TP_DCHECK(inLoop_());
+  TP_DCHECK(loop_.inLoop());
   closingReceiver_.activate(*this);
   if (state_ == CLIENT_ABOUT_TO_SEND_HELLO_AND_BROCHURE) {
     auto pbPacketOut = std::make_shared<proto::Packet>();
@@ -356,47 +350,13 @@ void Pipe::close() {
 }
 
 void Pipe::Impl::close() {
-  deferToLoop_([this]() { closeFromLoop_(); });
+  loop_.deferToLoop([this]() { closeFromLoop_(); });
 }
 
 void Pipe::Impl::closeFromLoop_() {
-  TP_DCHECK(inLoop_());
+  TP_DCHECK(loop_.inLoop());
   TP_VLOG() << "Pipe " << id_ << " is closing";
   setError_(TP_CREATE_ERROR(PipeClosedError));
-}
-
-bool Pipe::Impl::inLoop_() {
-  // If the current thread is already holding the lock (i.e., it's already in
-  // this function somewhere higher up in the stack) then this check won't race
-  // and we will detect it correctly. If this is not the case, then this check
-  // may race with another thread, but that's nothing to worry about because in
-  // either case the outcome will be negative.
-  return currentLoop_ == std::this_thread::get_id();
-}
-
-void Pipe::Impl::deferToLoop_(std::function<void()> fn) {
-  {
-    std::unique_lock<std::mutex> lock(mutex_);
-    pendingTasks_.push_back(std::move(fn));
-    if (currentLoop_ != std::thread::id()) {
-      return;
-    }
-    currentLoop_ = std::this_thread::get_id();
-  }
-
-  while (true) {
-    std::function<void()> task;
-    {
-      std::unique_lock<std::mutex> lock(mutex_);
-      if (pendingTasks_.empty()) {
-        currentLoop_ = std::thread::id();
-        return;
-      }
-      task = std::move(pendingTasks_.front());
-      pendingTasks_.pop_front();
-    }
-    task();
-  }
 }
 
 //
@@ -408,13 +368,13 @@ void Pipe::readDescriptor(read_descriptor_callback_fn fn) {
 }
 
 void Pipe::Impl::readDescriptor(read_descriptor_callback_fn fn) {
-  deferToLoop_([this, fn{std::move(fn)}]() mutable {
+  loop_.deferToLoop([this, fn{std::move(fn)}]() mutable {
     readDescriptorFromLoop_(std::move(fn));
   });
 }
 
 void Pipe::Impl::readDescriptorFromLoop_(read_descriptor_callback_fn fn) {
-  TP_DCHECK(inLoop_());
+  TP_DCHECK(loop_.inLoop());
 
   int64_t sequenceNumber = nextMessageBeingRead_++;
   TP_VLOG() << "Pipe " << id_ << " received a readDescriptor request (#"
@@ -450,15 +410,15 @@ void Pipe::Impl::read(Message message, read_callback_fn fn) {
   // Messages aren't copyable and thus if a lambda captures them it cannot be
   // wrapped in a std::function. Therefore we wrap Messages in shared_ptrs.
   auto sharedMessage = std::make_shared<Message>(std::move(message));
-  deferToLoop_([this,
-                sharedMessage{std::move(sharedMessage)},
-                fn{std::move(fn)}]() mutable {
+  loop_.deferToLoop([this,
+                     sharedMessage{std::move(sharedMessage)},
+                     fn{std::move(fn)}]() mutable {
     readFromLoop_(std::move(*sharedMessage), std::move(fn));
   });
 }
 
 void Pipe::Impl::readFromLoop_(Message message, read_callback_fn fn) {
-  TP_DCHECK(inLoop_());
+  TP_DCHECK(loop_.inLoop());
 
   // This is such a bad logical error on the user's side that it doesn't deserve
   // to pass through the channel for "expected errors" (i.e., the callback).
@@ -563,15 +523,15 @@ void Pipe::Impl::write(Message message, write_callback_fn fn) {
   // Messages aren't copyable and thus if a lambda captures them it cannot be
   // wrapped in a std::function. Therefore we wrap Messages in shared_ptrs.
   auto sharedMessage = std::make_shared<Message>(std::move(message));
-  deferToLoop_([this,
-                sharedMessage{std::move(sharedMessage)},
-                fn{std::move(fn)}]() mutable {
+  loop_.deferToLoop([this,
+                     sharedMessage{std::move(sharedMessage)},
+                     fn{std::move(fn)}]() mutable {
     writeFromLoop_(std::move(*sharedMessage), std::move(fn));
   });
 }
 
 void Pipe::Impl::writeFromLoop_(Message message, write_callback_fn fn) {
-  TP_DCHECK(inLoop_());
+  TP_DCHECK(loop_.inLoop());
 
   int64_t sequenceNumber = nextMessageBeingWritten_++;
   TP_VLOG() << "Pipe " << id_ << " received a write request (#"
@@ -599,7 +559,7 @@ void Pipe::Impl::triggerReadDescriptorCallback_(
     read_descriptor_callback_fn&& fn,
     const Error& error,
     Message message) {
-  TP_DCHECK(inLoop_());
+  TP_DCHECK(loop_.inLoop());
   TP_DCHECK_EQ(nextReadDescriptorCallbackToCall_, sequenceNumber);
   TP_VLOG() << "Pipe " << id_ << " calling a readDescriptor callback (#"
             << sequenceNumber << ")";
@@ -614,7 +574,7 @@ void Pipe::Impl::triggerReadCallback_(
     read_callback_fn&& fn,
     const Error& error,
     Message message) {
-  TP_DCHECK(inLoop_());
+  TP_DCHECK(loop_.inLoop());
   TP_DCHECK_EQ(nextReadCallbackToCall_, sequenceNumber);
   TP_VLOG() << "Pipe " << id_ << " calling a read callback (#" << sequenceNumber
             << ")";
@@ -629,7 +589,7 @@ void Pipe::Impl::triggerWriteCallback_(
     write_callback_fn&& fn,
     const Error& error,
     Message message) {
-  TP_DCHECK(inLoop_());
+  TP_DCHECK(loop_.inLoop());
   TP_DCHECK_EQ(nextWriteCallbackToCall_, sequenceNumber);
   TP_VLOG() << "Pipe " << id_ << " calling a write callback (#"
             << sequenceNumber << ")";
@@ -640,7 +600,7 @@ void Pipe::Impl::triggerWriteCallback_(
 }
 
 void Pipe::Impl::triggerReadyCallbacks_() {
-  TP_DCHECK(inLoop_());
+  TP_DCHECK(loop_.inLoop());
 
   while (true) {
     if (!messagesBeingExpected_.empty()) {
@@ -717,7 +677,7 @@ void Pipe::Impl::setError_(Error error) {
 }
 
 void Pipe::Impl::handleError_() {
-  TP_DCHECK(inLoop_());
+  TP_DCHECK(loop_.inLoop());
 
   // TODO Close all connections and channels.
 
@@ -738,7 +698,7 @@ void Pipe::Impl::handleError_() {
 //
 
 void Pipe::Impl::doWritesAccumulatedWhileWaitingForPipeToBeEstablished_() {
-  TP_DCHECK(inLoop_());
+  TP_DCHECK(loop_.inLoop());
   TP_DCHECK_EQ(state_, ESTABLISHED);
   for (auto& m : messagesBeingWritten_) {
     if (m.startedSendingTensors) {
@@ -750,7 +710,7 @@ void Pipe::Impl::doWritesAccumulatedWhileWaitingForPipeToBeEstablished_() {
 
 void Pipe::Impl::sendTensorsOfMessage_(
     MessageBeingWritten& messageBeingWritten) {
-  TP_DCHECK(inLoop_());
+  TP_DCHECK(loop_.inLoop());
   TP_DCHECK_EQ(state_, ESTABLISHED);
   TP_DCHECK(!messageBeingWritten.startedSendingTensors);
   messageBeingWritten.startedSendingTensors = true;
@@ -803,7 +763,7 @@ void Pipe::Impl::sendTensorsOfMessage_(
 }
 
 void Pipe::Impl::writeMessage_(MessageBeingWritten& messageBeingWritten) {
-  TP_DCHECK(inLoop_());
+  TP_DCHECK(loop_.inLoop());
   TP_DCHECK_EQ(state_, ESTABLISHED);
   TP_DCHECK(!messageBeingWritten.startedWritingPayloads);
   messageBeingWritten.startedWritingPayloads = true;
@@ -868,7 +828,7 @@ void Pipe::Impl::writeMessage_(MessageBeingWritten& messageBeingWritten) {
 
 void Pipe::Impl::onReadWhileServerWaitingForBrochure_(
     const proto::Packet& pbPacketIn) {
-  TP_DCHECK(inLoop_());
+  TP_DCHECK(loop_.inLoop());
   TP_DCHECK_EQ(state_, SERVER_WAITING_FOR_BROCHURE);
   TP_DCHECK_EQ(pbPacketIn.type_case(), proto::Packet::kBrochure);
   const proto::Brochure& pbBrochure = pbPacketIn.brochure();
@@ -1001,7 +961,7 @@ void Pipe::Impl::onReadWhileServerWaitingForBrochure_(
 
 void Pipe::Impl::onReadWhileClientWaitingForBrochureAnswer_(
     const proto::Packet& pbPacketIn) {
-  TP_DCHECK(inLoop_());
+  TP_DCHECK(loop_.inLoop());
   TP_DCHECK_EQ(state_, CLIENT_WAITING_FOR_BROCHURE_ANSWER);
   TP_DCHECK_EQ(pbPacketIn.type_case(), proto::Packet::kBrochureAnswer);
 
@@ -1081,7 +1041,7 @@ void Pipe::Impl::onReadWhileClientWaitingForBrochureAnswer_(
 void Pipe::Impl::onAcceptWhileServerWaitingForConnection_(
     std::string receivedTransport,
     std::shared_ptr<transport::Connection> receivedConnection) {
-  TP_DCHECK(inLoop_());
+  TP_DCHECK(loop_.inLoop());
   TP_DCHECK_EQ(state_, SERVER_WAITING_FOR_CONNECTIONS);
   TP_DCHECK(registrationId_.has_value());
   listener_->unregisterConnectionRequest(registrationId_.value());
@@ -1112,7 +1072,7 @@ void Pipe::Impl::onAcceptWhileServerWaitingForChannel_(
     std::string channelName,
     std::string receivedTransport,
     std::shared_ptr<transport::Connection> receivedConnection) {
-  TP_DCHECK(inLoop_());
+  TP_DCHECK(loop_.inLoop());
   TP_DCHECK_EQ(state_, SERVER_WAITING_FOR_CONNECTIONS);
   auto channelRegistrationIdIter = channelRegistrationIds_.find(channelName);
   TP_DCHECK(channelRegistrationIdIter != channelRegistrationIds_.end());
@@ -1150,7 +1110,7 @@ void Pipe::Impl::onAcceptWhileServerWaitingForChannel_(
 }
 
 void Pipe::Impl::onReadOfMessageDescriptor_(const proto::Packet& pbPacketIn) {
-  TP_DCHECK(inLoop_());
+  TP_DCHECK(loop_.inLoop());
   TP_DCHECK_EQ(state_, ESTABLISHED);
 
   TP_DCHECK(!messagesBeingExpected_.empty());
@@ -1204,7 +1164,7 @@ void Pipe::Impl::onDescriptorOfTensor_(
     int64_t sequenceNumber,
     int64_t tensorIdx,
     channel::Channel::TDescriptor descriptor) {
-  TP_DCHECK(inLoop_());
+  TP_DCHECK(loop_.inLoop());
   // FIXME Using find_if makes sense when we expect the result to be near the
   // beginning, but here it's actually likely to be at the back. Perhaps it
   // makes sense to just use a hashmap?
@@ -1222,7 +1182,7 @@ void Pipe::Impl::onDescriptorOfTensor_(
 }
 
 void Pipe::Impl::onReadOfPayload_(int64_t sequenceNumber) {
-  TP_DCHECK(inLoop_());
+  TP_DCHECK(loop_.inLoop());
   auto iter = std::find_if(
       messagesBeingRead_.begin(), messagesBeingRead_.end(), [&](const auto& m) {
         return m.sequenceNumber == sequenceNumber;
@@ -1234,7 +1194,7 @@ void Pipe::Impl::onReadOfPayload_(int64_t sequenceNumber) {
 }
 
 void Pipe::Impl::onRecvOfTensor_(int64_t sequenceNumber) {
-  TP_DCHECK(inLoop_());
+  TP_DCHECK(loop_.inLoop());
   auto iter = std::find_if(
       messagesBeingRead_.begin(), messagesBeingRead_.end(), [&](const auto& m) {
         return m.sequenceNumber == sequenceNumber;
@@ -1246,7 +1206,7 @@ void Pipe::Impl::onRecvOfTensor_(int64_t sequenceNumber) {
 }
 
 void Pipe::Impl::onWriteOfPayload_(int64_t sequenceNumber) {
-  TP_DCHECK(inLoop_());
+  TP_DCHECK(loop_.inLoop());
   auto iter = std::find_if(
       messagesBeingWritten_.begin(),
       messagesBeingWritten_.end(),
@@ -1258,7 +1218,7 @@ void Pipe::Impl::onWriteOfPayload_(int64_t sequenceNumber) {
 }
 
 void Pipe::Impl::onSendOfTensor_(int64_t sequenceNumber) {
-  TP_DCHECK(inLoop_());
+  TP_DCHECK(loop_.inLoop());
   auto iter = std::find_if(
       messagesBeingWritten_.begin(),
       messagesBeingWritten_.end(),

@@ -56,12 +56,7 @@ class Channel::Impl : public std::enable_shared_from_this<Channel::Impl> {
   void close();
 
  private:
-  std::mutex mutex_;
-  std::thread::id currentLoop_{std::thread::id()};
-  std::deque<std::function<void()>> pendingTasks_;
-
-  bool inLoop_();
-  void deferToLoop_(std::function<void()> fn);
+  OnDemandLoop loop_;
 
   void initFromLoop_();
 
@@ -113,8 +108,8 @@ class Channel::Impl : public std::enable_shared_from_this<Channel::Impl> {
 
   std::list<SendOperation> sendOperations_;
 
-  LazyCallbackWrapper<Impl> lazyCallbackWrapper_{*this};
-  EagerCallbackWrapper<Impl> eagerCallbackWrapper_{*this};
+  LazyCallbackWrapper<Impl> lazyCallbackWrapper_{*this, this->loop_};
+  EagerCallbackWrapper<Impl> eagerCallbackWrapper_{*this, this->loop_};
 
   // For some odd reason it seems we need to use a qualified name here...
   template <typename T>
@@ -139,42 +134,13 @@ Channel::Impl::Impl(
       closingReceiver_(context_, context_->getClosingEmitter()) {}
 
 void Channel::Impl::init() {
-  deferToLoop_([this]() { initFromLoop_(); });
+  loop_.deferToLoop([this]() { initFromLoop_(); });
 }
 
 void Channel::Impl::initFromLoop_() {
-  TP_DCHECK(inLoop_());
+  TP_DCHECK(loop_.inLoop());
   closingReceiver_.activate(*this);
   readPacket_();
-}
-
-bool Channel::Impl::inLoop_() {
-  return currentLoop_ == std::this_thread::get_id();
-}
-
-void Channel::Impl::deferToLoop_(std::function<void()> fn) {
-  {
-    std::unique_lock<std::mutex> lock(mutex_);
-    pendingTasks_.push_back(std::move(fn));
-    if (currentLoop_ != std::thread::id()) {
-      return;
-    }
-    currentLoop_ = std::this_thread::get_id();
-  }
-
-  while (true) {
-    std::function<void()> task;
-    {
-      std::unique_lock<std::mutex> lock(mutex_);
-      if (pendingTasks_.empty()) {
-        currentLoop_ = std::thread::id();
-        return;
-      }
-      task = std::move(pendingTasks_.front());
-      pendingTasks_.pop_front();
-    }
-    task();
-  }
 }
 
 void Channel::send(
@@ -190,11 +156,11 @@ void Channel::Impl::send(
     size_t length,
     TDescriptorCallback descriptorCallback,
     TSendCallback callback) {
-  deferToLoop_([this,
-                ptr,
-                length,
-                descriptorCallback{std::move(descriptorCallback)},
-                callback{std::move(callback)}]() mutable {
+  loop_.deferToLoop([this,
+                     ptr,
+                     length,
+                     descriptorCallback{std::move(descriptorCallback)},
+                     callback{std::move(callback)}]() mutable {
     sendFromLoop_(
         ptr, length, std::move(descriptorCallback), std::move(callback));
   });
@@ -205,7 +171,7 @@ void Channel::Impl::sendFromLoop_(
     size_t length,
     TDescriptorCallback descriptorCallback,
     TSendCallback callback) {
-  TP_DCHECK(inLoop_());
+  TP_DCHECK(loop_.inLoop());
 
   if (error_) {
     descriptorCallback(error_, std::string());
@@ -238,11 +204,11 @@ void Channel::Impl::recv(
     void* ptr,
     size_t length,
     TRecvCallback callback) {
-  deferToLoop_([this,
-                descriptor{std::move(descriptor)},
-                ptr,
-                length,
-                callback{std::move(callback)}]() mutable {
+  loop_.deferToLoop([this,
+                     descriptor{std::move(descriptor)},
+                     ptr,
+                     length,
+                     callback{std::move(callback)}]() mutable {
     recvFromLoop_(std::move(descriptor), ptr, length, std::move(callback));
   });
 }
@@ -252,7 +218,7 @@ void Channel::Impl::recvFromLoop_(
     void* ptr,
     size_t length,
     TRecvCallback callback) {
-  TP_DCHECK(inLoop_());
+  TP_DCHECK(loop_.inLoop());
 
   if (error_) {
     callback(error_);
@@ -292,16 +258,16 @@ Channel::~Channel() {
 }
 
 void Channel::Impl::close() {
-  deferToLoop_([this]() { closeFromLoop_(); });
+  loop_.deferToLoop([this]() { closeFromLoop_(); });
 }
 
 void Channel::Impl::closeFromLoop_() {
-  TP_DCHECK(inLoop_());
+  TP_DCHECK(loop_.inLoop());
   setError_(TP_CREATE_ERROR(ChannelClosedError));
 }
 
 void Channel::Impl::readPacket_() {
-  TP_DCHECK(inLoop_());
+  TP_DCHECK(loop_.inLoop());
   auto pbPacketIn = std::make_shared<proto::Packet>();
   connection_->read(*pbPacketIn, lazyCallbackWrapper_([pbPacketIn](Impl& impl) {
     impl.onPacket_(*pbPacketIn);
@@ -309,7 +275,7 @@ void Channel::Impl::readPacket_() {
 }
 
 void Channel::Impl::onPacket_(const proto::Packet& pbPacketIn) {
-  TP_DCHECK(inLoop_());
+  TP_DCHECK(loop_.inLoop());
 
   TP_DCHECK_EQ(pbPacketIn.type_case(), proto::Packet::kNotification);
   onNotification_(pbPacketIn.notification());
@@ -319,7 +285,7 @@ void Channel::Impl::onPacket_(const proto::Packet& pbPacketIn) {
 }
 
 void Channel::Impl::onNotification_(const proto::Notification& pbNotification) {
-  TP_DCHECK(inLoop_());
+  TP_DCHECK(loop_.inLoop());
 
   // Find the send operation matching the notification's operation ID.
   const auto id = pbNotification.operation_id();
@@ -350,7 +316,7 @@ void Channel::Impl::setError_(Error error) {
 }
 
 void Channel::Impl::handleError_() {
-  TP_DCHECK(inLoop_());
+  TP_DCHECK(loop_.inLoop());
 
   // Move pending operations to stack.
   auto sendOperations = std::move(sendOperations_);

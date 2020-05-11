@@ -8,10 +8,12 @@
 
 #pragma once
 
+#include <atomic>
 #include <deque>
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <thread>
 #include <tuple>
 #include <unordered_map>
 
@@ -110,6 +112,67 @@ class RearmableCallback {
   std::deque<TStoredArgs> args_;
 };
 
+// Dealing with thread-safety using per-object mutexes is prone to deadlocks
+// because of reentrant calls (both "upward", when invoking a callback that
+// calls back into a method of the object, and "downward", when passing a
+// callback to an operation of another object that calls it inline) and lock
+// inversions (object A calling a method of object B and attempting to acquire
+// its lock, with the reverse happening at the same time). Using a "loop" model,
+// where operations aren't called inlined and piled up on the stack but instead
+// deferred to a later iteration of the loop, solves many of these issues.
+// Transports typically have their own thread they can use to host such loops,
+// but many objects (like pipes) don't naturally own threads and introducing
+// them would also mean introducing latency costs due to context switching.
+// In order to give these objects a loop they can use to defer their operations
+// to, we can have them temporarily hijack the calling thread and repurpose it
+// to run an ephemeral loop on which to run the original task and all the ones
+// that a task running on the loop chooses to defer to a later iteration of the
+// loop, recursively. Once all these tasks have been completed, the makeshift
+// loop is dismantled and control of the thread is returned to the caller.
+class OnDemandLoop {
+ public:
+  using TTask = std::function<void()>;
+
+  inline bool inLoop() {
+    // If the current thread is already holding the lock (i.e., it's already in
+    // this function somewhere higher up in the stack) then this check won't
+    // race and we will detect it correctly. If this is not the case, then this
+    // check may race with another thread, but that's nothing to worry about
+    // because in either case the outcome will be negative.
+    return currentLoop_ == std::this_thread::get_id();
+  }
+
+  void deferToLoop(TTask fn) {
+    {
+      std::unique_lock<std::mutex> lock(mutex_);
+      pendingTasks_.push_back(std::move(fn));
+      if (currentLoop_ != std::thread::id()) {
+        return;
+      }
+      currentLoop_ = std::this_thread::get_id();
+    }
+
+    while (true) {
+      TTask task;
+      {
+        std::unique_lock<std::mutex> lock(mutex_);
+        if (pendingTasks_.empty()) {
+          currentLoop_ = std::thread::id();
+          return;
+        }
+        task = std::move(pendingTasks_.front());
+        pendingTasks_.pop_front();
+      }
+      task();
+    }
+  }
+
+ private:
+  std::mutex mutex_;
+  std::atomic<std::thread::id> currentLoop_{std::thread::id()};
+  std::deque<TTask> pendingTasks_;
+};
+
 // This class provides some boilerplate that is used by the pipe, the listener
 // and others when passing a callback to some lower-level component.
 // It is called "lazy" because it will only acquire a weak_ptr to the object
@@ -119,8 +182,10 @@ class RearmableCallback {
 template <typename TSubject>
 class LazyCallbackWrapper {
  public:
-  LazyCallbackWrapper(std::enable_shared_from_this<TSubject>& subject)
-      : subject_(subject){};
+  LazyCallbackWrapper(
+      std::enable_shared_from_this<TSubject>& subject,
+      OnDemandLoop& loop)
+      : subject_(subject), loop_(loop){};
 
   template <typename TBoundFn>
   auto operator()(TBoundFn&& fn) {
@@ -138,6 +203,7 @@ class LazyCallbackWrapper {
 
  private:
   std::enable_shared_from_this<TSubject>& subject_;
+  OnDemandLoop& loop_;
 
   template <typename TBoundFn, typename... Args>
   void entryPoint_(
@@ -146,7 +212,7 @@ class LazyCallbackWrapper {
       const Error& error,
       Args&&... args) {
     // FIXME We're copying the args here...
-    subject.deferToLoop_(
+    loop_.deferToLoop(
         [this, &subject, fn{std::move(fn)}, error, args...]() mutable {
           entryPointFromLoop_(
               subject, std::move(fn), error, std::forward<Args>(args)...);
@@ -159,7 +225,7 @@ class LazyCallbackWrapper {
       TBoundFn fn,
       const Error& error,
       Args&&... args) {
-    TP_DCHECK(subject.inLoop_());
+    TP_DCHECK(loop_.inLoop());
 
     subject.setError_(error);
     // Proceed only in case of success: this is why it's called "lazy".
@@ -181,8 +247,10 @@ class LazyCallbackWrapper {
 template <typename TSubject>
 class EagerCallbackWrapper {
  public:
-  EagerCallbackWrapper(std::enable_shared_from_this<TSubject>& subject)
-      : subject_(subject){};
+  EagerCallbackWrapper(
+      std::enable_shared_from_this<TSubject>& subject,
+      OnDemandLoop& loop)
+      : subject_(subject), loop_(loop){};
 
   template <typename TBoundFn>
   auto operator()(TBoundFn&& fn) {
@@ -198,6 +266,7 @@ class EagerCallbackWrapper {
 
  private:
   std::enable_shared_from_this<TSubject>& subject_;
+  OnDemandLoop& loop_;
 
   template <typename TBoundFn, typename... Args>
   void entryPoint_(
@@ -206,7 +275,7 @@ class EagerCallbackWrapper {
       const Error& error,
       Args&&... args) {
     // FIXME We're copying the args here...
-    subject.deferToLoop_(
+    loop_.deferToLoop(
         [this, &subject, fn{std::move(fn)}, error, args...]() mutable {
           entryPointFromLoop_(
               subject, std::move(fn), error, std::forward<Args>(args)...);
@@ -219,7 +288,7 @@ class EagerCallbackWrapper {
       TBoundFn fn,
       const Error& error,
       Args&&... args) {
-    TP_DCHECK(subject.inLoop_());
+    TP_DCHECK(loop_.inLoop());
 
     subject.setError_(error);
     // Proceed regardless of any error: this is why it's called "eager".
