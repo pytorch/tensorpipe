@@ -31,7 +31,8 @@ class Listener final : public transport::Listener {
   Listener(
       ConstructorToken,
       std::shared_ptr<Context::PrivateIface> context,
-      address_t addr);
+      address_t addr,
+      std::string id);
 
   // Queue a callback to be called when a connection comes in.
   void accept(accept_callback_fn fn) override;

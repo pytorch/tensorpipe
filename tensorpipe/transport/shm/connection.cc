@@ -293,10 +293,14 @@ class Connection::Impl : public std::enable_shared_from_this<Connection::Impl>,
   // Create a connection that is already connected (e.g. from a listener).
   Impl(
       std::shared_ptr<Context::PrivateIface> context,
-      std::shared_ptr<Socket> socket);
+      std::shared_ptr<Socket> socket,
+      std::string id);
 
   // Create a connection that connects to the specified address.
-  Impl(std::shared_ptr<Context::PrivateIface> context, address_t addr);
+  Impl(
+      std::shared_ptr<Context::PrivateIface> context,
+      address_t addr,
+      std::string id);
 
   // Initialize member fields that need `shared_from_this`.
   void init();
@@ -380,6 +384,11 @@ class Connection::Impl : public std::enable_shared_from_this<Connection::Impl>,
   // Pending write operations.
   std::deque<WriteOperation> writeOperations_;
 
+  // An identifier for the connection, composed of the identifier for the
+  // context or listener, combined with an increasing sequence number. It will
+  // only be used for logging and debugging purposes.
+  std::string id_;
+
   // Process pending read operations if in an operational state.
   //
   // This may be triggered by the other side of the connection (by pushing this
@@ -411,16 +420,24 @@ class Connection::Impl : public std::enable_shared_from_this<Connection::Impl>,
 Connection::Connection(
     ConstructorToken /* unused */,
     std::shared_ptr<Context::PrivateIface> context,
-    std::shared_ptr<Socket> socket)
-    : impl_(std::make_shared<Impl>(std::move(context), std::move(socket))) {
+    std::shared_ptr<Socket> socket,
+    std::string id)
+    : impl_(std::make_shared<Impl>(
+          std::move(context),
+          std::move(socket),
+          std::move(id))) {
   impl_->init();
 }
 
 Connection::Connection(
     ConstructorToken /* unused */,
     std::shared_ptr<Context::PrivateIface> context,
-    address_t addr)
-    : impl_(std::make_shared<Impl>(std::move(context), std::move(addr))) {
+    address_t addr,
+    std::string id)
+    : impl_(std::make_shared<Impl>(
+          std::move(context),
+          std::move(addr),
+          std::move(id))) {
   impl_->init();
 }
 
@@ -443,18 +460,22 @@ Connection::~Connection() {
 
 Connection::Impl::Impl(
     std::shared_ptr<Context::PrivateIface> context,
-    std::shared_ptr<Socket> socket)
+    std::shared_ptr<Socket> socket,
+    std::string id)
     : context_(std::move(context)),
       socket_(std::move(socket)),
-      closingReceiver_(context_, context_->getClosingEmitter()) {}
+      closingReceiver_(context_, context_->getClosingEmitter()),
+      id_(std::move(id)) {}
 
 Connection::Impl::Impl(
     std::shared_ptr<Context::PrivateIface> context,
-    address_t addr)
+    address_t addr,
+    std::string id)
     : context_(std::move(context)),
       socket_(Socket::createForFamily(AF_UNIX)),
       sockaddr_(Sockaddr::createAbstractUnixAddr(addr)),
-      closingReceiver_(context_, context_->getClosingEmitter()) {}
+      closingReceiver_(context_, context_->getClosingEmitter()),
+      id_(std::move(id)) {}
 
 void Connection::Impl::initFromLoop() {
   TP_DCHECK(context_->inLoopThread());

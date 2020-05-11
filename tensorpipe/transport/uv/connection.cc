@@ -194,10 +194,13 @@ void WriteOperation::callbackFromLoop(const Error& error) {
 class Connection::Impl : public std::enable_shared_from_this<Connection::Impl> {
  public:
   // Create a connection that is already connected (e.g. from a listener).
-  Impl(std::shared_ptr<Context::PrivateIface>, std::shared_ptr<TCPHandle>);
+  Impl(
+      std::shared_ptr<Context::PrivateIface>,
+      std::shared_ptr<TCPHandle>,
+      std::string);
 
   // Create a connection that connects to the specified address.
-  Impl(std::shared_ptr<Context::PrivateIface>, address_t);
+  Impl(std::shared_ptr<Context::PrivateIface>, address_t, std::string);
 
   // Initialize member fields that need `shared_from_this`.
   void init();
@@ -252,6 +255,11 @@ class Connection::Impl : public std::enable_shared_from_this<Connection::Impl> {
   std::deque<ReadOperation> readOperations_;
   std::deque<WriteOperation> writeOperations_;
 
+  // An identifier for the connection, composed of the identifier for the
+  // context or listener, combined with an increasing sequence number. It will
+  // only be used for logging and debugging purposes.
+  std::string id_;
+
   // By having the instance store a shared_ptr to itself we create a reference
   // cycle which will "leak" the instance. This allows us to detach its
   // lifetime from the connection and sync it with the TCPHandle's life cycle.
@@ -260,18 +268,22 @@ class Connection::Impl : public std::enable_shared_from_this<Connection::Impl> {
 
 Connection::Impl::Impl(
     std::shared_ptr<Context::PrivateIface> context,
-    std::shared_ptr<TCPHandle> handle)
+    std::shared_ptr<TCPHandle> handle,
+    std::string id)
     : context_(std::move(context)),
       handle_(std::move(handle)),
-      closingReceiver_(context_, context_->getClosingEmitter()) {}
+      closingReceiver_(context_, context_->getClosingEmitter()),
+      id_(std::move(id)) {}
 
 Connection::Impl::Impl(
     std::shared_ptr<Context::PrivateIface> context,
-    address_t addr)
+    address_t addr,
+    std::string id)
     : context_(std::move(context)),
       handle_(context_->createHandle()),
       sockaddr_(Sockaddr::createInetSockAddr(addr)),
-      closingReceiver_(context_, context_->getClosingEmitter()) {}
+      closingReceiver_(context_, context_->getClosingEmitter()),
+      id_(std::move(id)) {}
 
 void Connection::Impl::initFromLoop() {
   leak_ = shared_from_this();
@@ -443,16 +455,24 @@ void Connection::Impl::handleError_() {
 Connection::Connection(
     ConstructorToken /* unused */,
     std::shared_ptr<Context::PrivateIface> context,
-    std::shared_ptr<TCPHandle> handle)
-    : impl_(std::make_shared<Impl>(std::move(context), std::move(handle))) {
+    std::shared_ptr<TCPHandle> handle,
+    std::string id)
+    : impl_(std::make_shared<Impl>(
+          std::move(context),
+          std::move(handle),
+          std::move(id))) {
   impl_->init();
 }
 
 Connection::Connection(
     ConstructorToken /* unused */,
     std::shared_ptr<Context::PrivateIface> context,
-    address_t addr)
-    : impl_(std::make_shared<Impl>(std::move(context), std::move(addr))) {
+    address_t addr,
+    std::string id)
+    : impl_(std::make_shared<Impl>(
+          std::move(context),
+          std::move(addr),
+          std::move(id))) {
   impl_->init();
 }
 

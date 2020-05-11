@@ -23,7 +23,7 @@ namespace uv {
 class Listener::Impl : public std::enable_shared_from_this<Listener::Impl> {
  public:
   // Create a listener that listens on the specified address.
-  Impl(std::shared_ptr<Context::PrivateIface>, address_t);
+  Impl(std::shared_ptr<Context::PrivateIface>, address_t, std::string);
 
   // Initialize member fields that need `shared_from_this`.
   void init();
@@ -78,6 +78,17 @@ class Listener::Impl : public std::enable_shared_from_this<Listener::Impl> {
   // somewhere. This is what RearmableCallback is for.
   RearmableCallback<const Error&, std::shared_ptr<Connection>> callback_;
 
+  // An identifier for the listener, composed of the identifier for the context,
+  // combined with an increasing sequence number. It will be used as a prefix
+  // for the identifiers of connections. All of them will only be used for
+  // logging and debugging purposes.
+  std::string id_;
+
+  // Sequence numbers for the connections created by this listener, used to
+  // create their identifiers based off this listener's identifier. They will
+  // only be used for logging and debugging.
+  uint64_t connectionCounter_{0};
+
   // By having the instance store a shared_ptr to itself we create a reference
   // cycle which will "leak" the instance. This allows us to detach its
   // lifetime from the connection and sync it with the TCPHandle's life cycle.
@@ -86,11 +97,13 @@ class Listener::Impl : public std::enable_shared_from_this<Listener::Impl> {
 
 Listener::Impl::Impl(
     std::shared_ptr<Context::PrivateIface> context,
-    address_t addr)
+    address_t addr,
+    std::string id)
     : context_(std::move(context)),
       handle_(context_->createHandle()),
       sockaddr_(Sockaddr::createInetSockAddr(addr)),
-      closingReceiver_(context_, context_->getClosingEmitter()) {}
+      closingReceiver_(context_, context_->getClosingEmitter()),
+      id_(std::move(id)) {}
 
 void Listener::Impl::initFromLoop() {
   leak_ = shared_from_this();
@@ -141,10 +154,15 @@ void Listener::Impl::connectionCallbackFromLoop_(int status) {
   auto connection = context_->createHandle();
   connection->initFromLoop();
   handle_->acceptFromLoop(connection);
+  std::string connectionId = id_ + ".c" + std::to_string(connectionCounter_++);
+  TP_VLOG() << "Listener " << id_ << " is opening connection " << connectionId;
   callback_.trigger(
       Error::kSuccess,
       std::make_shared<Connection>(
-          Connection::ConstructorToken(), context_, std::move(connection)));
+          Connection::ConstructorToken(),
+          context_,
+          std::move(connection),
+          std::move(connectionId)));
 }
 
 void Listener::Impl::closeCallbackFromLoop_() {
@@ -172,8 +190,12 @@ void Listener::Impl::handleError_() {
 Listener::Listener(
     ConstructorToken /* unused */,
     std::shared_ptr<Context::PrivateIface> context,
-    address_t addr)
-    : impl_(std::make_shared<Impl>(std::move(context), std::move(addr))) {
+    address_t addr,
+    std::string id)
+    : impl_(std::make_shared<Impl>(
+          std::move(context),
+          std::move(addr),
+          std::move(id))) {
   impl_->init();
 }
 

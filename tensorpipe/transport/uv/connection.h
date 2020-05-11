@@ -33,13 +33,15 @@ class Connection : public transport::Connection {
   Connection(
       ConstructorToken,
       std::shared_ptr<Context::PrivateIface> context,
-      std::shared_ptr<TCPHandle> handle);
+      std::shared_ptr<TCPHandle> handle,
+      std::string id);
 
   // Create a connection that connects to the specified address.
   Connection(
       ConstructorToken,
       std::shared_ptr<Context::PrivateIface> context,
-      address_t addr);
+      address_t addr,
+      std::string id);
 
   // Queue a read operation.
   void read(read_callback_fn fn) override;

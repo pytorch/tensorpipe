@@ -82,6 +82,12 @@ class Context::Impl : public Context::PrivateIface,
   // combined with the transport's name. It will only be used for logging and
   // debugging purposes.
   std::string id_{"N/A"};
+
+  // Sequence numbers for the listeners and connections created by this context,
+  // used to create their identifiers based off this context's identifier. They
+  // will only be used for logging and debugging.
+  uint64_t listenerCounter_{0};
+  uint64_t connectionCounter_{0};
 };
 
 Context::Context() : impl_(std::make_shared<Impl>()) {}
@@ -120,10 +126,14 @@ std::shared_ptr<transport::Connection> Context::connect(address_t addr) {
 }
 
 std::shared_ptr<transport::Connection> Context::Impl::connect(address_t addr) {
+  std::string connectionId = id_ + ".c" + std::to_string(connectionCounter_++);
+  TP_VLOG() << "Transport context " << id_ << " is opening connection "
+            << connectionId;
   return std::make_shared<Connection>(
       Connection::ConstructorToken(),
       std::static_pointer_cast<PrivateIface>(shared_from_this()),
-      std::move(addr));
+      std::move(addr),
+      std::move(connectionId));
 }
 
 std::shared_ptr<transport::Listener> Context::listen(address_t addr) {
@@ -131,10 +141,14 @@ std::shared_ptr<transport::Listener> Context::listen(address_t addr) {
 }
 
 std::shared_ptr<transport::Listener> Context::Impl::listen(address_t addr) {
+  std::string listenerId = id_ + ".l" + std::to_string(listenerCounter_++);
+  TP_VLOG() << "Transport context " << id_ << " is opening listener "
+            << listenerId;
   return std::make_shared<Listener>(
       Listener::ConstructorToken(),
       std::static_pointer_cast<PrivateIface>(shared_from_this()),
-      std::move(addr));
+      std::move(addr),
+      std::move(listenerId));
 }
 
 const std::string& Context::domainDescriptor() const {
