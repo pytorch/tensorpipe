@@ -36,7 +36,8 @@ class Channel::Impl : public std::enable_shared_from_this<Channel::Impl> {
  public:
   Impl(
       std::shared_ptr<Context::PrivateIface>,
-      std::shared_ptr<transport::Connection>);
+      std::shared_ptr<transport::Connection>,
+      std::string);
 
   // Called by the channel's constructor.
   void init();
@@ -98,7 +99,7 @@ class Channel::Impl : public std::enable_shared_from_this<Channel::Impl> {
   ClosingReceiver closingReceiver_;
 
   // Increasing identifier for send operations.
-  uint64_t id_{0};
+  uint64_t nextTensorBeingSent_{0};
 
   // State capturing a single send operation.
   struct SendOperation {
@@ -107,6 +108,11 @@ class Channel::Impl : public std::enable_shared_from_this<Channel::Impl> {
   };
 
   std::list<SendOperation> sendOperations_;
+
+  // An identifier for the channel, composed of the identifier for the context,
+  // combined with an increasing sequence number. It will only be used for
+  // logging and debugging purposes.
+  std::string id_;
 
   LazyCallbackWrapper<Impl> lazyCallbackWrapper_{*this, this->loop_};
   EagerCallbackWrapper<Impl> eagerCallbackWrapper_{*this, this->loop_};
@@ -121,17 +127,23 @@ class Channel::Impl : public std::enable_shared_from_this<Channel::Impl> {
 Channel::Channel(
     ConstructorToken /* unused */,
     std::shared_ptr<Context::PrivateIface> context,
-    std::shared_ptr<transport::Connection> connection)
-    : impl_(std::make_shared<Impl>(std::move(context), std::move(connection))) {
+    std::shared_ptr<transport::Connection> connection,
+    std::string id)
+    : impl_(std::make_shared<Impl>(
+          std::move(context),
+          std::move(connection),
+          std::move(id))) {
   impl_->init();
 }
 
 Channel::Impl::Impl(
     std::shared_ptr<Context::PrivateIface> context,
-    std::shared_ptr<transport::Connection> connection)
+    std::shared_ptr<transport::Connection> connection,
+    std::string id)
     : context_(std::move(context)),
       connection_(std::move(connection)),
-      closingReceiver_(context_, context_->getClosingEmitter()) {}
+      closingReceiver_(context_, context_->getClosingEmitter()),
+      id_(std::move(id)) {}
 
 void Channel::Impl::init() {
   loop_.deferToLoop([this]() { initFromLoop_(); });
@@ -181,7 +193,7 @@ void Channel::Impl::sendFromLoop_(
 
   proto::Descriptor pbDescriptor;
 
-  const auto id = id_++;
+  const auto id = nextTensorBeingSent_++;
   pbDescriptor.set_operation_id(id);
   pbDescriptor.set_pid(getpid());
   pbDescriptor.set_ptr(reinterpret_cast<uint64_t>(ptr));

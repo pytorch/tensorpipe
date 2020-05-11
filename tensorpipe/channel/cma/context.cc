@@ -118,6 +118,11 @@ class Context::Impl : public Context::PrivateIface,
   // debugging purposes.
   std::string id_{"N/A"};
 
+  // Sequence numbers for the channels created by this context, used to create
+  // their identifiers based off this context's identifier. They will only be
+  // used for logging and debugging.
+  uint64_t channelCounter_{0};
+
   void handleCopyRequests_();
 };
 
@@ -186,10 +191,13 @@ std::shared_ptr<channel::Channel> Context::Impl::createChannel(
     std::shared_ptr<transport::Connection> connection,
     Channel::Endpoint /* unused */) {
   TP_THROW_ASSERT_IF(joined_);
+  std::string channelId = id_ + ".c" + std::to_string(channelCounter_++);
+  TP_VLOG() << "Channel context " << id_ << " is opening channel " << channelId;
   return std::make_shared<Channel>(
       Channel::ConstructorToken(),
       std::static_pointer_cast<PrivateIface>(shared_from_this()),
-      std::move(connection));
+      std::move(connection),
+      std::move(channelId));
 }
 
 void Context::Impl::requestCopy(

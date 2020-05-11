@@ -26,7 +26,8 @@ class Channel : public channel::Channel {
   Channel(
       ConstructorToken,
       std::shared_ptr<Context::PrivateIface>,
-      std::shared_ptr<transport::Connection> connection);
+      std::shared_ptr<transport::Connection> connection,
+      std::string id);
 
   // Send memory region to peer.
   void send(
