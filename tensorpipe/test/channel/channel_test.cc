@@ -40,15 +40,16 @@ TEST_P(ChannelTest, ClientToServer) {
 
         // Perform send and wait for completion.
         std::future<std::tuple<Error, Channel::TDescriptor>> descriptorFuture;
-        std::future<Error> future;
-        std::tie(descriptorFuture, future) =
+        std::future<Error> sendFuture;
+        std::tie(descriptorFuture, sendFuture) =
             sendWithFuture(channel, data.data(), data.size());
-        Error error;
+        Error descriptorError;
         Channel::TDescriptor descriptor;
-        std::tie(error, descriptor) = descriptorFuture.get();
-        ASSERT_FALSE(error);
+        std::tie(descriptorError, descriptor) = descriptorFuture.get();
+        EXPECT_FALSE(descriptorError) << descriptorError.what();
         descriptorQueue.push(std::move(descriptor));
-        ASSERT_FALSE(future.get());
+        Error sendError = sendFuture.get();
+        EXPECT_FALSE(sendError) << sendError.what();
       },
       [&](std::shared_ptr<transport::Connection> conn) {
         auto channel = context2->createChannel(
@@ -59,9 +60,10 @@ TEST_P(ChannelTest, ClientToServer) {
         std::fill(data.begin(), data.end(), 0);
 
         // Perform recv and wait for completion.
-        std::future<Error> future = recvWithFuture(
+        std::future<Error> recvFuture = recvWithFuture(
             channel, descriptorQueue.pop(), data.data(), data.size());
-        ASSERT_FALSE(future.get());
+        Error recvError = recvFuture.get();
+        EXPECT_FALSE(recvError) << recvError.what();
 
         // Validate contents of vector.
         for (auto i = 0; i < data.size(); i++) {
@@ -89,9 +91,10 @@ TEST_P(ChannelTest, ServerToClient) {
         std::fill(data.begin(), data.end(), 0);
 
         // Perform recv and wait for completion.
-        std::future<Error> future = recvWithFuture(
+        std::future<Error> recvFuture = recvWithFuture(
             channel, descriptorQueue.pop(), data.data(), data.size());
-        ASSERT_FALSE(future.get());
+        Error recvError = recvFuture.get();
+        EXPECT_FALSE(recvError) << recvError.what();
 
         // Validate contents of vector.
         for (auto i = 0; i < data.size(); i++) {
@@ -108,15 +111,16 @@ TEST_P(ChannelTest, ServerToClient) {
 
         // Perform send and wait for completion.
         std::future<std::tuple<Error, Channel::TDescriptor>> descriptorFuture;
-        std::future<Error> future;
-        std::tie(descriptorFuture, future) =
+        std::future<Error> sendFuture;
+        std::tie(descriptorFuture, sendFuture) =
             sendWithFuture(channel, data.data(), data.size());
-        Error error;
+        Error descriptorError;
         Channel::TDescriptor descriptor;
-        std::tie(error, descriptor) = descriptorFuture.get();
-        ASSERT_FALSE(error);
+        std::tie(descriptorError, descriptor) = descriptorFuture.get();
+        EXPECT_FALSE(descriptorError) << descriptorError.what();
         descriptorQueue.push(std::move(descriptor));
-        ASSERT_FALSE(future.get());
+        Error sendError = sendFuture.get();
+        EXPECT_FALSE(sendError) << sendError.what();
       });
 
   context1->join();
@@ -140,23 +144,24 @@ TEST_P(ChannelTest, SendMultipleTensors) {
         std::iota(data.begin(), data.end(), 0);
 
         // Error futures
-        std::vector<std::future<Error>> futures;
+        std::vector<std::future<Error>> sendFutures;
 
         // Perform send and wait for completion.
         for (int i = 0; i < numTensors; i++) {
           std::future<std::tuple<Error, Channel::TDescriptor>> descriptorFuture;
-          std::future<Error> future;
-          std::tie(descriptorFuture, future) =
+          std::future<Error> sendFuture;
+          std::tie(descriptorFuture, sendFuture) =
               sendWithFuture(channel, data.data(), data.size());
-          Error error;
+          Error descriptorError;
           Channel::TDescriptor descriptor;
-          std::tie(error, descriptor) = descriptorFuture.get();
-          ASSERT_FALSE(error);
+          std::tie(descriptorError, descriptor) = descriptorFuture.get();
+          EXPECT_FALSE(descriptorError) << descriptorError.what();
           descriptorQueue.push(std::move(descriptor));
-          futures.push_back(std::move(future));
+          sendFutures.push_back(std::move(sendFuture));
         }
-        for (auto& future : futures) {
-          ASSERT_FALSE(future.get());
+        for (auto& sendFuture : sendFutures) {
+          Error sendError = sendFuture.get();
+          EXPECT_FALSE(sendError) << sendError.what();
         }
       },
       [&](std::shared_ptr<transport::Connection> conn) {
@@ -168,16 +173,17 @@ TEST_P(ChannelTest, SendMultipleTensors) {
             numTensors, std::vector<uint8_t>(dataSize, 0));
 
         // Error futures
-        std::vector<std::future<Error>> futures;
+        std::vector<std::future<Error>> recvFutures;
 
         // Perform recv and wait for completion.
         for (int i = 0; i < numTensors; i++) {
-          std::future<Error> future = recvWithFuture(
+          std::future<Error> recvFuture = recvWithFuture(
               channel, descriptorQueue.pop(), dataVec[i].data(), dataSize);
-          futures.push_back(std::move(future));
+          recvFutures.push_back(std::move(recvFuture));
         }
-        for (auto& future : futures) {
-          ASSERT_FALSE(future.get());
+        for (auto& recvFuture : recvFutures) {
+          Error recvError = recvFuture.get();
+          EXPECT_FALSE(recvError) << recvError.what();
         }
 
         // Validate contents of vector.
@@ -228,7 +234,7 @@ TEST_P(ChannelTest, CallbacksAreDeferred) {
 
         // Perform send and wait for completion.
         std::promise<std::tuple<Error, Channel::TDescriptor>> descriptorPromise;
-        std::promise<Error> promise;
+        std::promise<Error> sendPromise;
         std::mutex mutex;
         std::unique_lock<std::mutex> callerLock(mutex);
         channel->send(
@@ -239,17 +245,19 @@ TEST_P(ChannelTest, CallbacksAreDeferred) {
               descriptorPromise.set_value(
                   std::make_tuple(error, std::move(descriptor)));
             },
-            [&promise, &mutex](const Error& error) {
+            [&sendPromise, &mutex](const Error& error) {
               std::unique_lock<std::mutex> calleeLock(mutex);
-              promise.set_value(error);
+              sendPromise.set_value(error);
             });
         callerLock.unlock();
-        Error error;
+        Error descriptorError;
         Channel::TDescriptor descriptor;
-        std::tie(error, descriptor) = descriptorPromise.get_future().get();
-        ASSERT_FALSE(error);
+        std::tie(descriptorError, descriptor) =
+            descriptorPromise.get_future().get();
+        EXPECT_FALSE(descriptorError) << descriptorError.what();
         descriptorQueue.push(std::move(descriptor));
-        ASSERT_FALSE(promise.get_future().get());
+        Error sendError = sendPromise.get_future().get();
+        EXPECT_FALSE(sendError) << sendError.what();
       },
       [&](std::shared_ptr<transport::Connection> conn) {
         auto channel = context2->createChannel(
@@ -260,19 +268,20 @@ TEST_P(ChannelTest, CallbacksAreDeferred) {
         std::fill(data.begin(), data.end(), 0);
 
         // Perform recv and wait for completion.
-        std::promise<Error> promise;
+        std::promise<Error> recvPromise;
         std::mutex mutex;
         std::unique_lock<std::mutex> callerLock(mutex);
         channel->recv(
             descriptorQueue.pop(),
             data.data(),
             data.size(),
-            [&promise, &mutex](const Error& error) {
+            [&recvPromise, &mutex](const Error& error) {
               std::unique_lock<std::mutex> calleeLock(mutex);
-              promise.set_value(error);
+              recvPromise.set_value(error);
             });
         callerLock.unlock();
-        ASSERT_FALSE(promise.get_future().get());
+        Error recvError = recvPromise.get_future().get();
+        EXPECT_FALSE(recvError) << recvError.what();
 
         // Validate contents of vector.
         for (auto i = 0; i < data.size(); i++) {
