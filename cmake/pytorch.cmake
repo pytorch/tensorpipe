@@ -51,7 +51,6 @@ set(TENSORPIPE_PUBLIC_HEADERS
   tensorpipe/tensorpipe.h)
 
 set(TENSORPIPE_SRC
-  tensorpipe/channel/context.cc
   tensorpipe/channel/error.cc
   tensorpipe/channel/helpers.cc
   tensorpipe/channel/registry.cc

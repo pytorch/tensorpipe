@@ -21,7 +21,7 @@
 class ChannelTestHelper {
  public:
   virtual std::shared_ptr<tensorpipe::channel::Context> makeContext() = 0;
-  virtual std::string getName() = 0;
+
   virtual ~ChannelTestHelper() = default;
 };
 

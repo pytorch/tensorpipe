@@ -27,11 +27,6 @@ namespace channel {
 //
 class Context {
  public:
-  explicit Context(std::string name);
-
-  // Return the context's name.
-  const std::string& name() const;
-
   // Return string to describe the domain for this channel.
   //
   // Two processes with a channel context of the same type whose

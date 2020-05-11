@@ -22,7 +22,9 @@
 class TransportTestHelper {
  public:
   virtual std::shared_ptr<tensorpipe::transport::Context> getContext() = 0;
+
   virtual std::string defaultAddr() = 0;
+
   virtual ~TransportTestHelper() = default;
 };
 

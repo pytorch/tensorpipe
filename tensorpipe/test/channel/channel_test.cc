@@ -15,12 +15,6 @@
 using namespace tensorpipe;
 using namespace tensorpipe::channel;
 
-TEST_P(ChannelTest, Name) {
-  std::shared_ptr<Context> context = GetParam()->makeContext();
-  EXPECT_EQ(context->name(), GetParam()->getName());
-  context->join();
-}
-
 TEST_P(ChannelTest, DomainDescriptor) {
   std::shared_ptr<Context> context1 = GetParam()->makeContext();
   std::shared_ptr<Context> context2 = GetParam()->makeContext();

@@ -61,8 +61,7 @@ class Context::Impl : public Context::PrivateIface,
   ClosingEmitter closingEmitter_;
 };
 
-Context::Context()
-    : channel::Context("basic"), impl_(std::make_shared<Impl>()) {}
+Context::Context() : impl_(std::make_shared<Impl>()) {}
 
 Context::Impl::Impl() : domainDescriptor_("any") {}
 

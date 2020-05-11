@@ -39,7 +39,6 @@ set(TENSORPIPE_PUBLIC_HEADERS
   tensorpipe.h)
 
 target_sources(tensorpipe PRIVATE
-  channel/context.cc
   channel/error.cc
   channel/helpers.cc
   channel/registry.cc

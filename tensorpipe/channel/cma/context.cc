@@ -35,8 +35,6 @@ namespace cma {
 
 namespace {
 
-const std::string kChannelName{"cma"};
-
 std::string generateDomainDescriptor() {
   std::ostringstream oss;
   auto bootID = getBootID();
@@ -52,8 +50,7 @@ std::string generateDomainDescriptor() {
   // end up needing these IDs to all be the same on both processes.
 
   // Combine boot ID, effective UID, and effective GID.
-  oss << kChannelName;
-  oss << ":" << bootID.value();
+  oss << bootID.value();
   // FIXME As domain descriptors are just compared for equality, we only include
   // the effective IDs, but we should abide by the rules above and make sure
   // that they match the real and saved-set ones too.
@@ -117,9 +114,7 @@ class Context::Impl : public Context::PrivateIface,
   void handleCopyRequests_();
 };
 
-Context::Context()
-    : channel::Context(kChannelName),
-      impl_(std::make_shared<Context::Impl>()) {}
+Context::Context() : impl_(std::make_shared<Context::Impl>()) {}
 
 Context::Impl::Impl()
     : domainDescriptor_(generateDomainDescriptor()), requests_(INT_MAX) {

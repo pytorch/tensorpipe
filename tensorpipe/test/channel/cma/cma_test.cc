@@ -16,10 +16,6 @@ class CmaChannelTestHelper : public ChannelTestHelper {
   std::shared_ptr<tensorpipe::channel::Context> makeContext() override {
     return std::make_shared<tensorpipe::channel::cma::Context>();
   }
-
-  std::string getName() override {
-    return "cma";
-  }
 };
 
 CmaChannelTestHelper helper;
