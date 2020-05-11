@@ -32,6 +32,12 @@ class Listener {
   // letting the operating system pick a TCP port to listen on).
   virtual address_t addr() const = 0;
 
+  // Tell the listener what its identifier is.
+  //
+  // This is only supposed to be called from the high-level listener or from
+  // channel contexts. It will only used for logging and debugging purposes.
+  virtual void setId(std::string id) = 0;
+
   virtual void close() = 0;
 
   virtual ~Listener() = default;

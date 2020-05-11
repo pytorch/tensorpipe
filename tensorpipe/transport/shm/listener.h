@@ -40,6 +40,9 @@ class Listener final : public transport::Listener {
   // Obtain the listener's address.
   address_t addr() const override;
 
+  // Tell the listener what its identifier is.
+  void setId(std::string id) override;
+
   // Shut down the connection and its resources.
   void close() override;
 

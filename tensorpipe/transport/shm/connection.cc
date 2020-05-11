@@ -316,6 +316,9 @@ class Connection::Impl : public std::enable_shared_from_this<Connection::Impl>,
       const google::protobuf::MessageLite& message,
       write_callback_fn fn);
 
+  // Tell the connection what its identifier is.
+  void setId(std::string id);
+
   // Shut down the connection and its resources.
   void close();
 
@@ -704,6 +707,16 @@ void Connection::Impl::writeFromLoop(
   // If the outbox has some free space, we may be able to process this operation
   // right away.
   processWriteOperationsFromLoop();
+}
+
+void Connection::setId(std::string id) {
+  impl_->setId(std::move(id));
+}
+
+void Connection::Impl::setId(std::string id) {
+  TP_VLOG() << "Connection " << id_ << " was renamed to " << id;
+  // FIXME Should we defer this to the loop?
+  id_ = std::move(id);
 }
 
 void Connection::Impl::handleEventsFromLoop(int events) {

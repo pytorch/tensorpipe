@@ -66,6 +66,12 @@ class Connection {
       const google::protobuf::MessageLite& message,
       write_callback_fn fn);
 
+  // Tell the connection what its identifier is.
+  //
+  // This is only supposed to be called from the high-level pipe or from
+  // channels. It will only used for logging and debugging purposes.
+  virtual void setId(std::string id) = 0;
+
   virtual void close() = 0;
 
   virtual ~Connection() = default;

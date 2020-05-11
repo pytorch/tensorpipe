@@ -43,6 +43,9 @@ class Listener::Impl : public std::enable_shared_from_this<Listener::Impl>,
   // Obtain the listener's address.
   std::string addr() const;
 
+  // Tell the listener what its identifier is.
+  void setId(std::string id);
+
   // Shut down the connection and its resources.
   void close();
 
@@ -204,6 +207,16 @@ std::string Listener::Impl::addr() const {
 address_t Listener::Impl::addrFromLoop() const {
   TP_DCHECK(context_->inLoopThread());
   return sockaddr_.str();
+}
+
+void Listener::setId(std::string id) {
+  impl_->setId(std::move(id));
+}
+
+void Listener::Impl::setId(std::string id) {
+  TP_VLOG() << "Listener " << id_ << " was renamed to " << id;
+  // FIXME Should we defer this to the loop?
+  id_ = std::move(id);
 }
 
 void Listener::Impl::handleEventsFromLoop(int events) {

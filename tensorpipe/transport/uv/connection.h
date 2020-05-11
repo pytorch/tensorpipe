@@ -50,6 +50,9 @@ class Connection : public transport::Connection {
   // Perform a write operation.
   void write(const void* ptr, size_t length, write_callback_fn fn) override;
 
+  // Tell the connection what its identifier is.
+  void setId(std::string id) override;
+
   // Shut down the connection and its resources.
   void close() override;
 

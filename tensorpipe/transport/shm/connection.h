@@ -53,6 +53,9 @@ class Connection final : public transport::Connection {
   void write(const google::protobuf::MessageLite& message, write_callback_fn fn)
       override;
 
+  // Tell the connection what its identifier is.
+  void setId(std::string id) override;
+
   // Shut down the connection and its resources.
   void close() override;
 
