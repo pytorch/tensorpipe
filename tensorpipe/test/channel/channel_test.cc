@@ -28,6 +28,8 @@ TEST_P(ChannelTest, ClientToServer) {
   std::shared_ptr<Context> context2 = GetParam()->makeContext();
   constexpr auto dataSize = 256;
   Queue<Channel::TDescriptor> descriptorQueue;
+  std::promise<void> sendCompletedProm;
+  std::promise<void> recvCompletedProm;
 
   testConnectionPair(
       [&](std::shared_ptr<transport::Connection> conn) {
@@ -50,6 +52,9 @@ TEST_P(ChannelTest, ClientToServer) {
         descriptorQueue.push(std::move(descriptor));
         Error sendError = sendFuture.get();
         EXPECT_FALSE(sendError) << sendError.what();
+
+        sendCompletedProm.set_value();
+        recvCompletedProm.get_future().get();
       },
       [&](std::shared_ptr<transport::Connection> conn) {
         auto channel = context2->createChannel(
@@ -69,6 +74,9 @@ TEST_P(ChannelTest, ClientToServer) {
         for (auto i = 0; i < data.size(); i++) {
           EXPECT_EQ(data[i], i);
         }
+
+        recvCompletedProm.set_value();
+        sendCompletedProm.get_future().get();
       });
 
   context1->join();
@@ -80,6 +88,8 @@ TEST_P(ChannelTest, ServerToClient) {
   std::shared_ptr<Context> context2 = GetParam()->makeContext();
   constexpr auto dataSize = 256;
   Queue<Channel::TDescriptor> descriptorQueue;
+  std::promise<void> sendCompletedProm;
+  std::promise<void> recvCompletedProm;
 
   testConnectionPair(
       [&](std::shared_ptr<transport::Connection> conn) {
@@ -100,6 +110,9 @@ TEST_P(ChannelTest, ServerToClient) {
         for (auto i = 0; i < data.size(); i++) {
           EXPECT_EQ(data[i], i);
         }
+
+        recvCompletedProm.set_value();
+        sendCompletedProm.get_future().get();
       },
       [&](std::shared_ptr<transport::Connection> conn) {
         auto channel = context2->createChannel(
@@ -121,6 +134,9 @@ TEST_P(ChannelTest, ServerToClient) {
         descriptorQueue.push(std::move(descriptor));
         Error sendError = sendFuture.get();
         EXPECT_FALSE(sendError) << sendError.what();
+
+        sendCompletedProm.set_value();
+        recvCompletedProm.get_future().get();
       });
 
   context1->join();
@@ -132,6 +148,8 @@ TEST_P(ChannelTest, SendMultipleTensors) {
   std::shared_ptr<Context> context2 = GetParam()->makeContext();
   constexpr auto dataSize = 256 * 1024; // 256KB
   Queue<Channel::TDescriptor> descriptorQueue;
+  std::promise<void> sendCompletedProm;
+  std::promise<void> recvCompletedProm;
   constexpr int numTensors = 100;
 
   testConnectionPair(
@@ -163,6 +181,9 @@ TEST_P(ChannelTest, SendMultipleTensors) {
           Error sendError = sendFuture.get();
           EXPECT_FALSE(sendError) << sendError.what();
         }
+
+        sendCompletedProm.set_value();
+        recvCompletedProm.get_future().get();
       },
       [&](std::shared_ptr<transport::Connection> conn) {
         auto channel = context2->createChannel(
@@ -193,6 +214,9 @@ TEST_P(ChannelTest, SendMultipleTensors) {
             EXPECT_EQ(data[i], value);
           }
         }
+
+        recvCompletedProm.set_value();
+        sendCompletedProm.get_future().get();
       });
 
   context1->join();
@@ -222,6 +246,8 @@ TEST_P(ChannelTest, CallbacksAreDeferred) {
   std::shared_ptr<Context> context2 = GetParam()->makeContext();
   constexpr auto dataSize = 256;
   Queue<Channel::TDescriptor> descriptorQueue;
+  std::promise<void> sendCompletedProm;
+  std::promise<void> recvCompletedProm;
 
   testConnectionPair(
       [&](std::shared_ptr<transport::Connection> conn) {
@@ -258,6 +284,9 @@ TEST_P(ChannelTest, CallbacksAreDeferred) {
         descriptorQueue.push(std::move(descriptor));
         Error sendError = sendPromise.get_future().get();
         EXPECT_FALSE(sendError) << sendError.what();
+
+        sendCompletedProm.set_value();
+        recvCompletedProm.get_future().get();
       },
       [&](std::shared_ptr<transport::Connection> conn) {
         auto channel = context2->createChannel(
@@ -287,6 +316,9 @@ TEST_P(ChannelTest, CallbacksAreDeferred) {
         for (auto i = 0; i < data.size(); i++) {
           EXPECT_EQ(data[i], i);
         }
+
+        recvCompletedProm.set_value();
+        sendCompletedProm.get_future().get();
       });
 
   context1->join();
