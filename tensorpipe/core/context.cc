@@ -91,8 +91,8 @@ class Context::Impl : public Context::PrivateIface,
   // Sequence numbers for the listeners and pipes created by this context, used
   // to create their identifiers based off this context's identifier. They will
   // only be used for logging and debugging.
-  uint64_t listenerCounter_{0};
-  uint64_t pipeCounter_{0};
+  std::atomic<uint64_t> listenerCounter_{0};
+  std::atomic<uint64_t> pipeCounter_{0};
 
   // A user-provided name for this context which should be semantically
   // meaningful. It will only be used for logging and debugging purposes, to
