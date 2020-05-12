@@ -58,9 +58,16 @@ Loop::~Loop() noexcept {
 }
 
 void Loop::deferToLoop(std::function<void()> fn) {
-  std::unique_lock<std::mutex> lock(mutex_);
-  fns_.push_back(std::move(fn));
-  wakeup();
+  {
+    std::unique_lock<std::mutex> lock(mutex_);
+    if (likely(isThreadConsumingDeferredFunctions_)) {
+      fns_.push_back(std::move(fn));
+      wakeup();
+      return;
+    }
+  }
+  // Must call it without holding the lock, as it could cause a reentrant call.
+  onDemandLoop_.deferToLoop(std::move(fn));
 }
 
 void Loop::wakeup() {
@@ -77,21 +84,32 @@ void Loop::loop() {
   TP_THROW_ASSERT_IF(rv > 0)
       << ": uv_run returned with active handles or requests";
 
-  // We got broken out of the run loop by Loop::join's unref on the
-  // async handle. It is possible we still have callbacks to run,
-  // which in turn may trigger more work. Therefore, we keep running
-  // until the only active handle is the async handle.
   uv_ref(reinterpret_cast<uv_handle_t*>(async_.get()));
-  rv = uv_run(loop_.get(), UV_RUN_NOWAIT);
-  TP_THROW_ASSERT_IF(rv == 0)
-      << ": uv_run returned with no active handles or requests";
-
-  // By this time we expect to have drained all pending work and can
-  // safely close the async handle and terminate the thread.
   uv_close(reinterpret_cast<uv_handle_t*>(async_.get()), nullptr);
+
   rv = uv_run(loop_.get(), UV_RUN_NOWAIT);
   TP_THROW_ASSERT_IF(rv > 0)
       << ": uv_run returned with active handles or requests";
+
+  // The loop is winding down and "handing over" control to the on demand loop.
+  // But it can only do so safely once there are no pending deferred functions,
+  // as otherwise those may risk never being executed.
+  while (true) {
+    decltype(fns_) fns;
+
+    {
+      std::unique_lock<std::mutex> lock(mutex_);
+      if (fns_.empty()) {
+        isThreadConsumingDeferredFunctions_ = false;
+        break;
+      }
+      std::swap(fns, fns_);
+    }
+
+    for (auto& fn : fns) {
+      fn();
+    }
+  }
 }
 
 void Loop::uv__async_cb(uv_async_t* handle) {
