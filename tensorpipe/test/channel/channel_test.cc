@@ -16,16 +16,16 @@ using namespace tensorpipe;
 using namespace tensorpipe::channel;
 
 TEST_P(ChannelTest, DomainDescriptor) {
-  std::shared_ptr<Context> context1 = GetParam()->makeContext();
-  std::shared_ptr<Context> context2 = GetParam()->makeContext();
+  std::shared_ptr<Context> context1 = GetParam()->makeContext("ctx1");
+  std::shared_ptr<Context> context2 = GetParam()->makeContext("ctx2");
   EXPECT_FALSE(context1->domainDescriptor().empty());
   EXPECT_FALSE(context2->domainDescriptor().empty());
   EXPECT_EQ(context1->domainDescriptor(), context2->domainDescriptor());
 }
 
 TEST_P(ChannelTest, ClientToServer) {
-  std::shared_ptr<Context> context1 = GetParam()->makeContext();
-  std::shared_ptr<Context> context2 = GetParam()->makeContext();
+  std::shared_ptr<Context> serverCtx = GetParam()->makeContext("server");
+  std::shared_ptr<Context> clientCtx = GetParam()->makeContext("client");
   constexpr auto dataSize = 256;
   Queue<Channel::TDescriptor> descriptorQueue;
   std::promise<void> sendCompletedProm;
@@ -33,7 +33,7 @@ TEST_P(ChannelTest, ClientToServer) {
 
   testConnectionPair(
       [&](std::shared_ptr<transport::Connection> conn) {
-        auto channel = context1->createChannel(
+        auto channel = serverCtx->createChannel(
             std::move(conn), Channel::Endpoint::kListen);
 
         // Initialize with sequential values.
@@ -57,7 +57,7 @@ TEST_P(ChannelTest, ClientToServer) {
         recvCompletedProm.get_future().get();
       },
       [&](std::shared_ptr<transport::Connection> conn) {
-        auto channel = context2->createChannel(
+        auto channel = clientCtx->createChannel(
             std::move(conn), Channel::Endpoint::kConnect);
 
         // Initialize with zeroes.
@@ -79,13 +79,13 @@ TEST_P(ChannelTest, ClientToServer) {
         sendCompletedProm.get_future().get();
       });
 
-  context1->join();
-  context2->join();
+  serverCtx->join();
+  clientCtx->join();
 }
 
 TEST_P(ChannelTest, ServerToClient) {
-  std::shared_ptr<Context> context1 = GetParam()->makeContext();
-  std::shared_ptr<Context> context2 = GetParam()->makeContext();
+  std::shared_ptr<Context> serverCtx = GetParam()->makeContext("server");
+  std::shared_ptr<Context> clientCtx = GetParam()->makeContext("client");
   constexpr auto dataSize = 256;
   Queue<Channel::TDescriptor> descriptorQueue;
   std::promise<void> sendCompletedProm;
@@ -93,7 +93,7 @@ TEST_P(ChannelTest, ServerToClient) {
 
   testConnectionPair(
       [&](std::shared_ptr<transport::Connection> conn) {
-        auto channel = context1->createChannel(
+        auto channel = serverCtx->createChannel(
             std::move(conn), Channel::Endpoint::kListen);
 
         // Initialize with zeroes.
@@ -115,7 +115,7 @@ TEST_P(ChannelTest, ServerToClient) {
         sendCompletedProm.get_future().get();
       },
       [&](std::shared_ptr<transport::Connection> conn) {
-        auto channel = context2->createChannel(
+        auto channel = clientCtx->createChannel(
             std::move(conn), Channel::Endpoint::kConnect);
 
         // Initialize with sequential values.
@@ -139,13 +139,13 @@ TEST_P(ChannelTest, ServerToClient) {
         recvCompletedProm.get_future().get();
       });
 
-  context1->join();
-  context2->join();
+  serverCtx->join();
+  clientCtx->join();
 }
 
 TEST_P(ChannelTest, SendMultipleTensors) {
-  std::shared_ptr<Context> context1 = GetParam()->makeContext();
-  std::shared_ptr<Context> context2 = GetParam()->makeContext();
+  std::shared_ptr<Context> serverCtx = GetParam()->makeContext("server");
+  std::shared_ptr<Context> clientCtx = GetParam()->makeContext("client");
   constexpr auto dataSize = 256 * 1024; // 256KB
   Queue<Channel::TDescriptor> descriptorQueue;
   std::promise<void> sendCompletedProm;
@@ -154,7 +154,7 @@ TEST_P(ChannelTest, SendMultipleTensors) {
 
   testConnectionPair(
       [&](std::shared_ptr<transport::Connection> conn) {
-        auto channel = context1->createChannel(
+        auto channel = serverCtx->createChannel(
             std::move(conn), Channel::Endpoint::kListen);
 
         // Initialize with sequential values.
@@ -186,7 +186,7 @@ TEST_P(ChannelTest, SendMultipleTensors) {
         recvCompletedProm.get_future().get();
       },
       [&](std::shared_ptr<transport::Connection> conn) {
-        auto channel = context2->createChannel(
+        auto channel = clientCtx->createChannel(
             std::move(conn), Channel::Endpoint::kConnect);
 
         // Initialize with zeroes.
@@ -219,12 +219,12 @@ TEST_P(ChannelTest, SendMultipleTensors) {
         sendCompletedProm.get_future().get();
       });
 
-  context1->join();
-  context2->join();
+  serverCtx->join();
+  clientCtx->join();
 }
 
 TEST_P(ChannelTest, contextIsNotJoined) {
-  std::shared_ptr<Context> context = GetParam()->makeContext();
+  std::shared_ptr<Context> context = GetParam()->makeContext("ctx");
 
   testConnectionPair(
       [&](std::shared_ptr<transport::Connection> conn) {
@@ -242,8 +242,8 @@ TEST_P(ChannelTest, CallbacksAreDeferred) {
   // behavior, we'll check a highly correlated one: that the recv callback isn't
   // called inline from within the recv method. We do so by having that behavior
   // cause a deadlock.
-  std::shared_ptr<Context> context1 = GetParam()->makeContext();
-  std::shared_ptr<Context> context2 = GetParam()->makeContext();
+  std::shared_ptr<Context> serverCtx = GetParam()->makeContext("server");
+  std::shared_ptr<Context> clientCtx = GetParam()->makeContext("client");
   constexpr auto dataSize = 256;
   Queue<Channel::TDescriptor> descriptorQueue;
   std::promise<void> sendCompletedProm;
@@ -251,7 +251,7 @@ TEST_P(ChannelTest, CallbacksAreDeferred) {
 
   testConnectionPair(
       [&](std::shared_ptr<transport::Connection> conn) {
-        auto channel = context1->createChannel(
+        auto channel = serverCtx->createChannel(
             std::move(conn), Channel::Endpoint::kListen);
 
         // Initialize with sequential values.
@@ -289,7 +289,7 @@ TEST_P(ChannelTest, CallbacksAreDeferred) {
         recvCompletedProm.get_future().get();
       },
       [&](std::shared_ptr<transport::Connection> conn) {
-        auto channel = context2->createChannel(
+        auto channel = clientCtx->createChannel(
             std::move(conn), Channel::Endpoint::kConnect);
 
         // Initialize with zeroes.
@@ -321,6 +321,6 @@ TEST_P(ChannelTest, CallbacksAreDeferred) {
         sendCompletedProm.get_future().get();
       });
 
-  context1->join();
-  context2->join();
+  serverCtx->join();
+  clientCtx->join();
 }

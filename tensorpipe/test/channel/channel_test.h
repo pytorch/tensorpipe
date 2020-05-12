@@ -20,7 +20,8 @@
 
 class ChannelTestHelper {
  public:
-  virtual std::shared_ptr<tensorpipe::channel::Context> makeContext() = 0;
+  virtual std::shared_ptr<tensorpipe::channel::Context> makeContext(
+      std::string id) = 0;
 
   virtual ~ChannelTestHelper() = default;
 };
@@ -33,6 +34,7 @@ class ChannelTest : public ::testing::TestWithParam<ChannelTestHelper*> {
       std::function<void(std::shared_ptr<tensorpipe::transport::Connection>)>
           f2) {
     auto context = std::make_shared<tensorpipe::transport::uv::Context>();
+    context->setId("harness");
     auto addr = "127.0.0.1";
 
     {
