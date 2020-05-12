@@ -107,6 +107,7 @@ std::tuple<int, int> Reactor::fds() const {
 
 void Reactor::run() {
   setThreadName("TP_SHM_reactor");
+
   // Stop when another thread has asked the reactor the close and when
   // all functions have been removed except for the one used to defer.
   while (!closed_ || functionCount_ > 1) {
@@ -131,7 +132,27 @@ void Reactor::run() {
       fn();
     }
   }
-  TP_DCHECK(deferredFunctionList_.empty());
+
+  // The loop is winding down and "handing over" control to the on demand loop.
+  // But it can only do so safely once there are no pending deferred functions,
+  // as otherwise those may risk never being executed.
+  while (true) {
+    decltype(deferredFunctionList_) fns;
+
+    {
+      std::unique_lock<std::mutex> lock(deferredFunctionMutex_);
+      if (deferredFunctionList_.empty()) {
+        isThreadConsumingDeferredFunctions_ = false;
+        break;
+      }
+      std::swap(fns, deferredFunctionList_);
+    }
+
+    for (auto& fn : fns) {
+      fn();
+    }
+  }
+
   remove(deferredFunctionToken_);
 }
 
@@ -147,19 +168,28 @@ void Reactor::Trigger::run(TToken token) {
 }
 
 void Reactor::deferToLoop(TDeferredFunction fn) {
-  std::unique_lock<std::mutex> lock(deferredFunctionMutex_);
-  deferredFunctionList_.push_back(std::move(fn));
-  trigger(deferredFunctionToken_);
+  {
+    std::unique_lock<std::mutex> lock(deferredFunctionMutex_);
+    if (likely(isThreadConsumingDeferredFunctions_)) {
+      deferredFunctionList_.push_back(std::move(fn));
+      trigger(deferredFunctionToken_);
+      return;
+    }
+  }
+  // Must call it without holding the lock, as it could cause a reentrant call.
+  onDemandLoop_.deferToLoop(std::move(fn));
 }
 
 void Reactor::handleDeferredFunctionFromLoop() {
-  std::unique_lock<std::mutex> lock(deferredFunctionMutex_);
-  std::list<TDeferredFunction> fns;
-  std::swap(fns, deferredFunctionList_);
+  decltype(deferredFunctionList_) fns;
 
   // Unlock before executing, because the function could try to
   // defer another function and that needs the lock.
-  lock.unlock();
+  {
+    std::unique_lock<std::mutex> lock(deferredFunctionMutex_);
+    std::swap(fns, deferredFunctionList_);
+  }
+
   for (auto& fn : fns) {
     fn();
   }

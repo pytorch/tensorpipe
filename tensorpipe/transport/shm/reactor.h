@@ -16,6 +16,7 @@
 #include <thread>
 #include <vector>
 
+#include <tensorpipe/common/callback.h>
 #include <tensorpipe/common/optional.h>
 #include <tensorpipe/transport/shm/fd.h>
 #include <tensorpipe/util/ringbuffer/consumer.h>
@@ -63,7 +64,13 @@ class Reactor final {
   std::tuple<int, int> fds() const;
 
   inline bool inReactorThread() {
-    return std::this_thread::get_id() == thread_.get_id();
+    {
+      std::unique_lock<std::mutex> lock(deferredFunctionMutex_);
+      if (likely(isThreadConsumingDeferredFunctions_)) {
+        return std::this_thread::get_id() == thread_.get_id();
+      }
+    }
+    return onDemandLoop_.inLoop();
   }
 
   void close();
@@ -86,6 +93,20 @@ class Reactor final {
   TToken deferredFunctionToken_;
   std::mutex deferredFunctionMutex_;
   std::list<TDeferredFunction> deferredFunctionList_;
+
+  // Whether the thread is still taking care of running the deferred functions
+  //
+  // This is part of what can only be described as a hack. Sometimes, even when
+  // using the API as intended, objects try to defer tasks to the loop after
+  // that loop has been closed and joined. Since those tasks may be lambdas that
+  // captured shared_ptrs to the objects in their closures, this may lead to a
+  // reference cycle and thus a leak. Our hack is to have this flag to record
+  // when we can no longer defer tasks to the loop and in that case we just run
+  // those tasks inline. In order to keep ensuring the single-threadedness
+  // assumption of our model (which is what we rely on to be safe from race
+  // conditions) we use an on-demand loop.
+  bool isThreadConsumingDeferredFunctions_{true};
+  OnDemandLoop onDemandLoop_;
 
   // Reactor thread entry point.
   void run();
