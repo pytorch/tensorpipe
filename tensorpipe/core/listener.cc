@@ -72,7 +72,7 @@ class Listener::Impl : public Listener::PrivateIface,
   // Sequence numbers for the pipes created by this listener, used to create
   // their identifiers based off this listener's identifier. They will only be
   // used for logging and debugging.
-  uint64_t pipeCounter_{0};
+  std::atomic<uint64_t> pipeCounter_{0};
 
   std::unordered_map<std::string, std::shared_ptr<transport::Listener>>
       listeners_;

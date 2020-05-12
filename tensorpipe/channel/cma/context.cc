@@ -121,7 +121,7 @@ class Context::Impl : public Context::PrivateIface,
   // Sequence numbers for the channels created by this context, used to create
   // their identifiers based off this context's identifier. They will only be
   // used for logging and debugging.
-  uint64_t channelCounter_{0};
+  std::atomic<uint64_t> channelCounter_{0};
 
   void handleCopyRequests_();
 };

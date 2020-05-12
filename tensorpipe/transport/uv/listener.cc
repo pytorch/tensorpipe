@@ -90,7 +90,7 @@ class Listener::Impl : public std::enable_shared_from_this<Listener::Impl> {
   // Sequence numbers for the connections created by this listener, used to
   // create their identifiers based off this listener's identifier. They will
   // only be used for logging and debugging.
-  uint64_t connectionCounter_{0};
+  std::atomic<uint64_t> connectionCounter_{0};
 
   // By having the instance store a shared_ptr to itself we create a reference
   // cycle which will "leak" the instance. This allows us to detach its
