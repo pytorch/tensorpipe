@@ -46,5 +46,5 @@ endif()
 
 include(FindPackageHandleStandardArgs)
 find_package_handle_standard_args(uv
-  REQUIRED_VARS uv_LIBRARY_DIRS
+  REQUIRED_VARS uv_VERSION
   VERSION_VAR uv_VERSION)
