@@ -22,10 +22,12 @@ void TCPHandle::initFromLoop() {
   uv_tcp_init(loop_.ptr(), this->ptr());
 }
 
-void TCPHandle::bindFromLoop(const Sockaddr& addr) {
+int TCPHandle::bindFromLoop(const Sockaddr& addr) {
   TP_DCHECK(this->loop_.inLoopThread());
   auto rv = uv_tcp_bind(ptr(), addr.addr(), 0);
-  TP_THROW_UV_IF(rv < 0, rv);
+  // We don't throw in case of errors here because sometimes we bind in order to
+  // try if an address works and want to handle errors gracefully.
+  return rv;
 }
 
 Sockaddr TCPHandle::sockNameFromLoop() {
@@ -46,6 +48,55 @@ void TCPHandle::connectFromLoop(
   auto rv =
       uv_tcp_connect(request->ptr(), ptr(), addr.addr(), request->callback());
   TP_THROW_UV_IF(rv < 0, rv);
+}
+
+std::tuple<int, Addrinfo> getAddrinfoFromLoop(
+    Loop& loop,
+    std::string hostname) {
+  struct addrinfo hints;
+  std::memset(&hints, 0, sizeof(hints));
+  hints.ai_family = AF_UNSPEC;
+  hints.ai_socktype = SOCK_STREAM;
+  hints.ai_protocol = IPPROTO_TCP;
+
+  uv_getaddrinfo_t request;
+  // Don't use a callback, and thus perform the call synchronously, because the
+  // asynchronous version uses a thread pool, and it's not worth spawning new
+  // threads for a functionality which is used so sparingly.
+  auto rv = uv_getaddrinfo(
+      loop.ptr(),
+      &request,
+      /*getaddrinfo_cb=*/nullptr,
+      hostname.c_str(),
+      /*service=*/nullptr,
+      &hints);
+  if (rv != 0) {
+    return std::make_tuple(rv, Addrinfo());
+  }
+
+  return std::make_tuple(0, Addrinfo(request.addrinfo, AddrinfoDeleter()));
+}
+
+std::tuple<int, InterfaceAddresses, int> getInterfaceAddresses() {
+  uv_interface_address_t* info;
+  int count;
+  auto rv = uv_interface_addresses(&info, &count);
+  if (rv != 0) {
+    return std::make_tuple(rv, InterfaceAddresses(), 0);
+  }
+  return std::make_tuple(
+      0, InterfaceAddresses(info, InterfaceAddressesDeleter(count)), count);
+}
+
+std::tuple<int, std::string> getHostname() {
+  std::array<char, UV_MAXHOSTNAMESIZE> hostname;
+  size_t size = hostname.size();
+  auto rv = uv_os_gethostname(hostname.data(), &size);
+  if (rv != 0) {
+    return std::make_tuple(rv, std::string());
+  }
+  return std::make_tuple(
+      0, std::string(hostname.data(), hostname.data() + size));
 }
 
 } // namespace uv

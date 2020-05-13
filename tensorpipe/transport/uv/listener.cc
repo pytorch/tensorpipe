@@ -114,7 +114,8 @@ void Listener::Impl::initFromLoop() {
   closingReceiver_.activate(*this);
 
   handle_->initFromLoop();
-  handle_->bindFromLoop(sockaddr_);
+  auto rv = handle_->bindFromLoop(sockaddr_);
+  TP_THROW_UV_IF(rv < 0, rv);
   handle_->armCloseCallbackFromLoop(
       [this]() { this->closeCallbackFromLoop_(); });
   handle_->listenFromLoop(

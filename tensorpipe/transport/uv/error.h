@@ -24,6 +24,13 @@ class UVError final : public BaseError {
   int error_;
 };
 
+class NoAddrFoundError final : public BaseError {
+ public:
+  NoAddrFoundError() {}
+
+  std::string what() const override;
+};
+
 } // namespace uv
 } // namespace transport
 } // namespace tensorpipe

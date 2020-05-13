@@ -22,6 +22,10 @@ std::string UVError::what() const {
   return ss.str();
 }
 
+std::string NoAddrFoundError::what() const {
+  return "no address found";
+}
+
 } // namespace uv
 } // namespace transport
 } // namespace tensorpipe

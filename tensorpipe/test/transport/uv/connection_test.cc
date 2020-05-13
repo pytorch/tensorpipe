@@ -12,7 +12,7 @@
 
 namespace {
 
-class UVTransportTest : public TransportTest {};
+class UVTransportConnectionTest : public TransportTest {};
 
 UVTransportTestHelper helper;
 
@@ -21,7 +21,7 @@ UVTransportTestHelper helper;
 using namespace tensorpipe;
 using namespace tensorpipe::transport;
 
-TEST_P(UVTransportTest, LargeWrite) {
+TEST_P(UVTransportConnectionTest, LargeWrite) {
   constexpr int kMsgSize = 16 * 1024 * 1024;
   std::string msg(kMsgSize, 0x42);
   std::promise<void> writeCompletedProm;
@@ -57,4 +57,7 @@ TEST_P(UVTransportTest, LargeWrite) {
       });
 }
 
-INSTANTIATE_TEST_CASE_P(Uv, UVTransportTest, ::testing::Values(&helper));
+INSTANTIATE_TEST_CASE_P(
+    Uv,
+    UVTransportConnectionTest,
+    ::testing::Values(&helper));

@@ -310,7 +310,7 @@ class TCPHandle : public StreamHandle<TCPHandle, uv_tcp_t> {
 
   void initFromLoop();
 
-  void bindFromLoop(const Sockaddr& addr);
+  [[nodiscard]] int bindFromLoop(const Sockaddr& addr);
 
   Sockaddr sockNameFromLoop();
 
@@ -318,6 +318,35 @@ class TCPHandle : public StreamHandle<TCPHandle, uv_tcp_t> {
       const Sockaddr& addr,
       ConnectRequest::TConnectCallback fn);
 };
+
+struct AddrinfoDeleter {
+  void operator()(struct addrinfo* ptr) const {
+    uv_freeaddrinfo(ptr);
+  }
+};
+
+using Addrinfo = std::unique_ptr<struct addrinfo, AddrinfoDeleter>;
+
+std::tuple<int, Addrinfo> getAddrinfoFromLoop(Loop& loop, std::string hostname);
+
+struct InterfaceAddressesDeleter {
+  int count_{-1};
+
+  explicit InterfaceAddressesDeleter(int count) : count_(count) {}
+
+  InterfaceAddressesDeleter() = default;
+
+  void operator()(uv_interface_address_t* ptr) const {
+    uv_free_interface_addresses(ptr, count_);
+  }
+};
+
+using InterfaceAddresses =
+    std::unique_ptr<uv_interface_address_t[], InterfaceAddressesDeleter>;
+
+std::tuple<int, InterfaceAddresses, int> getInterfaceAddresses();
+
+std::tuple<int, std::string> getHostname();
 
 } // namespace uv
 } // namespace transport
