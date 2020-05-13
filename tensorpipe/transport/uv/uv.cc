@@ -8,6 +8,8 @@
 
 #include <tensorpipe/transport/uv/uv.h>
 
+#include <array>
+
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/error_macros.h>
 #include <tensorpipe/transport/uv/macros.h>
