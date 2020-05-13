@@ -10,6 +10,7 @@
 
 #include <sys/socket.h>
 
+#include <cstring>
 #include <string>
 
 namespace tensorpipe {
@@ -20,8 +21,12 @@ class Sockaddr final {
  public:
   static Sockaddr createInetSockAddr(const std::string& name);
 
-  Sockaddr(const struct sockaddr_storage& addr, socklen_t addrlen)
-      : addr_(addr), addrlen_(addrlen) {}
+  Sockaddr(const struct sockaddr* addr, socklen_t addrlen) : addrlen_(addrlen) {
+    // Ensure the sockaddr_storage is zeroed, because we don't always
+    // write to all fields in the `sockaddr_[in|in6]` structures.
+    std::memset(&addr_, 0, sizeof(addr_));
+    std::memcpy(&addr_, addr, addrlen);
+  }
 
   inline const struct sockaddr* addr() const {
     return reinterpret_cast<const struct sockaddr*>(&addr_);

@@ -23,14 +23,9 @@ namespace transport {
 namespace uv {
 
 Sockaddr Sockaddr::createInetSockAddr(const std::string& str) {
-  struct sockaddr_storage ss;
   int port = 0;
   std::string addrStr;
   std::string portStr;
-
-  // Ensure the sockaddr_storage is zeroed, because we don't always
-  // write to all fields in the `sockaddr_[in|in6]` structures.
-  memset(&ss, 0, sizeof(ss));
 
   // If the input string is an IPv6 address with port, the address
   // itself must be wrapped with brackets.
@@ -72,23 +67,25 @@ Sockaddr Sockaddr::createInetSockAddr(const std::string& str) {
 
   // Try to convert an IPv4 address.
   {
-    struct sockaddr_in* in = reinterpret_cast<struct sockaddr_in*>(&ss);
-    auto rv = uv_inet_pton(AF_INET, addrStr.c_str(), &in->sin_addr);
+    struct sockaddr_in addr;
+    std::memset(&addr, 0, sizeof(addr));
+    auto rv = uv_inet_pton(AF_INET, addrStr.c_str(), &addr.sin_addr);
     if (rv == 0) {
-      in->sin_family = AF_INET;
-      in->sin_port = ntohs(port);
-      return Sockaddr(ss, sizeof(struct sockaddr_in));
+      addr.sin_family = AF_INET;
+      addr.sin_port = ntohs(port);
+      return Sockaddr(reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr));
     }
   }
 
   // Try to convert an IPv6 address.
   {
-    struct sockaddr_in6* in6 = reinterpret_cast<struct sockaddr_in6*>(&ss);
-    auto rv = uv_inet_pton(AF_INET6, addrStr.c_str(), &in6->sin6_addr);
+    struct sockaddr_in6 addr;
+    std::memset(&addr, 0, sizeof(addr));
+    auto rv = uv_inet_pton(AF_INET6, addrStr.c_str(), &addr.sin6_addr);
     if (rv == 0) {
-      in6->sin6_family = AF_INET6;
-      in6->sin6_port = ntohs(port);
-      return Sockaddr(ss, sizeof(struct sockaddr_in6));
+      addr.sin6_family = AF_INET6;
+      addr.sin6_port = ntohs(port);
+      return Sockaddr(reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr));
     }
   }
 
@@ -97,7 +94,7 @@ Sockaddr Sockaddr::createInetSockAddr(const std::string& str) {
 
   // Return bogus to silence "return from non-void function" warning.
   // Note: we don't reach this point per the throw above.
-  return Sockaddr(ss, 0);
+  return Sockaddr(nullptr, 0);
 }
 
 std::string Sockaddr::str() const {

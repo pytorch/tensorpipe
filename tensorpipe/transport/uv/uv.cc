@@ -30,10 +30,10 @@ void TCPHandle::bindFromLoop(const Sockaddr& addr) {
 
 Sockaddr TCPHandle::sockNameFromLoop() {
   TP_DCHECK(this->loop_.inLoopThread());
-  struct sockaddr_storage addr;
-  int addrlen = sizeof(addr);
-  auto rv = uv_tcp_getsockname(
-      ptr(), reinterpret_cast<struct sockaddr*>(&addr), &addrlen);
+  struct sockaddr_storage ss;
+  struct sockaddr* addr = reinterpret_cast<struct sockaddr*>(&ss);
+  int addrlen = sizeof(ss);
+  auto rv = uv_tcp_getsockname(ptr(), addr, &addrlen);
   TP_THROW_UV_IF(rv < 0, rv);
   return Sockaddr(addr, addrlen);
 }
