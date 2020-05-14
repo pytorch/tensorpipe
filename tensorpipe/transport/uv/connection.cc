@@ -258,6 +258,14 @@ class Connection::Impl : public std::enable_shared_from_this<Connection::Impl> {
   std::deque<ReadOperation> readOperations_;
   std::deque<WriteOperation> writeOperations_;
 
+  // A sequence number for the calls to read and write.
+  uint64_t nextBufferBeingRead_{0};
+  uint64_t nextBufferBeingWritten_{0};
+
+  // A sequence number for the invocations of the callbacks of read and write.
+  uint64_t nextReadCallbackToCall_{0};
+  uint64_t nextWriteCallbackToCall_{0};
+
   // An identifier for the connection, composed of the identifier for the
   // context or listener, combined with an increasing sequence number. It will
   // only be used for logging and debugging purposes.
@@ -313,6 +321,20 @@ void Connection::Impl::initFromLoop() {
 void Connection::Impl::readFromLoop(read_callback_fn fn) {
   TP_DCHECK(context_->inLoopThread());
 
+  uint64_t sequenceNumber = nextBufferBeingRead_++;
+  TP_VLOG() << "Connection " << id_ << " received a read request (#"
+            << sequenceNumber << ")";
+
+  fn = [this, sequenceNumber, fn{std::move(fn)}](
+           const Error& error, const void* ptr, size_t length) {
+    TP_DCHECK_EQ(sequenceNumber, nextReadCallbackToCall_++);
+    TP_VLOG() << "Connection " << id_ << " is calling a read callback (#"
+              << sequenceNumber << ")";
+    fn(error, ptr, length);
+    TP_VLOG() << "Connection " << id_ << " done calling a read callback (#"
+              << sequenceNumber << ")";
+  };
+
   if (error_) {
     fn(error_, nullptr, 0);
     return;
@@ -332,6 +354,20 @@ void Connection::Impl::readFromLoop(
     read_callback_fn fn) {
   TP_DCHECK(context_->inLoopThread());
 
+  uint64_t sequenceNumber = nextBufferBeingRead_++;
+  TP_VLOG() << "Connection " << id_ << " received a read request (#"
+            << sequenceNumber << ")";
+
+  fn = [this, sequenceNumber, fn{std::move(fn)}](
+           const Error& error, const void* ptr, size_t length) {
+    TP_DCHECK_EQ(sequenceNumber, nextReadCallbackToCall_++);
+    TP_VLOG() << "Connection " << id_ << " is calling a read callback (#"
+              << sequenceNumber << ")";
+    fn(error, ptr, length);
+    TP_VLOG() << "Connection " << id_ << " done calling a read callback (#"
+              << sequenceNumber << ")";
+  };
+
   if (error_) {
     fn(error_, ptr, length);
     return;
@@ -350,6 +386,19 @@ void Connection::Impl::writeFromLoop(
     size_t length,
     write_callback_fn fn) {
   TP_DCHECK(context_->inLoopThread());
+
+  uint64_t sequenceNumber = nextBufferBeingWritten_++;
+  TP_VLOG() << "Connection " << id_ << " received a write request (#"
+            << sequenceNumber << ")";
+
+  fn = [this, sequenceNumber, fn{std::move(fn)}](const Error& error) {
+    TP_DCHECK_EQ(sequenceNumber, nextWriteCallbackToCall_++);
+    TP_VLOG() << "Connection " << id_ << " is calling a write callback (#"
+              << sequenceNumber << ")";
+    fn(error);
+    TP_VLOG() << "Connection " << id_ << " done calling a write callback (#"
+              << sequenceNumber << ")";
+  };
 
   if (error_) {
     fn(error_);
@@ -380,12 +429,15 @@ void Connection::Impl::close() {
 
 void Connection::Impl::closeFromLoop() {
   TP_DCHECK(context_->inLoopThread());
+  TP_VLOG() << "Connection " << id_ << " is closing";
   setError_(TP_CREATE_ERROR(ConnectionClosedError));
 }
 
 void Connection::Impl::allocCallbackFromLoop_(uv_buf_t* buf) {
   TP_DCHECK(context_->inLoopThread());
   TP_THROW_ASSERT_IF(readOperations_.empty());
+  TP_VLOG() << "Connection " << id_
+            << " has incoming data for which it needs to provide a buffer";
   readOperations_.front().allocFromLoop(buf);
 }
 
@@ -393,6 +445,10 @@ void Connection::Impl::readCallbackFromLoop_(
     ssize_t nread,
     const uv_buf_t* buf) {
   TP_DCHECK(context_->inLoopThread());
+  TP_VLOG() << "Connection " << id_ << " has completed reading some data ("
+            << (nread >= 0 ? std::to_string(nread) + " bytes"
+                           : formatUvError(nread))
+            << ")";
 
   if (nread < 0) {
     setError_(TP_CREATE_ERROR(UVError, nread));
@@ -416,6 +472,8 @@ void Connection::Impl::readCallbackFromLoop_(
 
 void Connection::Impl::writeCallbackFromLoop_(int status) {
   TP_DCHECK(context_->inLoopThread());
+  TP_VLOG() << "Connection " << id_ << " has completed a write request ("
+            << formatUvError(status) << ")";
 
   if (status < 0) {
     setError_(TP_CREATE_ERROR(UVError, status));
@@ -435,6 +493,7 @@ void Connection::Impl::writeCallbackFromLoop_(int status) {
 
 void Connection::Impl::closeCallbackFromLoop_() {
   TP_DCHECK(context_->inLoopThread());
+  TP_VLOG() << "Connection " << id_ << " has finished closing its handle";
   TP_DCHECK(writeOperations_.empty());
   leak_.reset();
 }
@@ -451,6 +510,9 @@ void Connection::Impl::setError_(Error error) {
 }
 
 void Connection::Impl::handleError_() {
+  TP_DCHECK(context_->inLoopThread());
+  TP_VLOG() << "Connection " << id_ << " is handling error " << error_.what();
+
   for (auto& readOperation : readOperations_) {
     readOperation.callbackFromLoop(error_);
   }

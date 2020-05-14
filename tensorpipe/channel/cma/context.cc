@@ -113,6 +113,9 @@ class Context::Impl : public Context::PrivateIface,
   std::atomic<bool> joined_{false};
   ClosingEmitter closingEmitter_;
 
+  // This is atomic because it may be accessed from outside the loop.
+  std::atomic<uint64_t> nextRequestId_{0};
+
   // An identifier for the context, composed of the identifier for the context,
   // combined with the channel's name. It will only be used for logging and
   // debugging purposes.
@@ -139,8 +142,12 @@ void Context::close() {
 
 void Context::Impl::close() {
   if (!closed_.exchange(true)) {
+    TP_VLOG() << "Channel context " << id_ << " is closing";
+
     closingEmitter_.close();
     requests_.push(nullopt);
+
+    TP_VLOG() << "Channel context " << id_ << " done closing";
   }
 }
 
@@ -152,8 +159,12 @@ void Context::Impl::join() {
   close();
 
   if (!joined_.exchange(true)) {
+    TP_VLOG() << "Channel context " << id_ << " is joining";
+
     thread_.join();
     // TP_DCHECK(requests_.empty());
+
+    TP_VLOG() << "Channel context " << id_ << " done joining";
   }
 }
 
@@ -206,6 +217,18 @@ void Context::Impl::requestCopy(
     void* localPtr,
     size_t length,
     std::function<void(const Error&)> fn) {
+  uint64_t requestId = nextRequestId_++;
+  TP_VLOG() << "Channel context " << id_ << " received a copy request (#"
+            << requestId << ")";
+
+  fn = [this, requestId, fn{std::move(fn)}](const Error& error) {
+    TP_VLOG() << "Channel context " << id_
+              << " is calling a copy request callback (#" << requestId << ")";
+    fn(error);
+    TP_VLOG() << "Channel context " << id_
+              << " done calling a copy request callback (#" << requestId << ")";
+  };
+
   requests_.push(
       CopyRequest{remotePid, remotePtr, localPtr, length, std::move(fn)});
 }

@@ -387,6 +387,18 @@ class Connection::Impl : public std::enable_shared_from_this<Connection::Impl>,
   // Pending write operations.
   std::deque<WriteOperation> writeOperations_;
 
+  // A sequence number for the calls to read.
+  uint64_t nextBufferBeingRead_{0};
+
+  // A sequence number for the calls to write.
+  uint64_t nextBufferBeingWritten_{0};
+
+  // A sequence number for the invocations of the callbacks of read.
+  uint64_t nextReadCallbackToCall_{0};
+
+  // A sequence number for the invocations of the callbacks of write.
+  uint64_t nextWriteCallbackToCall_{0};
+
   // An identifier for the connection, composed of the identifier for the
   // context or listener, combined with an increasing sequence number. It will
   // only be used for logging and debugging purposes.
@@ -499,12 +511,18 @@ void Connection::Impl::initFromLoop() {
   inbox_.emplace(std::move(inboxRingBuffer));
 
   // Register method to be called when our peer writes to our inbox.
-  inboxReactorToken_ = context_->addReaction(runIfAlive(
-      *this, [](Impl& impl) { impl.processReadOperationsFromLoop(); }));
+  inboxReactorToken_ = context_->addReaction(runIfAlive(*this, [](Impl& impl) {
+    TP_VLOG() << "Connection " << impl.id_
+              << " is reacting to the peer writing to the inbox";
+    impl.processReadOperationsFromLoop();
+  }));
 
   // Register method to be called when our peer reads from our outbox.
-  outboxReactorToken_ = context_->addReaction(runIfAlive(
-      *this, [](Impl& impl) { impl.processWriteOperationsFromLoop(); }));
+  outboxReactorToken_ = context_->addReaction(runIfAlive(*this, [](Impl& impl) {
+    TP_VLOG() << "Connection " << impl.id_
+              << " is reacting to the peer reading from the outbox";
+    impl.processWriteOperationsFromLoop();
+  }));
 
   // We're sending file descriptors first, so wait for writability.
   state_ = SEND_FDS;
@@ -524,6 +542,22 @@ void Connection::Impl::read(read_callback_fn fn) {
 
 void Connection::Impl::readFromLoop(read_callback_fn fn) {
   TP_DCHECK(context_->inLoopThread());
+
+  uint64_t sequenceNumber = nextBufferBeingRead_++;
+  TP_VLOG() << "Connection " << id_ << " received an unsized read request (#"
+            << sequenceNumber << ")";
+
+  fn = [this, sequenceNumber, fn{std::move(fn)}](
+           const Error& error, const void* ptr, size_t length) {
+    TP_DCHECK_EQ(sequenceNumber, nextReadCallbackToCall_++);
+    TP_VLOG() << "Connection " << id_
+              << " is calling an unsized read callback (#" << sequenceNumber
+              << ")";
+    fn(error, ptr, length);
+    TP_VLOG() << "Connection " << id_
+              << " done calling an unsized read callback (#" << sequenceNumber
+              << ")";
+  };
 
   if (error_) {
     fn(error_, nullptr, 0);
@@ -556,6 +590,20 @@ void Connection::Impl::readFromLoop(
     google::protobuf::MessageLite& message,
     read_proto_callback_fn fn) {
   TP_DCHECK(context_->inLoopThread());
+
+  uint64_t sequenceNumber = nextBufferBeingRead_++;
+  TP_VLOG() << "Connection " << id_ << " received a proto read request (#"
+            << sequenceNumber << ")";
+
+  fn = [this, sequenceNumber, fn{std::move(fn)}](const Error& error) {
+    TP_DCHECK_EQ(sequenceNumber, nextReadCallbackToCall_++);
+    TP_VLOG() << "Connection " << id_ << " is calling a proto read callback (#"
+              << sequenceNumber << ")";
+    fn(error);
+    TP_VLOG() << "Connection " << id_
+              << " done calling a proto read callback (#" << sequenceNumber
+              << ")";
+  };
 
   if (error_) {
     fn(error_);
@@ -612,6 +660,21 @@ void Connection::Impl::readFromLoop(
     read_callback_fn fn) {
   TP_DCHECK(context_->inLoopThread());
 
+  uint64_t sequenceNumber = nextBufferBeingRead_++;
+  TP_VLOG() << "Connection " << id_ << " received a sized read request (#"
+            << sequenceNumber << ")";
+
+  fn = [this, sequenceNumber, fn{std::move(fn)}](
+           const Error& error, const void* ptr, size_t length) {
+    TP_DCHECK_EQ(sequenceNumber, nextReadCallbackToCall_++);
+    TP_VLOG() << "Connection " << id_ << " is calling a sized read callback (#"
+              << sequenceNumber << ")";
+    fn(error, ptr, length);
+    TP_VLOG() << "Connection " << id_
+              << " done calling a sized read callback (#" << sequenceNumber
+              << ")";
+  };
+
   if (error_) {
     fn(error_, ptr, length);
     return;
@@ -644,6 +707,19 @@ void Connection::Impl::writeFromLoop(
     write_callback_fn fn) {
   TP_DCHECK(context_->inLoopThread());
 
+  uint64_t sequenceNumber = nextBufferBeingWritten_++;
+  TP_VLOG() << "Connection " << id_ << " received a write request (#"
+            << sequenceNumber << ")";
+
+  fn = [this, sequenceNumber, fn{std::move(fn)}](const Error& error) {
+    TP_DCHECK_EQ(sequenceNumber, nextWriteCallbackToCall_++);
+    TP_VLOG() << "Connection " << id_ << " is calling a write callback (#"
+              << sequenceNumber << ")";
+    fn(error);
+    TP_VLOG() << "Connection " << id_ << " done calling a write callback (#"
+              << sequenceNumber << ")";
+  };
+
   if (error_) {
     fn(error_);
     return;
@@ -675,6 +751,20 @@ void Connection::Impl::writeFromLoop(
     const google::protobuf::MessageLite& message,
     write_callback_fn fn) {
   TP_DCHECK(context_->inLoopThread());
+
+  uint64_t sequenceNumber = nextBufferBeingWritten_++;
+  TP_VLOG() << "Connection " << id_ << " received a proto write request (#"
+            << sequenceNumber << ")";
+
+  fn = [this, sequenceNumber, fn{std::move(fn)}](const Error& error) {
+    TP_DCHECK_EQ(sequenceNumber, nextWriteCallbackToCall_++);
+    TP_VLOG() << "Connection " << id_ << " is calling a proto write callback (#"
+              << sequenceNumber << ")";
+    fn(error);
+    TP_VLOG() << "Connection " << id_
+              << " done calling a proto write callback (#" << sequenceNumber
+              << ")";
+  };
 
   if (error_) {
     fn(error_);
@@ -721,6 +811,8 @@ void Connection::Impl::setId(std::string id) {
 
 void Connection::Impl::handleEventsFromLoop(int events) {
   TP_DCHECK(context_->inLoopThread());
+  TP_VLOG() << "Connection " << id_ << " is handling an event on its socket ("
+            << events << ")";
 
   // Handle only one of the events in the mask. Events on the control
   // file descriptor are rare enough for the cost of having epoll call
@@ -885,6 +977,8 @@ void Connection::Impl::setError_(Error error) {
 
 void Connection::Impl::handleError() {
   TP_DCHECK(context_->inLoopThread());
+  TP_VLOG() << "Connection " << id_ << " is handling error " << error_.what();
+
   for (auto& readOperation : readOperations_) {
     readOperation.handleError(error_);
   }
@@ -903,6 +997,7 @@ void Connection::Impl::handleError() {
 
 void Connection::Impl::closeFromLoop() {
   TP_DCHECK(context_->inLoopThread());
+  TP_VLOG() << "Connection " << id_ << " is closing";
   setError_(TP_CREATE_ERROR(ConnectionClosedError));
 }
 

@@ -9,6 +9,7 @@
 #include <tensorpipe/transport/uv/uv.h>
 
 #include <array>
+#include <sstream>
 
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/error_macros.h>
@@ -99,6 +100,16 @@ std::tuple<int, std::string> getHostname() {
   }
   return std::make_tuple(
       0, std::string(hostname.data(), hostname.data() + size));
+}
+
+std::string formatUvError(int status) {
+  if (status == 0) {
+    return "success";
+  } else {
+    std::ostringstream ss;
+    ss << uv_err_name(status) << ": " << uv_strerror(status);
+    return ss.str();
+  }
 }
 
 } // namespace uv

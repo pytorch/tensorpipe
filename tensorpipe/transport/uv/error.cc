@@ -8,18 +8,14 @@
 
 #include <tensorpipe/transport/uv/error.h>
 
-#include <sstream>
-
-#include <uv.h>
+#include <tensorpipe/transport/uv/uv.h>
 
 namespace tensorpipe {
 namespace transport {
 namespace uv {
 
 std::string UVError::what() const {
-  std::ostringstream ss;
-  ss << uv_err_name(error_) << ": " << uv_strerror(error_);
-  return ss.str();
+  return formatUvError(error_);
 }
 
 std::string NoAddrFoundError::what() const {

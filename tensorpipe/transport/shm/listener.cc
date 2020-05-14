@@ -77,6 +77,12 @@ class Listener::Impl : public std::enable_shared_from_this<Listener::Impl>,
   std::deque<accept_callback_fn> fns_;
   ClosingReceiver closingReceiver_;
 
+  // A sequence number for the calls to accept.
+  uint64_t nextConnectionBeingAccepted_{0};
+
+  // A sequence number for the invocations of the callbacks of accept.
+  uint64_t nextAcceptCallbackToCall_{0};
+
   // An identifier for the listener, composed of the identifier for the context,
   // combined with an increasing sequence number. It will be used as a prefix
   // for the identifiers of connections. All of them will only be used for
@@ -127,6 +133,7 @@ void Listener::Impl::init() {
 
 void Listener::Impl::closeFromLoop() {
   TP_DCHECK(context_->inLoopThread());
+  TP_VLOG() << "Listener " << id_ << " is closing";
   setError_(TP_CREATE_ERROR(ListenerClosedError));
 }
 
@@ -142,6 +149,9 @@ void Listener::Impl::setError_(Error error) {
 }
 
 void Listener::Impl::handleError() {
+  TP_DCHECK(context_->inLoopThread());
+  TP_VLOG() << "Listener " << id_ << " is handling error " << error_.what();
+
   if (!fns_.empty()) {
     context_->unregisterDescriptor(socket_->fd());
   }
@@ -178,6 +188,21 @@ void Listener::Impl::accept(accept_callback_fn fn) {
 
 void Listener::Impl::acceptFromLoop(accept_callback_fn fn) {
   TP_DCHECK(context_->inLoopThread());
+
+  uint64_t sequenceNumber = nextConnectionBeingAccepted_++;
+  TP_VLOG() << "Listener " << id_ << " received an accept request (#"
+            << sequenceNumber << ")";
+
+  fn = [this, sequenceNumber, fn{std::move(fn)}](
+           const Error& error,
+           std::shared_ptr<transport::Connection> connection) {
+    TP_DCHECK_EQ(sequenceNumber, nextAcceptCallbackToCall_++);
+    TP_VLOG() << "Listener " << id_ << " is calling an accept callback (#"
+              << sequenceNumber << ")";
+    fn(error, std::move(connection));
+    TP_VLOG() << "Listener " << id_ << " done calling an accept callback (#"
+              << sequenceNumber << ")";
+  };
 
   if (error_) {
     fn(error_, std::shared_ptr<Connection>());
@@ -221,6 +246,8 @@ void Listener::Impl::setId(std::string id) {
 
 void Listener::Impl::handleEventsFromLoop(int events) {
   TP_DCHECK(context_->inLoopThread());
+  TP_VLOG() << "Listener " << id_ << " is handling an event on its socket ("
+            << events << ")";
 
   if (events & EPOLLERR || events & EPOLLHUP) {
     // FIXME Should we try to figure out what error it is, e.g., its errno?

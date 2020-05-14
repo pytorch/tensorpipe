@@ -81,6 +81,12 @@ class Listener::Impl : public std::enable_shared_from_this<Listener::Impl> {
   // somewhere. This is what RearmableCallback is for.
   RearmableCallback<const Error&, std::shared_ptr<Connection>> callback_;
 
+  // A sequence number for the calls to accept.
+  uint64_t nextConnectionBeingAccepted_{0};
+
+  // A sequence number for the invocations of the callbacks of accept.
+  uint64_t nextAcceptCallbackToCall_{0};
+
   // An identifier for the listener, composed of the identifier for the context,
   // combined with an increasing sequence number. It will be used as a prefix
   // for the identifiers of connections. All of them will only be used for
@@ -125,6 +131,21 @@ void Listener::Impl::initFromLoop() {
 void Listener::Impl::acceptFromLoop(accept_callback_fn fn) {
   TP_DCHECK(context_->inLoopThread());
 
+  uint64_t sequenceNumber = nextConnectionBeingAccepted_++;
+  TP_VLOG() << "Listener " << id_ << " received an accept request (#"
+            << sequenceNumber << ")";
+
+  fn = [this, sequenceNumber, fn{std::move(fn)}](
+           const Error& error,
+           std::shared_ptr<transport::Connection> connection) {
+    TP_DCHECK_EQ(sequenceNumber, nextAcceptCallbackToCall_++);
+    TP_VLOG() << "Listener " << id_ << " is calling an accept callback (#"
+              << sequenceNumber << ")";
+    fn(error, std::move(connection));
+    TP_VLOG() << "Listener " << id_ << " done calling an accept callback (#"
+              << sequenceNumber << ")";
+  };
+
   if (error_) {
     fn(error_, std::shared_ptr<Connection>());
     return;
@@ -150,11 +171,16 @@ void Listener::Impl::close() {
 }
 
 void Listener::Impl::closeFromLoop() {
+  TP_DCHECK(context_->inLoopThread());
+  TP_VLOG() << "Listener " << id_ << " is closing";
   setError_(TP_CREATE_ERROR(ListenerClosedError));
 }
 
 void Listener::Impl::connectionCallbackFromLoop_(int status) {
   TP_DCHECK(context_->inLoopThread());
+  TP_VLOG() << "Listener " << id_
+            << " has an incoming connection ready to be accepted ("
+            << formatUvError(status) << ")";
 
   if (status != 0) {
     setError_(TP_CREATE_ERROR(UVError, status));
@@ -176,6 +202,7 @@ void Listener::Impl::connectionCallbackFromLoop_(int status) {
 }
 
 void Listener::Impl::closeCallbackFromLoop_() {
+  TP_VLOG() << "Listener " << id_ << " has finished closing its handle";
   leak_.reset();
 }
 
@@ -191,6 +218,8 @@ void Listener::Impl::setError_(Error error) {
 }
 
 void Listener::Impl::handleError_() {
+  TP_DCHECK(context_->inLoopThread());
+  TP_VLOG() << "Listener " << id_ << " is handling error " << error_.what();
   callback_.triggerAll([&]() {
     return std::make_tuple(std::cref(error_), std::shared_ptr<Connection>());
   });

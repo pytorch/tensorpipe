@@ -248,6 +248,8 @@ void Context::Impl::close() {
     for (auto& iter : channels_) {
       iter.second->close();
     }
+
+    TP_VLOG() << "Context " << id_ << " done closing";
   }
 }
 
@@ -259,12 +261,16 @@ void Context::Impl::join() {
   close();
 
   if (!joined_.exchange(true)) {
+    TP_VLOG() << "Context " << id_ << " is joining";
+
     for (auto& iter : transports_) {
       iter.second->join();
     }
     for (auto& iter : channels_) {
       iter.second->join();
     }
+
+    TP_VLOG() << "Context " << id_ << " done joining";
   }
 }
 

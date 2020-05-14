@@ -348,6 +348,8 @@ std::tuple<int, InterfaceAddresses, int> getInterfaceAddresses();
 
 std::tuple<int, std::string> getHostname();
 
+std::string formatUvError(int status);
+
 } // namespace uv
 } // namespace transport
 } // namespace tensorpipe

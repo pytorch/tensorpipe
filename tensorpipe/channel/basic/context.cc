@@ -113,7 +113,11 @@ void Context::close() {
 
 void Context::Impl::close() {
   if (!closed_.exchange(true)) {
+    TP_VLOG() << "Channel context " << id_ << " is closing";
+
     closingEmitter_.close();
+
+    TP_VLOG() << "Channel context " << id_ << " done closing";
   }
 }
 
@@ -125,7 +129,11 @@ void Context::Impl::join() {
   close();
 
   if (!joined_.exchange(true)) {
+    TP_VLOG() << "Channel context " << id_ << " is joining";
+
     // Nothing to do?
+
+    TP_VLOG() << "Channel context " << id_ << " done joining";
   }
 }
 

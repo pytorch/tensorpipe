@@ -111,8 +111,12 @@ void Context::close() {
 
 void Context::Impl::close() {
   if (!closed_.exchange(true)) {
+    TP_VLOG() << "Transport context " << id_ << " is closing";
+
     closingEmitter_.close();
     loop_.close();
+
+    TP_VLOG() << "Transport context " << id_ << " done closing";
   }
 }
 
@@ -124,7 +128,11 @@ void Context::Impl::join() {
   close();
 
   if (!joined_.exchange(true)) {
+    TP_VLOG() << "Transport context " << id_ << " is joining";
+
     loop_.join();
+
+    TP_VLOG() << "Transport context " << id_ << " done joining";
   }
 }
 
@@ -140,7 +148,7 @@ std::shared_ptr<transport::Connection> Context::Impl::connect(
     std::string addr) {
   std::string connectionId = id_ + ".c" + std::to_string(connectionCounter_++);
   TP_VLOG() << "Transport context " << id_ << " is opening connection "
-            << connectionId;
+            << connectionId << " to address " << addr;
   return std::make_shared<Connection>(
       Connection::ConstructorToken(),
       std::static_pointer_cast<PrivateIface>(shared_from_this()),
@@ -155,7 +163,7 @@ std::shared_ptr<transport::Listener> Context::listen(std::string addr) {
 std::shared_ptr<transport::Listener> Context::Impl::listen(std::string addr) {
   std::string listenerId = id_ + ".l" + std::to_string(listenerCounter_++);
   TP_VLOG() << "Transport context " << id_ << " is opening listener "
-            << listenerId;
+            << listenerId << " on address " << addr;
   return std::make_shared<Listener>(
       Listener::ConstructorToken(),
       std::static_pointer_cast<PrivateIface>(shared_from_this()),
