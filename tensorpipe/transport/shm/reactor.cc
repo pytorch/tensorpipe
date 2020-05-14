@@ -27,6 +27,7 @@ void writeToken(util::ringbuffer::Producer& producer, Reactor::TToken token) {
     TP_DCHECK_EQ(rv, sizeof(token));
     break;
   }
+  producer.semPostData();
 }
 
 } // namespace
@@ -41,12 +42,13 @@ Reactor::Reactor() {
   consumer_.emplace(rb);
   producer_.emplace(rb);
   deferredFunctionToken_ = add([this]() { handleDeferredFunctionFromLoop(); });
+  wakeUpToken_ = add([]() { ; });
   thread_ = std::thread(&Reactor::run, this);
 }
 
 void Reactor::close() {
   if (!closed_.exchange(true)) {
-    // No need to wake up the reactor, since it is busy-waiting.
+    trigger(wakeUpToken_);
   }
 }
 
@@ -94,6 +96,11 @@ void Reactor::remove(TToken token) {
   functions_[token] = nullptr;
   reusableTokens_.insert(token);
   functionCount_--;
+  if (functionCount_ >= 2) {
+    // Wake up loop thread upon each token removal except for the
+    // two used to defer and wake up.
+    writeToken(producer_.value(), wakeUpToken_);
+  }
 }
 
 void Reactor::trigger(TToken token) {
@@ -109,14 +116,13 @@ void Reactor::run() {
   setThreadName("TP_SHM_reactor");
 
   // Stop when another thread has asked the reactor the close and when
-  // all functions have been removed except for the one used to defer.
-  while (!closed_ || functionCount_ > 1) {
+  // all functions have been removed except for the two used to defer
+  // and wakeup.
+  while (!closed_ || functionCount_ > 2) {
     uint32_t token;
+    consumer_->semWaitData();
     auto ret = consumer_->copy(sizeof(token), &token);
-    if (ret == -ENODATA) {
-      std::this_thread::yield();
-      continue;
-    }
+    TP_DCHECK_NE(ret, -ENODATA);
 
     TFunction fn;
 
@@ -154,6 +160,7 @@ void Reactor::run() {
   }
 
   remove(deferredFunctionToken_);
+  remove(wakeUpToken_);
 }
 
 Reactor::Trigger::Trigger(Fd&& headerFd, Fd&& dataFd)

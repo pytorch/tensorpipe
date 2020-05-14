@@ -119,6 +119,10 @@ class Producer : public RingBufferWrapper {
     return writeInTx(sizeof(T), &d);
   }
 
+  void semPostData() {
+    semPost_();
+  }
+
   [[nodiscard]] std::pair<ssize_t, void*> reserveContiguousInTx(
       const size_t size) {
     if (unlikely(size == 0)) {
