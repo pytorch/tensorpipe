@@ -206,6 +206,20 @@ class LogEntry final {
 // debug flags, as we want to allow it to be enabled in production builds.
 //
 
+// The level of each TP_VLOG call should reflect where the object issuing it is
+// located in the stack , and whether it's a call that involves handling
+// requests from objects higher up, or issuing requests to objects lower down.
+// This brings us to the following classification:
+// - level 1 is for requests that core classes receive from the user
+// - level 2 is for generic core classes stuff
+// - level 3 is for requests that core classes issue to channels/transports
+// - level 4 is for requests that channels receive from core classes
+// - level 5 is for generic channels stuff
+// - level 6 is for requests that channels issue to transports
+// - level 7 is for requests that transports receive from core classes/channels
+// - level 8 is for generic transports stuff
+// - level 9 is for how transports deal with system resources
+
 inline unsigned long GetTensorPipeVerbosityLevel() {
   char* levelStr = std::getenv("TP_VERBOSE_LOGGING");
   if (levelStr == nullptr) {
@@ -219,10 +233,7 @@ inline unsigned long TensorPipeVerbosityLevel() {
   return level;
 }
 
-// TODO Add a verbosity level to all TP_VLOG calls and then use this version:
-// #define TP_VLOG(level) TP_LOG_DEBUG_IF(level <= TensorPipeVerbosityLevel())
-// For now stick to a level of 1 everywhere.
-#define TP_VLOG() TP_LOG_DEBUG_IF(1 <= TensorPipeVerbosityLevel())
+#define TP_VLOG(level) TP_LOG_DEBUG_IF(level <= TensorPipeVerbosityLevel())
 
 //
 // Argument checks

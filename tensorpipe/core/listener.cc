@@ -201,7 +201,7 @@ void Listener::Impl::close() {
 
 void Listener::Impl::closeFromLoop_() {
   TP_DCHECK(loop_.inLoop());
-  TP_VLOG() << "Listener " << id_ << " is closing";
+  TP_VLOG(1) << "Listener " << id_ << " is closing";
   setError_(TP_CREATE_ERROR(ListenerClosedError));
 }
 
@@ -226,17 +226,17 @@ void Listener::Impl::acceptFromLoop_(accept_callback_fn fn) {
   TP_DCHECK(loop_.inLoop());
 
   uint64_t sequenceNumber = nextPipeBeingAccepted_++;
-  TP_VLOG() << "Listener " << id_ << " received an accept request (#"
-            << sequenceNumber << ")";
+  TP_VLOG(1) << "Listener " << id_ << " received an accept request (#"
+             << sequenceNumber << ")";
 
   fn = [this, sequenceNumber, fn{std::move(fn)}](
            const Error& error, std::shared_ptr<Pipe> pipe) {
     TP_DCHECK_EQ(sequenceNumber, nextAcceptCallbackToCall_++);
-    TP_VLOG() << "Listener " << id_ << " is calling an accept callback (#"
-              << sequenceNumber << ")";
+    TP_VLOG(1) << "Listener " << id_ << " is calling an accept callback (#"
+               << sequenceNumber << ")";
     fn(error, std::move(pipe));
-    TP_VLOG() << "Listener " << id_ << " done calling an accept callback (#"
-              << sequenceNumber << ")";
+    TP_VLOG(1) << "Listener " << id_ << " done calling an accept callback (#"
+               << sequenceNumber << ")";
   };
 
   if (error_) {
@@ -303,21 +303,21 @@ void Listener::Impl::registerConnectionRequestFromLoop_(
     connection_request_callback_fn fn) {
   TP_DCHECK(loop_.inLoop());
 
-  TP_VLOG() << "Listener " << id_
-            << " received a connection request registration (#"
-            << registrationId << ")";
+  TP_VLOG(1) << "Listener " << id_
+             << " received a connection request registration (#"
+             << registrationId << ")";
 
   fn = [this, registrationId, fn{std::move(fn)}](
            const Error& error,
            std::string transport,
            std::shared_ptr<transport::Connection> connection) {
-    TP_VLOG() << "Listener " << id_
-              << " is calling a connection request registration callback (#"
-              << registrationId << ")";
+    TP_VLOG(1) << "Listener " << id_
+               << " is calling a connection request registration callback (#"
+               << registrationId << ")";
     fn(error, std::move(transport), std::move(connection));
-    TP_VLOG() << "Listener " << id_
-              << " done calling a connection request registration callback (#"
-              << registrationId << ")";
+    TP_VLOG(1) << "Listener " << id_
+               << " done calling a connection request registration callback (#"
+               << registrationId << ")";
   };
 
   if (error_) {
@@ -336,9 +336,9 @@ void Listener::Impl::unregisterConnectionRequest(uint64_t registrationId) {
 void Listener::Impl::unregisterConnectionRequestFromLoop_(
     uint64_t registrationId) {
   TP_DCHECK(loop_.inLoop());
-  TP_VLOG() << "Listener " << id_
-            << " received a connection request de-registration (#"
-            << registrationId << ")";
+  TP_VLOG(1) << "Listener " << id_
+             << " received a connection request de-registration (#"
+             << registrationId << ")";
   connectionRequestRegistrations_.erase(registrationId);
 }
 
@@ -359,7 +359,7 @@ void Listener::Impl::setError_(Error error) {
 
 void Listener::Impl::handleError_() {
   TP_DCHECK(loop_.inLoop());
-  TP_VLOG() << "Listener " << id_ << " is handling error " << error_.what();
+  TP_VLOG(2) << "Listener " << id_ << " is handling error " << error_.what();
 
   acceptCallback_.triggerAll([&]() {
     return std::make_tuple(std::cref(error_), std::shared_ptr<Pipe>());
@@ -386,15 +386,15 @@ void Listener::Impl::onAccept_(
   // Keep it alive until we figure out what to do with it.
   connectionsWaitingForHello_.insert(connection);
   auto pbPacketIn = std::make_shared<proto::Packet>();
-  TP_VLOG() << "Listener " << id_
-            << " is reading proto (spontaneous or requested connection)";
+  TP_VLOG(3) << "Listener " << id_
+             << " is reading proto (spontaneous or requested connection)";
   connection->read(
       *pbPacketIn,
       lazyCallbackWrapper_([pbPacketIn,
                             transport{std::move(transport)},
                             weakConnection{std::weak_ptr<transport::Connection>(
                                 connection)}](Impl& impl) mutable {
-        TP_VLOG()
+        TP_VLOG(3)
             << "Listener " << impl.id_
             << " done reading proto (spontaneous or requested connection)";
         std::shared_ptr<transport::Connection> connection =
@@ -413,13 +413,13 @@ void Listener::Impl::armListener_(std::string transport) {
     TP_THROW_EINVAL() << "unsupported transport " << transport;
   }
   auto transportListener = iter->second;
-  TP_VLOG() << "Listener " << id_ << " is accepting connection on transport "
-            << transport;
+  TP_VLOG(3) << "Listener " << id_ << " is accepting connection on transport "
+             << transport;
   transportListener->accept(lazyCallbackWrapper_(
       [transport](
           Impl& impl, std::shared_ptr<transport::Connection> connection) {
-        TP_VLOG() << "Listener " << impl.id_
-                  << " done accepting connection on transport " << transport;
+        TP_VLOG(3) << "Listener " << impl.id_
+                   << " done accepting connection on transport " << transport;
         impl.onAccept_(transport, std::move(connection));
         impl.armListener_(transport);
       }));
@@ -433,11 +433,11 @@ void Listener::Impl::onConnectionHelloRead_(
   if (pbPacketIn.has_spontaneous_connection()) {
     const proto::SpontaneousConnection& pbSpontaneousConnection =
         pbPacketIn.spontaneous_connection();
-    TP_VLOG() << "Listener " << id_ << " got spontaneous connection";
+    TP_VLOG(3) << "Listener " << id_ << " got spontaneous connection";
     std::string pipeId = id_ + ".p" + std::to_string(pipeCounter_++);
-    TP_VLOG() << "Listener " << id_ << " is opening pipe " << pipeId
-              << " (from " << pbSpontaneousConnection.context_name() << " to "
-              << context_->getName() << ")";
+    TP_VLOG(1) << "Listener " << id_ << " is opening pipe " << pipeId
+               << " (from " << pbSpontaneousConnection.context_name() << " to "
+               << context_->getName() << ")";
     auto pipe = std::make_shared<Pipe>(
         Pipe::ConstructorToken(),
         context_,
@@ -450,8 +450,8 @@ void Listener::Impl::onConnectionHelloRead_(
     const proto::RequestedConnection& pbRequestedConnection =
         pbPacketIn.requested_connection();
     uint64_t registrationId = pbRequestedConnection.registration_id();
-    TP_VLOG() << "Listener " << id_ << " got requested connection (#"
-              << registrationId << ")";
+    TP_VLOG(3) << "Listener " << id_ << " got requested connection (#"
+               << registrationId << ")";
     auto fn = std::move(connectionRequestRegistrations_.at(registrationId));
     connectionRequestRegistrations_.erase(registrationId);
     fn(Error::kSuccess, std::move(transport), std::move(connection));

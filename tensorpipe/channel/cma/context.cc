@@ -142,12 +142,12 @@ void Context::close() {
 
 void Context::Impl::close() {
   if (!closed_.exchange(true)) {
-    TP_VLOG() << "Channel context " << id_ << " is closing";
+    TP_VLOG(4) << "Channel context " << id_ << " is closing";
 
     closingEmitter_.close();
     requests_.push(nullopt);
 
-    TP_VLOG() << "Channel context " << id_ << " done closing";
+    TP_VLOG(4) << "Channel context " << id_ << " done closing";
   }
 }
 
@@ -159,12 +159,12 @@ void Context::Impl::join() {
   close();
 
   if (!joined_.exchange(true)) {
-    TP_VLOG() << "Channel context " << id_ << " is joining";
+    TP_VLOG(4) << "Channel context " << id_ << " is joining";
 
     thread_.join();
     // TP_DCHECK(requests_.empty());
 
-    TP_VLOG() << "Channel context " << id_ << " done joining";
+    TP_VLOG(4) << "Channel context " << id_ << " done joining";
   }
 }
 
@@ -203,7 +203,8 @@ std::shared_ptr<channel::Channel> Context::Impl::createChannel(
     Channel::Endpoint /* unused */) {
   TP_THROW_ASSERT_IF(joined_);
   std::string channelId = id_ + ".c" + std::to_string(channelCounter_++);
-  TP_VLOG() << "Channel context " << id_ << " is opening channel " << channelId;
+  TP_VLOG(4) << "Channel context " << id_ << " is opening channel "
+             << channelId;
   return std::make_shared<Channel>(
       Channel::ConstructorToken(),
       std::static_pointer_cast<PrivateIface>(shared_from_this()),
@@ -218,15 +219,16 @@ void Context::Impl::requestCopy(
     size_t length,
     std::function<void(const Error&)> fn) {
   uint64_t requestId = nextRequestId_++;
-  TP_VLOG() << "Channel context " << id_ << " received a copy request (#"
-            << requestId << ")";
+  TP_VLOG(4) << "Channel context " << id_ << " received a copy request (#"
+             << requestId << ")";
 
   fn = [this, requestId, fn{std::move(fn)}](const Error& error) {
-    TP_VLOG() << "Channel context " << id_
-              << " is calling a copy request callback (#" << requestId << ")";
+    TP_VLOG(4) << "Channel context " << id_
+               << " is calling a copy request callback (#" << requestId << ")";
     fn(error);
-    TP_VLOG() << "Channel context " << id_
-              << " done calling a copy request callback (#" << requestId << ")";
+    TP_VLOG(4) << "Channel context " << id_
+               << " done calling a copy request callback (#" << requestId
+               << ")";
   };
 
   requests_.push(

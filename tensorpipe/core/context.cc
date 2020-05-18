@@ -114,7 +114,7 @@ Context::Context(ContextOptions opts)
 
 Context::Impl::Impl(ContextOptions opts)
     : id_(createContextId()), name_(std::move(opts.name_)) {
-  TP_VLOG() << "Context " << id_ << " corresponds to " << name_;
+  TP_VLOG(1) << "Context " << id_ << " corresponds to " << name_;
 }
 
 void Context::registerTransport(
@@ -134,7 +134,7 @@ void Context::Impl::registerTransport(
   TP_THROW_ASSERT_IF(
       transportsByPriority_.find(priority) != transportsByPriority_.end())
       << "transport with priority " << priority << " already registered";
-  TP_VLOG() << "Context " << id_ << " is registering transport " << transport;
+  TP_VLOG(1) << "Context " << id_ << " is registering transport " << transport;
   context->setId(id_ + ".tr_" + transport);
   transports_.emplace(transport, context);
   transportsByPriority_.emplace(priority, std::make_tuple(transport, context));
@@ -157,7 +157,7 @@ void Context::Impl::registerChannel(
   TP_THROW_ASSERT_IF(
       channelsByPriority_.find(priority) != channelsByPriority_.end())
       << "channel with priority " << priority << " already registered";
-  TP_VLOG() << "Context " << id_ << " is registering channel " << channel;
+  TP_VLOG(1) << "Context " << id_ << " is registering channel " << channel;
   context->setId(id_ + ".ch_" + channel);
   channels_.emplace(channel, context);
   channelsByPriority_.emplace(priority, std::make_tuple(channel, context));
@@ -171,7 +171,7 @@ std::shared_ptr<Listener> Context::listen(
 std::shared_ptr<Listener> Context::Impl::listen(
     const std::vector<std::string>& urls) {
   std::string listenerId = id_ + ".l" + std::to_string(listenerCounter_++);
-  TP_VLOG() << "Context " << id_ << " is opening listener " << listenerId;
+  TP_VLOG(1) << "Context " << id_ << " is opening listener " << listenerId;
   return std::make_shared<Listener>(
       Listener::ConstructorToken(),
       std::static_pointer_cast<PrivateIface>(shared_from_this()),
@@ -189,8 +189,8 @@ std::shared_ptr<Pipe> Context::Impl::connect(
     const std::string& url,
     PipeOptions opts) {
   std::string pipeId = id_ + ".p" + std::to_string(pipeCounter_++);
-  TP_VLOG() << "Context " << id_ << " is opening pipe " << pipeId << " (from "
-            << name_ << " to " << std::move(opts.name_) << ")";
+  TP_VLOG(1) << "Context " << id_ << " is opening pipe " << pipeId << " (from "
+             << name_ << " to " << std::move(opts.name_) << ")";
   return std::make_shared<Pipe>(
       Pipe::ConstructorToken(),
       std::static_pointer_cast<PrivateIface>(shared_from_this()),
@@ -238,7 +238,7 @@ void Context::close() {
 
 void Context::Impl::close() {
   if (!closed_.exchange(true)) {
-    TP_VLOG() << "Context " << id_ << " is closing";
+    TP_VLOG(1) << "Context " << id_ << " is closing";
 
     closingEmitter_.close();
 
@@ -249,7 +249,7 @@ void Context::Impl::close() {
       iter.second->close();
     }
 
-    TP_VLOG() << "Context " << id_ << " done closing";
+    TP_VLOG(1) << "Context " << id_ << " done closing";
   }
 }
 
@@ -261,7 +261,7 @@ void Context::Impl::join() {
   close();
 
   if (!joined_.exchange(true)) {
-    TP_VLOG() << "Context " << id_ << " is joining";
+    TP_VLOG(1) << "Context " << id_ << " is joining";
 
     for (auto& iter : transports_) {
       iter.second->join();
@@ -270,7 +270,7 @@ void Context::Impl::join() {
       iter.second->join();
     }
 
-    TP_VLOG() << "Context " << id_ << " done joining";
+    TP_VLOG(1) << "Context " << id_ << " done joining";
   }
 }
 

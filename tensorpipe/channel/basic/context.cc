@@ -99,7 +99,8 @@ std::shared_ptr<channel::Channel> Context::Impl::createChannel(
     std::shared_ptr<transport::Connection> connection,
     Channel::Endpoint /* unused */) {
   std::string channelId = id_ + ".c" + std::to_string(channelCounter_++);
-  TP_VLOG() << "Channel context " << id_ << " is opening channel " << channelId;
+  TP_VLOG(4) << "Channel context " << id_ << " is opening channel "
+             << channelId;
   return std::make_shared<Channel>(
       Channel::ConstructorToken(),
       std::static_pointer_cast<PrivateIface>(shared_from_this()),
@@ -113,11 +114,11 @@ void Context::close() {
 
 void Context::Impl::close() {
   if (!closed_.exchange(true)) {
-    TP_VLOG() << "Channel context " << id_ << " is closing";
+    TP_VLOG(4) << "Channel context " << id_ << " is closing";
 
     closingEmitter_.close();
 
-    TP_VLOG() << "Channel context " << id_ << " done closing";
+    TP_VLOG(4) << "Channel context " << id_ << " done closing";
   }
 }
 
@@ -129,11 +130,11 @@ void Context::Impl::join() {
   close();
 
   if (!joined_.exchange(true)) {
-    TP_VLOG() << "Channel context " << id_ << " is joining";
+    TP_VLOG(4) << "Channel context " << id_ << " is joining";
 
     // Nothing to do?
 
-    TP_VLOG() << "Channel context " << id_ << " done joining";
+    TP_VLOG(4) << "Channel context " << id_ << " done joining";
   }
 }
 

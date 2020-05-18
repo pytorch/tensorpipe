@@ -189,26 +189,26 @@ void Channel::Impl::sendFromLoop_(
   TP_DCHECK(loop_.inLoop());
 
   const uint64_t id = nextTensorBeingSent_++;
-  TP_VLOG() << "Channel " << id_ << " received a send request (#" << id << ")";
+  TP_VLOG(4) << "Channel " << id_ << " received a send request (#" << id << ")";
 
   descriptorCallback =
       [this, id, descriptorCallback{std::move(descriptorCallback)}](
           const Error& error, TDescriptor descriptor) {
         // There is no requirement for the channel to invoke callbacks in order.
-        TP_VLOG() << "Channel " << id_ << " is calling a descriptor callback (#"
-                  << id << ")";
+        TP_VLOG(4) << "Channel " << id_
+                   << " is calling a descriptor callback (#" << id << ")";
         descriptorCallback(error, std::move(descriptor));
-        TP_VLOG() << "Channel " << id_
-                  << " done calling a descriptor callback (#" << id << ")";
+        TP_VLOG(4) << "Channel " << id_
+                   << " done calling a descriptor callback (#" << id << ")";
       };
 
   callback = [this, id, callback{std::move(callback)}](const Error& error) {
     // There is no requirement for the channel to invoke callbacks in order.
-    TP_VLOG() << "Channel " << id_ << " is calling a send callback (#" << id
-              << ")";
+    TP_VLOG(4) << "Channel " << id_ << " is calling a send callback (#" << id
+               << ")";
     callback(error);
-    TP_VLOG() << "Channel " << id_ << " done calling a send callback (#" << id
-              << ")";
+    TP_VLOG(4) << "Channel " << id_ << " done calling a send callback (#" << id
+               << ")";
   };
 
   if (error_) {
@@ -260,15 +260,15 @@ void Channel::Impl::recvFromLoop_(
   proto::Descriptor pbDescriptor;
   loadDescriptor(pbDescriptor, descriptor);
   const uint64_t id = pbDescriptor.operation_id();
-  TP_VLOG() << "Channel " << id_ << " received a recv request (#" << id << ")";
+  TP_VLOG(4) << "Channel " << id_ << " received a recv request (#" << id << ")";
 
   callback = [this, id, callback{std::move(callback)}](const Error& error) {
     // There is no requirement for the channel to invoke callbacks in order.
-    TP_VLOG() << "Channel " << id_ << " is calling a recv callback (#" << id
-              << ")";
+    TP_VLOG(4) << "Channel " << id_ << " is calling a recv callback (#" << id
+               << ")";
     callback(error);
-    TP_VLOG() << "Channel " << id_ << " done calling a recv callback (#" << id
-              << ")";
+    TP_VLOG(4) << "Channel " << id_ << " done calling a recv callback (#" << id
+               << ")";
   };
 
   if (error_) {
@@ -279,26 +279,26 @@ void Channel::Impl::recvFromLoop_(
   pid_t remotePid = pbDescriptor.pid();
   void* remotePtr = reinterpret_cast<void*>(pbDescriptor.ptr());
 
-  TP_VLOG() << "Channel " << id_ << " is copying payload #" << id;
+  TP_VLOG(6) << "Channel " << id_ << " is copying payload #" << id;
   context_->requestCopy(
       remotePid,
       remotePtr,
       ptr,
       length,
       eagerCallbackWrapper_([id, callback{std::move(callback)}](Impl& impl) {
-        TP_VLOG() << "Channel " << impl.id_ << " done copying payload #" << id;
+        TP_VLOG(6) << "Channel " << impl.id_ << " done copying payload #" << id;
         // Let peer know we've completed the copy.
         auto pbPacketOut = std::make_shared<proto::Packet>();
         proto::Notification* pbNotification =
             pbPacketOut->mutable_notification();
         pbNotification->set_operation_id(id);
-        TP_VLOG() << "Channel " << impl.id_
-                  << " is writing proto (notification #" << id << ")";
+        TP_VLOG(6) << "Channel " << impl.id_
+                   << " is writing proto (notification #" << id << ")";
         impl.connection_->write(
             *pbPacketOut,
             impl.lazyCallbackWrapper_([pbPacketOut, id](Impl& impl) {
-              TP_VLOG() << "Channel " << impl.id_
-                        << " done writing proto (notification #" << id << ")";
+              TP_VLOG(6) << "Channel " << impl.id_
+                         << " done writing proto (notification #" << id << ")";
             }));
         callback(impl.error_);
       }));
@@ -309,7 +309,7 @@ void Channel::setId(std::string id) {
 }
 
 void Channel::Impl::setId(std::string id) {
-  TP_VLOG() << "Channel " << id_ << " was renamed to " << id;
+  TP_VLOG(4) << "Channel " << id_ << " was renamed to " << id;
   // FIXME Should we defer this to the loop?
   id_ = std::move(id);
 }
@@ -328,16 +328,17 @@ void Channel::Impl::close() {
 
 void Channel::Impl::closeFromLoop_() {
   TP_DCHECK(loop_.inLoop());
-  TP_VLOG() << "Channel " << id_ << " is closing";
+  TP_VLOG(4) << "Channel " << id_ << " is closing";
   setError_(TP_CREATE_ERROR(ChannelClosedError));
 }
 
 void Channel::Impl::readPacket_() {
   TP_DCHECK(loop_.inLoop());
   auto pbPacketIn = std::make_shared<proto::Packet>();
-  TP_VLOG() << "Channel " << id_ << " is reading proto (notification)";
+  TP_VLOG(6) << "Channel " << id_ << " is reading proto (notification)";
   connection_->read(*pbPacketIn, lazyCallbackWrapper_([pbPacketIn](Impl& impl) {
-    TP_VLOG() << "Channel " << impl.id_ << " done reading proto (notification)";
+    TP_VLOG(6) << "Channel " << impl.id_
+               << " done reading proto (notification)";
     impl.onPacket_(*pbPacketIn);
   }));
 }
@@ -357,7 +358,7 @@ void Channel::Impl::onNotification_(const proto::Notification& pbNotification) {
 
   // Find the send operation matching the notification's operation ID.
   const auto id = pbNotification.operation_id();
-  TP_VLOG() << "Channel " << id_ << " got notification #" << id;
+  TP_VLOG(6) << "Channel " << id_ << " got notification #" << id;
   auto it = std::find_if(
       sendOperations_.begin(), sendOperations_.end(), [id](const auto& op) {
         return op.id == id;
@@ -386,7 +387,7 @@ void Channel::Impl::setError_(Error error) {
 
 void Channel::Impl::handleError_() {
   TP_DCHECK(loop_.inLoop());
-  TP_VLOG() << "Channel " << id_ << " is handling error " << error_.what();
+  TP_VLOG(5) << "Channel " << id_ << " is handling error " << error_.what();
 
   // Move pending operations to stack.
   auto sendOperations = std::move(sendOperations_);

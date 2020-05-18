@@ -132,18 +132,18 @@ void Listener::Impl::acceptFromLoop(accept_callback_fn fn) {
   TP_DCHECK(context_->inLoopThread());
 
   uint64_t sequenceNumber = nextConnectionBeingAccepted_++;
-  TP_VLOG() << "Listener " << id_ << " received an accept request (#"
-            << sequenceNumber << ")";
+  TP_VLOG(7) << "Listener " << id_ << " received an accept request (#"
+             << sequenceNumber << ")";
 
   fn = [this, sequenceNumber, fn{std::move(fn)}](
            const Error& error,
            std::shared_ptr<transport::Connection> connection) {
     TP_DCHECK_EQ(sequenceNumber, nextAcceptCallbackToCall_++);
-    TP_VLOG() << "Listener " << id_ << " is calling an accept callback (#"
-              << sequenceNumber << ")";
+    TP_VLOG(7) << "Listener " << id_ << " is calling an accept callback (#"
+               << sequenceNumber << ")";
     fn(error, std::move(connection));
-    TP_VLOG() << "Listener " << id_ << " done calling an accept callback (#"
-              << sequenceNumber << ")";
+    TP_VLOG(7) << "Listener " << id_ << " done calling an accept callback (#"
+               << sequenceNumber << ")";
   };
 
   if (error_) {
@@ -160,7 +160,7 @@ std::string Listener::Impl::addrFromLoop() const {
 }
 
 void Listener::Impl::setId(std::string id) {
-  TP_VLOG() << "Listener " << id_ << " was renamed to " << id;
+  TP_VLOG(7) << "Listener " << id_ << " was renamed to " << id;
   // FIXME Should we defer this to the loop?
   id_ = std::move(id);
 }
@@ -172,15 +172,15 @@ void Listener::Impl::close() {
 
 void Listener::Impl::closeFromLoop() {
   TP_DCHECK(context_->inLoopThread());
-  TP_VLOG() << "Listener " << id_ << " is closing";
+  TP_VLOG(7) << "Listener " << id_ << " is closing";
   setError_(TP_CREATE_ERROR(ListenerClosedError));
 }
 
 void Listener::Impl::connectionCallbackFromLoop_(int status) {
   TP_DCHECK(context_->inLoopThread());
-  TP_VLOG() << "Listener " << id_
-            << " has an incoming connection ready to be accepted ("
-            << formatUvError(status) << ")";
+  TP_VLOG(9) << "Listener " << id_
+             << " has an incoming connection ready to be accepted ("
+             << formatUvError(status) << ")";
 
   if (status != 0) {
     setError_(TP_CREATE_ERROR(UVError, status));
@@ -191,7 +191,7 @@ void Listener::Impl::connectionCallbackFromLoop_(int status) {
   connection->initFromLoop();
   handle_->acceptFromLoop(connection);
   std::string connectionId = id_ + ".c" + std::to_string(connectionCounter_++);
-  TP_VLOG() << "Listener " << id_ << " is opening connection " << connectionId;
+  TP_VLOG(7) << "Listener " << id_ << " is opening connection " << connectionId;
   callback_.trigger(
       Error::kSuccess,
       std::make_shared<Connection>(
@@ -202,7 +202,7 @@ void Listener::Impl::connectionCallbackFromLoop_(int status) {
 }
 
 void Listener::Impl::closeCallbackFromLoop_() {
-  TP_VLOG() << "Listener " << id_ << " has finished closing its handle";
+  TP_VLOG(9) << "Listener " << id_ << " has finished closing its handle";
   leak_.reset();
 }
 
@@ -219,7 +219,7 @@ void Listener::Impl::setError_(Error error) {
 
 void Listener::Impl::handleError_() {
   TP_DCHECK(context_->inLoopThread());
-  TP_VLOG() << "Listener " << id_ << " is handling error " << error_.what();
+  TP_VLOG(8) << "Listener " << id_ << " is handling error " << error_.what();
   callback_.triggerAll([&]() {
     return std::make_tuple(std::cref(error_), std::shared_ptr<Connection>());
   });
