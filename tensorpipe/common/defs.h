@@ -204,24 +204,25 @@ class LogEntry final {
 // Some logging is helpful to diagnose tricky production issues but is too
 // verbose to keep on all the time. It also should not be controlled by the
 // debug flags, as we want to allow it to be enabled in production builds.
-// Eventually we may even want this to make this a runtime flag.
 //
 
-// Expand macro only when TP_VERBOSE_LOGGING is set.
-#ifdef TP_VERBOSE_LOGGING
+inline unsigned long GetTensorPipeVerbosityLevel() {
+  char* levelStr = std::getenv("TP_VERBOSE_LOGGING");
+  if (levelStr == nullptr) {
+    return 0;
+  }
+  return std::strtoul(levelStr, /*str_end=*/nullptr, /*base=*/10);
+}
 
-#define _TP_VLOG() TP_LOG_DEBUG()
+inline unsigned long TensorPipeVerbosityLevel() {
+  static unsigned long level = GetTensorPipeVerbosityLevel();
+  return level;
+}
 
-#else
-
-#define _TP_VLOG() \
-  while (false)    \
-  TP_LOG_DEBUG()
-
-#endif
-
-// Public API for verbose logging.
-#define TP_VLOG() _TP_VLOG()
+// TODO Add a verbosity level to all TP_VLOG calls and then use this version:
+// #define TP_VLOG(level) TP_LOG_DEBUG_IF(level <= TensorPipeVerbosityLevel())
+// For now stick to a level of 1 everywhere.
+#define TP_VLOG() TP_LOG_DEBUG_IF(1 <= TensorPipeVerbosityLevel())
 
 //
 // Argument checks
