@@ -1204,10 +1204,38 @@ void Pipe::Impl::checkForMessagesDoneCollectingTensorDescriptors_() {
   // this was a map indexed by sequence number we could just store the sequence
   // number of the last message we had written and resume looking from there.
   for (MessageBeingWritten& mRef : messagesBeingWritten_) {
+    // An outgoing message is processed in three stages, with messages coming
+    // later in the queue being at an earlier stage than earlier messages.
+    //
+    // O  startedSendingTensors == false,
+    // |    && numTensorDescriptorsStillBeingCollected == 0
+    // |    && startedWritingPayloads == false
+    // |
+    // |  sendTensorsOfMessage_ is called on it
+    // V
+    // O  startedSendingTensors == true,
+    // |    && numTensorDescriptorsStillBeingCollected > 0
+    // |    && startedWritingPayloads == false
+    // |
+    // |  the descriptor callbacks fire
+    // V
+    // O  startedSendingTensors == true,
+    // |    && numTensorDescriptorsStillBeingCollected == 0
+    // |    && startedWritingPayloads == false
+    // |
+    // |  writeMessage_ is called on it
+    // V
+    // O  startedSendingTensors == true,
+    //      && numTensorDescriptorsStillBeingCollected == 0
+    //      && startedWritingPayloads == true
+    //
+    // (The state diagram actually goes on, with numPayloadsStillBeingWritten
+    // and numTensorsStillBeingSent going from > 0 to == 0).
     if (mRef.startedWritingPayloads) {
       continue;
     }
-    if (mRef.numTensorDescriptorsStillBeingCollected == 0) {
+    if (mRef.startedSendingTensors &&
+        mRef.numTensorDescriptorsStillBeingCollected == 0) {
       writeMessage_(mRef);
     } else {
       break;
