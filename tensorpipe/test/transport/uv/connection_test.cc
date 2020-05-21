@@ -24,23 +24,17 @@ using namespace tensorpipe::transport;
 TEST_P(UVTransportConnectionTest, LargeWrite) {
   constexpr int kMsgSize = 16 * 1024 * 1024;
   std::string msg(kMsgSize, 0x42);
-  std::promise<void> writeCompletedProm;
-  std::promise<void> readCompletedProm;
-  std::future<void> writeCompletedFuture = writeCompletedProm.get_future();
-  std::future<void> readCompletedFuture = readCompletedProm.get_future();
 
-  this->testConnection(
+  testConnection(
       [&](std::shared_ptr<Connection> conn) {
-        this->doWrite(
-            conn, msg.c_str(), msg.length(), [&, conn](const Error& error) {
-              ASSERT_FALSE(error) << error.what();
-              writeCompletedProm.set_value();
-            });
-        writeCompletedFuture.wait();
-        readCompletedFuture.wait();
+        doWrite(conn, msg.c_str(), msg.length(), [&, conn](const Error& error) {
+          ASSERT_FALSE(error) << error.what();
+          peers_->done(PeerGroup::kServer);
+        });
+        peers_->join(PeerGroup::kServer);
       },
       [&](std::shared_ptr<Connection> conn) {
-        this->doRead(
+        doRead(
             conn, [&, conn](const Error& error, const void* data, size_t len) {
               ASSERT_FALSE(error) << error.what();
               ASSERT_EQ(len, msg.length());
@@ -50,10 +44,9 @@ TEST_P(UVTransportConnectionTest, LargeWrite) {
                 ASSERT_EQ(c, msg[i]) << "Wrong value at position " << i
                                      << " of " << msg.length();
               }
-              readCompletedProm.set_value();
+              peers_->done(PeerGroup::kClient);
             });
-        writeCompletedFuture.wait();
-        readCompletedFuture.wait();
+        peers_->join(PeerGroup::kClient);
       });
 }
 

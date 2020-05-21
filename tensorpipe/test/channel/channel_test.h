@@ -10,57 +10,75 @@
 
 #include <future>
 #include <memory>
+#include <string>
 #include <thread>
 
 #include <tensorpipe/channel/context.h>
-#include <tensorpipe/common/queue.h>
 #include <tensorpipe/transport/uv/context.h>
 
 #include <gtest/gtest.h>
 
+#include <tensorpipe/test/peer_group.h>
+
 class ChannelTestHelper {
  public:
+  virtual ~ChannelTestHelper() = default;
+
   virtual std::shared_ptr<tensorpipe::channel::Context> makeContext(
       std::string id) = 0;
 
-  virtual ~ChannelTestHelper() = default;
+  virtual std::shared_ptr<PeerGroup> makePeerGroup() {
+    return std::make_shared<ThreadPeerGroup>();
+  }
 };
 
 class ChannelTest : public ::testing::TestWithParam<ChannelTestHelper*> {
+ protected:
+  std::shared_ptr<PeerGroup> peers_;
+
  public:
-  void testConnectionPair(
+  ChannelTest() : peers_(GetParam()->makePeerGroup()) {}
+
+  void testConnection(
       std::function<void(std::shared_ptr<tensorpipe::transport::Connection>)>
-          f1,
+          server,
       std::function<void(std::shared_ptr<tensorpipe::transport::Connection>)>
-          f2) {
-    auto context = std::make_shared<tensorpipe::transport::uv::Context>();
-    context->setId("harness");
+          client) {
     auto addr = "127.0.0.1";
 
-    {
-      tensorpipe::Queue<std::shared_ptr<tensorpipe::transport::Connection>> q1,
-          q2;
+    peers_->spawn(
+        [&] {
+          auto context = std::make_shared<tensorpipe::transport::uv::Context>();
+          context->setId("server_harness");
 
-      // Listening side.
-      auto listener = context->listen(addr);
-      listener->accept(
-          [&](const tensorpipe::Error& error,
-              std::shared_ptr<tensorpipe::transport::Connection> connection) {
-            ASSERT_FALSE(error) << error.what();
-            q1.push(std::move(connection));
-          });
+          auto listener = context->listen(addr);
 
-      // Connecting side.
-      q2.push(context->connect(listener->addr()));
+          std::promise<std::shared_ptr<tensorpipe::transport::Connection>>
+              connectionProm;
+          std::future<std::shared_ptr<tensorpipe::transport::Connection>>
+              connectionFuture = connectionProm.get_future();
+          listener->accept(
+              [&](const tensorpipe::Error& error,
+                  std::shared_ptr<tensorpipe::transport::Connection>
+                      connection) {
+                ASSERT_FALSE(error) << error.what();
+                connectionProm.set_value(std::move(connection));
+              });
 
-      // Run user specified functions.
-      std::thread t1([&] { f1(q1.pop()); });
-      std::thread t2([&] { f2(q2.pop()); });
-      t1.join();
-      t2.join();
-    }
+          peers_->send(PeerGroup::kClient, listener->addr());
+          server(connectionFuture.get());
 
-    context->join();
+          context->join();
+        },
+        [&] {
+          auto context = std::make_shared<tensorpipe::transport::uv::Context>();
+          context->setId("client_harness");
+
+          auto laddr = peers_->recv(PeerGroup::kClient);
+          client(context->connect(laddr));
+
+          context->join();
+        });
   }
 
   [[nodiscard]] std::pair<

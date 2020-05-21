@@ -10,14 +10,14 @@
 
 #include <future>
 #include <memory>
-#include <thread>
 
-#include <tensorpipe/common/queue.h>
 #include <tensorpipe/transport/connection.h>
 #include <tensorpipe/transport/context.h>
 #include <tensorpipe/transport/listener.h>
 
 #include <gtest/gtest.h>
+
+#include <tensorpipe/test/peer_group.h>
 
 class TransportTestHelper {
  public:
@@ -25,11 +25,20 @@ class TransportTestHelper {
 
   virtual std::string defaultAddr() = 0;
 
+  virtual std::unique_ptr<PeerGroup> makePeerGroup() {
+    return std::make_unique<ThreadPeerGroup>();
+  }
+
   virtual ~TransportTestHelper() = default;
 };
 
 class TransportTest : public ::testing::TestWithParam<TransportTestHelper*> {
+ protected:
+  std::unique_ptr<PeerGroup> peers_;
+
  public:
+  TransportTest() : peers_(GetParam()->makePeerGroup()) {}
+
   void testConnection(
       std::function<void(std::shared_ptr<tensorpipe::transport::Connection>)>
           listeningFn,
@@ -37,33 +46,34 @@ class TransportTest : public ::testing::TestWithParam<TransportTestHelper*> {
           connectingFn) {
     using namespace tensorpipe::transport;
 
-    auto ctx = GetParam()->getContext();
-    auto addr = GetParam()->defaultAddr();
-    {
-      auto listener = ctx->listen(addr);
-      tensorpipe::Queue<std::shared_ptr<Connection>> queue;
-      listener->accept([&](const tensorpipe::Error& error,
-                           std::shared_ptr<Connection> conn) {
-        ASSERT_FALSE(error) << error.what();
-        queue.push(std::move(conn));
-      });
+    peers_->spawn(
+        [&] {
+          auto ctx = GetParam()->getContext();
+          auto addr = GetParam()->defaultAddr();
+          auto listener = ctx->listen(addr);
+          std::promise<std::shared_ptr<Connection>> connectionProm;
+          std::future<std::shared_ptr<Connection>> connectionFuture =
+              connectionProm.get_future();
+          listener->accept([&](const tensorpipe::Error& error,
+                               std::shared_ptr<Connection> conn) {
+            ASSERT_FALSE(error) << error.what();
+            connectionProm.set_value(std::move(conn));
+          });
 
-      // Start thread for listening side.
-      std::thread listeningThread([&]() { listeningFn(queue.pop()); });
+          peers_->send(PeerGroup::kServer, listener->addr());
 
-      // Capture real listener address.
-      const std::string listenerAddr = listener->addr();
+          listeningFn(connectionFuture.get());
 
-      // Start thread for connecting side.
-      std::thread connectingThread(
-          [&]() { connectingFn(ctx->connect(listenerAddr)); });
+          ctx->join();
+        },
+        [&] {
+          auto ctx = GetParam()->getContext();
+          auto listenerAddr = peers_->recv(PeerGroup::kServer);
 
-      // Wait for completion.
-      listeningThread.join();
-      connectingThread.join();
-    }
+          connectingFn(ctx->connect(listenerAddr));
 
-    ctx->join();
+          ctx->join();
+        });
   }
 
   // Add to a closure to check the callback is called before being destroyed
@@ -138,8 +148,8 @@ class TransportTest : public ::testing::TestWithParam<TransportTestHelper*> {
       size_t length,
       tensorpipe::transport::Connection::write_callback_fn fn) {
     auto mutex = std::make_shared<std::mutex>();
-    // We acquire the same mutex while calling write and inside its callback so
-    // that we deadlock if the callback is invoked inline.
+    // We acquire the same mutex while calling write and inside its callback
+    // so that we deadlock if the callback is invoked inline.
     std::lock_guard<std::mutex> outerLock(*mutex);
     conn->write(
         ptr,
