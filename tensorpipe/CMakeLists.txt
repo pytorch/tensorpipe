@@ -7,7 +7,7 @@
 add_library(tensorpipe)
 
 # Support `#include <tensorpipe/foo.h>`.
-target_include_directories(tensorpipe PUBLIC $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}>)
+target_include_directories(tensorpipe PUBLIC $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}>)
 
 ## Core
 
