@@ -22,7 +22,8 @@ UVTransportTestHelper helper;
 using namespace tensorpipe;
 using namespace tensorpipe::transport;
 
-TEST_P(UVTransportContextTest, LookupHostnameAddress) {
+// Disabled because on CircleCI the macOS machines cannot resolve their hostname
+TEST_P(UVTransportContextTest, DISABLED_LookupHostnameAddress) {
   auto context = std::dynamic_pointer_cast<transport::uv::Context>(
       GetParam()->getContext());
   ASSERT_TRUE(context);
