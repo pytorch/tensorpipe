@@ -59,6 +59,11 @@ class Error final {
     return static_cast<bool>(error_);
   }
 
+  template <typename T>
+  bool isOfType() const {
+    return std::dynamic_pointer_cast<T>(error_) != nullptr;
+  }
+
   // Like `std::exception` but returns a `std::string`.
   std::string what() const;
 
