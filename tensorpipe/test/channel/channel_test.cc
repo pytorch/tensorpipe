@@ -225,12 +225,15 @@ TEST_P(ChannelTest, SendMultipleTensors) {
 
 TEST_P(ChannelTest, contextIsNotJoined) {
   std::shared_ptr<Context> context = GetParam()->makeContext("ctx");
+  std::promise<void> serverReadyProm;
 
   testConnectionPair(
       [&](std::shared_ptr<transport::Connection> conn) {
+        serverReadyProm.set_value();
         context->createChannel(std::move(conn), Channel::Endpoint::kListen);
       },
       [&](std::shared_ptr<transport::Connection> conn) {
+        serverReadyProm.get_future().wait();
         context->createChannel(std::move(conn), Channel::Endpoint::kConnect);
       });
 }
