@@ -9,7 +9,6 @@
 #include <tensorpipe/test/transport/uv/uv_test.h>
 
 #include <gtest/gtest.h>
-#include <uv.h>
 
 namespace {
 
@@ -20,7 +19,6 @@ UVTransportTestHelper helper;
 } // namespace
 
 using namespace tensorpipe;
-using namespace tensorpipe::transport;
 
 // Disabled because on CircleCI the macOS machines cannot resolve their hostname
 TEST_P(UVTransportContextTest, DISABLED_LookupHostnameAddress) {
