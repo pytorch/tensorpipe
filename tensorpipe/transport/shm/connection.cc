@@ -825,7 +825,23 @@ void Connection::Impl::handleEventsFromLoop(int events) {
   // state and readable/writable. If we checked for EPOLLIN or EPOLLOUT first
   // and then returned after handling them, we would keep doing so forever and
   // never reach the error handling. So we should keep those checks first.
-  if (events & EPOLLERR || events & EPOLLHUP) {
+  if (events & EPOLLERR) {
+    int error;
+    socklen_t errorlen = sizeof(error);
+    int rv = getsockopt(
+        socket_->fd(),
+        SOL_SOCKET,
+        SO_ERROR,
+        reinterpret_cast<void*>(&error),
+        &errorlen);
+    if (rv == -1) {
+      setError_(TP_CREATE_ERROR(SystemError, "getsockopt", rv));
+    } else {
+      setError_(TP_CREATE_ERROR(SystemError, "async error on socket", error));
+    }
+    return;
+  }
+  if (events & EPOLLHUP) {
     setError_(TP_CREATE_ERROR(EOFError));
     return;
   }

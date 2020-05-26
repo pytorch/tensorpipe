@@ -249,8 +249,23 @@ void Listener::Impl::handleEventsFromLoop(int events) {
   TP_VLOG(9) << "Listener " << id_ << " is handling an event on its socket ("
              << events << ")";
 
-  if (events & EPOLLERR || events & EPOLLHUP) {
-    // FIXME Should we try to figure out what error it is, e.g., its errno?
+  if (events & EPOLLERR) {
+    int error;
+    socklen_t errorlen = sizeof(error);
+    int rv = getsockopt(
+        socket_->fd(),
+        SOL_SOCKET,
+        SO_ERROR,
+        reinterpret_cast<void*>(&error),
+        &errorlen);
+    if (rv == -1) {
+      setError_(TP_CREATE_ERROR(SystemError, "getsockopt", rv));
+    } else {
+      setError_(TP_CREATE_ERROR(SystemError, "async error on socket", error));
+    }
+    return;
+  }
+  if (events & EPOLLHUP) {
     setError_(TP_CREATE_ERROR(EOFError));
     return;
   }
