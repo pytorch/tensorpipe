@@ -487,7 +487,6 @@ Connection::Impl::Impl(
     address_t addr,
     std::string id)
     : context_(std::move(context)),
-      socket_(Socket::createForFamily(AF_UNIX)),
       sockaddr_(Sockaddr::createAbstractUnixAddr(addr)),
       closingReceiver_(context_, context_->getClosingEmitter()),
       id_(std::move(id)) {}
@@ -497,12 +496,28 @@ void Connection::Impl::initFromLoop() {
 
   closingReceiver_.activate(*this);
 
-  if (sockaddr_.has_value()) {
-    socket_->connect(sockaddr_.value());
+  Error error;
+  // The connection either got a socket or an address, but not both.
+  TP_DCHECK((socket_ != nullptr) ^ sockaddr_.has_value());
+  if (socket_ == nullptr) {
+    std::tie(error, socket_) = Socket::createForFamily(AF_UNIX);
+    if (error) {
+      setError_(std::move(error));
+      return;
+    }
+    error = socket_->connect(sockaddr_.value());
+    if (error) {
+      setError_(std::move(error));
+      return;
+    }
   }
   // Ensure underlying control socket is non-blocking such that it
   // works well with event driven I/O.
-  socket_->block(false);
+  error = socket_->block(false);
+  if (error) {
+    setError_(std::move(error));
+    return;
+  }
 
   // Create ringbuffer for inbox.
   std::shared_ptr<util::ringbuffer::RingBuffer> inboxRingBuffer;
@@ -1004,12 +1019,20 @@ void Connection::Impl::handleError() {
     writeOperation.handleError(error_);
   }
   writeOperations_.clear();
-  context_->removeReaction(inboxReactorToken_.value());
-  inboxReactorToken_.reset();
-  context_->removeReaction(outboxReactorToken_.value());
-  outboxReactorToken_.reset();
-  context_->unregisterDescriptor(socket_->fd());
-  socket_.reset();
+  if (inboxReactorToken_.has_value()) {
+    context_->removeReaction(inboxReactorToken_.value());
+    inboxReactorToken_.reset();
+  }
+  if (outboxReactorToken_.has_value()) {
+    context_->removeReaction(outboxReactorToken_.value());
+    outboxReactorToken_.reset();
+  }
+  if (socket_ != nullptr) {
+    if (state_ > INITIALIZING) {
+      context_->unregisterDescriptor(socket_->fd());
+    }
+    socket_.reset();
+  }
 }
 
 void Connection::Impl::closeFromLoop() {

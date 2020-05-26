@@ -61,7 +61,11 @@ void loadFdsFromArray(int* array, std::index_sequence<Idxs...>, Fds&... fds) {
 } // namespace
 
 template <typename T, typename... Fds>
-Error sendToSocket(int socketFd, const T& t1, const T& t2, const Fds&... fds) {
+[[nodiscard]] Error sendToSocket(
+    int socketFd,
+    const T& t1,
+    const T& t2,
+    const Fds&... fds) {
   using TPayload = int;
 
   // Build message.
@@ -110,13 +114,13 @@ Error sendToSocket(int socketFd, const T& t1, const T& t2, const Fds&... fds) {
 }
 
 template <typename... Fds>
-Error sendFdsToSocket(int socketFd, const Fds&... fds) {
+[[nodiscard]] Error sendFdsToSocket(int socketFd, const Fds&... fds) {
   char dummy = 0;
   return sendToSocket(socketFd, dummy, dummy, fds...);
 }
 
 template <typename T, typename... Fds>
-Error recvFromSocket(int socketFd, T& t1, T& t2, Fds&... fds) {
+[[nodiscard]] Error recvFromSocket(int socketFd, T& t1, T& t2, Fds&... fds) {
   using TPayload = int;
 
   // Build message.
@@ -170,7 +174,7 @@ Error recvFromSocket(int socketFd, T& t1, T& t2, Fds&... fds) {
 }
 
 template <typename... Fds>
-Error recvFdsFromSocket(int socketFd, Fds&... fds) {
+[[nodiscard]] Error recvFdsFromSocket(int socketFd, Fds&... fds) {
   char dummy = 0;
   return recvFromSocket(socketFd, dummy, dummy, fds...);
 }
@@ -198,40 +202,35 @@ class Sockaddr final {
 
 class Socket final : public Fd {
  public:
-  static std::shared_ptr<Socket> createForFamily(sa_family_t ai_family);
+  [[nodiscard]] static std::tuple<Error, std::shared_ptr<Socket>>
+  createForFamily(sa_family_t ai_family);
 
   explicit Socket(int fd) : Fd(fd) {}
 
   // Configure if the socket is blocking or not.
-  void block(bool on);
-
-  // Configure recv timeout.
-  void recvTimeout(std::chrono::milliseconds timeout);
-
-  // Configure send timeout.
-  void sendTimeout(std::chrono::milliseconds timeout);
+  [[nodiscard]] Error block(bool on);
 
   // Bind socket to address.
-  void bind(const Sockaddr& addr);
+  [[nodiscard]] Error bind(const Sockaddr& addr);
 
   // Listen on socket.
-  void listen(int backlog);
+  [[nodiscard]] Error listen(int backlog);
 
   // Accept new socket connecting to listening socket.
-  std::shared_ptr<Socket> accept();
+  [[nodiscard]] std::tuple<Error, std::shared_ptr<Socket>> accept();
 
   // Connect to address.
-  void connect(const Sockaddr& addr);
+  [[nodiscard]] Error connect(const Sockaddr& addr);
 
   // Send file descriptor.
   template <typename... Fds>
-  Error sendFds(const Fds&... fds) {
+  [[nodiscard]] Error sendFds(const Fds&... fds) {
     return sendFdsToSocket(fd_, fds...);
   }
 
   // Receive file descriptor.
   template <typename... Fds>
-  Error recvFds(Fds&... fds) {
+  [[nodiscard]] Error recvFds(Fds&... fds) {
     return recvFdsFromSocket(fd_, fds...);
   }
 
@@ -241,7 +240,10 @@ class Socket final : public Fd {
       typename... Fds,
       typename std::enable_if<std::is_trivially_copyable<T>::value, bool>::
           type = false>
-  Error sendPayloadAndFds(const T& t1, const T& t2, const Fds&... fds) {
+  [[nodiscard]] Error sendPayloadAndFds(
+      const T& t1,
+      const T& t2,
+      const Fds&... fds) {
     return sendToSocket(fd_, t1, t2, fds...);
   }
 
@@ -251,13 +253,9 @@ class Socket final : public Fd {
       typename... Fds,
       typename std::enable_if<std::is_trivially_copyable<T>::value, bool>::
           type = false>
-  Error recvPayloadAndFds(T& t1, T& t2, Fds&... fds) {
+  [[nodiscard]] Error recvPayloadAndFds(T& t1, T& t2, Fds&... fds) {
     return recvFromSocket(fd_, t1, t2, fds...);
   }
-
- private:
-  // Configure send or recv timeout.
-  void configureTimeout(int opt, std::chrono::milliseconds timeout);
 };
 
 } // namespace shm

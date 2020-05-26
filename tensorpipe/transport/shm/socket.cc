@@ -50,16 +50,23 @@ std::string Sockaddr::str() const {
   return std::string(&sun->sun_path[offset], len);
 }
 
-std::shared_ptr<Socket> Socket::createForFamily(sa_family_t ai_family) {
+std::tuple<Error, std::shared_ptr<Socket>> Socket::createForFamily(
+    sa_family_t ai_family) {
   auto rv = socket(ai_family, SOCK_STREAM | SOCK_NONBLOCK, 0);
-  TP_THROW_SYSTEM_IF(rv == -1, errno);
-  return std::make_shared<Socket>(rv);
+  if (rv == -1) {
+    return std::make_tuple(
+        TP_CREATE_ERROR(SystemError, "socket", errno),
+        std::shared_ptr<Socket>());
+  }
+  return std::make_tuple(Error::kSuccess, std::make_shared<Socket>(rv));
 }
 
-void Socket::block(bool on) {
+Error Socket::block(bool on) {
   int rv;
   rv = fcntl(fd_, F_GETFL);
-  TP_THROW_SYSTEM_IF(rv == -1, errno);
+  if (rv == -1) {
+    return TP_CREATE_ERROR(SystemError, "fcntl", errno);
+  }
   if (!on) {
     // Set O_NONBLOCK
     rv |= O_NONBLOCK;
@@ -68,37 +75,29 @@ void Socket::block(bool on) {
     rv &= ~O_NONBLOCK;
   }
   rv = fcntl(fd_, F_SETFL, rv);
-  TP_THROW_SYSTEM_IF(rv == -1, errno);
+  if (rv == -1) {
+    return TP_CREATE_ERROR(SystemError, "fcntl", errno);
+  }
+  return Error::kSuccess;
 }
 
-void Socket::configureTimeout(int opt, std::chrono::milliseconds timeout) {
-  struct timeval tv = {
-      .tv_sec = timeout.count() / 1000,
-      .tv_usec = (timeout.count() % 1000) * 1000,
-  };
-  auto rv = setsockopt(fd_, SOL_SOCKET, opt, &tv, sizeof(tv));
-  TP_THROW_SYSTEM_IF(rv == -1, errno);
-}
-
-void Socket::recvTimeout(std::chrono::milliseconds timeout) {
-  configureTimeout(SO_RCVTIMEO, std::move(timeout));
-}
-
-void Socket::sendTimeout(std::chrono::milliseconds timeout) {
-  configureTimeout(SO_SNDTIMEO, std::move(timeout));
-}
-
-void Socket::bind(const Sockaddr& addr) {
+Error Socket::bind(const Sockaddr& addr) {
   auto rv = ::bind(fd_, addr.addr(), addr.addrlen());
-  TP_THROW_SYSTEM_IF(rv == -1, errno);
+  if (rv == -1) {
+    return TP_CREATE_ERROR(SystemError, "bind", errno);
+  }
+  return Error::kSuccess;
 }
 
-void Socket::listen(int backlog) {
+Error Socket::listen(int backlog) {
   auto rv = ::listen(fd_, backlog);
-  TP_THROW_SYSTEM_IF(rv == -1, errno);
+  if (rv == -1) {
+    return TP_CREATE_ERROR(SystemError, "listen", errno);
+  }
+  return Error::kSuccess;
 }
 
-std::shared_ptr<Socket> Socket::accept() {
+std::tuple<Error, std::shared_ptr<Socket>> Socket::accept() {
   struct sockaddr_storage addr;
   socklen_t addrlen = sizeof(addr);
   int rv = -1;
@@ -108,16 +107,16 @@ std::shared_ptr<Socket> Socket::accept() {
       if (errno == EINTR) {
         continue;
       }
-      // Return empty shared_ptr to indicate failure.
-      // The caller can assume errno has been set.
-      return std::shared_ptr<Socket>();
+      return std::make_tuple(
+          TP_CREATE_ERROR(SystemError, "accept", errno),
+          std::shared_ptr<Socket>());
     }
     break;
   }
-  return std::make_shared<Socket>(rv);
+  return std::make_tuple(Error::kSuccess, std::make_shared<Socket>(rv));
 }
 
-void Socket::connect(const Sockaddr& addr) {
+Error Socket::connect(const Sockaddr& addr) {
   for (;;) {
     auto rv = ::connect(fd_, addr.addr(), addr.addrlen());
     if (rv == -1) {
@@ -125,11 +124,12 @@ void Socket::connect(const Sockaddr& addr) {
         continue;
       }
       if (errno != EINPROGRESS) {
-        TP_THROW_SYSTEM(errno);
+        return TP_CREATE_ERROR(SystemError, "connect", errno);
       }
     }
     break;
   }
+  return Error::kSuccess;
 }
 
 } // namespace shm

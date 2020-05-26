@@ -100,7 +100,6 @@ Listener::Impl::Impl(
     address_t addr,
     std::string id)
     : context_(std::move(context)),
-      socket_(Socket::createForFamily(AF_UNIX)),
       sockaddr_(Sockaddr::createAbstractUnixAddr(addr)),
       closingReceiver_(context_, context_->getClosingEmitter()),
       id_(std::move(id)) {}
@@ -110,9 +109,28 @@ void Listener::Impl::initFromLoop() {
 
   closingReceiver_.activate(*this);
 
-  socket_->bind(sockaddr_);
-  socket_->block(false);
-  socket_->listen(128);
+  Error error;
+  TP_DCHECK(socket_ == nullptr);
+  std::tie(error, socket_) = Socket::createForFamily(AF_UNIX);
+  if (error) {
+    setError_(std::move(error));
+    return;
+  }
+  error = socket_->bind(sockaddr_);
+  if (error) {
+    setError_(std::move(error));
+    return;
+  }
+  error = socket_->block(false);
+  if (error) {
+    setError_(std::move(error));
+    return;
+  }
+  error = socket_->listen(128);
+  if (error) {
+    setError_(std::move(error));
+    return;
+  }
 }
 
 Listener::Listener(
@@ -271,9 +289,11 @@ void Listener::Impl::handleEventsFromLoop(int events) {
   }
   TP_ARG_CHECK_EQ(events, EPOLLIN);
 
-  auto socket = socket_->accept();
-  if (!socket) {
-    setError_(TP_CREATE_ERROR(SystemError, "accept", errno));
+  Error error;
+  std::shared_ptr<Socket> socket;
+  std::tie(error, socket) = socket_->accept();
+  if (error) {
+    setError_(std::move(error));
     return;
   }
 
