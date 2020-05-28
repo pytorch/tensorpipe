@@ -21,6 +21,17 @@ void writeToken(util::ringbuffer::Producer& producer, Reactor::TToken token) {
   for (;;) {
     auto rv = producer.write(&token, sizeof(token));
     if (rv == -EAGAIN) {
+      // There's contention on the spin-lock, wait for it by retrying.
+      std::this_thread::yield();
+      continue;
+    }
+    if (rv == -ENOSPC) {
+      // The ringbuffer is full. Retrying should typically work, but might lead
+      // to a deadlock if, for example, a reactor thread is trying to write a
+      // token to its own ringbuffer, as then it would be stuck here and never
+      // proceed to consume data from the ringbuffer. This could also happen
+      // across multiple processes. This case seems remote enough, and a proper
+      // solution rather complicated, that we're going to take that risk...
       std::this_thread::yield();
       continue;
     }
@@ -40,7 +51,6 @@ Reactor::Reactor() {
   dataFd_ = Fd(dataFd);
   consumer_.emplace(rb);
   producer_.emplace(rb);
-  deferredFunctionToken_ = add([this]() { handleDeferredFunctionFromLoop(); });
   thread_ = std::thread(&Reactor::run, this);
 }
 
@@ -109,12 +119,27 @@ void Reactor::run() {
   setThreadName("TP_SHM_reactor");
 
   // Stop when another thread has asked the reactor the close and when
-  // all functions have been removed except for the one used to defer.
-  while (!closed_ || functionCount_ > 1) {
+  // all functions have been removed.
+  while (!closed_ || functionCount_ > 0) {
     uint32_t token;
     auto ret = consumer_->copy(sizeof(token), &token);
     if (ret == -ENODATA) {
-      std::this_thread::yield();
+      if (deferredFunctionCount_ > 0) {
+        decltype(deferredFunctionList_) fns;
+
+        {
+          std::unique_lock<std::mutex> lock(deferredFunctionMutex_);
+          std::swap(fns, deferredFunctionList_);
+        }
+
+        deferredFunctionCount_ -= fns.size();
+
+        for (auto& fn : fns) {
+          fn();
+        }
+      } else {
+        std::this_thread::yield();
+      }
       continue;
     }
 
@@ -152,8 +177,6 @@ void Reactor::run() {
       fn();
     }
   }
-
-  remove(deferredFunctionToken_);
 }
 
 Reactor::Trigger::Trigger(Fd&& headerFd, Fd&& dataFd)
@@ -172,27 +195,13 @@ void Reactor::deferToLoop(TDeferredFunction fn) {
     std::unique_lock<std::mutex> lock(deferredFunctionMutex_);
     if (likely(isThreadConsumingDeferredFunctions_)) {
       deferredFunctionList_.push_back(std::move(fn));
-      trigger(deferredFunctionToken_);
+      ++deferredFunctionCount_;
+      // No need to wake up the reactor, since it is busy-waiting.
       return;
     }
   }
   // Must call it without holding the lock, as it could cause a reentrant call.
   onDemandLoop_.deferToLoop(std::move(fn));
-}
-
-void Reactor::handleDeferredFunctionFromLoop() {
-  decltype(deferredFunctionList_) fns;
-
-  // Unlock before executing, because the function could try to
-  // defer another function and that needs the lock.
-  {
-    std::unique_lock<std::mutex> lock(deferredFunctionMutex_);
-    std::swap(fns, deferredFunctionList_);
-  }
-
-  for (auto& fn : fns) {
-    fn();
-  }
 }
 
 } // namespace shm

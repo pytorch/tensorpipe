@@ -35,8 +35,8 @@ namespace shm {
 // mutex and condition variable to avoid a busy loop.
 //
 class Reactor final {
-  // This allows for buffering 2k triggers (at 4 bytes a piece).
-  static constexpr auto kSize = 8192;
+  // This allows for buffering 1M triggers (at 4 bytes a piece).
+  static constexpr auto kSize = 4 * 1024 * 1024;
 
  public:
   using TFunction = std::function<void()>;
@@ -90,9 +90,9 @@ class Reactor final {
   std::atomic<bool> closed_{false};
   std::atomic<bool> joined_{false};
 
-  TToken deferredFunctionToken_;
   std::mutex deferredFunctionMutex_;
   std::list<TDeferredFunction> deferredFunctionList_;
+  std::atomic<int64_t> deferredFunctionCount_{0};
 
   // Whether the thread is still taking care of running the deferred functions
   //
@@ -123,9 +123,6 @@ class Reactor final {
 
   // Count how many functions are registered.
   std::atomic<uint64_t> functionCount_{0};
-
-  // Called in response to a deferred function.
-  void handleDeferredFunctionFromLoop();
 
  public:
   class Trigger {
