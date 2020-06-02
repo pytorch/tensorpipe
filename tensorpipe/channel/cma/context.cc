@@ -27,7 +27,6 @@
 #include <tensorpipe/common/optional.h>
 #include <tensorpipe/common/queue.h>
 #include <tensorpipe/common/system.h>
-#include <tensorpipe/proto/channel/cma.pb.h>
 
 namespace tensorpipe {
 namespace channel {
