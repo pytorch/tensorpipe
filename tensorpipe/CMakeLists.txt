@@ -62,8 +62,7 @@ target_sources(tensorpipe PRIVATE
 list(APPEND TENSORPIPE_PUBLIC_HEADERS channel/basic/context.h)
 target_sources(tensorpipe PRIVATE
   channel/basic/channel.cc
-  channel/basic/context.cc
-  proto/channel/basic.proto)
+  channel/basic/context.cc)
 
 ### cma
 

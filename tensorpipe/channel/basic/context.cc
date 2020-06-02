@@ -19,7 +19,6 @@
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/error.h>
 #include <tensorpipe/common/error_macros.h>
-#include <tensorpipe/proto/channel/basic.pb.h>
 
 namespace tensorpipe {
 namespace channel {

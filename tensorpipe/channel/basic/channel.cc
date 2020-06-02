@@ -17,7 +17,6 @@
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/error.h>
 #include <tensorpipe/common/error_macros.h>
-#include <tensorpipe/proto/channel/basic.pb.h>
 
 namespace tensorpipe {
 namespace channel {
@@ -70,24 +69,6 @@ class Channel::Impl : public std::enable_shared_from_this<Channel::Impl> {
 
   void closeFromLoop_();
 
-  // Arm connection to read next protobuf packet.
-  void readPacket_();
-
-  // Called when a protobuf packet was received.
-  void onPacket_(const proto::Packet& packet);
-
-  // Called when protobuf packet is a request.
-  void onRequest_(const proto::Request& request);
-
-  // Called when protobuf packet is a reply.
-  void onReply_(const proto::Reply& reply);
-
-  // Called if send operation was successful.
-  void sendCompleted(const uint64_t);
-
-  // Called if recv operation was successful.
-  void recvCompleted(const uint64_t);
-
   void setError_(Error error);
 
   // Helper function to process transport error.
@@ -102,24 +83,8 @@ class Channel::Impl : public std::enable_shared_from_this<Channel::Impl> {
   // Increasing identifier for send operations.
   uint64_t nextTensorBeingSent_{0};
 
-  // State capturing a single send operation.
-  struct SendOperation {
-    const uint64_t id;
-    const void* ptr;
-    size_t length;
-    TSendCallback callback;
-  };
-
-  // State capturing a single recv operation.
-  struct RecvOperation {
-    const uint64_t id;
-    void* ptr;
-    size_t length;
-    TRecvCallback callback;
-  };
-
-  std::list<SendOperation> sendOperations_;
-  std::list<RecvOperation> recvOperations_;
+  // Increasing identifier for recv operations.
+  uint64_t nextTensorBeingReceived_{0};
 
   // An identifier for the channel, composed of the identifier for the context,
   // combined with an increasing sequence number. It will only be used for
@@ -189,27 +154,30 @@ void Channel::Impl::sendFromLoop_(
     TSendCallback callback) {
   TP_DCHECK(loop_.inLoop());
 
-  const uint64_t id = nextTensorBeingSent_++;
-  TP_VLOG(4) << "Channel " << id_ << " received a send request (#" << id << ")";
+  const uint64_t sequenceNumber = nextTensorBeingSent_++;
+  TP_VLOG(4) << "Channel " << id_ << " received a send request (#"
+             << sequenceNumber << ")";
 
-  descriptorCallback =
-      [this, id, descriptorCallback{std::move(descriptorCallback)}](
-          const Error& error, TDescriptor descriptor) {
-        // There is no requirement for the channel to invoke callbacks in order.
-        TP_VLOG(4) << "Channel " << id_
-                   << " is calling a descriptor callback (#" << id << ")";
-        descriptorCallback(error, std::move(descriptor));
-        TP_VLOG(4) << "Channel " << id_
-                   << " done calling a descriptor callback (#" << id << ")";
-      };
-
-  callback = [this, id, callback{std::move(callback)}](const Error& error) {
+  descriptorCallback = [this,
+                        sequenceNumber,
+                        descriptorCallback{std::move(descriptorCallback)}](
+                           const Error& error, TDescriptor descriptor) {
     // There is no requirement for the channel to invoke callbacks in order.
-    TP_VLOG(4) << "Channel " << id_ << " is calling a send callback (#" << id
-               << ")";
+    TP_VLOG(4) << "Channel " << id_ << " is calling a descriptor callback (#"
+               << sequenceNumber << ")";
+    descriptorCallback(error, std::move(descriptor));
+    TP_VLOG(4) << "Channel " << id_ << " done calling a descriptor callback (#"
+               << sequenceNumber << ")";
+  };
+
+  callback = [this, sequenceNumber, callback{std::move(callback)}](
+                 const Error& error) {
+    // There is no requirement for the channel to invoke callbacks in order.
+    TP_VLOG(4) << "Channel " << id_ << " is calling a send callback (#"
+               << sequenceNumber << ")";
     callback(error);
-    TP_VLOG(4) << "Channel " << id_ << " done calling a send callback (#" << id
-               << ")";
+    TP_VLOG(4) << "Channel " << id_ << " done calling a send callback (#"
+               << sequenceNumber << ")";
   };
 
   if (error_) {
@@ -218,13 +186,19 @@ void Channel::Impl::sendFromLoop_(
     return;
   }
 
-  proto::Descriptor pbDescriptor;
+  TP_VLOG(6) << "Channel " << id_ << " is writing payload (#" << sequenceNumber
+             << ")";
+  connection_->write(
+      ptr,
+      length,
+      eagerCallbackWrapper_(
+          [sequenceNumber, callback{std::move(callback)}](Impl& impl) {
+            TP_VLOG(6) << "Channel " << impl.id_ << " done writing payload (#"
+                       << sequenceNumber << ")";
+            callback(impl.error_);
+          }));
 
-  pbDescriptor.set_operation_id(id);
-  sendOperations_.emplace_back(
-      SendOperation{id, ptr, length, std::move(callback)});
-
-  descriptorCallback(Error::kSuccess, saveDescriptor(pbDescriptor));
+  descriptorCallback(Error::kSuccess, std::string());
 }
 
 // Receive memory region from peer.
@@ -257,18 +231,18 @@ void Channel::Impl::recvFromLoop_(
     TRecvCallback callback) {
   TP_DCHECK(loop_.inLoop());
 
-  proto::Descriptor pbDescriptor;
-  loadDescriptor(pbDescriptor, descriptor);
-  const uint64_t id = pbDescriptor.operation_id();
-  TP_VLOG(4) << "Channel " << id_ << " received a recv request (#" << id << ")";
+  const uint64_t sequenceNumber = nextTensorBeingReceived_++;
+  TP_VLOG(4) << "Channel " << id_ << " received a recv request (#"
+             << sequenceNumber << ")";
 
-  callback = [this, id, callback{std::move(callback)}](const Error& error) {
+  callback = [this, sequenceNumber, callback{std::move(callback)}](
+                 const Error& error) {
     // There is no requirement for the channel to invoke callbacks in order.
-    TP_VLOG(4) << "Channel " << id_ << " is calling a recv callback (#" << id
-               << ")";
+    TP_VLOG(4) << "Channel " << id_ << " is calling a recv callback (#"
+               << sequenceNumber << ")";
     callback(error);
-    TP_VLOG(4) << "Channel " << id_ << " done calling a recv callback (#" << id
-               << ")";
+    TP_VLOG(4) << "Channel " << id_ << " done calling a recv callback (#"
+               << sequenceNumber << ")";
   };
 
   if (error_) {
@@ -276,20 +250,20 @@ void Channel::Impl::recvFromLoop_(
     return;
   }
 
-  recvOperations_.emplace_back(
-      RecvOperation{id, ptr, length, std::move(callback)});
+  TP_DCHECK_EQ(descriptor, std::string());
 
-  // Ask peer to start sending data now that we have a target pointer.
-  auto packet = std::make_shared<proto::Packet>();
-  proto::Request* pbRequest = packet->mutable_request();
-  pbRequest->set_operation_id(id);
-  TP_VLOG(6) << "Channel " << id_ << " is writing proto (request #" << id
+  TP_VLOG(6) << "Channel " << id_ << " is reading payload (#" << sequenceNumber
              << ")";
-  connection_->write(*packet, lazyCallbackWrapper_([packet, id](Impl& impl) {
-    TP_VLOG(6) << "Channel " << impl.id_ << " done writing proto (reply #" << id
-               << ")";
-  }));
-  return;
+  connection_->read(
+      ptr,
+      length,
+      eagerCallbackWrapper_(
+          [sequenceNumber, callback{std::move(callback)}](
+              Impl& impl, const void* /* unused */, size_t /* unused */) {
+            TP_VLOG(6) << "Channel " << impl.id_ << " done reading payload (#"
+                       << sequenceNumber << ")";
+            callback(impl.error_);
+          }));
 }
 
 void Channel::Impl::init() {
@@ -299,7 +273,6 @@ void Channel::Impl::init() {
 void Channel::Impl::initFromLoop_() {
   TP_DCHECK(loop_.inLoop());
   closingReceiver_.activate(*this);
-  readPacket_();
 }
 
 void Channel::setId(std::string id) {
@@ -328,126 +301,6 @@ void Channel::Impl::closeFromLoop_() {
   TP_DCHECK(loop_.inLoop());
   TP_VLOG(4) << "Channel " << id_ << " is closing";
   setError_(TP_CREATE_ERROR(ChannelClosedError));
-}
-
-void Channel::Impl::readPacket_() {
-  TP_DCHECK(loop_.inLoop());
-  auto packet = std::make_shared<proto::Packet>();
-  TP_VLOG(6) << "Channel " << id_ << " is reading proto (request or reply)";
-  connection_->read(*packet, lazyCallbackWrapper_([packet](Impl& impl) {
-    TP_VLOG(6) << "Channel " << impl.id_
-               << " done reading proto (request or reply)";
-    impl.onPacket_(*packet);
-  }));
-}
-
-void Channel::Impl::onPacket_(const proto::Packet& packet) {
-  TP_DCHECK(loop_.inLoop());
-  if (packet.has_request()) {
-    onRequest_(packet.request());
-  } else if (packet.has_reply()) {
-    onReply_(packet.reply());
-  } else {
-    TP_THROW_ASSERT() << "Packet is not a request nor a reply.";
-  }
-
-  // Wait for next request.
-  readPacket_();
-}
-
-void Channel::Impl::onRequest_(const proto::Request& request) {
-  TP_DCHECK(loop_.inLoop());
-  // Find the send operation matching the request's operation ID.
-  const auto id = request.operation_id();
-  TP_VLOG(6) << "Channel " << id_ << " got request (#" << id << ")";
-  auto it = std::find_if(
-      sendOperations_.begin(), sendOperations_.end(), [id](const auto& op) {
-        return op.id == id;
-      });
-  TP_THROW_ASSERT_IF(it == sendOperations_.end())
-      << "Expected send operation with ID " << id << " to exist.";
-
-  // Reference to operation.
-  auto& op = *it;
-
-  // Write packet announcing the payload.
-  auto pbPacketOut = std::make_shared<proto::Packet>();
-  proto::Reply* pbReply = pbPacketOut->mutable_reply();
-  pbReply->set_operation_id(id);
-  TP_VLOG(6) << "Channel " << id_ << " is writing proto (reply #" << id << ")";
-  connection_->write(
-      *pbPacketOut, lazyCallbackWrapper_([pbPacketOut, id](Impl& impl) {
-        TP_VLOG(6) << "Channel " << impl.id_ << " done writing proto (reply #"
-                   << id << ")";
-      }));
-
-  // Write payload.
-  TP_VLOG(6) << "Channel " << id_ << " is writing payload (#" << id << ")";
-  connection_->write(op.ptr, op.length, eagerCallbackWrapper_([id](Impl& impl) {
-                       TP_VLOG(6) << "Channel " << impl.id_
-                                  << " done writing payload (#" << id << ")";
-                       impl.sendCompleted(id);
-                     }));
-}
-
-void Channel::Impl::onReply_(const proto::Reply& reply) {
-  TP_DCHECK(loop_.inLoop());
-  // Find the recv operation matching the reply's operation ID.
-  const auto id = reply.operation_id();
-  TP_VLOG(6) << "Channel " << id_ << " got reply (#" << id << ")";
-  auto it = std::find_if(
-      recvOperations_.begin(), recvOperations_.end(), [id](const auto& op) {
-        return op.id == id;
-      });
-  TP_THROW_ASSERT_IF(it == recvOperations_.end())
-      << "Expected recv operation with ID " << id << " to exist.";
-
-  // Reference to operation.
-  auto& op = *it;
-
-  // Read payload into specified memory region.
-  TP_VLOG(6) << "Channel " << id_ << " is reading payload (#" << id << ")";
-  connection_->read(
-      op.ptr,
-      op.length,
-      eagerCallbackWrapper_(
-          [id](Impl& impl, const void* /* unused */, size_t /* unused */) {
-            TP_VLOG(6) << "Channel " << impl.id_ << " done reading payload (#"
-                       << id << ")";
-            impl.recvCompleted(id);
-          }));
-}
-
-void Channel::Impl::sendCompleted(const uint64_t id) {
-  TP_DCHECK(loop_.inLoop());
-  auto it = std::find_if(
-      sendOperations_.begin(), sendOperations_.end(), [id](const auto& op) {
-        return op.id == id;
-      });
-  TP_THROW_ASSERT_IF(it == sendOperations_.end())
-      << "Expected send operation with ID " << id << " to exist.";
-
-  // Move operation to stack.
-  auto op = std::move(*it);
-  sendOperations_.erase(it);
-
-  op.callback(error_);
-}
-
-void Channel::Impl::recvCompleted(const uint64_t id) {
-  TP_DCHECK(loop_.inLoop());
-  auto it = std::find_if(
-      recvOperations_.begin(), recvOperations_.end(), [id](const auto& op) {
-        return op.id == id;
-      });
-  TP_THROW_ASSERT_IF(it == recvOperations_.end())
-      << "Expected recv operation with ID " << id << " to exist.";
-
-  // Move operation to stack.
-  auto op = std::move(*it);
-  recvOperations_.erase(it);
-
-  op.callback(error_);
 }
 
 void Channel::Impl::setError_(Error error) {

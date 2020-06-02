@@ -74,8 +74,7 @@ set(TENSORPIPE_SRC
 list(APPEND TENSORPIPE_PUBLIC_HEADERS tensorpipe/channel/basic/context.h)
 list(APPEND TENSORPIPE_SRC
   tensorpipe/channel/basic/channel.cc
-  tensorpipe/channel/basic/context.cc
-  tensorpipe/proto/channel/basic.proto)
+  tensorpipe/channel/basic/context.cc)
 
 ### cma
 
