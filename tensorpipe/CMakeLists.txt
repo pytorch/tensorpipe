@@ -64,6 +64,14 @@ target_sources(tensorpipe PRIVATE
   channel/basic/channel.cc
   channel/basic/context.cc)
 
+### intrap
+
+list(APPEND TENSORPIPE_PUBLIC_HEADERS channel/intrap/context.h)
+target_sources(tensorpipe PRIVATE
+  channel/intrap/channel.cc
+  channel/intrap/context.cc
+  proto/channel/intrap.proto)
+
 ### cma
 
 if(TP_ENABLE_CMA)
