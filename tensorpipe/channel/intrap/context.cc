@@ -8,15 +8,9 @@
 
 #include <tensorpipe/channel/intrap/context.h>
 
-#include <sys/types.h>
-#include <sys/uio.h>
 #include <unistd.h>
 
-#include <algorithm>
 #include <cstring>
-#include <limits>
-#include <list>
-#include <mutex>
 
 #include <tensorpipe/channel/error.h>
 #include <tensorpipe/channel/helpers.h>
@@ -40,22 +34,11 @@ std::string generateDomainDescriptor() {
   auto bootID = getBootID();
   TP_THROW_ASSERT_IF(!bootID) << "Unable to read boot_id";
 
-  // According to the man page of process_vm_readv and process_vm_writev,
-  // permission to read from or write to another process is governed by a ptrace
-  // access mode PTRACE_MODE_ATTACH_REALCREDS check. This consists in a series
-  // of checks, some governed by the CAP_SYS_PTRACE capability, others by the
-  // Linux Security Modules (LSMs), but the primary constraint is that the real,
-  // effective, and saved-set user IDs of the target match the caller's real
-  // user ID, and the same for group IDs. Since channels are bidirectional, we
-  // end up needing these IDs to all be the same on both processes.
+  pid_t pid = getpid();
 
-  // Combine boot ID, effective UID, and effective GID.
-  oss << bootID.value();
-  // FIXME As domain descriptors are just compared for equality, we only include
-  // the effective IDs, but we should abide by the rules above and make sure
-  // that they match the real and saved-set ones too.
-  oss << "/" << geteuid();
-  oss << "/" << getegid();
+  // Combine boot ID and PID.
+  oss << bootID.value() << "-" << pid;
+
   return oss.str();
 }
 
