@@ -8,22 +8,12 @@
 
 #include <tensorpipe/channel/intrap/channel.h>
 
-#include <sys/types.h>
-#include <unistd.h>
-
-#include <algorithm>
-#include <limits>
-#include <list>
-
 #include <tensorpipe/channel/error.h>
 #include <tensorpipe/channel/helpers.h>
 #include <tensorpipe/common/callback.h>
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/error.h>
 #include <tensorpipe/common/error_macros.h>
-#include <tensorpipe/common/optional.h>
-#include <tensorpipe/common/queue.h>
-#include <tensorpipe/common/system.h>
 #include <tensorpipe/proto/channel/intrap.pb.h>
 
 namespace tensorpipe {
