@@ -28,7 +28,6 @@
 #include <tensorpipe/common/optional.h>
 #include <tensorpipe/common/queue.h>
 #include <tensorpipe/common/system.h>
-#include <tensorpipe/proto/channel/intrap.pb.h>
 
 namespace tensorpipe {
 namespace channel {

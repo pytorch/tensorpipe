@@ -78,15 +78,6 @@ class Channel::Impl : public std::enable_shared_from_this<Channel::Impl> {
 
   void closeFromLoop_();
 
-  // Arm connection to read next protobuf packet.
-  void readPacket_();
-
-  // Called when a protobuf packet was received.
-  void onPacket_(const proto::Packet& packet);
-
-  // Called when protobuf packet is a notification.
-  void onNotification_(const proto::Notification& notification);
-
   void setError_(Error error);
 
   // Helper function to process transport error.
@@ -102,13 +93,8 @@ class Channel::Impl : public std::enable_shared_from_this<Channel::Impl> {
   // Increasing identifier for send operations.
   uint64_t nextTensorBeingSent_{0};
 
-  // State capturing a single send operation.
-  struct SendOperation {
-    const uint64_t id;
-    TSendCallback callback;
-  };
-
-  std::list<SendOperation> sendOperations_;
+  // Increasing identifier for recv operations.
+  uint64_t nextTensorBeingReceived_{0};
 
   // An identifier for the channel, composed of the identifier for the context,
   // combined with an increasing sequence number. It will only be used for
@@ -153,7 +139,6 @@ void Channel::Impl::init() {
 void Channel::Impl::initFromLoop_() {
   TP_DCHECK(loop_.inLoop());
   closingReceiver_.activate(*this);
-  readPacket_();
 }
 
 void Channel::send(
@@ -186,19 +171,53 @@ void Channel::Impl::sendFromLoop_(
     TSendCallback callback) {
   TP_DCHECK(loop_.inLoop());
 
+  const auto sequenceNumber = nextTensorBeingSent_++;
+  TP_VLOG(4) << "Channel " << id_ << " received a send request (#"
+             << sequenceNumber << ")";
+
+  descriptorCallback = [this,
+                        sequenceNumber,
+                        descriptorCallback{std::move(descriptorCallback)}](
+                           const Error& error, TDescriptor descriptor) {
+    // There is no requirement for the channel to invoke callbacks in order.
+    TP_VLOG(4) << "Channel " << id_ << " is calling a descriptor callback (#"
+               << sequenceNumber << ")";
+    descriptorCallback(error, std::move(descriptor));
+    TP_VLOG(4) << "Channel " << id_ << " done calling a descriptor callback (#"
+               << sequenceNumber << ")";
+  };
+
+  callback = [this, sequenceNumber, callback{std::move(callback)}](
+                 const Error& error) {
+    TP_VLOG(4) << "Channel " << id_ << " is calling a send callback (#"
+               << sequenceNumber << ")";
+    callback(error);
+    TP_VLOG(4) << "Channel " << id_ << " done calling a send callback (#"
+               << sequenceNumber << ")";
+  };
+
   if (error_) {
     descriptorCallback(error_, std::string());
     callback(error_);
     return;
   }
 
+  TP_VLOG(6) << "Channel " << id_ << " is reading notification (#"
+             << sequenceNumber << ")";
+  connection_->read(
+      nullptr,
+      0,
+      eagerCallbackWrapper_(
+          [sequenceNumber, callback{std::move(callback)}](
+              Impl& impl, const void* /* unused */, size_t /* unused */) {
+            TP_VLOG(6) << "Channel " << impl.id_
+                       << " done reading notification (#" << sequenceNumber
+                       << ")";
+            callback(impl.error_);
+          }));
+
   proto::Descriptor pbDescriptor;
-
-  const auto id = nextTensorBeingSent_++;
-  pbDescriptor.set_operation_id(id);
   pbDescriptor.set_ptr(reinterpret_cast<std::uintptr_t>(ptr));
-
-  sendOperations_.emplace_back(SendOperation{id, std::move(callback)});
 
   descriptorCallback(Error::kSuccess, saveDescriptor(pbDescriptor));
 }
@@ -233,6 +252,19 @@ void Channel::Impl::recvFromLoop_(
     TRecvCallback callback) {
   TP_DCHECK(loop_.inLoop());
 
+  const uint64_t sequenceNumber = nextTensorBeingReceived_++;
+  TP_VLOG(4) << "Channel " << id_ << " received a recv request (#"
+             << sequenceNumber << ")";
+
+  callback = [this, sequenceNumber, callback{std::move(callback)}](
+                 const Error& error) {
+    TP_VLOG(4) << "Channel " << id_ << " is calling a recv callback (#"
+               << sequenceNumber << ")";
+    callback(error);
+    TP_VLOG(4) << "Channel " << id_ << " done calling a recv callback (#"
+               << sequenceNumber << ")";
+  };
+
   if (error_) {
     callback(error_);
     return;
@@ -240,28 +272,27 @@ void Channel::Impl::recvFromLoop_(
 
   proto::Descriptor pbDescriptor;
   loadDescriptor(pbDescriptor, descriptor);
-  const uint64_t id = pbDescriptor.operation_id();
   void* remotePtr = reinterpret_cast<void*>(pbDescriptor.ptr());
-
+  TP_VLOG(6) << "Channel " << id_ << " is copying payload (#" << sequenceNumber
+             << ")";
   context_->requestCopy(
       remotePtr,
       ptr,
       length,
-      eagerCallbackWrapper_([id, callback{std::move(callback)}](Impl& impl) {
-        TP_VLOG(6) << "Channel " << impl.id_ << " done copying payload #" << id;
+      eagerCallbackWrapper_([sequenceNumber,
+                             callback{std::move(callback)}](Impl& impl) {
+        TP_VLOG(6) << "Channel " << impl.id_ << " done copying payload (#"
+                   << sequenceNumber << ")";
         // Let peer know we've completed the copy.
-        auto pbPacketOut = std::make_shared<proto::Packet>();
-        proto::Notification* pbNotification =
-            pbPacketOut->mutable_notification();
-        pbNotification->set_operation_id(id);
-        TP_VLOG(6) << "Channel " << impl.id_
-                   << " is writing proto (notification #" << id << ")";
+        TP_VLOG(6) << "Channel " << impl.id_ << " is writing notification (#"
+                   << sequenceNumber << ")";
         impl.connection_->write(
-            *pbPacketOut,
-            impl.lazyCallbackWrapper_([pbPacketOut, id](Impl& impl) {
+            nullptr, 0, impl.lazyCallbackWrapper_([sequenceNumber](Impl& impl) {
               TP_VLOG(6) << "Channel " << impl.id_
-                         << " done writing proto (notification #" << id << ")";
+                         << " done writing notification (#" << sequenceNumber
+                         << ")";
             }));
+
         callback(impl.error_);
       }));
 }
@@ -293,44 +324,6 @@ void Channel::Impl::closeFromLoop_() {
   setError_(TP_CREATE_ERROR(ChannelClosedError));
 }
 
-void Channel::Impl::readPacket_() {
-  TP_DCHECK(loop_.inLoop());
-  auto pbPacketIn = std::make_shared<proto::Packet>();
-  connection_->read(*pbPacketIn, lazyCallbackWrapper_([pbPacketIn](Impl& impl) {
-    impl.onPacket_(*pbPacketIn);
-  }));
-}
-
-void Channel::Impl::onPacket_(const proto::Packet& pbPacketIn) {
-  TP_DCHECK(loop_.inLoop());
-
-  TP_DCHECK_EQ(pbPacketIn.type_case(), proto::Packet::kNotification);
-  onNotification_(pbPacketIn.notification());
-
-  // Arm connection to wait for next packet.
-  readPacket_();
-}
-
-void Channel::Impl::onNotification_(const proto::Notification& pbNotification) {
-  TP_DCHECK(loop_.inLoop());
-
-  // Find the send operation matching the notification's operation ID.
-  const auto id = pbNotification.operation_id();
-  auto it = std::find_if(
-      sendOperations_.begin(), sendOperations_.end(), [id](const auto& op) {
-        return op.id == id;
-      });
-  TP_THROW_ASSERT_IF(it == sendOperations_.end())
-      << "Expected send operation with ID " << id << " to exist.";
-
-  // Move operation to stack.
-  auto op = std::move(*it);
-  sendOperations_.erase(it);
-
-  // Execute send completion callback.
-  op.callback(Error::kSuccess);
-}
-
 void Channel::Impl::setError_(Error error) {
   // Don't overwrite an error that's already set.
   if (error_ || !error) {
@@ -344,14 +337,6 @@ void Channel::Impl::setError_(Error error) {
 
 void Channel::Impl::handleError_() {
   TP_DCHECK(loop_.inLoop());
-
-  // Move pending operations to stack.
-  auto sendOperations = std::move(sendOperations_);
-
-  // Notify pending send callbacks of error.
-  for (auto& op : sendOperations) {
-    op.callback(error_);
-  }
 
   connection_->close();
 }
