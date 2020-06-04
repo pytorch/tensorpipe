@@ -452,9 +452,14 @@ void Listener::Impl::onConnectionHelloRead_(
     uint64_t registrationId = pbRequestedConnection.registration_id();
     TP_VLOG(3) << "Listener " << id_ << " got requested connection (#"
                << registrationId << ")";
-    auto fn = std::move(connectionRequestRegistrations_.at(registrationId));
-    connectionRequestRegistrations_.erase(registrationId);
-    fn(Error::kSuccess, std::move(transport), std::move(connection));
+    auto iter = connectionRequestRegistrations_.find(registrationId);
+    // The connection request may have already been deregistered, for example
+    // because the pipe may have been closed.
+    if (iter != connectionRequestRegistrations_.end()) {
+      auto fn = std::move(iter->second);
+      connectionRequestRegistrations_.erase(iter);
+      fn(Error::kSuccess, std::move(transport), std::move(connection));
+    }
   } else {
     TP_LOG_ERROR() << "packet contained unknown content: "
                    << pbPacketIn.type_case();
