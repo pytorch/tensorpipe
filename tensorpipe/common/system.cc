@@ -12,6 +12,7 @@
 #include <pthread.h>
 #endif
 
+#include <array>
 #include <cstring>
 #include <fstream>
 #include <iomanip>
@@ -56,7 +57,23 @@ std::string removeBlankSpaces(std::string s) {
   return s;
 }
 
-optional<std::string> getBootID() {
+#ifdef __APPLE__
+optional<std::string> _getBootID() {
+  std::string res;
+  std::array<char, 128> buffer;
+  const std::string cmd =
+      "ioreg -d2 -c IOPlatformExpertDevice | awk -F\" '/IOPlatformUUID/{print $(NF-1)}'";
+  std::unique_ptr<FILE, decltype(&pclose)> pipe(
+      popen(cmd.c_str(), "r"), pclose);
+  TP_DCHECK(pipe);
+  while (fgets(buffer.data(), buffer.size(), pipe.get()) != nullptr) {
+    res += buffer.data();
+  }
+  return res;
+}
+
+#elif defined(__linux__)
+optional<std::string> _getBootID() {
   std::ifstream f{"/proc/sys/kernel/random/boot_id"};
   if (!f.is_open()) {
     return nullopt;
@@ -65,6 +82,13 @@ optional<std::string> getBootID() {
   getline(f, v);
   f.close();
   return v;
+}
+
+#endif
+
+optional<std::string> getBootID() {
+  static optional<std::string> bootID = _getBootID();
+  return bootID;
 }
 
 void setThreadName(std::string name) {
