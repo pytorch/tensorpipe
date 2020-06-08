@@ -137,10 +137,6 @@ class Pipe::Impl : public std::enable_shared_from_this<Pipe::Impl> {
 
   ClosingReceiver closingReceiver_;
 
-  enum ConnectionState { NEXT_UP_IS_DESCRIPTOR, NEXT_UP_IS_PAYLOADS };
-
-  ConnectionState connectionState_{NEXT_UP_IS_DESCRIPTOR};
-
   uint64_t nextMessageBeingRead_{0};
   std::deque<MessageBeingExpected> messagesBeingExpected_;
   uint64_t nextReadDescriptorCallbackToCall_{0};
@@ -151,6 +147,15 @@ class Pipe::Impl : public std::enable_shared_from_this<Pipe::Impl> {
   uint64_t nextMessageBeingWritten_{0};
   std::deque<MessageBeingWritten> messagesBeingWritten_;
   uint64_t nextWriteCallbackToCall_{0};
+
+  // When reading, we first read the descriptor, then signal this to the user,
+  // and only once the user has allocated the memory we read the payloads. These
+  // members store where we are in this loop, i.e., whether the next buffer we
+  // will read from the connection will be a descriptor or a payload, and the
+  // sequence number of which message that will be for.
+  enum ConnectionState { NEXT_UP_IS_DESCRIPTOR, NEXT_UP_IS_PAYLOADS };
+  ConnectionState connectionState_{NEXT_UP_IS_DESCRIPTOR};
+  int64_t messageBeingReadFromConnection_{0};
 
   Error error_{Error::kSuccess};
 
@@ -400,8 +405,8 @@ void Pipe::Impl::readDescriptorFromLoop_(read_descriptor_callback_fn fn) {
     return;
   }
 
-  if (messagesBeingExpected_.size() == 1 && state_ == ESTABLISHED &&
-      connectionState_ == NEXT_UP_IS_DESCRIPTOR) {
+  if (state_ == ESTABLISHED && connectionState_ == NEXT_UP_IS_DESCRIPTOR &&
+      messageBeingReadFromConnection_ == sequenceNumber) {
     readDescriptorOfMessage_(messagesBeingExpected_.front());
   }
 }
@@ -477,6 +482,7 @@ void Pipe::Impl::readFromLoop_(Message message, read_callback_fn fn) {
   }
 
   TP_DCHECK_EQ(connectionState_, NEXT_UP_IS_PAYLOADS);
+  TP_DCHECK_EQ(messageBeingReadFromConnection_, sequenceNumber);
   for (size_t payloadIdx = 0; payloadIdx < numPayloads; payloadIdx++) {
     Message::Payload& payload = messageBeingRead.message.payloads[payloadIdx];
     TP_VLOG(3) << "Pipe " << id_ << " is reading payload #" << sequenceNumber
@@ -494,6 +500,7 @@ void Pipe::Impl::readFromLoop_(Message message, read_callback_fn fn) {
     ++messageBeingRead.numPayloadsStillBeingRead;
   }
   connectionState_ = NEXT_UP_IS_DESCRIPTOR;
+  ++messageBeingReadFromConnection_;
 
   for (size_t tensorIdx = 0; tensorIdx < numTensors; tensorIdx++) {
     Message::Tensor& tensor = messageBeingRead.message.tensors[tensorIdx];
@@ -688,6 +695,8 @@ void Pipe::Impl::readDescriptorOfMessage_(
   TP_DCHECK(loop_.inLoop());
   TP_DCHECK_EQ(state_, ESTABLISHED);
   TP_DCHECK_EQ(connectionState_, NEXT_UP_IS_DESCRIPTOR);
+  TP_DCHECK_EQ(
+      messageBeingReadFromConnection_, messageBeingExpected.sequenceNumber);
   auto pbPacketIn = std::make_shared<proto::Packet>();
   TP_VLOG(3) << "Pipe " << id_ << " is reading proto (message descriptor #"
              << messageBeingExpected.sequenceNumber << ")";
