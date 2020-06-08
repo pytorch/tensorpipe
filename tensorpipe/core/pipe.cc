@@ -179,7 +179,10 @@ class Pipe::Impl : public std::enable_shared_from_this<Pipe::Impl> {
   // Everything else
   //
 
-  void doWritesAccumulatedWhileWaitingForPipeToBeEstablished_();
+  void startReadingUponEstablishingPipe_();
+  void startWritingUponEstablishingPipe_();
+
+  void readDescriptorOfMessage_(MessageBeingExpected&);
   void sendTensorsOfMessage_(MessageBeingWritten&);
   void writeMessage_(MessageBeingWritten&);
   void onReadWhileServerWaitingForBrochure_(const proto::Packet&);
@@ -399,22 +402,7 @@ void Pipe::Impl::readDescriptorFromLoop_(read_descriptor_callback_fn fn) {
 
   if (messagesBeingExpected_.size() == 1 && state_ == ESTABLISHED &&
       connectionState_ == NEXT_UP_IS_DESCRIPTOR) {
-    const MessageBeingExpected& messageBeingExpected =
-        messagesBeingExpected_.front();
-    auto pbPacketIn = std::make_shared<proto::Packet>();
-    TP_VLOG(3) << "Pipe " << id_ << " is reading proto (message descriptor #"
-               << messageBeingExpected.sequenceNumber << ")";
-    connection_->read(
-        *pbPacketIn,
-        lazyCallbackWrapper_(
-            [sequenceNumber{messageBeingExpected.sequenceNumber},
-             pbPacketIn](Impl& impl) {
-              TP_VLOG(3) << "Pipe " << impl.id_
-                         << " done reading proto (message descriptor #"
-                         << sequenceNumber << ")";
-              impl.onReadOfMessageDescriptor_(*pbPacketIn);
-            }));
-    connectionState_ = NEXT_UP_IS_PAYLOADS;
+    readDescriptorOfMessage_(messagesBeingExpected_.front());
   }
 }
 
@@ -527,24 +515,8 @@ void Pipe::Impl::readFromLoop_(Message message, read_callback_fn fn) {
     ++messageBeingRead.numTensorsStillBeingReceived;
   }
 
-  TP_DCHECK_EQ(connectionState_, NEXT_UP_IS_DESCRIPTOR);
   if (!messagesBeingExpected_.empty()) {
-    const MessageBeingExpected& messageBeingExpected =
-        messagesBeingExpected_.front();
-    auto pbPacketIn = std::make_shared<proto::Packet>();
-    TP_VLOG(3) << "Pipe " << id_ << " is reading proto (message descriptor #"
-               << messageBeingExpected.sequenceNumber << ")";
-    connection_->read(
-        *pbPacketIn,
-        lazyCallbackWrapper_(
-            [sequenceNumber{messageBeingExpected.sequenceNumber},
-             pbPacketIn](Impl& impl) {
-              TP_VLOG(3) << "Pipe " << impl.id_
-                         << " done reading proto (message descriptor #"
-                         << sequenceNumber << ")";
-              impl.onReadOfMessageDescriptor_(*pbPacketIn);
-            }));
-    connectionState_ = NEXT_UP_IS_PAYLOADS;
+    readDescriptorOfMessage_(messagesBeingExpected_.front());
   }
 
   messagesBeingRead_.push_back(std::move(messageBeingRead));
@@ -693,15 +665,42 @@ void Pipe::Impl::handleError_() {
 // Everything else
 //
 
-void Pipe::Impl::doWritesAccumulatedWhileWaitingForPipeToBeEstablished_() {
+void Pipe::Impl::startReadingUponEstablishingPipe_() {
   TP_DCHECK(loop_.inLoop());
   TP_DCHECK_EQ(state_, ESTABLISHED);
-  for (auto& m : messagesBeingWritten_) {
-    if (m.startedSendingTensors) {
-      break;
-    }
+
+  if (!messagesBeingExpected_.empty()) {
+    readDescriptorOfMessage_(messagesBeingExpected_.front());
+  }
+}
+
+void Pipe::Impl::startWritingUponEstablishingPipe_() {
+  TP_DCHECK(loop_.inLoop());
+  TP_DCHECK_EQ(state_, ESTABLISHED);
+
+  for (MessageBeingWritten& m : messagesBeingWritten_) {
     sendTensorsOfMessage_(m);
   }
+}
+
+void Pipe::Impl::readDescriptorOfMessage_(
+    MessageBeingExpected& messageBeingExpected) {
+  TP_DCHECK(loop_.inLoop());
+  TP_DCHECK_EQ(state_, ESTABLISHED);
+  TP_DCHECK_EQ(connectionState_, NEXT_UP_IS_DESCRIPTOR);
+  auto pbPacketIn = std::make_shared<proto::Packet>();
+  TP_VLOG(3) << "Pipe " << id_ << " is reading proto (message descriptor #"
+             << messageBeingExpected.sequenceNumber << ")";
+  connection_->read(
+      *pbPacketIn,
+      lazyCallbackWrapper_([sequenceNumber{messageBeingExpected.sequenceNumber},
+                            pbPacketIn](Impl& impl) {
+        TP_VLOG(3) << "Pipe " << impl.id_
+                   << " done reading proto (message descriptor #"
+                   << sequenceNumber << ")";
+        impl.onReadOfMessageDescriptor_(*pbPacketIn);
+      }));
+  connectionState_ = NEXT_UP_IS_PAYLOADS;
 }
 
 void Pipe::Impl::sendTensorsOfMessage_(
@@ -956,26 +955,8 @@ void Pipe::Impl::onReadWhileServerWaitingForBrochure_(
 
   if (!needToWaitForConnections) {
     state_ = ESTABLISHED;
-    doWritesAccumulatedWhileWaitingForPipeToBeEstablished_();
-    TP_DCHECK_EQ(connectionState_, NEXT_UP_IS_DESCRIPTOR);
-    if (!messagesBeingExpected_.empty()) {
-      const MessageBeingExpected& messageBeingExpected =
-          messagesBeingExpected_.front();
-      auto pbPacketIn = std::make_shared<proto::Packet>();
-      TP_VLOG(3) << "Pipe " << id_ << " is reading proto (message descriptor #"
-                 << messageBeingExpected.sequenceNumber << ")";
-      connection_->read(
-          *pbPacketIn,
-          lazyCallbackWrapper_(
-              [sequenceNumber{messageBeingExpected.sequenceNumber},
-               pbPacketIn](Impl& impl) {
-                TP_VLOG(3) << "Pipe " << impl.id_
-                           << " done reading proto (message descriptor #"
-                           << sequenceNumber << ")";
-                impl.onReadOfMessageDescriptor_(*pbPacketIn);
-              }));
-      connectionState_ = NEXT_UP_IS_PAYLOADS;
-    }
+    startReadingUponEstablishingPipe_();
+    startWritingUponEstablishingPipe_();
   } else {
     state_ = SERVER_WAITING_FOR_CONNECTIONS;
   }
@@ -1048,26 +1029,8 @@ void Pipe::Impl::onReadWhileClientWaitingForBrochureAnswer_(
   }
 
   state_ = ESTABLISHED;
-  doWritesAccumulatedWhileWaitingForPipeToBeEstablished_();
-  TP_DCHECK_EQ(connectionState_, NEXT_UP_IS_DESCRIPTOR);
-  if (!messagesBeingExpected_.empty()) {
-    const MessageBeingExpected& messageBeingExpected =
-        messagesBeingExpected_.front();
-    auto pbPacketIn2 = std::make_shared<proto::Packet>();
-    TP_VLOG(3) << "Pipe " << id_ << " is reading proto (message descriptor #"
-               << messageBeingExpected.sequenceNumber << ")";
-    connection_->read(
-        *pbPacketIn2,
-        lazyCallbackWrapper_(
-            [sequenceNumber{messageBeingExpected.sequenceNumber},
-             pbPacketIn2](Impl& impl) {
-              TP_VLOG(3) << "Pipe " << impl.id_
-                         << " done reading proto (message descriptor #"
-                         << sequenceNumber << ")";
-              impl.onReadOfMessageDescriptor_(*pbPacketIn2);
-            }));
-    connectionState_ = NEXT_UP_IS_PAYLOADS;
-  }
+  startReadingUponEstablishingPipe_();
+  startWritingUponEstablishingPipe_();
 }
 
 void Pipe::Impl::onAcceptWhileServerWaitingForConnection_(
@@ -1085,26 +1048,8 @@ void Pipe::Impl::onAcceptWhileServerWaitingForConnection_(
 
   if (!registrationId_.has_value() && channelRegistrationIds_.empty()) {
     state_ = ESTABLISHED;
-    doWritesAccumulatedWhileWaitingForPipeToBeEstablished_();
-    TP_DCHECK_EQ(connectionState_, NEXT_UP_IS_DESCRIPTOR);
-    if (!messagesBeingExpected_.empty()) {
-      const MessageBeingExpected& messageBeingExpected =
-          messagesBeingExpected_.front();
-      auto pbPacketIn = std::make_shared<proto::Packet>();
-      TP_VLOG(3) << "Pipe " << id_ << " is reading proto (message descriptor #"
-                 << messageBeingExpected.sequenceNumber << ")";
-      connection_->read(
-          *pbPacketIn,
-          lazyCallbackWrapper_(
-              [sequenceNumber{messageBeingExpected.sequenceNumber},
-               pbPacketIn](Impl& impl) {
-                TP_VLOG(3) << "Pipe " << impl.id_
-                           << " done reading proto (message descriptor #"
-                           << sequenceNumber << ")";
-                impl.onReadOfMessageDescriptor_(*pbPacketIn);
-              }));
-      connectionState_ = NEXT_UP_IS_PAYLOADS;
-    }
+    startReadingUponEstablishingPipe_();
+    startWritingUponEstablishingPipe_();
   }
 }
 
@@ -1134,26 +1079,8 @@ void Pipe::Impl::onAcceptWhileServerWaitingForChannel_(
 
   if (!registrationId_.has_value() && channelRegistrationIds_.empty()) {
     state_ = ESTABLISHED;
-    doWritesAccumulatedWhileWaitingForPipeToBeEstablished_();
-    TP_DCHECK_EQ(connectionState_, NEXT_UP_IS_DESCRIPTOR);
-    if (!messagesBeingExpected_.empty()) {
-      const MessageBeingExpected& messageBeingExpected =
-          messagesBeingExpected_.front();
-      auto pbPacketIn = std::make_shared<proto::Packet>();
-      TP_VLOG(3) << "Pipe " << id_ << " is reading proto (message descriptor #"
-                 << messageBeingExpected.sequenceNumber << ")";
-      connection_->read(
-          *pbPacketIn,
-          lazyCallbackWrapper_(
-              [sequenceNumber{messageBeingExpected.sequenceNumber},
-               pbPacketIn](Impl& impl) {
-                TP_VLOG(3) << "Pipe " << impl.id_
-                           << " done reading proto (message descriptor #"
-                           << sequenceNumber << ")";
-                impl.onReadOfMessageDescriptor_(*pbPacketIn);
-              }));
-      connectionState_ = NEXT_UP_IS_PAYLOADS;
-    }
+    startReadingUponEstablishingPipe_();
+    startWritingUponEstablishingPipe_();
   }
 }
 
