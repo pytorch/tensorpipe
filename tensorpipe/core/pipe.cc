@@ -200,6 +200,9 @@ class Pipe::Impl : public std::enable_shared_from_this<Pipe::Impl> {
 
   void checkForMessagesDoneCollectingTensorDescriptors_();
 
+  MessageBeingRead* findMessageBeingRead(int64_t sequenceNumber);
+  MessageBeingWritten* findMessageBeingWritten(int64_t sequenceNumber);
+
   template <typename T>
   friend class LazyCallbackWrapper;
   template <typename T>
@@ -1206,15 +1209,11 @@ void Pipe::Impl::onDescriptorOfTensor_(
     int64_t tensorIdx,
     channel::Channel::TDescriptor descriptor) {
   TP_DCHECK(loop_.inLoop());
-  // FIXME Using find_if makes sense when we expect the result to be near the
-  // beginning, but here it's actually likely to be at the back. Perhaps it
-  // makes sense to just use a hashmap?
-  auto iter = std::find_if(
-      messagesBeingWritten_.begin(),
-      messagesBeingWritten_.end(),
-      [&](const auto& m) { return m.sequenceNumber == sequenceNumber; });
-  TP_DCHECK(iter != messagesBeingWritten_.end());
-  MessageBeingWritten& messageBeingWritten = *iter;
+
+  MessageBeingWritten* mPtr = findMessageBeingWritten(sequenceNumber);
+  TP_DCHECK(mPtr != nullptr) << "Couldn't find message #" << sequenceNumber;
+  MessageBeingWritten& messageBeingWritten = *mPtr;
+
   TP_DCHECK(messageBeingWritten.startedSendingTensors);
   TP_DCHECK_LT(tensorIdx, messageBeingWritten.tensors.size());
   messageBeingWritten.tensors[tensorIdx].descriptor = std::move(descriptor);
@@ -1224,48 +1223,44 @@ void Pipe::Impl::onDescriptorOfTensor_(
 
 void Pipe::Impl::onReadOfPayload_(int64_t sequenceNumber) {
   TP_DCHECK(loop_.inLoop());
-  auto iter = std::find_if(
-      messagesBeingRead_.begin(), messagesBeingRead_.end(), [&](const auto& m) {
-        return m.sequenceNumber == sequenceNumber;
-      });
-  TP_DCHECK(iter != messagesBeingRead_.end());
-  MessageBeingRead& messageBeingRead = *iter;
+
+  MessageBeingRead* mPtr = findMessageBeingRead(sequenceNumber);
+  TP_DCHECK(mPtr != nullptr) << "Couldn't find message #" << sequenceNumber;
+  MessageBeingRead& messageBeingRead = *mPtr;
+
   messageBeingRead.numPayloadsStillBeingRead--;
   triggerReadyCallbacks_();
 }
 
 void Pipe::Impl::onRecvOfTensor_(int64_t sequenceNumber) {
   TP_DCHECK(loop_.inLoop());
-  auto iter = std::find_if(
-      messagesBeingRead_.begin(), messagesBeingRead_.end(), [&](const auto& m) {
-        return m.sequenceNumber == sequenceNumber;
-      });
-  TP_DCHECK(iter != messagesBeingRead_.end());
-  MessageBeingRead& messageBeingRead = *iter;
+
+  MessageBeingRead* mPtr = findMessageBeingRead(sequenceNumber);
+  TP_DCHECK(mPtr != nullptr) << "Couldn't find message #" << sequenceNumber;
+  MessageBeingRead& messageBeingRead = *mPtr;
+
   messageBeingRead.numTensorsStillBeingReceived--;
   triggerReadyCallbacks_();
 }
 
 void Pipe::Impl::onWriteOfPayload_(int64_t sequenceNumber) {
   TP_DCHECK(loop_.inLoop());
-  auto iter = std::find_if(
-      messagesBeingWritten_.begin(),
-      messagesBeingWritten_.end(),
-      [&](const auto& m) { return m.sequenceNumber == sequenceNumber; });
-  TP_DCHECK(iter != messagesBeingWritten_.end());
-  MessageBeingWritten& messageBeingWritten = *iter;
+
+  MessageBeingWritten* mPtr = findMessageBeingWritten(sequenceNumber);
+  TP_DCHECK(mPtr != nullptr) << "Couldn't find message #" << sequenceNumber;
+  MessageBeingWritten& messageBeingWritten = *mPtr;
+
   messageBeingWritten.numPayloadsStillBeingWritten--;
   triggerReadyCallbacks_();
 }
 
 void Pipe::Impl::onSendOfTensor_(int64_t sequenceNumber) {
   TP_DCHECK(loop_.inLoop());
-  auto iter = std::find_if(
-      messagesBeingWritten_.begin(),
-      messagesBeingWritten_.end(),
-      [&](const auto& m) { return m.sequenceNumber == sequenceNumber; });
-  TP_DCHECK(iter != messagesBeingWritten_.end());
-  MessageBeingWritten& messageBeingWritten = *iter;
+
+  MessageBeingWritten* mPtr = findMessageBeingWritten(sequenceNumber);
+  TP_DCHECK(mPtr != nullptr) << "Couldn't find message #" << sequenceNumber;
+  MessageBeingWritten& messageBeingWritten = *mPtr;
+
   messageBeingWritten.numTensorsStillBeingSent--;
   triggerReadyCallbacks_();
 }
@@ -1312,6 +1307,34 @@ void Pipe::Impl::checkForMessagesDoneCollectingTensorDescriptors_() {
       break;
     }
   }
+}
+
+MessageBeingRead* Pipe::Impl::findMessageBeingRead(int64_t sequenceNumber) {
+  if (messagesBeingRead_.empty()) {
+    return nullptr;
+  }
+  int64_t offset = sequenceNumber - messagesBeingRead_.front().sequenceNumber;
+  if (offset < 0 || offset >= messagesBeingRead_.size()) {
+    return nullptr;
+  }
+  MessageBeingRead& mRef = messagesBeingRead_[offset];
+  TP_DCHECK_EQ(mRef.sequenceNumber, sequenceNumber);
+  return &mRef;
+}
+
+MessageBeingWritten* Pipe::Impl::findMessageBeingWritten(
+    int64_t sequenceNumber) {
+  if (messagesBeingWritten_.empty()) {
+    return nullptr;
+  }
+  int64_t offset =
+      sequenceNumber - messagesBeingWritten_.front().sequenceNumber;
+  if (offset < 0 || offset >= messagesBeingWritten_.size()) {
+    return nullptr;
+  }
+  MessageBeingWritten& mRef = messagesBeingWritten_[offset];
+  TP_DCHECK_EQ(mRef.sequenceNumber, sequenceNumber);
+  return &mRef;
 }
 
 } // namespace tensorpipe
