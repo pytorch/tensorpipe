@@ -6,23 +6,23 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <tensorpipe/channel/intrap/context.h>
+#include <tensorpipe/channel/xth/context.h>
 #include <tensorpipe/test/channel/channel_test.h>
 
 namespace {
 
-class IntrapChannelTestHelper : public ChannelTestHelper {
+class XthChannelTestHelper : public ChannelTestHelper {
  public:
   std::shared_ptr<tensorpipe::channel::Context> makeContext(
       std::string id) override {
-    auto context = std::make_shared<tensorpipe::channel::intrap::Context>();
+    auto context = std::make_shared<tensorpipe::channel::xth::Context>();
     context->setId(std::move(id));
     return context;
   }
 };
 
-IntrapChannelTestHelper helper;
+XthChannelTestHelper helper;
 
 } // namespace
 
-INSTANTIATE_TEST_CASE_P(Intrap, ChannelTest, ::testing::Values(&helper));
+INSTANTIATE_TEST_CASE_P(Xth, ChannelTest, ::testing::Values(&helper));

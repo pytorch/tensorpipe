@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <tensorpipe/channel/intrap/channel.h>
+#include <tensorpipe/channel/xth/channel.h>
 
 #include <tensorpipe/channel/error.h>
 #include <tensorpipe/channel/helpers.h>
@@ -14,11 +14,11 @@
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/error.h>
 #include <tensorpipe/common/error_macros.h>
-#include <tensorpipe/proto/channel/intrap.pb.h>
+#include <tensorpipe/proto/channel/xth.pb.h>
 
 namespace tensorpipe {
 namespace channel {
-namespace intrap {
+namespace xth {
 
 class Channel::Impl : public std::enable_shared_from_this<Channel::Impl> {
  public:
@@ -331,6 +331,6 @@ void Channel::Impl::handleError_() {
   connection_->close();
 }
 
-} // namespace intrap
+} // namespace xth
 } // namespace channel
 } // namespace tensorpipe

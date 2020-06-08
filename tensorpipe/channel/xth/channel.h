@@ -11,11 +11,11 @@
 #include <memory>
 
 #include <tensorpipe/channel/channel.h>
-#include <tensorpipe/channel/intrap/context.h>
+#include <tensorpipe/channel/xth/context.h>
 
 namespace tensorpipe {
 namespace channel {
-namespace intrap {
+namespace xth {
 
 class Channel : public channel::Channel {
   // Use the passkey idiom to allow make_shared to call what should be a private
@@ -61,6 +61,6 @@ class Channel : public channel::Channel {
   friend class Context;
 };
 
-} // namespace intrap
+} // namespace xth
 } // namespace channel
 } // namespace tensorpipe

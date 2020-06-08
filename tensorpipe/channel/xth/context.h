@@ -18,7 +18,7 @@
 
 namespace tensorpipe {
 namespace channel {
-namespace intrap {
+namespace xth {
 
 class Context : public channel::Context {
  public:
@@ -66,6 +66,6 @@ class Context : public channel::Context {
   friend class Channel;
 };
 
-} // namespace intrap
+} // namespace xth
 } // namespace channel
 } // namespace tensorpipe

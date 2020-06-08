@@ -70,13 +70,13 @@ target_sources(tensorpipe PRIVATE
   channel/basic/channel.cc
   channel/basic/context.cc)
 
-### intrap
+### xth
 
-list(APPEND TENSORPIPE_PUBLIC_HEADERS channel/intrap/context.h)
+list(APPEND TENSORPIPE_PUBLIC_HEADERS channel/xth/context.h)
 target_sources(tensorpipe PRIVATE
-  channel/intrap/channel.cc
-  channel/intrap/context.cc
-  proto/channel/intrap.proto)
+  channel/xth/channel.cc
+  channel/xth/context.cc
+  proto/channel/xth.proto)
 
 ### cma
 

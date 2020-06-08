@@ -8,7 +8,7 @@
 
 syntax = "proto3";
 
-package tensorpipe.channel.intrap.proto;
+package tensorpipe.channel.xth.proto;
 
 message Descriptor {
   uint64 ptr = 2;

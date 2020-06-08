@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <tensorpipe/channel/intrap/context.h>
+#include <tensorpipe/channel/xth/context.h>
 
 #include <unistd.h>
 
@@ -14,7 +14,7 @@
 
 #include <tensorpipe/channel/error.h>
 #include <tensorpipe/channel/helpers.h>
-#include <tensorpipe/channel/intrap/channel.h>
+#include <tensorpipe/channel/xth/channel.h>
 #include <tensorpipe/channel/registry.h>
 #include <tensorpipe/common/callback.h>
 #include <tensorpipe/common/defs.h>
@@ -25,7 +25,7 @@
 
 namespace tensorpipe {
 namespace channel {
-namespace intrap {
+namespace xth {
 
 namespace {
 
@@ -42,11 +42,11 @@ std::string generateDomainDescriptor() {
   return oss.str();
 }
 
-std::shared_ptr<Context> makeIntrapChannel() {
+std::shared_ptr<Context> makeXthChannel() {
   return std::make_shared<Context>();
 }
 
-TP_REGISTER_CREATOR(TensorpipeChannelRegistry, intrap, makeIntrapChannel);
+TP_REGISTER_CREATOR(TensorpipeChannelRegistry, xth, makeXthChannel);
 
 } // namespace
 
@@ -215,7 +215,7 @@ void Context::Impl::requestCopy(
 }
 
 void Context::Impl::handleCopyRequests_() {
-  setThreadName("TP_INTRAP_loop");
+  setThreadName("TP_XTH_loop");
   while (true) {
     auto maybeRequest = requests_.pop();
     if (!maybeRequest.has_value()) {
@@ -230,6 +230,6 @@ void Context::Impl::handleCopyRequests_() {
   }
 }
 
-} // namespace intrap
+} // namespace xth
 } // namespace channel
 } // namespace tensorpipe
