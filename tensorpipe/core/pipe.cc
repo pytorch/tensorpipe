@@ -40,8 +40,8 @@ struct ReadOperation {
   State state{UNINITIALIZED};
   bool doneReadingDescriptor{false};
   bool doneGettingAllocation{false};
-  int64_t numPayloadsStillBeingRead{0};
-  int64_t numTensorsStillBeingReceived{0};
+  int64_t numPayloadsBeingRead{0};
+  int64_t numTensorsBeingReceived{0};
 
   // Callbacks.
   Pipe::read_descriptor_callback_fn readDescriptorCallback;
@@ -74,9 +74,9 @@ struct WriteOperation {
     FINISHED
   };
   State state{UNINITIALIZED};
-  int64_t numPayloadsStillBeingWritten{0};
-  int64_t numTensorDescriptorsStillBeingCollected{0};
-  int64_t numTensorsStillBeingSent{0};
+  int64_t numPayloadsBeingWritten{0};
+  int64_t numTensorDescriptorsBeingCollected{0};
+  int64_t numTensorsBeingSent{0};
 
   // Callbacks.
   Pipe::write_callback_fn writeCallback;
@@ -177,8 +177,8 @@ class Pipe::Impl : public std::enable_shared_from_this<Pipe::Impl> {
   // members store where we are in this loop, i.e., whether the next buffer we
   // will read from the connection will be a descriptor or a payload, and the
   // sequence number of which message that will be for.
-  enum ConnectionState { NEXT_UP_IS_DESCRIPTOR, NEXT_UP_IS_PAYLOADS };
-  ConnectionState connectionState_{NEXT_UP_IS_DESCRIPTOR};
+  enum ConnectionState { AWAITING_DESCRIPTOR, AWAITING_PAYLOADS };
+  ConnectionState connectionState_{AWAITING_DESCRIPTOR};
   int64_t messageBeingReadFromConnection_{0};
 
   // When reading, each message will be presented to the user in order for some
@@ -531,7 +531,7 @@ void Pipe::Impl::readPayloadsAndReceiveTensorsOfMessage(ReadOperation& op) {
              << " is reading payloads and receiving tensors of message #"
              << op.sequenceNumber;
 
-  TP_DCHECK_EQ(connectionState_, NEXT_UP_IS_PAYLOADS);
+  TP_DCHECK_EQ(connectionState_, AWAITING_PAYLOADS);
   TP_DCHECK_EQ(messageBeingReadFromConnection_, op.sequenceNumber);
   for (size_t payloadIdx = 0; payloadIdx < op.message.payloads.size();
        payloadIdx++) {
@@ -548,9 +548,9 @@ void Pipe::Impl::readPayloadsAndReceiveTensorsOfMessage(ReadOperation& op) {
                          << op.sequenceNumber << "." << payloadIdx;
               impl.onReadOfPayload_(op);
             }));
-    ++op.numPayloadsStillBeingRead;
+    ++op.numPayloadsBeingRead;
   }
-  connectionState_ = NEXT_UP_IS_DESCRIPTOR;
+  connectionState_ = AWAITING_DESCRIPTOR;
   ++messageBeingReadFromConnection_;
 
   for (size_t tensorIdx = 0; tensorIdx < op.message.tensors.size();
@@ -570,7 +570,7 @@ void Pipe::Impl::readPayloadsAndReceiveTensorsOfMessage(ReadOperation& op) {
                      << op.sequenceNumber << "." << tensorIdx;
           impl.onRecvOfTensor_(op);
         }));
-    ++op.numTensorsStillBeingReceived;
+    ++op.numTensorsBeingReceived;
   }
 }
 
@@ -810,8 +810,7 @@ bool Pipe::Impl::advanceOneReadOperation_(ReadOperation& op) {
   attemptTransition(
       /*from=*/ReadOperation::READING_PAYLOADS_AND_RECEIVING_TENSORS,
       /*to=*/ReadOperation::FINISHED,
-      /*cond=*/op.numPayloadsStillBeingRead == 0 &&
-          op.numTensorsStillBeingReceived == 0,
+      /*cond=*/op.numPayloadsBeingRead == 0 && op.numTensorsBeingReceived == 0,
       /*action=*/&Impl::callReadCallback_);
 
   // Compute return value now in case we next delete the operation.
@@ -890,21 +889,20 @@ bool Pipe::Impl::advanceOneWriteOperation_(WriteOperation& op) {
   attemptTransition(
       /*from=*/WriteOperation::SENDING_TENSORS_AND_COLLECTING_DESCRIPTORS,
       /*to=*/WriteOperation::FINISHED,
-      /*cond=*/error_ && op.numTensorDescriptorsStillBeingCollected == 0 &&
-          op.numTensorsStillBeingSent == 0,
+      /*cond=*/error_ && op.numTensorDescriptorsBeingCollected == 0 &&
+          op.numTensorsBeingSent == 0,
       /*action=*/&Impl::callWriteCallback_);
 
   attemptTransition(
       /*from=*/WriteOperation::SENDING_TENSORS_AND_COLLECTING_DESCRIPTORS,
       /*to=*/WriteOperation::WRITING_PAYLOADS_AND_SENDING_TENSORS,
-      /*cond=*/!error_ && op.numTensorDescriptorsStillBeingCollected == 0,
+      /*cond=*/!error_ && op.numTensorDescriptorsBeingCollected == 0,
       /*action=*/&Impl::writeDescriptorAndPayloadsOfMessage_);
 
   attemptTransition(
       /*from=*/WriteOperation::WRITING_PAYLOADS_AND_SENDING_TENSORS,
       /*to=*/WriteOperation::FINISHED,
-      /*cond=*/op.numPayloadsStillBeingWritten == 0 &&
-          op.numTensorsStillBeingSent == 0,
+      /*cond=*/op.numPayloadsBeingWritten == 0 && op.numTensorsBeingSent == 0,
       /*action=*/&Impl::callWriteCallback_);
 
   // Compute return value now in case we next delete the operation.
@@ -928,7 +926,7 @@ void Pipe::Impl::readDescriptorOfMessage_(ReadOperation& op) {
   TP_VLOG(2) << "Pipe " << id_ << " is reading descriptor of message #"
              << op.sequenceNumber;
 
-  TP_DCHECK_EQ(connectionState_, NEXT_UP_IS_DESCRIPTOR);
+  TP_DCHECK_EQ(connectionState_, AWAITING_DESCRIPTOR);
   TP_DCHECK_EQ(messageBeingReadFromConnection_, op.sequenceNumber);
   auto pbPacketIn = std::make_shared<proto::Packet>();
   TP_VLOG(3) << "Pipe " << id_ << " is reading proto (message descriptor #"
@@ -940,7 +938,7 @@ void Pipe::Impl::readDescriptorOfMessage_(ReadOperation& op) {
                    << op.sequenceNumber << ")";
         impl.onReadOfMessageDescriptor_(op, *pbPacketIn);
       }));
-  connectionState_ = NEXT_UP_IS_PAYLOADS;
+  connectionState_ = AWAITING_PAYLOADS;
 }
 
 void Pipe::Impl::sendTensorsOfMessage_(WriteOperation& op) {
@@ -983,8 +981,8 @@ void Pipe::Impl::sendTensorsOfMessage_(WriteOperation& op) {
             impl.onSendOfTensor_(op);
           }));
       op.tensors.push_back(WriteOperation::Tensor{channelName});
-      ++op.numTensorDescriptorsStillBeingCollected;
-      ++op.numTensorsStillBeingSent;
+      ++op.numTensorDescriptorsBeingCollected;
+      ++op.numTensorsBeingSent;
 
       foundAChannel = true;
       break;
@@ -1058,7 +1056,7 @@ void Pipe::Impl::writeDescriptorAndPayloadsOfMessage_(WriteOperation& op) {
                      << op.sequenceNumber << "." << payloadIdx;
           impl.onWriteOfPayload_(op);
         }));
-    ++op.numPayloadsStillBeingWritten;
+    ++op.numPayloadsBeingWritten;
   }
 }
 
@@ -1362,7 +1360,7 @@ void Pipe::Impl::onDescriptorOfTensor_(
       op.state, WriteOperation::SENDING_TENSORS_AND_COLLECTING_DESCRIPTORS);
   TP_DCHECK_LT(tensorIdx, op.tensors.size());
   op.tensors[tensorIdx].descriptor = std::move(descriptor);
-  --op.numTensorDescriptorsStillBeingCollected;
+  --op.numTensorDescriptorsBeingCollected;
 
   advanceWriteOperation_(op);
 }
@@ -1371,7 +1369,7 @@ void Pipe::Impl::onReadOfPayload_(ReadOperation& op) {
   TP_DCHECK(loop_.inLoop());
 
   TP_DCHECK_EQ(op.state, ReadOperation::READING_PAYLOADS_AND_RECEIVING_TENSORS);
-  op.numPayloadsStillBeingRead--;
+  op.numPayloadsBeingRead--;
 
   advanceReadOperation_(op);
 }
@@ -1380,7 +1378,7 @@ void Pipe::Impl::onRecvOfTensor_(ReadOperation& op) {
   TP_DCHECK(loop_.inLoop());
 
   TP_DCHECK_EQ(op.state, ReadOperation::READING_PAYLOADS_AND_RECEIVING_TENSORS);
-  op.numTensorsStillBeingReceived--;
+  op.numTensorsBeingReceived--;
 
   advanceReadOperation_(op);
 }
@@ -1389,7 +1387,7 @@ void Pipe::Impl::onWriteOfPayload_(WriteOperation& op) {
   TP_DCHECK(loop_.inLoop());
 
   TP_DCHECK_EQ(op.state, WriteOperation::WRITING_PAYLOADS_AND_SENDING_TENSORS);
-  op.numPayloadsStillBeingWritten--;
+  op.numPayloadsBeingWritten--;
 
   advanceWriteOperation_(op);
 }
@@ -1400,7 +1398,7 @@ void Pipe::Impl::onSendOfTensor_(WriteOperation& op) {
   TP_DCHECK_GE(
       op.state, WriteOperation::SENDING_TENSORS_AND_COLLECTING_DESCRIPTORS);
   TP_DCHECK_LE(op.state, WriteOperation::WRITING_PAYLOADS_AND_SENDING_TENSORS);
-  op.numTensorsStillBeingSent--;
+  op.numTensorsBeingSent--;
 
   advanceWriteOperation_(op);
 }
