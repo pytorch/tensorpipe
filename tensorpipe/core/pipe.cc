@@ -29,8 +29,23 @@ namespace {
 struct ReadOperation {
   int64_t sequenceNumber{-1};
 
-  Pipe::read_descriptor_callback_fn readDescriptorCallback;
+  // Progress indicators.
+  enum State {
+    UNINITIALIZED,
+    READING_DESCRIPTOR,
+    ASKING_FOR_ALLOCATION,
+    READING_PAYLOADS_AND_RECEIVING_TENSORS,
+    FINISHED
+  };
+  State state{UNINITIALIZED};
+  int64_t numPayloadsStillBeingRead{0};
+  int64_t numTensorsStillBeingReceived{0};
 
+  // Callbacks.
+  Pipe::read_descriptor_callback_fn readDescriptorCallback;
+  Pipe::read_callback_fn readCallback;
+
+  // Metadata found in the descriptor read from the connection.
   struct Payload {
     ssize_t length{-1};
   };
@@ -42,22 +57,32 @@ struct ReadOperation {
   };
   std::vector<Tensor> tensors;
 
+  // Buffers allocated by the user.
   Message message;
-  Pipe::read_callback_fn readCallback;
-  int64_t numPayloadsStillBeingRead{0};
-  int64_t numTensorsStillBeingReceived{0};
 };
 
 struct WriteOperation {
   int64_t sequenceNumber{-1};
 
-  Message message;
-  Pipe::write_callback_fn writeCallback;
-  bool startedWritingPayloads{false};
-  bool startedSendingTensors{false};
+  // Progress indicators.
+  enum State {
+    UNINITIALIZED,
+    SENDING_TENSORS_AND_COLLECTING_DESCRIPTORS,
+    WRITING_PAYLOADS_AND_SENDING_TENSORS,
+    FINISHED
+  };
+  State state{UNINITIALIZED};
   int64_t numPayloadsStillBeingWritten{0};
   int64_t numTensorDescriptorsStillBeingCollected{0};
   int64_t numTensorsStillBeingSent{0};
+
+  // Callbacks.
+  Pipe::write_callback_fn writeCallback;
+
+  // Buffers provided by the user.
+  Message message;
+
+  // Tensor descriptors collected from the channels.
   struct Tensor {
     std::string channelName;
     channel::Channel::TDescriptor descriptor;
@@ -494,6 +519,9 @@ void Pipe::Impl::readFromLoop_(Message message, read_callback_fn fn) {
     return;
   }
 
+  TP_DCHECK_EQ(op.state, ReadOperation::ASKING_FOR_ALLOCATION);
+  op.state = ReadOperation::READING_PAYLOADS_AND_RECEIVING_TENSORS;
+
   TP_DCHECK_EQ(connectionState_, NEXT_UP_IS_PAYLOADS);
   TP_DCHECK_EQ(messageBeingReadFromConnection_, op.sequenceNumber);
   for (size_t payloadIdx = 0; payloadIdx < numPayloads; payloadIdx++) {
@@ -634,13 +662,17 @@ void Pipe::Impl::triggerReadyCallbacks_() {
       // channel callbacks to return to be sure that no other thread is working
       // on the data.
       bool doneWritingData =
-          op.startedWritingPayloads && op.numPayloadsStillBeingWritten == 0;
+          op.state >= WriteOperation::WRITING_PAYLOADS_AND_SENDING_TENSORS &&
+          op.numPayloadsStillBeingWritten == 0;
       bool blockedWritingData =
-          op.startedWritingPayloads && op.numPayloadsStillBeingWritten > 0;
-      bool doneSendingTensors = op.startedSendingTensors &&
+          op.state >= WriteOperation::WRITING_PAYLOADS_AND_SENDING_TENSORS &&
+          op.numPayloadsStillBeingWritten > 0;
+      bool doneSendingTensors = op.state >=
+              WriteOperation::SENDING_TENSORS_AND_COLLECTING_DESCRIPTORS &&
           op.numTensorDescriptorsStillBeingCollected == 0 &&
           op.numTensorsStillBeingSent == 0;
-      bool blockedWritingTensors = op.startedSendingTensors &&
+      bool blockedWritingTensors = op.state >=
+              WriteOperation::SENDING_TENSORS_AND_COLLECTING_DESCRIPTORS &&
           (op.numTensorDescriptorsStillBeingCollected > 0 ||
            op.numTensorsStillBeingSent > 0);
       if ((error_ && !blockedWritingData && !blockedWritingTensors) ||
@@ -712,6 +744,8 @@ void Pipe::Impl::startWritingUponEstablishingPipe_() {
 void Pipe::Impl::readDescriptorOfMessage_(ReadOperation& op) {
   TP_DCHECK(loop_.inLoop());
   TP_DCHECK_EQ(state_, ESTABLISHED);
+  TP_DCHECK_EQ(op.state, ReadOperation::UNINITIALIZED);
+  op.state = ReadOperation::READING_DESCRIPTOR;
   TP_DCHECK_EQ(connectionState_, NEXT_UP_IS_DESCRIPTOR);
   TP_DCHECK_EQ(messageBeingReadFromConnection_, op.sequenceNumber);
   auto pbPacketIn = std::make_shared<proto::Packet>();
@@ -730,8 +764,8 @@ void Pipe::Impl::readDescriptorOfMessage_(ReadOperation& op) {
 void Pipe::Impl::sendTensorsOfMessage_(WriteOperation& op) {
   TP_DCHECK(loop_.inLoop());
   TP_DCHECK_EQ(state_, ESTABLISHED);
-  TP_DCHECK(!op.startedSendingTensors);
-  op.startedSendingTensors = true;
+  TP_DCHECK_EQ(op.state, WriteOperation::UNINITIALIZED);
+  op.state = WriteOperation::SENDING_TENSORS_AND_COLLECTING_DESCRIPTORS;
   TP_VLOG(2) << "Pipe " << id_ << " is sending tensors of message #"
              << op.sequenceNumber;
 
@@ -783,8 +817,9 @@ void Pipe::Impl::sendTensorsOfMessage_(WriteOperation& op) {
 void Pipe::Impl::writeMessage_(WriteOperation& op) {
   TP_DCHECK(loop_.inLoop());
   TP_DCHECK_EQ(state_, ESTABLISHED);
-  TP_DCHECK(!op.startedWritingPayloads);
-  op.startedWritingPayloads = true;
+  TP_DCHECK_EQ(
+      op.state, WriteOperation::SENDING_TENSORS_AND_COLLECTING_DESCRIPTORS);
+  op.state = WriteOperation::WRITING_PAYLOADS_AND_SENDING_TENSORS;
   TP_VLOG(2) << "Pipe " << id_
              << " is writing descriptor and payloads of message #"
              << op.sequenceNumber;
@@ -1102,6 +1137,9 @@ void Pipe::Impl::onReadOfMessageDescriptor_(const proto::Packet& pbPacketIn) {
   ReadOperation& op = *opPtr;
   ++nextMessageAskingForAllocation_;
 
+  TP_DCHECK_EQ(op.state, ReadOperation::READING_DESCRIPTOR);
+  op.state = ReadOperation::ASKING_FOR_ALLOCATION;
+
   TP_DCHECK_EQ(pbPacketIn.type_case(), proto::Packet::kMessageDescriptor);
   const proto::MessageDescriptor& pbMessageDescriptor =
       pbPacketIn.message_descriptor();
@@ -1144,7 +1182,8 @@ void Pipe::Impl::onDescriptorOfTensor_(
     channel::Channel::TDescriptor descriptor) {
   TP_DCHECK(loop_.inLoop());
 
-  TP_DCHECK(op.startedSendingTensors);
+  TP_DCHECK_EQ(
+      op.state, WriteOperation::SENDING_TENSORS_AND_COLLECTING_DESCRIPTORS);
   TP_DCHECK_LT(tensorIdx, op.tensors.size());
   op.tensors[tensorIdx].descriptor = std::move(descriptor);
   --op.numTensorDescriptorsStillBeingCollected;
@@ -1154,6 +1193,7 @@ void Pipe::Impl::onDescriptorOfTensor_(
 void Pipe::Impl::onReadOfPayload_(ReadOperation& op) {
   TP_DCHECK(loop_.inLoop());
 
+  TP_DCHECK_EQ(op.state, ReadOperation::READING_PAYLOADS_AND_RECEIVING_TENSORS);
   op.numPayloadsStillBeingRead--;
   triggerReadyCallbacks_();
 }
@@ -1161,6 +1201,7 @@ void Pipe::Impl::onReadOfPayload_(ReadOperation& op) {
 void Pipe::Impl::onRecvOfTensor_(ReadOperation& op) {
   TP_DCHECK(loop_.inLoop());
 
+  TP_DCHECK_EQ(op.state, ReadOperation::READING_PAYLOADS_AND_RECEIVING_TENSORS);
   op.numTensorsStillBeingReceived--;
   triggerReadyCallbacks_();
 }
@@ -1168,6 +1209,7 @@ void Pipe::Impl::onRecvOfTensor_(ReadOperation& op) {
 void Pipe::Impl::onWriteOfPayload_(WriteOperation& op) {
   TP_DCHECK(loop_.inLoop());
 
+  TP_DCHECK_EQ(op.state, WriteOperation::WRITING_PAYLOADS_AND_SENDING_TENSORS);
   op.numPayloadsStillBeingWritten--;
   triggerReadyCallbacks_();
 }
@@ -1175,6 +1217,9 @@ void Pipe::Impl::onWriteOfPayload_(WriteOperation& op) {
 void Pipe::Impl::onSendOfTensor_(WriteOperation& op) {
   TP_DCHECK(loop_.inLoop());
 
+  TP_DCHECK_GE(
+      op.state, WriteOperation::SENDING_TENSORS_AND_COLLECTING_DESCRIPTORS);
+  TP_DCHECK_LE(op.state, WriteOperation::WRITING_PAYLOADS_AND_SENDING_TENSORS);
   op.numTensorsStillBeingSent--;
   triggerReadyCallbacks_();
 }
@@ -1187,34 +1232,31 @@ void Pipe::Impl::checkForMessagesDoneCollectingTensorDescriptors_() {
     // An outgoing message is processed in three stages, with messages coming
     // later in the queue being at an earlier stage than earlier messages.
     //
-    // O  startedSendingTensors == false,
+    // O  state == UNINITIALIZED
     // |    && numTensorDescriptorsStillBeingCollected == 0
-    // |    && startedWritingPayloads == false
     // |
     // |  sendTensorsOfMessage_ is called on it
     // V
-    // O  startedSendingTensors == true,
+    // O  state == SENDING_TENSORS_AND_COLLECTING_DESCRIPTORS
     // |    && numTensorDescriptorsStillBeingCollected > 0
-    // |    && startedWritingPayloads == false
     // |
     // |  the descriptor callbacks fire
     // V
-    // O  startedSendingTensors == true,
+    // O  state == SENDING_TENSORS_AND_COLLECTING_DESCRIPTORS
     // |    && numTensorDescriptorsStillBeingCollected == 0
-    // |    && startedWritingPayloads == false
     // |
     // |  writeMessage_ is called on it
     // V
-    // O  startedSendingTensors == true,
+    // O  state == WRITING_PAYLOADS_AND_SENDING_TENSORS
     //      && numTensorDescriptorsStillBeingCollected == 0
-    //      && startedWritingPayloads == true
     //
     // (The state diagram actually goes on, with numPayloadsStillBeingWritten
     // and numTensorsStillBeingSent going from > 0 to == 0).
-    if (op.startedWritingPayloads) {
+    if (op.state >= WriteOperation::WRITING_PAYLOADS_AND_SENDING_TENSORS) {
       continue;
     }
-    if (op.startedSendingTensors &&
+    if (op.state ==
+            WriteOperation::SENDING_TENSORS_AND_COLLECTING_DESCRIPTORS &&
         op.numTensorDescriptorsStillBeingCollected == 0) {
       writeMessage_(op);
     } else {
