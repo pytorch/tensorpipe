@@ -24,6 +24,53 @@
 
 namespace tensorpipe {
 
+namespace {
+
+struct MessageBeingExpected {
+  int64_t sequenceNumber{-1};
+  Pipe::read_descriptor_callback_fn callback;
+};
+
+struct MessageBeingAllocated {
+  int64_t sequenceNumber{-1};
+  struct Payload {
+    ssize_t length{-1};
+  };
+  std::vector<Payload> payloads;
+  struct Tensor {
+    ssize_t length{-1};
+    std::string channelName;
+    channel::Channel::TDescriptor descriptor;
+  };
+  std::vector<Tensor> tensors;
+};
+
+struct MessageBeingRead {
+  int64_t sequenceNumber{-1};
+  Message message;
+  Pipe::read_callback_fn callback;
+  int64_t numPayloadsStillBeingRead{0};
+  int64_t numTensorsStillBeingReceived{0};
+};
+
+struct MessageBeingWritten {
+  int64_t sequenceNumber{-1};
+  Message message;
+  Pipe::write_callback_fn callback;
+  bool startedWritingPayloads{false};
+  bool startedSendingTensors{false};
+  int64_t numPayloadsStillBeingWritten{0};
+  int64_t numTensorDescriptorsStillBeingCollected{0};
+  int64_t numTensorsStillBeingSent{0};
+  struct Tensor {
+    std::string channelName;
+    channel::Channel::TDescriptor descriptor;
+  };
+  std::vector<Tensor> tensors;
+};
+
+} // namespace
+
 class Pipe::Impl : public std::enable_shared_from_this<Pipe::Impl> {
  public:
   Impl(
@@ -93,49 +140,6 @@ class Pipe::Impl : public std::enable_shared_from_this<Pipe::Impl> {
   enum ConnectionState { NEXT_UP_IS_DESCRIPTOR, NEXT_UP_IS_PAYLOADS };
 
   ConnectionState connectionState_{NEXT_UP_IS_DESCRIPTOR};
-
-  struct MessageBeingExpected {
-    int64_t sequenceNumber{-1};
-    read_descriptor_callback_fn callback;
-  };
-
-  struct MessageBeingAllocated {
-    int64_t sequenceNumber{-1};
-    struct Payload {
-      ssize_t length{-1};
-    };
-    std::vector<Payload> payloads;
-    struct Tensor {
-      ssize_t length{-1};
-      std::string channelName;
-      channel::Channel::TDescriptor descriptor;
-    };
-    std::vector<Tensor> tensors;
-  };
-
-  struct MessageBeingRead {
-    int64_t sequenceNumber{-1};
-    Message message;
-    read_callback_fn callback;
-    int64_t numPayloadsStillBeingRead{0};
-    int64_t numTensorsStillBeingReceived{0};
-  };
-
-  struct MessageBeingWritten {
-    int64_t sequenceNumber{-1};
-    Message message;
-    write_callback_fn callback;
-    bool startedWritingPayloads{false};
-    bool startedSendingTensors{false};
-    int64_t numPayloadsStillBeingWritten{0};
-    int64_t numTensorDescriptorsStillBeingCollected{0};
-    int64_t numTensorsStillBeingSent{0};
-    struct Tensor {
-      std::string channelName;
-      channel::Channel::TDescriptor descriptor;
-    };
-    std::vector<Tensor> tensors;
-  };
 
   uint64_t nextMessageBeingRead_{0};
   std::deque<MessageBeingExpected> messagesBeingExpected_;
