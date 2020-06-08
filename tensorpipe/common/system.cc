@@ -12,6 +12,10 @@
 #include <pthread.h>
 #endif
 
+#ifdef __APPLE__
+#include <IOKit/IOKitLib.h>
+#endif
+
 #include <array>
 #include <cstring>
 #include <fstream>
@@ -59,17 +63,17 @@ std::string removeBlankSpaces(std::string s) {
 
 #ifdef __APPLE__
 optional<std::string> _getBootID() {
-  std::string res;
-  std::array<char, 128> buffer;
-  const std::string cmd =
-      "ioreg -d2 -c IOPlatformExpertDevice | awk -F\" '/IOPlatformUUID/{print $(NF-1)}'";
-  std::unique_ptr<FILE, decltype(&pclose)> pipe(
-      popen(cmd.c_str(), "r"), pclose);
-  TP_DCHECK(pipe);
-  while (fgets(buffer.data(), buffer.size(), pipe.get()) != nullptr) {
-    res += buffer.data();
-  }
-  return res;
+  std::array<char, 128> buf;
+
+  io_registry_entry_t ioRegistryRoot =
+      IORegistryEntryFromPath(kIOMasterPortDefault, "IOService:/");
+  CFStringRef uuidCf = (CFStringRef)IORegistryEntryCreateCFProperty(
+      ioRegistryRoot, CFSTR(kIOPlatformUUIDKey), kCFAllocatorDefault, 0);
+  IOObjectRelease(ioRegistryRoot);
+  CFStringGetCString(uuidCf, buf.data(), buf.size(), kCFStringEncodingMacRoman);
+  CFRelease(uuidCf);
+
+  return std::string(buf.data());
 }
 
 #elif defined(__linux__)

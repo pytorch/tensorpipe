@@ -54,6 +54,12 @@ target_sources(tensorpipe PRIVATE
   transport/error.cc
   transport/registry.cc)
 
+if(APPLE)
+  find_library(CF CoreFoundation)
+  find_library(IOKIT IOKit)
+  target_link_libraries(tensorpipe PRIVATE ${CF} ${IOKIT})
+endif()
+
 
 ## Channels
 
