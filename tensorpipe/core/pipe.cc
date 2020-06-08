@@ -391,11 +391,14 @@ void Pipe::Impl::readDescriptor(read_descriptor_callback_fn fn) {
 void Pipe::Impl::readDescriptorFromLoop_(read_descriptor_callback_fn fn) {
   TP_DCHECK(loop_.inLoop());
 
-  int64_t sequenceNumber = nextMessageBeingRead_++;
-  TP_VLOG(1) << "Pipe " << id_ << " received a readDescriptor request (#"
-             << sequenceNumber << ")";
+  readOperations_.emplace_back();
+  ReadOperation& op = readOperations_.back();
+  op.sequenceNumber = nextMessageBeingRead_++;
 
-  fn = [this, sequenceNumber, fn{std::move(fn)}](
+  TP_VLOG(1) << "Pipe " << id_ << " received a readDescriptor request (#"
+             << op.sequenceNumber << ")";
+
+  fn = [this, sequenceNumber{op.sequenceNumber}, fn{std::move(fn)}](
            const Error& error, Message message) {
     TP_DCHECK_EQ(sequenceNumber, nextReadDescriptorCallbackToCall_++);
     TP_VLOG(1) << "Pipe " << id_ << " is calling a readDescriptor callback (#"
@@ -405,9 +408,6 @@ void Pipe::Impl::readDescriptorFromLoop_(read_descriptor_callback_fn fn) {
                << sequenceNumber << ")";
   };
 
-  readOperations_.emplace_back();
-  ReadOperation& op = readOperations_.back();
-  op.sequenceNumber = sequenceNumber;
   op.readDescriptorCallback = std::move(fn);
 
   if (error_) {
@@ -416,7 +416,7 @@ void Pipe::Impl::readDescriptorFromLoop_(read_descriptor_callback_fn fn) {
   }
 
   if (state_ == ESTABLISHED && connectionState_ == NEXT_UP_IS_DESCRIPTOR &&
-      messageBeingReadFromConnection_ == sequenceNumber) {
+      messageBeingReadFromConnection_ == op.sequenceNumber) {
     readDescriptorOfMessage_(op);
   }
 }
@@ -469,12 +469,11 @@ void Pipe::Impl::readFromLoop_(Message message, read_callback_fn fn) {
     TP_THROW_ASSERT_IF(tensor.length != tensorBeingAllocated.length);
   }
 
-  int64_t sequenceNumber = op.sequenceNumber;
   TP_VLOG(1) << "Pipe " << id_ << " received a read request (#"
-             << sequenceNumber << ", contaning " << numPayloads
+             << op.sequenceNumber << ", contaning " << numPayloads
              << " payloads and " << numTensors << " tensors)";
 
-  fn = [this, sequenceNumber, fn{std::move(fn)}](
+  fn = [this, sequenceNumber{op.sequenceNumber}, fn{std::move(fn)}](
            const Error& error, Message message) {
     TP_DCHECK_EQ(sequenceNumber, nextReadCallbackToCall_++);
     TP_VLOG(1) << "Pipe " << id_ << " is calling a read callback (#"
@@ -493,16 +492,16 @@ void Pipe::Impl::readFromLoop_(Message message, read_callback_fn fn) {
   }
 
   TP_DCHECK_EQ(connectionState_, NEXT_UP_IS_PAYLOADS);
-  TP_DCHECK_EQ(messageBeingReadFromConnection_, sequenceNumber);
+  TP_DCHECK_EQ(messageBeingReadFromConnection_, op.sequenceNumber);
   for (size_t payloadIdx = 0; payloadIdx < numPayloads; payloadIdx++) {
     Message::Payload& payload = op.message.payloads[payloadIdx];
-    TP_VLOG(3) << "Pipe " << id_ << " is reading payload #" << sequenceNumber
+    TP_VLOG(3) << "Pipe " << id_ << " is reading payload #" << op.sequenceNumber
                << "." << payloadIdx;
     connection_->read(
         payload.data,
         payload.length,
         eagerCallbackWrapper_(
-            [sequenceNumber, payloadIdx](
+            [sequenceNumber{op.sequenceNumber}, payloadIdx](
                 Impl& impl, const void* /* unused */, size_t /* unused */) {
               TP_VLOG(3) << "Pipe " << impl.id_ << " done reading payload #"
                          << sequenceNumber << "." << payloadIdx;
@@ -518,21 +517,22 @@ void Pipe::Impl::readFromLoop_(Message message, read_callback_fn fn) {
     ReadOperation::Tensor& tensorBeingAllocated = op.tensors[tensorIdx];
     std::shared_ptr<channel::Channel> channel =
         channels_.at(tensorBeingAllocated.channelName);
-    TP_VLOG(3) << "Pipe " << id_ << " is receiving tensor #" << sequenceNumber
-               << "." << tensorIdx;
+    TP_VLOG(3) << "Pipe " << id_ << " is receiving tensor #"
+               << op.sequenceNumber << "." << tensorIdx;
     channel->recv(
         std::move(tensorBeingAllocated.descriptor),
         tensor.data,
         tensor.length,
-        eagerCallbackWrapper_([sequenceNumber, tensorIdx](Impl& impl) {
-          TP_VLOG(3) << "Pipe " << impl.id_ << " done receiving tensor #"
-                     << sequenceNumber << "." << tensorIdx;
-          impl.onRecvOfTensor_(sequenceNumber);
-        }));
+        eagerCallbackWrapper_(
+            [sequenceNumber{op.sequenceNumber}, tensorIdx](Impl& impl) {
+              TP_VLOG(3) << "Pipe " << impl.id_ << " done receiving tensor #"
+                         << sequenceNumber << "." << tensorIdx;
+              impl.onRecvOfTensor_(sequenceNumber);
+            }));
     ++op.numTensorsStillBeingReceived;
   }
 
-  ReadOperation* nextOpPtr = findReadOperation(sequenceNumber + 1);
+  ReadOperation* nextOpPtr = findReadOperation(op.sequenceNumber + 1);
   if (nextOpPtr != nullptr) {
     readDescriptorOfMessage_(*nextOpPtr);
   }
@@ -560,12 +560,15 @@ void Pipe::Impl::write(Message message, write_callback_fn fn) {
 void Pipe::Impl::writeFromLoop_(Message message, write_callback_fn fn) {
   TP_DCHECK(loop_.inLoop());
 
-  int64_t sequenceNumber = nextMessageBeingWritten_++;
+  writeOperations_.emplace_back();
+  WriteOperation& op = writeOperations_.back();
+  op.sequenceNumber = nextMessageBeingWritten_++;
+
   TP_VLOG(1) << "Pipe " << id_ << " received a write request (#"
-             << sequenceNumber << ", contaning " << message.payloads.size()
+             << op.sequenceNumber << ", contaning " << message.payloads.size()
              << " payloads and " << message.tensors.size() << " tensors)";
 
-  fn = [this, sequenceNumber, fn{std::move(fn)}](
+  fn = [this, sequenceNumber{op.sequenceNumber}, fn{std::move(fn)}](
            const Error& error, Message message) {
     TP_DCHECK_EQ(sequenceNumber, nextWriteCallbackToCall_++);
     TP_VLOG(1) << "Pipe " << id_ << " is calling a write callback (#"
@@ -575,8 +578,8 @@ void Pipe::Impl::writeFromLoop_(Message message, write_callback_fn fn) {
                << sequenceNumber << ")";
   };
 
-  writeOperations_.push_back(
-      WriteOperation{sequenceNumber, std::move(message), std::move(fn)});
+  op.message = std::move(message);
+  op.writeCallback = std::move(fn);
 
   if (error_) {
     triggerReadyCallbacks_();
@@ -584,7 +587,7 @@ void Pipe::Impl::writeFromLoop_(Message message, write_callback_fn fn) {
   }
 
   if (state_ == ESTABLISHED) {
-    sendTensorsOfMessage_(writeOperations_.back());
+    sendTensorsOfMessage_(op);
   }
 }
 
