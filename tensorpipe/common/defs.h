@@ -8,8 +8,13 @@
 
 #pragma once
 
+#include <sys/time.h>
 #include <sys/types.h>
+#include <unistd.h>
+
+#include <ctime>
 #include <functional>
+#include <iomanip>
 #include <iostream>
 #include <limits>
 #include <sstream>
@@ -105,6 +110,26 @@ inline std::error_code toErrorCode(ssize_t e) {
 //
 class LogEntry final {
  public:
+  LogEntry(char type) {
+    oss_ << type;
+
+    // In C++17 use std::timespec.
+    struct timeval tv;
+    // In C++17 use std::timespec_get.
+    gettimeofday(&tv, nullptr);
+    struct std::tm tm;
+    // Need to use localtime_r as std::localtime may not be thread-safe.
+    localtime_r(&tv.tv_sec, &tm);
+    oss_ << std::setfill('0') << std::setw(2) << 1 + tm.tm_mon << std::setw(2)
+         << tm.tm_mday << ' ' << std::setw(2) << tm.tm_hour << ':'
+         << std::setw(2) << tm.tm_min << ':' << std::setw(2) << tm.tm_sec << '.'
+         << std::setw(6) << tv.tv_usec;
+
+    // The glog format uses the thread ID but it's painful to get (there is a
+    // gettid syscall, but it's not exposed in glibc) so we use the PID instead.
+    oss_ << ' ' << std::setfill(' ') << std::setw(5) << getpid();
+  }
+
   ~LogEntry() noexcept {
     // Multiple threads or processes writing to the same log (e.g., stderr)
     // might lead to interleaved text and thus garbled output. It seems that a
@@ -123,14 +148,10 @@ class LogEntry final {
   std::ostringstream oss_;
 };
 
-#define TP_LOG_DEBUG() \
-  LogEntry().getStream() << "[tensorpipe debug: " << TP_LOG_PREFFIX << "] "
-#define TP_LOG_INFO() \
-  LogEntry().getStream() << "[tensorpipe info: " << TP_LOG_PREFFIX << "] "
-#define TP_LOG_WARNING() \
-  LogEntry().getStream() << "[tensorpipe warning: " << TP_LOG_PREFFIX << "] "
-#define TP_LOG_ERROR() \
-  LogEntry().getStream() << "[tensorpipe error: " << TP_LOG_PREFFIX << "] "
+#define TP_LOG_DEBUG() LogEntry('V').getStream() << ' ' << TP_LOG_LOC << "] "
+#define TP_LOG_INFO() LogEntry('I').getStream() << ' ' << TP_LOG_LOC << "] "
+#define TP_LOG_WARNING() LogEntry('W').getStream() << ' ' << TP_LOG_LOC << "] "
+#define TP_LOG_ERROR() LogEntry('E').getStream() << ' ' << TP_LOG_LOC << "] "
 
 #define TP_LOG_DEBUG_IF(cond) \
   if (unlikely(cond))         \
