@@ -38,13 +38,20 @@ class ContextOptions {
 
 class PipeOptions {
  public:
-  std::string name_;
+  std::string remoteName_;
 
   // The name should be a semantically meaningful description of the context
   // that the pipe is connecting to. It will only be used for logging and
   // debugging purposes, to identify the endpoints of a pipe.
-  PipeOptions&& name(std::string name) && {
-    name_ = std::move(name);
+  PipeOptions&& remoteName(std::string remoteName) && {
+    remoteName_ = std::move(remoteName);
+    return std::move(*this);
+  }
+
+  // FIXME This was the previous name of the function. Remove it once all users
+  // (i.e., just PyTorch) have moved to the new name.
+  PipeOptions&& name(std::string remoteName) && {
+    remoteName_ = std::move(remoteName);
     return std::move(*this);
   }
 };

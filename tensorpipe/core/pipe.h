@@ -48,6 +48,7 @@ class Pipe final {
       ConstructorToken,
       std::shared_ptr<Context::PrivateIface> context,
       std::string id,
+      std::string remoteName,
       const std::string& url);
 
   Pipe(
@@ -55,6 +56,7 @@ class Pipe final {
       std::shared_ptr<Context::PrivateIface> context,
       std::shared_ptr<Listener::PrivateIface> listener,
       std::string id,
+      std::string remoteName,
       std::string transport,
       std::shared_ptr<transport::Connection> connection);
 
@@ -74,6 +76,11 @@ class Pipe final {
   using write_callback_fn = std::function<void(const Error&, Message)>;
 
   void write(Message, write_callback_fn);
+
+  // Retrieve the user-defined name that was given to the constructor of the
+  // context on the remote side, if any (if not, this will be the empty string).
+  // This is intended to help in logging and debugging only.
+  const std::string& getRemoteName();
 
   // Put the pipe in a terminal state, aborting its pending operations and
   // rejecting future ones, and release its resrouces. This may be carried out

@@ -99,12 +99,14 @@ class Pipe::Impl : public std::enable_shared_from_this<Pipe::Impl> {
   Impl(
       std::shared_ptr<Context::PrivateIface> context,
       std::string id,
+      std::string remoteName,
       const std::string& url);
 
   Impl(
       std::shared_ptr<Context::PrivateIface> context,
       std::shared_ptr<Listener::PrivateIface> listener,
       std::string id,
+      std::string remoteName,
       std::string transport,
       std::shared_ptr<transport::Connection> connection);
 
@@ -114,6 +116,8 @@ class Pipe::Impl : public std::enable_shared_from_this<Pipe::Impl> {
   void readDescriptor(read_descriptor_callback_fn);
   void read(Message, read_callback_fn);
   void write(Message, write_callback_fn);
+
+  const std::string& getRemoteName();
 
   void close();
 
@@ -148,6 +152,11 @@ class Pipe::Impl : public std::enable_shared_from_this<Pipe::Impl> {
   // listener, combined with an increasing sequence number. It will only be used
   // for logging and debugging purposes.
   std::string id_;
+
+  // The name the user has given to the connect method of the local context (for
+  // outgoing pipes) or to the constructor of the context on the remote end (for
+  // incoming pipes).
+  std::string remoteName_;
 
   std::string transport_;
   std::shared_ptr<transport::Connection> connection_;
@@ -270,8 +279,13 @@ Pipe::Pipe(
     ConstructorToken /* unused */,
     std::shared_ptr<Context::PrivateIface> context,
     std::string id,
+    std::string remoteName,
     const std::string& url)
-    : impl_(std::make_shared<Impl>(std::move(context), std::move(id), url)) {
+    : impl_(std::make_shared<Impl>(
+          std::move(context),
+          std::move(id),
+          std::move(remoteName),
+          url)) {
   impl_->init();
 }
 
@@ -280,12 +294,14 @@ Pipe::Pipe(
     std::shared_ptr<Context::PrivateIface> context,
     std::shared_ptr<Listener::PrivateIface> listener,
     std::string id,
+    std::string remoteName,
     std::string transport,
     std::shared_ptr<transport::Connection> connection)
     : impl_(std::make_shared<Impl>(
           std::move(context),
           std::move(listener),
           std::move(id),
+          std::move(remoteName),
           std::move(transport),
           std::move(connection))) {
   impl_->init();
@@ -294,10 +310,12 @@ Pipe::Pipe(
 Pipe::Impl::Impl(
     std::shared_ptr<Context::PrivateIface> context,
     std::string id,
+    std::string remoteName,
     const std::string& url)
     : state_(CLIENT_ABOUT_TO_SEND_HELLO_AND_BROCHURE),
       context_(std::move(context)),
       id_(std::move(id)),
+      remoteName_(std::move(remoteName)),
       closingReceiver_(context_, context_->getClosingEmitter()) {
   std::string address;
   std::tie(transport_, address) = splitSchemeOfURL(url);
@@ -309,12 +327,14 @@ Pipe::Impl::Impl(
     std::shared_ptr<Context::PrivateIface> context,
     std::shared_ptr<Listener::PrivateIface> listener,
     std::string id,
+    std::string remoteName,
     std::string transport,
     std::shared_ptr<transport::Connection> connection)
     : state_(SERVER_WAITING_FOR_BROCHURE),
       context_(std::move(context)),
       listener_(std::move(listener)),
       id_(std::move(id)),
+      remoteName_(std::move(remoteName)),
       transport_(std::move(transport)),
       connection_(std::move(connection)),
       closingReceiver_(context_, context_->getClosingEmitter()) {
@@ -391,6 +411,14 @@ void Pipe::Impl::initFromLoop_() {
           impl.onReadWhileServerWaitingForBrochure_(*pbPacketIn);
         }));
   }
+}
+
+const std::string& Pipe::getRemoteName() {
+  return impl_->getRemoteName();
+}
+
+const std::string& Pipe::Impl::getRemoteName() {
+  return remoteName_;
 }
 
 Pipe::~Pipe() {

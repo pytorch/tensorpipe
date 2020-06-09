@@ -448,6 +448,7 @@ void Listener::Impl::onConnectionHelloRead_(
         context_,
         std::static_pointer_cast<PrivateIface>(shared_from_this()),
         std::move(pipeId),
+        remoteContextName,
         std::move(transport),
         std::move(connection));
     acceptCallback_.trigger(Error::kSuccess, std::move(pipe));

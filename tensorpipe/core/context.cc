@@ -196,7 +196,7 @@ std::shared_ptr<Pipe> Context::Impl::connect(
     PipeOptions opts) {
   std::string pipeId = id_ + ".p" + std::to_string(pipeCounter_++);
   TP_VLOG(1) << "Context " << id_ << " is opening pipe " << pipeId;
-  const std::string& remoteContextName = opts.name_;
+  std::string remoteContextName = std::move(opts.remoteName_);
   if (remoteContextName != "") {
     std::string aliasPipeId = id_ + "_to_" + remoteContextName;
     TP_VLOG(1) << "Pipe " << pipeId << " aliased as " << aliasPipeId;
@@ -206,6 +206,7 @@ std::shared_ptr<Pipe> Context::Impl::connect(
       Pipe::ConstructorToken(),
       std::static_pointer_cast<PrivateIface>(shared_from_this()),
       std::move(pipeId),
+      std::move(remoteContextName),
       url);
 }
 
