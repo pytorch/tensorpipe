@@ -63,6 +63,67 @@ struct ReadOperation {
   Message message;
 };
 
+// Copy the payload and tensors sizes, the tensor descriptors, etc. from the
+// message descriptor that is contained in the protobuf to the ReadOperation.
+void parseDescriptorOfMessage(
+    ReadOperation& op,
+    const proto::Packet& pbPacketIn) {
+  Message& message = op.message;
+
+  TP_DCHECK_EQ(pbPacketIn.type_case(), proto::Packet::kMessageDescriptor);
+  const proto::MessageDescriptor& pbMessageDescriptor =
+      pbPacketIn.message_descriptor();
+
+  message.metadata = pbMessageDescriptor.metadata();
+  for (const auto& pbPayloadDescriptor :
+       pbMessageDescriptor.payload_descriptors()) {
+    Message::Payload payload;
+    ReadOperation::Payload payloadBeingAllocated;
+    payload.length = pbPayloadDescriptor.size_in_bytes();
+    payloadBeingAllocated.length = payload.length;
+    payload.metadata = pbPayloadDescriptor.metadata();
+    message.payloads.push_back(std::move(payload));
+    op.payloads.push_back(std::move(payloadBeingAllocated));
+  }
+  for (const auto& pbTensorDescriptor :
+       pbMessageDescriptor.tensor_descriptors()) {
+    Message::Tensor tensor;
+    ReadOperation::Tensor tensorBeingAllocated;
+    tensor.length = pbTensorDescriptor.size_in_bytes();
+    tensorBeingAllocated.length = tensor.length;
+    tensor.metadata = pbTensorDescriptor.metadata();
+    tensorBeingAllocated.channelName = pbTensorDescriptor.channel_name();
+    // FIXME If the protobuf wasn't const we could move the string out...
+    tensorBeingAllocated.descriptor = pbTensorDescriptor.channel_descriptor();
+    message.tensors.push_back(std::move(tensor));
+    op.tensors.push_back(std::move(tensorBeingAllocated));
+  }
+}
+
+// Raise an error if the number or sizes of the payloads and the tensors in the
+// message do not match the ones that are expected by the ReadOperation.
+void checkAllocationCompatibility(
+    const ReadOperation& op,
+    const Message& message) {
+  size_t numPayloads = message.payloads.size();
+  TP_THROW_ASSERT_IF(numPayloads != op.payloads.size());
+  for (size_t payloadIdx = 0; payloadIdx < numPayloads; payloadIdx++) {
+    const Message::Payload& payload = message.payloads[payloadIdx];
+    const ReadOperation::Payload& payloadBeingAllocated =
+        op.payloads[payloadIdx];
+    TP_DCHECK_GE(payloadBeingAllocated.length, 0);
+    TP_THROW_ASSERT_IF(payload.length != payloadBeingAllocated.length);
+  }
+  size_t numTensors = message.tensors.size();
+  TP_THROW_ASSERT_IF(numTensors != op.tensors.size());
+  for (size_t tensorIdx = 0; tensorIdx < numTensors; tensorIdx++) {
+    const Message::Tensor& tensor = message.tensors[tensorIdx];
+    const ReadOperation::Tensor& tensorBeingAllocated = op.tensors[tensorIdx];
+    TP_DCHECK_GE(tensorBeingAllocated.length, 0);
+    TP_THROW_ASSERT_IF(tensor.length != tensorBeingAllocated.length);
+  }
+}
+
 struct WriteOperation {
   int64_t sequenceNumber{-1};
 
@@ -91,6 +152,43 @@ struct WriteOperation {
   };
   std::vector<Tensor> tensors;
 };
+
+// Produce a protobuf containing a message descriptor using the information
+// contained in the WriteOperation: number and sizes of payloads and tensors,
+// tensor descriptors, ...
+std::shared_ptr<proto::Packet> makeDescriptorForMessage(
+    const WriteOperation& op) {
+  auto pbPacketOut = std::make_shared<proto::Packet>();
+  proto::MessageDescriptor* pbMessageDescriptor =
+      pbPacketOut->mutable_message_descriptor();
+
+  pbMessageDescriptor->set_metadata(op.message.metadata);
+
+  for (int payloadIdx = 0; payloadIdx < op.message.payloads.size();
+       ++payloadIdx) {
+    const Message::Payload& payload = op.message.payloads[payloadIdx];
+    proto::MessageDescriptor::PayloadDescriptor* pbPayloadDescriptor =
+        pbMessageDescriptor->add_payload_descriptors();
+    pbPayloadDescriptor->set_size_in_bytes(payload.length);
+    pbPayloadDescriptor->set_metadata(payload.metadata);
+  }
+
+  TP_DCHECK_EQ(op.message.tensors.size(), op.tensors.size());
+  for (int tensorIdx = 0; tensorIdx < op.tensors.size(); ++tensorIdx) {
+    const Message::Tensor& tensor = op.message.tensors[tensorIdx];
+    const WriteOperation::Tensor& otherTensor = op.tensors[tensorIdx];
+    proto::MessageDescriptor::TensorDescriptor* pbTensorDescriptor =
+        pbMessageDescriptor->add_tensor_descriptors();
+    pbTensorDescriptor->set_device_type(proto::DeviceType::DEVICE_TYPE_CPU);
+    pbTensorDescriptor->set_size_in_bytes(tensor.length);
+    pbTensorDescriptor->set_metadata(tensor.metadata);
+    pbTensorDescriptor->set_channel_name(otherTensor.channelName);
+    // FIXME In principle we could move here.
+    pbTensorDescriptor->set_channel_descriptor(otherTensor.descriptor);
+  }
+
+  return pbPacketOut;
+}
 
 } // namespace
 
@@ -508,27 +606,7 @@ void Pipe::Impl::readFromLoop_(Message message, read_callback_fn fn) {
   ++nextMessageGettingAllocation_;
   ReadOperation& op = *opPtr;
 
-  // Other sanity checks that must pass unless the user really messed up.
-  size_t numPayloads = message.payloads.size();
-  TP_THROW_ASSERT_IF(numPayloads != op.payloads.size());
-  for (size_t payloadIdx = 0; payloadIdx < numPayloads; payloadIdx++) {
-    Message::Payload& payload = message.payloads[payloadIdx];
-    ReadOperation::Payload& payloadBeingAllocated = op.payloads[payloadIdx];
-    TP_DCHECK_GE(payloadBeingAllocated.length, 0);
-    TP_THROW_ASSERT_IF(payload.length != payloadBeingAllocated.length);
-  }
-  size_t numTensors = message.tensors.size();
-  TP_THROW_ASSERT_IF(numTensors != op.tensors.size());
-  for (size_t tensorIdx = 0; tensorIdx < numTensors; tensorIdx++) {
-    Message::Tensor& tensor = message.tensors[tensorIdx];
-    ReadOperation::Tensor& tensorBeingAllocated = op.tensors[tensorIdx];
-    TP_DCHECK_GE(tensorBeingAllocated.length, 0);
-    TP_THROW_ASSERT_IF(tensor.length != tensorBeingAllocated.length);
-  }
-
-  TP_VLOG(1) << "Pipe " << id_ << " received a read request (#"
-             << op.sequenceNumber << ", contaning " << numPayloads
-             << " payloads and " << numTensors << " tensors)";
+  checkAllocationCompatibility(op, message);
 
   fn = [this, sequenceNumber{op.sequenceNumber}, fn{std::move(fn)}](
            const Error& error, Message message) {
@@ -544,6 +622,11 @@ void Pipe::Impl::readFromLoop_(Message message, read_callback_fn fn) {
   op.message = std::move(message);
   op.readCallback = std::move(fn);
   op.doneGettingAllocation = true;
+
+  TP_VLOG(1) << "Pipe " << id_ << " received a read request (#"
+             << op.sequenceNumber << ", containing "
+             << op.message.payloads.size() << " payloads and "
+             << op.message.tensors.size() << " tensors)";
 
   advanceReadOperation_(op);
 }
@@ -1031,34 +1114,7 @@ void Pipe::Impl::writeDescriptorAndPayloadsOfMessage_(WriteOperation& op) {
              << " is writing descriptor and payloads of message #"
              << op.sequenceNumber;
 
-  auto pbPacketOut = std::make_shared<proto::Packet>();
-  proto::MessageDescriptor* pbMessageDescriptor =
-      pbPacketOut->mutable_message_descriptor();
-
-  pbMessageDescriptor->set_metadata(op.message.metadata);
-
-  for (int payloadIdx = 0; payloadIdx < op.message.payloads.size();
-       ++payloadIdx) {
-    const auto& payload = op.message.payloads[payloadIdx];
-    proto::MessageDescriptor::PayloadDescriptor* pbPayloadDescriptor =
-        pbMessageDescriptor->add_payload_descriptors();
-    pbPayloadDescriptor->set_size_in_bytes(payload.length);
-    pbPayloadDescriptor->set_metadata(payload.metadata);
-  }
-
-  TP_DCHECK_EQ(op.message.tensors.size(), op.tensors.size());
-  for (int tensorIdx = 0; tensorIdx < op.tensors.size(); ++tensorIdx) {
-    const auto& tensor = op.message.tensors[tensorIdx];
-    const auto& otherTensor = op.tensors[tensorIdx];
-    proto::MessageDescriptor::TensorDescriptor* pbTensorDescriptor =
-        pbMessageDescriptor->add_tensor_descriptors();
-    pbTensorDescriptor->set_device_type(proto::DeviceType::DEVICE_TYPE_CPU);
-    pbTensorDescriptor->set_size_in_bytes(tensor.length);
-    pbTensorDescriptor->set_metadata(tensor.metadata);
-    pbTensorDescriptor->set_channel_name(otherTensor.channelName);
-    // FIXME In principle we could move here.
-    pbTensorDescriptor->set_channel_descriptor(otherTensor.descriptor);
-  }
+  std::shared_ptr<proto::Packet> pbPacketOut = makeDescriptorForMessage(op);
 
   TP_VLOG(3) << "Pipe " << id_ << " is writing proto (message descriptor #"
              << op.sequenceNumber << ")";
@@ -1342,38 +1398,8 @@ void Pipe::Impl::onReadOfMessageDescriptor_(
   TP_DCHECK_EQ(state_, ESTABLISHED);
 
   TP_DCHECK_EQ(op.state, ReadOperation::READING_DESCRIPTOR);
+  parseDescriptorOfMessage(op, pbPacketIn);
   op.doneReadingDescriptor = true;
-
-  TP_DCHECK_EQ(pbPacketIn.type_case(), proto::Packet::kMessageDescriptor);
-  const proto::MessageDescriptor& pbMessageDescriptor =
-      pbPacketIn.message_descriptor();
-
-  Message& message = op.message;
-
-  message.metadata = pbMessageDescriptor.metadata();
-  for (const auto& pbPayloadDescriptor :
-       pbMessageDescriptor.payload_descriptors()) {
-    Message::Payload payload;
-    ReadOperation::Payload payloadBeingAllocated;
-    payload.length = pbPayloadDescriptor.size_in_bytes();
-    payloadBeingAllocated.length = payload.length;
-    payload.metadata = pbPayloadDescriptor.metadata();
-    message.payloads.push_back(std::move(payload));
-    op.payloads.push_back(std::move(payloadBeingAllocated));
-  }
-  for (const auto& pbTensorDescriptor :
-       pbMessageDescriptor.tensor_descriptors()) {
-    Message::Tensor tensor;
-    ReadOperation::Tensor tensorBeingAllocated;
-    tensor.length = pbTensorDescriptor.size_in_bytes();
-    tensorBeingAllocated.length = tensor.length;
-    tensor.metadata = pbTensorDescriptor.metadata();
-    tensorBeingAllocated.channelName = pbTensorDescriptor.channel_name();
-    // FIXME If the protobuf wasn't const we could move the string out...
-    tensorBeingAllocated.descriptor = pbTensorDescriptor.channel_descriptor();
-    message.tensors.push_back(std::move(tensor));
-    op.tensors.push_back(std::move(tensorBeingAllocated));
-  }
 
   advanceReadOperation_(op);
 }
