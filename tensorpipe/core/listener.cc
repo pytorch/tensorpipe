@@ -435,9 +435,14 @@ void Listener::Impl::onConnectionHelloRead_(
         pbPacketIn.spontaneous_connection();
     TP_VLOG(3) << "Listener " << id_ << " got spontaneous connection";
     std::string pipeId = id_ + ".p" + std::to_string(pipeCounter_++);
-    TP_VLOG(1) << "Listener " << id_ << " is opening pipe " << pipeId
-               << " (from " << pbSpontaneousConnection.context_name() << " to "
-               << context_->getName() << ")";
+    TP_VLOG(1) << "Listener " << id_ << " is opening pipe " << pipeId;
+    const std::string& remoteContextName =
+        pbSpontaneousConnection.context_name();
+    if (remoteContextName != "") {
+      std::string aliasPipeId = id_ + "_from_" + remoteContextName;
+      TP_VLOG(1) << "Pipe " << pipeId << " aliased as " << aliasPipeId;
+      pipeId = std::move(aliasPipeId);
+    }
     auto pipe = std::make_shared<Pipe>(
         Pipe::ConstructorToken(),
         context_,

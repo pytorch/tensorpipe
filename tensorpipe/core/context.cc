@@ -82,10 +82,11 @@ class Context::Impl : public Context::PrivateIface,
   std::atomic<bool> closed_{false};
   std::atomic<bool> joined_{false};
 
-  // An identifier for the context, composed of unique information about the
-  // host and process, combined with an increasing sequence number. It will be
-  // used as a prefix for the identifiers of listeners and pipes. All of them
-  // will only be used for logging and debugging purposes.
+  // An identifier for the context, either consisting of the user-provided name
+  // for this context (see below) or, by default, composed of unique information
+  // about the host and process, combined with an increasing sequence number. It
+  // will be used as a prefix for the identifiers of listeners and pipes. All of
+  // them will only be used for logging and debugging purposes.
   std::string id_;
 
   // Sequence numbers for the listeners and pipes created by this context, used
@@ -114,7 +115,11 @@ Context::Context(ContextOptions opts)
 
 Context::Impl::Impl(ContextOptions opts)
     : id_(createContextId()), name_(std::move(opts.name_)) {
-  TP_VLOG(1) << "Context " << id_ << " corresponds to " << name_;
+  TP_VLOG(1) << "Context " << id_ << " created";
+  if (name_ != "") {
+    TP_VLOG(1) << "Context " << id_ << " aliased as " << name_;
+    id_ = std::move(name_);
+  }
 }
 
 void Context::registerTransport(
@@ -170,7 +175,8 @@ std::shared_ptr<Listener> Context::listen(
 
 std::shared_ptr<Listener> Context::Impl::listen(
     const std::vector<std::string>& urls) {
-  std::string listenerId = id_ + ".l" + std::to_string(listenerCounter_++);
+  std::string listenerId =
+      id_ + "[l" + std::to_string(listenerCounter_++) + "]";
   TP_VLOG(1) << "Context " << id_ << " is opening listener " << listenerId;
   return std::make_shared<Listener>(
       Listener::ConstructorToken(),
@@ -189,8 +195,13 @@ std::shared_ptr<Pipe> Context::Impl::connect(
     const std::string& url,
     PipeOptions opts) {
   std::string pipeId = id_ + ".p" + std::to_string(pipeCounter_++);
-  TP_VLOG(1) << "Context " << id_ << " is opening pipe " << pipeId << " (from "
-             << name_ << " to " << std::move(opts.name_) << ")";
+  TP_VLOG(1) << "Context " << id_ << " is opening pipe " << pipeId;
+  const std::string& remoteContextName = opts.name_;
+  if (remoteContextName != "") {
+    std::string aliasPipeId = id_ + "_to_" + remoteContextName;
+    TP_VLOG(1) << "Pipe " << pipeId << " aliased as " << aliasPipeId;
+    pipeId = std::move(aliasPipeId);
+  }
   return std::make_shared<Pipe>(
       Pipe::ConstructorToken(),
       std::static_pointer_cast<PrivateIface>(shared_from_this()),

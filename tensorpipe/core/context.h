@@ -25,7 +25,7 @@ class Pipe;
 
 class ContextOptions {
  public:
-  std::string name_ = "N/A";
+  std::string name_;
 
   // The name should be a semantically meaningful description of this context.
   // It will only be used for logging and debugging purposes, to identify the
@@ -38,7 +38,7 @@ class ContextOptions {
 
 class PipeOptions {
  public:
-  std::string name_ = "N/A";
+  std::string name_;
 
   // The name should be a semantically meaningful description of the context
   // that the pipe is connecting to. It will only be used for logging and
