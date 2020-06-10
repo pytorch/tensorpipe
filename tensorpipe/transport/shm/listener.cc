@@ -265,7 +265,7 @@ void Listener::Impl::setId(std::string id) {
 void Listener::Impl::handleEventsFromLoop(int events) {
   TP_DCHECK(context_->inLoopThread());
   TP_VLOG(9) << "Listener " << id_ << " is handling an event on its socket ("
-             << events << ")";
+             << Loop::formatEpollEvents(events) << ")";
 
   if (events & EPOLLERR) {
     int error;

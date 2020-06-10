@@ -222,6 +222,31 @@ void Loop::handleEpollEventsFromLoop() {
   epollCond_.notify_one();
 }
 
+std::string Loop::formatEpollEvents(uint32_t events) {
+  std::string res;
+  if (events & EPOLLIN) {
+    res = res.empty() ? "IN" : res + " | IN";
+    events &= ~EPOLLIN;
+  }
+  if (events & EPOLLOUT) {
+    res = res.empty() ? "OUT" : res + " | OUT";
+    events &= ~EPOLLOUT;
+  }
+  if (events & EPOLLERR) {
+    res = res.empty() ? "ERR" : res + " | ERR";
+    events &= ~EPOLLERR;
+  }
+  if (events & EPOLLHUP) {
+    res = res.empty() ? "HUP" : res + " | HUP";
+    events &= ~EPOLLHUP;
+  }
+  if (events > 0) {
+    std::string eventsStr = std::to_string(events);
+    res = res.empty() ? eventsStr : res + " | " + eventsStr;
+  }
+  return res;
+}
+
 } // namespace shm
 } // namespace transport
 } // namespace tensorpipe

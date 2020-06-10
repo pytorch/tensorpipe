@@ -152,6 +152,8 @@ class Loop final {
     return reactor_.inReactorThread();
   }
 
+  static std::string formatEpollEvents(uint32_t events);
+
  private:
   static constexpr auto kCapacity_ = 64;
 

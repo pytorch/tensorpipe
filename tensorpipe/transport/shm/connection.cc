@@ -828,7 +828,7 @@ void Connection::Impl::setId(std::string id) {
 void Connection::Impl::handleEventsFromLoop(int events) {
   TP_DCHECK(context_->inLoopThread());
   TP_VLOG(9) << "Connection " << id_ << " is handling an event on its socket ("
-             << events << ")";
+             << Loop::formatEpollEvents(events) << ")";
 
   // Handle only one of the events in the mask. Events on the control
   // file descriptor are rare enough for the cost of having epoll call
