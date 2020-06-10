@@ -373,6 +373,7 @@ void Listener::Impl::handleError_() {
   for (const auto& listener : listeners_) {
     listener.second->close();
   }
+  connectionsWaitingForHello_.clear();
 }
 
 //

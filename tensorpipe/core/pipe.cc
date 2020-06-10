@@ -796,7 +796,10 @@ void Pipe::Impl::handleError_() {
   TP_DCHECK(loop_.inLoop());
   TP_VLOG(2) << "Pipe " << id_ << " is handling error " << error_.what();
 
-  // TODO Close all connections and channels.
+  connection_->close();
+  for (auto& channelIter : channels_) {
+    channelIter.second->close();
+  }
 
   if (registrationId_.has_value()) {
     listener_->unregisterConnectionRequest(registrationId_.value());
