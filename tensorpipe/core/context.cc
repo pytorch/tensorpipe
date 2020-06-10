@@ -118,7 +118,7 @@ Context::Impl::Impl(ContextOptions opts)
   TP_VLOG(1) << "Context " << id_ << " created";
   if (name_ != "") {
     TP_VLOG(1) << "Context " << id_ << " aliased as " << name_;
-    id_ = std::move(name_);
+    id_ = name_;
   }
 }
 
