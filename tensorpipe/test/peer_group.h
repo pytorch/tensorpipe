@@ -8,6 +8,7 @@
 
 #pragma once
 
+#include <array>
 #include <string>
 #include <thread>
 
@@ -53,7 +54,7 @@ class PeerGroup {
  private:
   const std::string kDone = "done";
   std::mutex m_;
-  std::array<bool, 2> done_ = {false, false};
+  std::array<bool, 2> done_{{false, false}};
   std::array<std::condition_variable, 2> condVar_;
 };
 
