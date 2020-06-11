@@ -1,0 +1,2 @@
+# There is a harmless data race in libuv on linux during the choice of a fast clock.
+race:uv__hrtime
