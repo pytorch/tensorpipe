@@ -66,12 +66,6 @@ set(TENSORPIPE_SRC
   tensorpipe/transport/error.cc
   tensorpipe/transport/registry.cc)
 
-if(APPLE)
-  find_library(CF CoreFoundation)
-  find_library(IOKIT IOKit)
-  target_link_libraries(tensorpipe PRIVATE ${CF} ${IOKIT})
-endif()
-
 
 ## Channels
 
@@ -157,6 +151,12 @@ target_include_directories(tensorpipe PRIVATE ${PROJECT_BINARY_DIR}/tensorpipe)
 
 include(cmake/ProtobufGenerate.cmake)
 protobuf_generate(TARGET tensorpipe)
+
+if(APPLE)
+  find_library(CF CoreFoundation)
+  find_library(IOKIT IOKit)
+  target_link_libraries(tensorpipe PRIVATE ${CF} ${IOKIT})
+endif()
 
 
 ## Installing
