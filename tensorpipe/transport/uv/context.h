@@ -22,7 +22,7 @@ class Connection;
 class Listener;
 class TCPHandle;
 
-class Context final : public transport::Context {
+class Context : public transport::Context {
  public:
   Context();
 

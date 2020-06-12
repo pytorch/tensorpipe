@@ -19,7 +19,7 @@ class Connection;
 class EventHandler;
 class Listener;
 
-class Context final : public transport::Context {
+class Context : public transport::Context {
  public:
   Context();
 
