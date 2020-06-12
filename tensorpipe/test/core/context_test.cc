@@ -143,13 +143,12 @@ TEST(Context, ClientPingSerial) {
       0, "uv", std::make_shared<transport::uv::Context>());
 #ifdef TP_ENABLE_SHM
   context->registerTransport(
-      -1, "shm", std::make_shared<transport::shm::Context>());
+      1, "shm", std::make_shared<transport::shm::Context>());
 #endif // TP_ENABLE_SHM
   context->registerChannel(
       0, "basic", std::make_shared<channel::basic::Context>());
 #ifdef TP_ENABLE_CMA
-  context->registerChannel(
-      -1, "cma", std::make_shared<channel::cma::Context>());
+  context->registerChannel(1, "cma", std::make_shared<channel::cma::Context>());
 #endif // TP_ENABLE_CMA
 
   auto listener = context->listen(genUrls());
@@ -229,13 +228,12 @@ TEST(Context, ClientPingInline) {
       0, "uv", std::make_shared<transport::uv::Context>());
 #ifdef TP_ENABLE_SHM
   context->registerTransport(
-      -1, "shm", std::make_shared<transport::shm::Context>());
+      1, "shm", std::make_shared<transport::shm::Context>());
 #endif // TP_ENABLE_SHM
   context->registerChannel(
       0, "basic", std::make_shared<channel::basic::Context>());
 #ifdef TP_ENABLE_CMA
-  context->registerChannel(
-      -1, "cma", std::make_shared<channel::cma::Context>());
+  context->registerChannel(1, "cma", std::make_shared<channel::cma::Context>());
 #endif // TP_ENABLE_CMA
 
   auto listener = context->listen(genUrls());
@@ -312,13 +310,12 @@ TEST(Context, ServerPingPongTwice) {
       0, "uv", std::make_shared<transport::uv::Context>());
 #ifdef TP_ENABLE_SHM
   context->registerTransport(
-      -1, "shm", std::make_shared<transport::shm::Context>());
+      1, "shm", std::make_shared<transport::shm::Context>());
 #endif // TP_ENABLE_SHM
   context->registerChannel(
       0, "basic", std::make_shared<channel::basic::Context>());
 #ifdef TP_ENABLE_CMA
-  context->registerChannel(
-      -1, "cma", std::make_shared<channel::cma::Context>());
+  context->registerChannel(1, "cma", std::make_shared<channel::cma::Context>());
 #endif // TP_ENABLE_CMA
 
   auto listener = context->listen(genUrls());
@@ -485,13 +482,12 @@ TEST(Context, MixedTensorMessage) {
       0, "uv", std::make_shared<transport::uv::Context>());
 #ifdef TP_ENABLE_SHM
   context->registerTransport(
-      -1, "shm", std::make_shared<transport::shm::Context>());
+      1, "shm", std::make_shared<transport::shm::Context>());
 #endif // TP_ENABLE_SHM
   context->registerChannel(
       0, "basic", std::make_shared<channel::basic::Context>());
 #ifdef TP_ENABLE_CMA
-  context->registerChannel(
-      -1, "cma", std::make_shared<channel::cma::Context>());
+  context->registerChannel(1, "cma", std::make_shared<channel::cma::Context>());
 #endif // TP_ENABLE_CMA
 
   auto listener = context->listen(genUrls());

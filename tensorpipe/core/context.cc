@@ -137,12 +137,14 @@ void Context::Impl::registerTransport(
   TP_THROW_ASSERT_IF(transports_.find(transport) != transports_.end())
       << "transport " << transport << " already registered";
   TP_THROW_ASSERT_IF(
-      transportsByPriority_.find(priority) != transportsByPriority_.end())
+      transportsByPriority_.find(-priority) != transportsByPriority_.end())
       << "transport with priority " << priority << " already registered";
   TP_VLOG(1) << "Context " << id_ << " is registering transport " << transport;
   context->setId(id_ + ".tr_" + transport);
   transports_.emplace(transport, context);
-  transportsByPriority_.emplace(priority, std::make_tuple(transport, context));
+  // Reverse the priority, as the pipe will pick the *first* available transport
+  // it can find in the ordered map, so higher priorities should come first.
+  transportsByPriority_.emplace(-priority, std::make_tuple(transport, context));
 }
 
 void Context::registerChannel(
@@ -160,12 +162,14 @@ void Context::Impl::registerChannel(
   TP_THROW_ASSERT_IF(channels_.find(channel) != channels_.end())
       << "channel " << channel << " already registered";
   TP_THROW_ASSERT_IF(
-      channelsByPriority_.find(priority) != channelsByPriority_.end())
+      channelsByPriority_.find(-priority) != channelsByPriority_.end())
       << "channel with priority " << priority << " already registered";
   TP_VLOG(1) << "Context " << id_ << " is registering channel " << channel;
   context->setId(id_ + ".ch_" + channel);
   channels_.emplace(channel, context);
-  channelsByPriority_.emplace(priority, std::make_tuple(channel, context));
+  // Reverse the priority, as the pipe will pick the *first* available channel
+  // it can find in the ordered map, so higher priorities should come first.
+  channelsByPriority_.emplace(-priority, std::make_tuple(channel, context));
 }
 
 std::shared_ptr<Listener> Context::listen(
