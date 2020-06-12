@@ -12,6 +12,11 @@
 #include <pthread.h>
 #endif
 
+#ifdef __APPLE__
+#include <IOKit/IOKitLib.h>
+#endif
+
+#include <array>
 #include <cstring>
 #include <fstream>
 #include <iomanip>
@@ -56,7 +61,25 @@ std::string removeBlankSpaces(std::string s) {
   return s;
 }
 
-optional<std::string> getBootID() {
+#ifdef __APPLE__
+optional<std::string> _getBootID() {
+  std::array<char, 128> buf;
+
+  // See https://developer.apple.com/documentation/iokit/iokitlib_h for IOKitLib
+  // API documentation.
+  io_registry_entry_t ioRegistryRoot =
+      IORegistryEntryFromPath(kIOMasterPortDefault, "IOService:/");
+  CFStringRef uuidCf = (CFStringRef)IORegistryEntryCreateCFProperty(
+      ioRegistryRoot, CFSTR(kIOPlatformUUIDKey), kCFAllocatorDefault, 0);
+  IOObjectRelease(ioRegistryRoot);
+  CFStringGetCString(uuidCf, buf.data(), buf.size(), kCFStringEncodingMacRoman);
+  CFRelease(uuidCf);
+
+  return std::string(buf.data());
+}
+
+#elif defined(__linux__)
+optional<std::string> _getBootID() {
   std::ifstream f{"/proc/sys/kernel/random/boot_id"};
   if (!f.is_open()) {
     return nullopt;
@@ -65,6 +88,13 @@ optional<std::string> getBootID() {
   getline(f, v);
   f.close();
   return v;
+}
+
+#endif
+
+optional<std::string> getBootID() {
+  static optional<std::string> bootID = _getBootID();
+  return bootID;
 }
 
 void setThreadName(std::string name) {

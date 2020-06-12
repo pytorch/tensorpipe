@@ -54,6 +54,12 @@ target_sources(tensorpipe PRIVATE
   transport/error.cc
   transport/registry.cc)
 
+if(APPLE)
+  find_library(CF CoreFoundation)
+  find_library(IOKIT IOKit)
+  target_link_libraries(tensorpipe PRIVATE ${CF} ${IOKIT})
+endif()
+
 
 ## Channels
 
@@ -63,6 +69,14 @@ list(APPEND TENSORPIPE_PUBLIC_HEADERS channel/basic/context.h)
 target_sources(tensorpipe PRIVATE
   channel/basic/channel.cc
   channel/basic/context.cc)
+
+### xth
+
+list(APPEND TENSORPIPE_PUBLIC_HEADERS channel/xth/context.h)
+target_sources(tensorpipe PRIVATE
+  channel/xth/channel.cc
+  channel/xth/context.cc
+  proto/channel/xth.proto)
 
 ### cma
 

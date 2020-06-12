@@ -66,6 +66,12 @@ set(TENSORPIPE_SRC
   tensorpipe/transport/error.cc
   tensorpipe/transport/registry.cc)
 
+if(APPLE)
+  find_library(CF CoreFoundation)
+  find_library(IOKIT IOKit)
+  target_link_libraries(tensorpipe PRIVATE ${CF} ${IOKIT})
+endif()
+
 
 ## Channels
 
@@ -75,6 +81,14 @@ list(APPEND TENSORPIPE_PUBLIC_HEADERS tensorpipe/channel/basic/context.h)
 list(APPEND TENSORPIPE_SRC
   tensorpipe/channel/basic/channel.cc
   tensorpipe/channel/basic/context.cc)
+
+### xth
+
+list(APPEND TENSORPIPE_PUBLIC_HEADERS channel/xth/context.h)
+target_sources(tensorpipe PRIVATE
+  channel/xth/channel.cc
+  channel/xth/context.cc
+  proto/channel/xth.proto)
 
 ### cma
 
