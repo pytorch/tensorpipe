@@ -84,11 +84,11 @@ list(APPEND TENSORPIPE_SRC
 
 ### xth
 
-list(APPEND TENSORPIPE_PUBLIC_HEADERS channel/xth/context.h)
-target_sources(tensorpipe PRIVATE
-  channel/xth/channel.cc
-  channel/xth/context.cc
-  proto/channel/xth.proto)
+list(APPEND TENSORPIPE_PUBLIC_HEADERS tensorpipe/channel/xth/context.h)
+list(APPEND TENSORPIPE_SRC
+  tensorpipe/channel/xth/channel.cc
+  tensorpipe/channel/xth/context.cc
+  tensorpipe/proto/channel/xth.proto)
 
 ### cma
 
