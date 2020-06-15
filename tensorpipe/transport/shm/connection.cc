@@ -839,7 +839,7 @@ void Connection::Impl::handleEventsFromLoop(int events) {
   // In some cases the socket could be in a state where it's both in an error
   // state and readable/writable. If we checked for EPOLLIN or EPOLLOUT first
   // and then returned after handling them, we would keep doing so forever and
-  // never reach the error handling. So we should keep those checks first.
+  // never reach the error handling. So we should keep the error check first.
   if (events & EPOLLERR) {
     int error;
     socklen_t errorlen = sizeof(error);
@@ -856,16 +856,19 @@ void Connection::Impl::handleEventsFromLoop(int events) {
     }
     return;
   }
-  if (events & EPOLLHUP) {
-    setError_(TP_CREATE_ERROR(EOFError));
-    return;
-  }
   if (events & EPOLLIN) {
     handleEventInFromLoop();
     return;
   }
   if (events & EPOLLOUT) {
     handleEventOutFromLoop();
+    return;
+  }
+  // Check for hangup last, as there could be cases where we get EPOLLHUP but
+  // there's still data to be read from the socket, so we want to deal with that
+  // before dealing with the hangup.
+  if (events & EPOLLHUP) {
+    setError_(TP_CREATE_ERROR(EOFError));
     return;
   }
 }
