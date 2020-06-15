@@ -126,27 +126,6 @@ class Loop final {
   // The reactor is used to process events for this loop.
   Reactor reactor_;
 
-  // Interaction with epoll(7).
-  //
-  // A dedicated thread runs epoll_wait(2) in a loop and triggers the
-  // reactor every time it returns. The function registered with the
-  // reactor is responsible for processing the epoll events and
-  // notifying the epoll thread that it is done. This back-and-forth
-  // between these threads is done to ensure that both events from
-  // epoll and events posted to the reactor are handled by a single
-  // thread. Doing so makes it easier to reason about how certain
-  // events are sequenced. For example, if another processes first
-  // makes a write to a connection and then closes the accompanying
-  // Unix domain socket, we know for a fact that the reactor will
-  // first react to the write, and then react to the epoll event
-  // caused by closing the socket. If we didn't force serialization
-  // onto the reactor, we would not have this guarantee.
-  //
-  Reactor::TToken epollReactorToken_;
-  std::mutex epollMutex_;
-  std::condition_variable epollCond_;
-  std::vector<struct epoll_event> epollEvents_;
-
   // Wake up the event loop.
   void wakeup();
 
@@ -157,9 +136,23 @@ class Loop final {
   Fd eventFd_;
   std::atomic<bool> closed_{false};
   std::atomic<bool> joined_{false};
-  std::mutex mutex_;
   std::thread thread_;
 
+  // Interaction with epoll(7).
+  //
+  // A dedicated thread runs epoll_wait(2) in a loop and, every time it returns,
+  // it defers a function to the reactor which is responsible for processing the
+  // epoll events and executing the handlers, and then notify the epoll thread
+  // that it is done, for it to start another iteration. This back-and-forth
+  // between these threads is done to ensure that all epoll handlers are run
+  // from the reactor thread, just like everything else. Doing so makes it
+  // easier to reason about how certain events are sequenced. For example, if
+  // another processes first makes a write to a connection and then closes the
+  // accompanying Unix domain socket, we know for a fact that the reactor will
+  // first react to the write, and then react to the epoll event caused by
+  // closing the socket. If we didn't force serialization onto the reactor, we
+  // would not have this guarantee.
+  //
   // It's safe to call epoll_ctl from one thread while another thread is blocked
   // on an epoll_wait call. This means that the kernel internally serializes the
   // operations on a single epoll fd. However, we have no way to control whether
@@ -188,9 +181,8 @@ class Loop final {
   uint64_t nextRecord_{1}; // Reserve record 0 for the eventfd
   std::mutex handlersMutex_;
 
-  // Called by the reactor in response to epoll_wait(2) producing a
-  // vector with epoll_event structs in `epollEvents_`.
-  void handleEpollEventsFromLoop();
+  // Deferred to the reactor to handle the events received by epoll_wait(2).
+  void handleEpollEventsFromLoop(std::vector<struct epoll_event> epollEvents);
 
   friend class Connection;
   friend class Listener;

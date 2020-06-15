@@ -38,9 +38,6 @@ Loop::Loop() {
     TP_THROW_SYSTEM_IF(rv == -1, errno);
   }
 
-  // Create reactor.
-  epollReactorToken_ = reactor_.add([this] { handleEpollEventsFromLoop(); });
-
   // Start epoll(2) thread.
   thread_ = std::thread(&Loop::loop, this);
 }
@@ -139,17 +136,16 @@ void Loop::wakeup() {
 
 void Loop::loop() {
   setThreadName("TP_SHM_loop");
-  std::unique_lock<std::mutex> lock(epollMutex_);
 
   // Stop when another thread has asked the loop the close and when all
   // handlers have been unregistered except for the wakeup eventfd one.
   while (!closed_ || !fdToRecord_.empty()) {
     // Use fixed epoll_event capacity for every call.
-    epollEvents_.resize(kCapacity_);
+    std::vector<struct epoll_event> epollEvents(kCapacity_);
 
     // Block waiting for something to happen...
     auto nfds =
-        epoll_wait(epollFd_.fd(), epollEvents_.data(), epollEvents_.size(), -1);
+        epoll_wait(epollFd_.fd(), epollEvents.data(), epollEvents.size(), -1);
     if (nfds == -1) {
       if (errno == EINTR) {
         continue;
@@ -170,23 +166,20 @@ void Loop::loop() {
     }
 
     // Resize based on actual number of events.
-    epollEvents_.resize(nfds);
+    epollEvents.resize(nfds);
 
-    // Trigger reactor and wait for it to process these events.
-    reactor_.trigger(epollReactorToken_);
-    while (!epollEvents_.empty()) {
-      epollCond_.wait(lock);
-    }
+    // Defer handling to reactor and wait for it to process these events.
+    // FIXME We should mark the lambda mutable, but it causes a compile error...
+    runInLoop([this, epollEvents{std::move(epollEvents)}]() {
+      handleEpollEventsFromLoop(std::move(epollEvents));
+    });
   }
-
-  reactor_.remove(epollReactorToken_);
 }
 
-void Loop::handleEpollEventsFromLoop() {
-  std::unique_lock<std::mutex> epollLock(epollMutex_);
-
+void Loop::handleEpollEventsFromLoop(
+    std::vector<struct epoll_event> epollEvents) {
   // Process events returned by epoll_wait(2).
-  for (const auto& event : epollEvents_) {
+  for (const auto& event : epollEvents) {
     const uint64_t record = event.data.u64;
 
     // Make a copy so that if the handler unregisters itself as it runs it will
@@ -205,10 +198,6 @@ void Loop::handleEpollEventsFromLoop() {
       handler->handleEventsFromLoop(event.events);
     }
   }
-
-  // Let epoll thread know we've completed processing.
-  epollEvents_.clear();
-  epollCond_.notify_one();
 }
 
 std::string Loop::formatEpollEvents(uint32_t events) {
