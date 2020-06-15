@@ -54,7 +54,6 @@ jobs:
           name: Test
           command: |
             export CTEST_OUTPUT_ON_FAILURE=1
-            export TSAN_OPTIONS="suppressions=$(realpath ./sanitizer_bl.txt)"
             cd build
             make test
       - run:
