@@ -10,6 +10,7 @@
 
 #include <atomic>
 #include <functional>
+#include <future>
 #include <list>
 #include <mutex>
 #include <set>
@@ -49,6 +50,35 @@ class Reactor final {
   // Run function on reactor thread.
   // If the function throws, the thread crashes.
   void deferToLoop(TDeferredFunction fn);
+
+  // Prefer using deferToLoop over runInLoop when you don't need to wait for the
+  // result.
+  template <typename F>
+  void runInLoop(F&& fn) {
+    // When called from the event loop thread itself (e.g., from a callback),
+    // deferring would cause a deadlock because the given callable can only be
+    // run when the loop is allowed to proceed. On the other hand, it means it
+    // is thread-safe to run it immediately. The danger here however is that it
+    // can lead to an inconsistent order between operations run from the event
+    // loop, from outside of it, and deferred.
+    if (inReactorThread()) {
+      fn();
+    } else {
+      // Must use a copyable wrapper around std::promise because
+      // we use it from a std::function which must be copyable.
+      auto promise = std::make_shared<std::promise<void>>();
+      auto future = promise->get_future();
+      deferToLoop([promise, fn{std::forward<F>(fn)}]() {
+        try {
+          fn();
+          promise->set_value();
+        } catch (...) {
+          promise->set_exception(std::current_exception());
+        }
+      });
+      future.get();
+    }
+  }
 
   // Add function to the reactor.
   // Returns token that can be used to trigger it.

@@ -55,7 +55,12 @@ class FunctionEventHandler
  public:
   using TFunction = std::function<void(FunctionEventHandler&)>;
 
-  FunctionEventHandler(Loop* loop, int fd, int event, TFunction fn);
+  FunctionEventHandler(
+      Reactor& reactor,
+      Loop& loop,
+      int fd,
+      int event,
+      TFunction fn);
 
   ~FunctionEventHandler() override;
 
@@ -66,7 +71,8 @@ class FunctionEventHandler
   void handleEventsFromLoop(int events) override;
 
  private:
-  Loop* loop_;
+  Reactor& reactor_;
+  Loop& loop_;
   const int fd_;
   const int event_;
   TFunction fn_;
@@ -76,26 +82,31 @@ class FunctionEventHandler
 };
 
 FunctionEventHandler::FunctionEventHandler(
-    Loop* loop,
+    Reactor& reactor,
+    Loop& loop,
     int fd,
     int event,
     TFunction fn)
-    : loop_(loop), fd_(fd), event_(event), fn_(std::move(fn)) {}
+    : reactor_(reactor),
+      loop_(loop),
+      fd_(fd),
+      event_(event),
+      fn_(std::move(fn)) {}
 
 FunctionEventHandler::~FunctionEventHandler() {
   cancel();
 }
 
 void FunctionEventHandler::start() {
-  loop_->runInLoop(
-      [&]() { loop_->registerDescriptor(fd_, event_, shared_from_this()); });
+  reactor_.runInLoop(
+      [&]() { loop_.registerDescriptor(fd_, event_, shared_from_this()); });
 }
 
 void FunctionEventHandler::cancel() {
   std::unique_lock<std::mutex> lock(mutex_);
   if (!cancelled_) {
-    loop_->runInLoop([&]() {
-      loop_->unregisterDescriptor(fd_);
+    reactor_.runInLoop([&]() {
+      loop_.unregisterDescriptor(fd_);
       cancelled_ = true;
     });
   }
@@ -110,13 +121,15 @@ void FunctionEventHandler::handleEventsFromLoop(int events) {
 // Instantiates an event monitor for the specified fd.
 template <typename T>
 std::shared_ptr<FunctionEventHandler> createMonitor(
+    Reactor& reactor,
     Loop& loop,
     std::shared_ptr<T> shared,
     int fd,
     int event,
     std::function<void(T&, FunctionEventHandler&)> fn) {
   auto handler = std::make_shared<FunctionEventHandler>(
-      &loop,
+      reactor,
+      loop,
       fd,
       event,
       [weak{std::weak_ptr<T>{shared}},
@@ -133,34 +146,36 @@ std::shared_ptr<FunctionEventHandler> createMonitor(
 } // namespace
 
 TEST(Loop, RegisterUnregister) {
-  Loop loop;
+  Reactor reactor;
+  Loop loop{reactor};
   auto handler = std::make_shared<Handler>();
   auto efd = Fd(eventfd(0, EFD_NONBLOCK));
 
   {
     // Test if writable (always).
-    loop.runInLoop([&]() {
+    reactor.runInLoop([&]() {
       loop.registerDescriptor(efd.fd(), EPOLLOUT | EPOLLONESHOT, handler);
     });
     ASSERT_EQ(handler->nextEvents(), EPOLLOUT);
     efd.writeOrThrow<uint64_t>(1337);
 
     // Test if readable (only if previously written to).
-    loop.runInLoop([&]() {
+    reactor.runInLoop([&]() {
       loop.registerDescriptor(efd.fd(), EPOLLIN | EPOLLONESHOT, handler);
     });
     ASSERT_EQ(handler->nextEvents(), EPOLLIN);
     ASSERT_EQ(efd.readOrThrow<uint64_t>(), 1337);
 
     // Test if we can unregister the descriptor.
-    loop.runInLoop([&]() { loop.unregisterDescriptor(efd.fd()); });
+    reactor.runInLoop([&]() { loop.unregisterDescriptor(efd.fd()); });
   }
 
   loop.join();
 }
 
 TEST(Loop, Monitor) {
-  Loop loop;
+  Reactor reactor;
+  Loop loop{reactor};
   auto efd = Fd(eventfd(0, EFD_NONBLOCK));
   constexpr uint64_t kValue = 1337;
 
@@ -172,6 +187,7 @@ TEST(Loop, Monitor) {
     // Test if writable (always).
     auto shared = std::make_shared<int>(1338);
     auto monitor = createMonitor<int>(
+        reactor,
         loop,
         shared,
         efd.fd(),
@@ -203,6 +219,7 @@ TEST(Loop, Monitor) {
     // Test if readable (only if previously written to).
     auto shared = std::make_shared<int>(1338);
     auto monitor = createMonitor<int>(
+        reactor,
         loop,
         shared,
         efd.fd(),
@@ -232,11 +249,11 @@ TEST(Loop, Monitor) {
 }
 
 TEST(Loop, Defer) {
-  Loop loop;
+  Reactor reactor;
   auto promise = std::make_shared<std::promise<void>>();
   auto future = promise->get_future();
-  loop.deferToLoop([promise]() { promise->set_value(); });
+  reactor.deferToLoop([promise]() { promise->set_value(); });
   future.wait();
   ASSERT_TRUE(future.valid());
-  loop.join();
+  reactor.join();
 }

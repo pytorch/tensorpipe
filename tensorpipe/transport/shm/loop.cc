@@ -17,7 +17,7 @@ namespace tensorpipe {
 namespace transport {
 namespace shm {
 
-Loop::Loop() {
+Loop::Loop(Reactor& reactor) : reactor_(reactor) {
   {
     auto rv = epoll_create(1);
     TP_THROW_SYSTEM_IF(rv == -1, errno);
@@ -68,19 +68,11 @@ Loop::~Loop() {
   }
 }
 
-void Loop::deferToLoop(TDeferredFunction fn) {
-  reactor_.deferToLoop(std::move(fn));
-}
-
-Reactor& Loop::reactor() {
-  return reactor_;
-}
-
 void Loop::registerDescriptor(
     int fd,
     int events,
     std::shared_ptr<EventHandler> h) {
-  TP_DCHECK(inLoopThread());
+  TP_DCHECK(reactor_.inReactorThread());
 
   std::lock_guard<std::mutex> lock(handlersMutex_);
 
@@ -109,7 +101,7 @@ void Loop::registerDescriptor(
 }
 
 void Loop::unregisterDescriptor(int fd) {
-  TP_DCHECK(inLoopThread());
+  TP_DCHECK(reactor_.inReactorThread());
 
   std::lock_guard<std::mutex> lock(handlersMutex_);
 
@@ -170,7 +162,7 @@ void Loop::loop() {
 
     // Defer handling to reactor and wait for it to process these events.
     // FIXME We should mark the lambda mutable, but it causes a compile error...
-    runInLoop([this, epollEvents{std::move(epollEvents)}]() {
+    reactor_.runInLoop([this, epollEvents{std::move(epollEvents)}]() {
       handleEpollEventsFromLoop(std::move(epollEvents));
     });
   }

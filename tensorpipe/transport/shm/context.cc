@@ -82,7 +82,8 @@ class Context::Impl : public Context::PrivateIface,
   ~Impl() override = default;
 
  private:
-  Loop loop_;
+  Reactor reactor_;
+  Loop loop_{this->reactor_};
   std::atomic<bool> closed_{false};
   std::atomic<bool> joined_{false};
   ClosingEmitter closingEmitter_;
@@ -192,15 +193,15 @@ ClosingEmitter& Context::Impl::getClosingEmitter() {
 };
 
 bool Context::Impl::inLoopThread() {
-  return loop_.inLoopThread();
+  return reactor_.inReactorThread();
 };
 
 void Context::Impl::deferToLoop(std::function<void()> fn) {
-  loop_.deferToLoop(std::move(fn));
+  reactor_.deferToLoop(std::move(fn));
 };
 
 void Context::Impl::runInLoop(std::function<void()> fn) {
-  loop_.runInLoop(std::move(fn));
+  reactor_.runInLoop(std::move(fn));
 };
 
 void Context::Impl::registerDescriptor(
@@ -215,15 +216,15 @@ void Context::Impl::unregisterDescriptor(int fd) {
 }
 
 Context::Impl::TToken Context::Impl::addReaction(TFunction fn) {
-  return loop_.reactor().add(std::move(fn));
+  return reactor_.add(std::move(fn));
 }
 
 void Context::Impl::removeReaction(TToken token) {
-  loop_.reactor().remove(token);
+  reactor_.remove(token);
 }
 
 std::tuple<int, int> Context::Impl::reactorFds() {
-  return loop_.reactor().fds();
+  return reactor_.fds();
 }
 
 } // namespace shm

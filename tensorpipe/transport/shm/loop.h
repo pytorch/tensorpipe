@@ -47,43 +47,7 @@ class Loop final {
  public:
   using TDeferredFunction = std::function<void()>;
 
-  Loop();
-
-  // Prefer using deferToLoop over runInLoop when you don't need to wait for the
-  // result.
-  template <typename F>
-  void runInLoop(F&& fn) {
-    // When called from the event loop thread itself (e.g., from a callback),
-    // deferring would cause a deadlock because the given callable can only be
-    // run when the loop is allowed to proceed. On the other hand, it means it
-    // is thread-safe to run it immediately. The danger here however is that it
-    // can lead to an inconsistent order between operations run from the event
-    // loop, from outside of it, and deferred.
-    if (reactor_.inReactorThread()) {
-      fn();
-    } else {
-      // Must use a copyable wrapper around std::promise because
-      // we use it from a std::function which must be copyable.
-      auto promise = std::make_shared<std::promise<void>>();
-      auto future = promise->get_future();
-      deferToLoop([promise, fn{std::forward<F>(fn)}]() {
-        try {
-          fn();
-          promise->set_value();
-        } catch (...) {
-          promise->set_exception(std::current_exception());
-        }
-      });
-      future.get();
-    }
-  }
-
-  // Run function on reactor thread.
-  // If the function throws, the thread crashes.
-  void deferToLoop(TDeferredFunction fn);
-
-  // Provide access to the underlying reactor.
-  Reactor& reactor();
+  explicit Loop(Reactor& reactor);
 
   // Register file descriptor with event loop.
   //
@@ -113,17 +77,13 @@ class Loop final {
 
   ~Loop();
 
-  inline bool inLoopThread() {
-    return reactor_.inReactorThread();
-  }
-
   static std::string formatEpollEvents(uint32_t events);
 
  private:
   static constexpr auto kCapacity_ = 64;
 
   // The reactor is used to process events for this loop.
-  Reactor reactor_;
+  Reactor& reactor_;
 
   // Wake up the event loop.
   void wakeup();
