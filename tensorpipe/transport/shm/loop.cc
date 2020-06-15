@@ -17,17 +17,6 @@ namespace tensorpipe {
 namespace transport {
 namespace shm {
 
-namespace {
-
-// Checks if the specified weak_ptr is uninitialized.
-template <typename T>
-bool is_uninitialized(const std::weak_ptr<T>& weak) {
-  const std::weak_ptr<T> empty{};
-  return !weak.owner_before(empty) && !empty.owner_before(weak);
-}
-
-} // namespace
-
 Loop::Loop() {
   {
     auto rv = epoll_create(1);
@@ -44,13 +33,10 @@ Loop::Loop() {
   {
     struct epoll_event ev;
     ev.events = EPOLLIN;
-    ev.data.fd = epollFd_.fd();
+    ev.data.u64 = 0;
     auto rv = epoll_ctl(epollFd_.fd(), EPOLL_CTL_ADD, eventFd_.fd(), &ev);
     TP_THROW_SYSTEM_IF(rv == -1, errno);
   }
-
-  // Fix to avoid buffer overflow.
-  handlers_.resize(eventFd_.fd() + 1);
 
   // Create reactor.
   epollReactorToken_ = reactor_.add([this] { handleEpollEventsFromLoop(); });
@@ -99,45 +85,50 @@ void Loop::registerDescriptor(
     std::shared_ptr<EventHandler> h) {
   TP_DCHECK(inLoopThread());
 
+  std::lock_guard<std::mutex> lock(handlersMutex_);
+
+  uint64_t record = nextRecord_++;
+
   struct epoll_event ev;
   ev.events = events;
-  ev.data.fd = fd;
+  ev.data.u64 = record;
 
-  {
-    std::lock_guard<std::mutex> lock(handlersMutex_);
-    if (fd >= handlers_.size()) {
-      handlers_.resize(fd + 1);
-    }
-    if (is_uninitialized(handlers_[fd])) {
-      handlerCount_++;
-    }
-    handlers_[fd] = h;
-  }
+  auto fdIter = fdToRecord_.find(fd);
+  if (fdIter == fdToRecord_.end()) {
+    fdToRecord_.emplace(fd, record);
+    recordToHandler_.emplace(record, h);
 
-  auto rv = epoll_ctl(epollFd_.fd(), EPOLL_CTL_ADD, fd, &ev);
-  if (rv == -1 && errno == EEXIST) {
-    rv = epoll_ctl(epollFd_.fd(), EPOLL_CTL_MOD, fd, &ev);
+    auto rv = epoll_ctl(epollFd_.fd(), EPOLL_CTL_ADD, fd, &ev);
+    TP_THROW_SYSTEM_IF(rv == -1, errno);
+  } else {
+    uint64_t oldRecord = fdIter->second;
+    fdIter->second = record;
+    recordToHandler_.erase(oldRecord);
+    recordToHandler_.emplace(record, h);
+
+    auto rv = epoll_ctl(epollFd_.fd(), EPOLL_CTL_MOD, fd, &ev);
+    TP_THROW_SYSTEM_IF(rv == -1, errno);
   }
-  TP_THROW_SYSTEM_IF(rv == -1, errno);
 }
 
 void Loop::unregisterDescriptor(int fd) {
   TP_DCHECK(inLoopThread());
 
+  std::lock_guard<std::mutex> lock(handlersMutex_);
+
+  auto fdIter = fdToRecord_.find(fd);
+  TP_DCHECK(fdIter != fdToRecord_.end());
+  uint64_t oldRecord = fdIter->second;
+  fdToRecord_.erase(fdIter);
+  recordToHandler_.erase(oldRecord);
+
   auto rv = epoll_ctl(epollFd_.fd(), EPOLL_CTL_DEL, fd, nullptr);
   TP_THROW_SYSTEM_IF(rv == -1, errno);
 
-  {
-    std::lock_guard<std::mutex> lock(handlersMutex_);
-    if (!is_uninitialized(handlers_[fd])) {
-      handlerCount_--;
-    }
-    handlers_[fd].reset();
-    // Maybe we're done and the event loop is waiting for the last handlers to
-    // be unregistered before terminating, so just in case we wake it up.
-    if (handlerCount_ == 0) {
-      wakeup();
-    }
+  // Maybe we're done and the event loop is waiting for the last handlers to
+  // be unregistered before terminating, so just in case we wake it up.
+  if (fdToRecord_.empty()) {
+    wakeup();
   }
 }
 
@@ -152,7 +143,7 @@ void Loop::loop() {
 
   // Stop when another thread has asked the loop the close and when all
   // handlers have been unregistered except for the wakeup eventfd one.
-  while (!closed_ || handlerCount_ > 0) {
+  while (!closed_ || !fdToRecord_.empty()) {
     // Use fixed epoll_event capacity for every call.
     epollEvents_.resize(kCapacity_);
 
@@ -192,25 +183,26 @@ void Loop::loop() {
 }
 
 void Loop::handleEpollEventsFromLoop() {
-  std::unique_lock<std::mutex> lock(epollMutex_);
+  std::unique_lock<std::mutex> epollLock(epollMutex_);
 
   // Process events returned by epoll_wait(2).
-  {
-    std::unique_lock<std::mutex> lock(handlersMutex_);
-    for (const auto& event : epollEvents_) {
-      const auto fd = event.data.fd;
-      auto h = handlers_[fd].lock();
-      if (h) {
-        lock.unlock();
-        // Trigger callback. Note that the object is kept alive
-        // through the shared_ptr that we acquired by locking the
-        // weak_ptr in the handlers vector.
-        h->handleEventsFromLoop(event.events);
-        // Reset the handler shared_ptr before reacquiring the lock.
-        // This may trigger destruction of the object.
-        h.reset();
-        lock.lock();
+  for (const auto& event : epollEvents_) {
+    const uint64_t record = event.data.u64;
+
+    // Make a copy so that if the handler unregisters itself as it runs it will
+    // still be kept alive by our copy of the shared_ptr.
+    std::shared_ptr<EventHandler> handler;
+    {
+      std::unique_lock<std::mutex> handlersLock(handlersMutex_);
+      const auto recordIter = recordToHandler_.find(record);
+      if (recordIter == recordToHandler_.end()) {
+        continue;
       }
+      handler = recordIter->second.lock();
+    }
+
+    if (handler) {
+      handler->handleEventsFromLoop(event.events);
     }
   }
 

@@ -160,10 +160,33 @@ class Loop final {
   std::mutex mutex_;
   std::thread thread_;
 
-  // Store weak_ptr for every registered fd.
-  std::vector<std::weak_ptr<EventHandler>> handlers_;
+  // It's safe to call epoll_ctl from one thread while another thread is blocked
+  // on an epoll_wait call. This means that the kernel internally serializes the
+  // operations on a single epoll fd. However, we have no way to control whether
+  // a modification of the set of file descriptors monitored by epoll occurred
+  // just before or just after the return from the epoll_wait. This means that
+  // when we start processing the result of epoll_wait we can't know what set of
+  // file descriptors it operated on. This becomes a problem if, for example, in
+  // between the moment epoll_wait returns and the moment we process the results
+  // a file descriptor is unregistered and closed and another one with the same
+  // value is opened and registered: we'd end up calling the handler of the new
+  // fd for the events of the old one (which probably include errors).
+  //
+  // However, epoll offers a way to address this: epoll_wait returns, for each
+  // event, the piece of extra data that was provided by the *last* call on
+  // epoll_ctl for that fd. This allows us to detect whether epoll_wait had
+  // taken into account an update to the set of fds or not. We do so by giving
+  // each update a unique identifier, called "record". Each update to a fd will
+  // associate a new record to it. The handlers are associated to records (and
+  // not to fds), and for each fd we know which handler is the one currently
+  // installed. This way when processing an event we can detect whether the
+  // record for that event is still valid or whether it is stale, in which case
+  // we disregard the event, and wait for it to fire again at the next epoll
+  // iteration, with the up-to-date handler.
+  std::unordered_map<int, uint64_t> fdToRecord_;
+  std::unordered_map<uint64_t, std::weak_ptr<EventHandler>> recordToHandler_;
+  uint64_t nextRecord_{1}; // Reserve record 0 for the eventfd
   std::mutex handlersMutex_;
-  std::atomic<uint64_t> handlerCount_{0};
 
   // Called by the reactor in response to epoll_wait(2) producing a
   // vector with epoll_event structs in `epollEvents_`.
