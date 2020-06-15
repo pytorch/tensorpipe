@@ -47,13 +47,6 @@ class PipeOptions {
     remoteName_ = std::move(remoteName);
     return std::move(*this);
   }
-
-  // FIXME This was the previous name of the function. Remove it once all users
-  // (i.e., just PyTorch) have moved to the new name.
-  PipeOptions&& name(std::string remoteName) && {
-    remoteName_ = std::move(remoteName);
-    return std::move(*this);
-  }
 };
 
 class Context final {
