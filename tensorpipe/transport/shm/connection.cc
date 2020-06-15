@@ -922,7 +922,7 @@ void Connection::Impl::handleEventInFromLoop() {
     return;
   }
 
-  TP_LOG_WARNING() << "handleEventIn not handled";
+  TP_THROW_ASSERT() << "EPOLLIN event not handled in state " << state_;
 }
 
 void Connection::Impl::handleEventOutFromLoop() {
@@ -951,7 +951,7 @@ void Connection::Impl::handleEventOutFromLoop() {
     return;
   }
 
-  TP_LOG_WARNING() << "handleEventOut not handled";
+  TP_THROW_ASSERT() << "EPOLLOUT event not handled in state " << state_;
 }
 
 void Connection::Impl::processReadOperationsFromLoop() {
