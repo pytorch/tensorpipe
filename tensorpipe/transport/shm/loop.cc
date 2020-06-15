@@ -126,12 +126,17 @@ void Loop::wakeup() {
   eventFd_.writeOrThrow<uint64_t>(1);
 }
 
+bool Loop::hasRegisteredHandlers() {
+  std::lock_guard<std::mutex> lock(handlersMutex_);
+  return !fdToRecord_.empty();
+}
+
 void Loop::loop() {
   setThreadName("TP_SHM_loop");
 
   // Stop when another thread has asked the loop the close and when all
   // handlers have been unregistered except for the wakeup eventfd one.
-  while (!closed_ || !fdToRecord_.empty()) {
+  while (!closed_ || hasRegisteredHandlers()) {
     // Use fixed epoll_event capacity for every call.
     std::vector<struct epoll_event> epollEvents(kCapacity_);
 

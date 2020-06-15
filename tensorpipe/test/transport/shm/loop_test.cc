@@ -193,14 +193,14 @@ TEST(Loop, Monitor) {
         efd.fd(),
         EPOLLOUT,
         [&](int& i, FunctionEventHandler& handler) {
-          ASSERT_EQ(i, 1338);
+          EXPECT_EQ(i, 1338);
+          efd.writeOrThrow<uint64_t>(kValue);
+          handler.cancel();
           {
             std::unique_lock<std::mutex> lock(mutex);
             done = true;
-            efd.writeOrThrow<uint64_t>(kValue);
+            cv.notify_all();
           }
-          handler.cancel();
-          cv.notify_all();
         });
 
     // Wait for monitor to trigger and perform a write.
@@ -225,14 +225,14 @@ TEST(Loop, Monitor) {
         efd.fd(),
         EPOLLIN,
         [&](int& i, FunctionEventHandler& handler) {
-          ASSERT_EQ(i, 1338);
+          EXPECT_EQ(i, 1338);
+          value = efd.readOrThrow<uint64_t>();
+          handler.cancel();
           {
             std::unique_lock<std::mutex> lock(mutex);
             done = true;
-            value = efd.readOrThrow<uint64_t>();
+            cv.notify_all();
           }
-          handler.cancel();
-          cv.notify_all();
         });
 
     // Wait for monitor to trigger and perform a read.
