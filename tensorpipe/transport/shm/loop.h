@@ -88,17 +88,16 @@ class Loop final {
   // Register file descriptor with event loop.
   //
   // Trigger the handler if any of the epoll events in the `events`
-  // mask occurs. The loop stores a weak_ptr to the handler, so it is
-  // the responsibility of the caller to keep the handler alive. If an
-  // event is triggered, the loop first acquires a shared_ptr to the
-  // handler before calling into its handler function. This ensures
-  // that the handler is alive for the duration of this function.
+  // mask occurs. If an event is triggered, the loop first acquires a
+  // copy of the shared_ptr to the handler before calling into its
+  // handler function. This ensures that the handler is alive for the
+  // duration of this function.
   //
   void registerDescriptor(int fd, int events, std::shared_ptr<EventHandler> h);
 
   // Unregister file descriptor from event loop.
   //
-  // This resets the weak_ptr to the event handler that was registered
+  // This resets the shared_ptr to the event handler that was registered
   // in `registerDescriptor`. Upon returning, the handler can no
   // longer be called, even if there were pending events for the file
   // descriptor. Only if the loop had acquired a shared_ptr to the
@@ -177,7 +176,7 @@ class Loop final {
   // we disregard the event, and wait for it to fire again at the next epoll
   // iteration, with the up-to-date handler.
   std::unordered_map<int, uint64_t> fdToRecord_;
-  std::unordered_map<uint64_t, std::weak_ptr<EventHandler>> recordToHandler_;
+  std::unordered_map<uint64_t, std::shared_ptr<EventHandler>> recordToHandler_;
   uint64_t nextRecord_{1}; // Reserve record 0 for the eventfd
   std::mutex handlersMutex_;
 

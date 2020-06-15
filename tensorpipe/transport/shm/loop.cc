@@ -191,12 +191,10 @@ void Loop::handleEpollEventsFromLoop(
       if (recordIter == recordToHandler_.end()) {
         continue;
       }
-      handler = recordIter->second.lock();
+      handler = recordIter->second;
     }
 
-    if (handler) {
-      handler->handleEventsFromLoop(event.events);
-    }
+    handler->handleEventsFromLoop(event.events);
   }
 }
 
