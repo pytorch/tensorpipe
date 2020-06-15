@@ -43,40 +43,6 @@ class EventHandler {
   virtual void handleEventsFromLoop(int events) = 0;
 };
 
-class Loop;
-
-// Monitor an fd for events and execute function when triggered.
-//
-// The lifetime of an instance dictates when the specified function
-// may be called. The function is guaranteed to not be called after
-// the monitor has been destructed.
-//
-class FunctionEventHandler
-    : public EventHandler,
-      public std::enable_shared_from_this<FunctionEventHandler> {
- public:
-  using TFunction = std::function<void(FunctionEventHandler&)>;
-
-  FunctionEventHandler(Loop* loop, int fd, int event, TFunction fn);
-
-  ~FunctionEventHandler() override;
-
-  void start();
-
-  void cancel();
-
-  void handleEventsFromLoop(int events) override;
-
- private:
-  Loop* loop_;
-  const int fd_;
-  const int event_;
-  TFunction fn_;
-
-  std::mutex mutex_;
-  bool cancelled_{false};
-};
-
 class Loop final {
  public:
   using TDeferredFunction = std::function<void()>;

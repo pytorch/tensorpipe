@@ -28,35 +28,6 @@ bool is_uninitialized(const std::weak_ptr<T>& weak) {
 
 } // namespace
 
-FunctionEventHandler::FunctionEventHandler(
-    Loop* loop,
-    int fd,
-    int event,
-    TFunction fn)
-    : loop_(loop), fd_(fd), event_(event), fn_(std::move(fn)) {}
-
-FunctionEventHandler::~FunctionEventHandler() {
-  cancel();
-}
-
-void FunctionEventHandler::start() {
-  loop_->registerDescriptor(fd_, event_, shared_from_this());
-}
-
-void FunctionEventHandler::cancel() {
-  std::unique_lock<std::mutex> lock(mutex_);
-  if (!cancelled_) {
-    loop_->unregisterDescriptor(fd_);
-    cancelled_ = true;
-  }
-}
-
-void FunctionEventHandler::handleEventsFromLoop(int events) {
-  if (events & event_) {
-    fn_(*this);
-  }
-}
-
 Loop::Loop() {
   {
     auto rv = epoll_create(1);
@@ -68,6 +39,18 @@ Loop::Loop() {
     TP_THROW_SYSTEM_IF(rv == -1, errno);
     eventFd_ = Fd(rv);
   }
+
+  // Register the eventfd with epoll.
+  {
+    struct epoll_event ev;
+    ev.events = EPOLLIN;
+    ev.data.fd = epollFd_.fd();
+    auto rv = epoll_ctl(epollFd_.fd(), EPOLL_CTL_ADD, eventFd_.fd(), &ev);
+    TP_THROW_SYSTEM_IF(rv == -1, errno);
+  }
+
+  // Fix to avoid buffer overflow.
+  handlers_.resize(eventFd_.fd() + 1);
 
   // Create reactor.
   epollReactorToken_ = reactor_.add([this] { handleEpollEventsFromLoop(); });
@@ -94,6 +77,12 @@ void Loop::join() {
 
 Loop::~Loop() {
   join();
+
+  // Unregister the eventfd with epoll.
+  {
+    auto rv = epoll_ctl(epollFd_.fd(), EPOLL_CTL_DEL, eventFd_.fd(), nullptr);
+    TP_THROW_SYSTEM_IF(rv == -1, errno);
+  }
 }
 
 void Loop::deferToLoop(TDeferredFunction fn) {
@@ -108,6 +97,8 @@ void Loop::registerDescriptor(
     int fd,
     int events,
     std::shared_ptr<EventHandler> h) {
+  TP_DCHECK(inLoopThread());
+
   struct epoll_event ev;
   ev.events = events;
   ev.data.fd = fd;
@@ -131,6 +122,8 @@ void Loop::registerDescriptor(
 }
 
 void Loop::unregisterDescriptor(int fd) {
+  TP_DCHECK(inLoopThread());
+
   auto rv = epoll_ctl(epollFd_.fd(), EPOLL_CTL_DEL, fd, nullptr);
   TP_THROW_SYSTEM_IF(rv == -1, errno);
 
@@ -142,7 +135,7 @@ void Loop::unregisterDescriptor(int fd) {
     handlers_[fd].reset();
     // Maybe we're done and the event loop is waiting for the last handlers to
     // be unregistered before terminating, so just in case we wake it up.
-    if (handlerCount_ == 1) {
+    if (handlerCount_ == 0) {
       wakeup();
     }
   }
@@ -155,20 +148,11 @@ void Loop::wakeup() {
 
 void Loop::loop() {
   setThreadName("TP_SHM_loop");
-  // Monitor eventfd for readability. Always read from the eventfd so
-  // that it is no longer readable on the next call to epoll_wait(2).
-  // Note: this is allocated on the stack so that we destroy it upon
-  // terminating the event loop thread.
-  auto wakeupHandler = std::make_shared<FunctionEventHandler>(
-      this, eventFd_.fd(), EPOLLIN, [this](FunctionEventHandler& /* unused */) {
-        eventFd_.readOrThrow<uint64_t>();
-      });
-  wakeupHandler->start();
-
   std::unique_lock<std::mutex> lock(epollMutex_);
+
   // Stop when another thread has asked the loop the close and when all
   // handlers have been unregistered except for the wakeup eventfd one.
-  while (!closed_ || handlerCount_ > 1) {
+  while (!closed_ || handlerCount_ > 0) {
     // Use fixed epoll_event capacity for every call.
     epollEvents_.resize(kCapacity_);
 
@@ -182,6 +166,18 @@ void Loop::loop() {
       TP_THROW_SYSTEM(errno);
     }
 
+    // Always immediately read from the eventfd so that it is no longer readable
+    // on the next call to epoll_wait(2). As it's opened in non-blocking mode,
+    // reading from it if its value is zero just return EAGAIN. Reset it before
+    // invoking any of the callbacks, so that if they perform a wakeup they will
+    // wake up the next iteration of epoll_wait(2).
+    {
+      uint64_t val;
+      auto rv = eventFd_.read(reinterpret_cast<void*>(&val), sizeof(val));
+      TP_DCHECK(
+          (rv == -1 && errno == EAGAIN) || (rv == sizeof(val) && val > 0));
+    }
+
     // Resize based on actual number of events.
     epollEvents_.resize(nfds);
 
@@ -191,6 +187,7 @@ void Loop::loop() {
       epollCond_.wait(lock);
     }
   }
+
   reactor_.remove(epollReactorToken_);
 }
 
