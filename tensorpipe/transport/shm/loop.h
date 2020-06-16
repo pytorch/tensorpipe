@@ -91,6 +91,9 @@ class Loop final {
   // Main loop function.
   void loop();
 
+  // Check whether some handlers are currently registered.
+  bool hasRegisteredHandlers();
+
   Fd epollFd_;
   Fd eventFd_;
   std::atomic<bool> closed_{false};
