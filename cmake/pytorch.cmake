@@ -94,6 +94,14 @@ if(TP_ENABLE_CMA)
     tensorpipe/proto/channel/cma.proto)
 endif()
 
+### mpt
+
+list(APPEND TENSORPIPE_PUBLIC_HEADERS tensorpipe/channel/mpt/context.h)
+list(APPEND TENSORPIPE_SRC
+  tensorpipe/channel/mpt/channel.cc
+  tensorpipe/channel/mpt/context.cc
+  tensorpipe/proto/channel/mpt.proto)
+
 
 ## Transports
 

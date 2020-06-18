@@ -58,6 +58,13 @@ class EOFError final : public BaseError {
   std::string what() const override;
 };
 
+class ContextClosedError final : public BaseError {
+ public:
+  ContextClosedError() {}
+
+  std::string what() const override;
+};
+
 class ChannelClosedError final : public BaseError {
  public:
   ChannelClosedError() {}

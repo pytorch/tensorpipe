@@ -89,6 +89,14 @@ if(TP_ENABLE_CMA)
   target_compile_definitions(tensorpipe INTERFACE TP_ENABLE_CMA)
 endif()
 
+### mpt
+
+list(APPEND TENSORPIPE_PUBLIC_HEADERS channel/mpt/context.h)
+target_sources(tensorpipe PRIVATE
+  channel/mpt/channel.cc
+  channel/mpt/context.cc
+  proto/channel/mpt.proto)
+
 
 ## Transports
 

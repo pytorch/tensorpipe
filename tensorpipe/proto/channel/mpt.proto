@@ -1,0 +1,31 @@
+/*
+ * Copyright (c) Facebook, Inc. and its affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+syntax = "proto3";
+
+package tensorpipe.channel.mpt.proto;
+
+message LaneAdvertisement {
+  string address = 1;
+  uint64 registration_id = 2;
+}
+
+message ServerHello {
+  repeated LaneAdvertisement lane_advertisements = 1;
+}
+
+message ClientHello {
+  uint64 registration_id = 1;
+}
+
+message Packet {
+  oneof type {
+    ServerHello server_hello = 1;
+    ClientHello client_hello = 2;
+  }
+}

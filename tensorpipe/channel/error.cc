@@ -38,6 +38,10 @@ std::string EOFError::what() const {
   return "eof";
 }
 
+std::string ContextClosedError::what() const {
+  return "context closed";
+}
+
 std::string ChannelClosedError::what() const {
   return "channel closed";
 }

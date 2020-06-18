@@ -18,6 +18,7 @@ add_executable(tensorpipe_test
   proto/core_test.cc
   channel/basic/basic_test.cc
   channel/xth/xth_test.cc
+  channel/mpt/mpt_test.cc
   channel/channel_test.cc
   common/system_test.cc
   common/defs_test.cc

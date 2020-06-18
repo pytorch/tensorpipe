@@ -11,6 +11,8 @@
 #include <tensorpipe/channel/basic/context.h>
 #include <tensorpipe/channel/channel.h>
 #include <tensorpipe/channel/helpers.h>
+#include <tensorpipe/channel/mpt/context.h>
+#include <tensorpipe/channel/xth/context.h>
 #include <tensorpipe/common/address.h>
 #include <tensorpipe/common/callback.h>
 #include <tensorpipe/common/defs.h>
