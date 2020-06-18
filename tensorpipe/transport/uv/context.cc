@@ -273,6 +273,7 @@ void Context::setId(std::string id) {
 }
 
 void Context::Impl::setId(std::string id) {
+  TP_VLOG(7) << "Transport context " << id_ << " was renamed to " << id;
   id_ = std::move(id);
 }
 
