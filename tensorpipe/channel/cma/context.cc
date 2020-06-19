@@ -176,6 +176,7 @@ void Context::setId(std::string id) {
 }
 
 void Context::Impl::setId(std::string id) {
+  TP_VLOG(4) << "Channel context " << id_ << " was renamed to " << id;
   id_ = std::move(id);
 }
 

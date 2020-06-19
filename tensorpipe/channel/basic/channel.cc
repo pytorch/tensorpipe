@@ -65,6 +65,8 @@ class Channel::Impl : public std::enable_shared_from_this<Channel::Impl> {
       size_t length,
       TRecvCallback callback);
 
+  void setIdFromLoop_(std::string id);
+
   void initFromLoop_();
 
   void closeFromLoop_();
@@ -280,8 +282,13 @@ void Channel::setId(std::string id) {
 }
 
 void Channel::Impl::setId(std::string id) {
+  loop_.deferToLoop(
+      [this, id{std::move(id)}]() mutable { setIdFromLoop_(std::move(id)); });
+}
+
+void Channel::Impl::setIdFromLoop_(std::string id) {
+  TP_DCHECK(loop_.inLoop());
   TP_VLOG(4) << "Channel " << id_ << " was renamed to " << id;
-  // FIXME Should we defer this to the loop?
   id_ = std::move(id);
 }
 

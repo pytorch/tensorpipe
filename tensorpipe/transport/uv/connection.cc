@@ -229,6 +229,8 @@ class Connection::Impl : public std::enable_shared_from_this<Connection::Impl> {
   // Perform a write operation.
   void writeFromLoop(const void* ptr, size_t length, write_callback_fn fn);
 
+  void setIdFromLoop_(std::string id);
+
   // Shut down the connection and its resources.
   void closeFromLoop();
 
@@ -417,8 +419,15 @@ void Connection::Impl::writeFromLoop(
 }
 
 void Connection::Impl::setId(std::string id) {
+  context_->deferToLoop(
+      [impl{shared_from_this()}, id{std::move(id)}]() mutable {
+        impl->setIdFromLoop_(std::move(id));
+      });
+}
+
+void Connection::Impl::setIdFromLoop_(std::string id) {
+  TP_DCHECK(context_->inLoopThread());
   TP_VLOG(7) << "Connection " << id_ << " was renamed to " << id;
-  // FIXME Should we defer this to the loop?
   id_ = std::move(id);
 }
 
