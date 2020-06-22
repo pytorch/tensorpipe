@@ -333,9 +333,14 @@ void Context::Impl::onReadClientHelloOnLane_(
   if (pbPacketIn.has_client_hello()) {
     const proto::ClientHello& pbClientHello = pbPacketIn.client_hello();
     uint64_t registrationId = pbClientHello.registration_id();
-    auto fn = std::move(connectionRequestRegistrations_.at(registrationId));
-    connectionRequestRegistrations_.erase(registrationId);
-    fn(Error::kSuccess, std::move(connection));
+    auto iter = connectionRequestRegistrations_.find(registrationId);
+    // The connection request may have already been deregistered, for example
+    // because the channel may have been closed.
+    if (iter != connectionRequestRegistrations_.end()) {
+      auto fn = std::move(iter->second);
+      connectionRequestRegistrations_.erase(iter);
+      fn(Error::kSuccess, std::move(connection));
+    }
   } else {
     TP_LOG_ERROR() << "packet contained unknown content: "
                    << pbPacketIn.type_case();
