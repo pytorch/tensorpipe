@@ -223,6 +223,106 @@ TEST_P(ChannelTest, SendMultipleTensors) {
   clientCtx->join();
 }
 
+TEST_P(ChannelTest, NullPointer) {
+  // Call send and recv with a null pointer and a length of 0.
+  std::shared_ptr<Context> serverCtx = GetParam()->makeContext("server");
+  std::shared_ptr<Context> clientCtx = GetParam()->makeContext("client");
+  Queue<Channel::TDescriptor> descriptorQueue;
+  std::promise<void> sendCompletedProm;
+  std::promise<void> recvCompletedProm;
+
+  testConnectionPair(
+      [&](std::shared_ptr<transport::Connection> conn) {
+        auto channel = serverCtx->createChannel(
+            std::move(conn), Channel::Endpoint::kListen);
+
+        // Perform send and wait for completion.
+        std::future<std::tuple<Error, Channel::TDescriptor>> descriptorFuture;
+        std::future<Error> sendFuture;
+        std::tie(descriptorFuture, sendFuture) =
+            sendWithFuture(channel, nullptr, 0);
+        Error descriptorError;
+        Channel::TDescriptor descriptor;
+        std::tie(descriptorError, descriptor) = descriptorFuture.get();
+        EXPECT_FALSE(descriptorError) << descriptorError.what();
+        descriptorQueue.push(std::move(descriptor));
+        Error sendError = sendFuture.get();
+        EXPECT_FALSE(sendError) << sendError.what();
+
+        sendCompletedProm.set_value();
+        recvCompletedProm.get_future().get();
+      },
+      [&](std::shared_ptr<transport::Connection> conn) {
+        auto channel = clientCtx->createChannel(
+            std::move(conn), Channel::Endpoint::kConnect);
+
+        // Perform recv and wait for completion.
+        std::future<Error> recvFuture =
+            recvWithFuture(channel, descriptorQueue.pop(), nullptr, 0);
+        Error recvError = recvFuture.get();
+        EXPECT_FALSE(recvError) << recvError.what();
+
+        recvCompletedProm.set_value();
+        sendCompletedProm.get_future().get();
+      });
+
+  serverCtx->join();
+  clientCtx->join();
+}
+
+TEST_P(ChannelTest, EmptyTensor) {
+  // Call send and recv with a length of 0 but a non-null pointer.
+  std::shared_ptr<Context> serverCtx = GetParam()->makeContext("server");
+  std::shared_ptr<Context> clientCtx = GetParam()->makeContext("client");
+  Queue<Channel::TDescriptor> descriptorQueue;
+  std::promise<void> sendCompletedProm;
+  std::promise<void> recvCompletedProm;
+
+  testConnectionPair(
+      [&](std::shared_ptr<transport::Connection> conn) {
+        auto channel = serverCtx->createChannel(
+            std::move(conn), Channel::Endpoint::kListen);
+
+        // Allocate a non-empty vector so that its .data() pointer is non-null.
+        std::vector<uint8_t> data(1);
+
+        // Perform send and wait for completion.
+        std::future<std::tuple<Error, Channel::TDescriptor>> descriptorFuture;
+        std::future<Error> sendFuture;
+        std::tie(descriptorFuture, sendFuture) =
+            sendWithFuture(channel, data.data(), 0);
+        Error descriptorError;
+        Channel::TDescriptor descriptor;
+        std::tie(descriptorError, descriptor) = descriptorFuture.get();
+        EXPECT_FALSE(descriptorError) << descriptorError.what();
+        descriptorQueue.push(std::move(descriptor));
+        Error sendError = sendFuture.get();
+        EXPECT_FALSE(sendError) << sendError.what();
+
+        sendCompletedProm.set_value();
+        recvCompletedProm.get_future().get();
+      },
+      [&](std::shared_ptr<transport::Connection> conn) {
+        auto channel = clientCtx->createChannel(
+            std::move(conn), Channel::Endpoint::kConnect);
+
+        // Allocate a non-empty vector so that its .data() pointer is non-null.
+        std::vector<uint8_t> data(1);
+
+        // Perform recv and wait for completion.
+        std::future<Error> recvFuture =
+            recvWithFuture(channel, descriptorQueue.pop(), data.data(), 0);
+        Error recvError = recvFuture.get();
+        EXPECT_FALSE(recvError) << recvError.what();
+
+        recvCompletedProm.set_value();
+        sendCompletedProm.get_future().get();
+      });
+
+  serverCtx->join();
+  clientCtx->join();
+}
+
 TEST_P(ChannelTest, contextIsNotJoined) {
   std::shared_ptr<Context> context = GetParam()->makeContext("ctx");
   std::promise<void> serverReadyProm;

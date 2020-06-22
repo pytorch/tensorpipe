@@ -224,8 +224,12 @@ void Context::Impl::handleCopyRequests_() {
     }
     CopyRequest request = std::move(maybeRequest).value();
 
-    // Perform copy.
-    std::memcpy(request.localPtr, request.remotePtr, request.length);
+    // Don't even call memcpy on a length of 0 to avoid issues with the pointer
+    // possibly being null.
+    if (request.length > 0) {
+      // Perform copy.
+      std::memcpy(request.localPtr, request.remotePtr, request.length);
+    }
 
     request.callback(Error::kSuccess);
   }

@@ -29,19 +29,19 @@ namespace {
 
 // State capturing a single send operation.
 struct SendOperation {
-  const uint64_t sequenceNumber;
+  uint64_t sequenceNumber;
   const void* ptr;
   size_t length;
-  size_t lengthBeingWritten;
+  int64_t numChunksBeingWritten{0};
   Channel::TSendCallback callback;
 };
 
 // State capturing a single recv operation.
 struct RecvOperation {
-  const uint64_t sequenceNumber;
+  uint64_t sequenceNumber;
   void* ptr;
   size_t length;
-  size_t lengthBeingRead;
+  int64_t numChunksBeingRead{0};
   Channel::TRecvCallback callback;
 };
 
@@ -121,10 +121,10 @@ class Channel::Impl : public std::enable_shared_from_this<Channel::Impl> {
   void recvOperation_(RecvOperation& op);
 
   // Called when the write of one chunk of a send operation has been completed.
-  void onWriteOfPayload_(SendOperation& op, uint64_t length);
+  void onWriteOfPayload_(SendOperation& op);
 
   // Called when the read of one chunk of a recv operation has been completed.
-  void onReadOfPayload_(RecvOperation& op, uint64_t length);
+  void onReadOfPayload_(RecvOperation& op);
 
   void setError_(Error error);
 
@@ -315,9 +315,12 @@ void Channel::Impl::sendFromLoop_(
     return;
   }
 
-  sendOperations_.emplace_back(
-      SendOperation{sequenceNumber, ptr, length, length, std::move(callback)});
+  sendOperations_.emplace_back();
   SendOperation& op = sendOperations_.back();
+  op.sequenceNumber = sequenceNumber;
+  op.ptr = ptr;
+  op.length = length;
+  op.callback = std::move(callback);
 
   if (state_ == ESTABLISHED) {
     sendOperation_(op);
@@ -376,9 +379,12 @@ void Channel::Impl::recvFromLoop_(
 
   TP_DCHECK_EQ(descriptor, std::string());
 
-  recvOperations_.emplace_back(
-      RecvOperation{sequenceNumber, ptr, length, length, std::move(callback)});
+  recvOperations_.emplace_back();
   RecvOperation& op = recvOperations_.back();
+  op.sequenceNumber = sequenceNumber;
+  op.ptr = ptr;
+  op.length = length;
+  op.callback = std::move(callback);
 
   if (state_ == ESTABLISHED) {
     recvOperation_(op);
@@ -483,11 +489,12 @@ void Channel::Impl::sendOperation_(SendOperation& op) {
     TP_VLOG(6) << "Channel " << id_ << " writing payload #" << op.sequenceNumber
                << " on lane " << laneIdx;
     lanes_[laneIdx]->write(
-        ptr, length, eagerCallbackWrapper_([&op, laneIdx, length](Impl& impl) {
+        ptr, length, eagerCallbackWrapper_([&op, laneIdx](Impl& impl) {
           TP_VLOG(6) << "Channel " << impl.id_ << " done writing payload #"
                      << op.sequenceNumber << " on lane " << laneIdx;
-          impl.onWriteOfPayload_(op, length);
+          impl.onWriteOfPayload_(op);
         }));
+    ++op.numChunksBeingWritten;
   }
 }
 
@@ -512,12 +519,13 @@ void Channel::Impl::recvOperation_(RecvOperation& op) {
         ptr,
         length,
         eagerCallbackWrapper_(
-            [&op, laneIdx, length](
+            [&op, laneIdx](
                 Impl& impl, const void* /* unused */, size_t /* unused */) {
               TP_VLOG(6) << "Channel " << impl.id_ << " done reading payload #"
                          << op.sequenceNumber << " on lane " << laneIdx;
-              impl.onReadOfPayload_(op, length);
+              impl.onReadOfPayload_(op);
             }));
+    ++op.numChunksBeingRead;
   }
 }
 
@@ -539,11 +547,11 @@ void Channel::Impl::closeFromLoop_() {
   setError_(TP_CREATE_ERROR(ChannelClosedError));
 }
 
-void Channel::Impl::onWriteOfPayload_(SendOperation& op, uint64_t length) {
+void Channel::Impl::onWriteOfPayload_(SendOperation& op) {
   TP_DCHECK(loop_.inLoop());
 
-  op.lengthBeingWritten -= length;
-  if (op.lengthBeingWritten > 0) {
+  --op.numChunksBeingWritten;
+  if (op.numChunksBeingWritten > 0) {
     return;
   }
 
@@ -554,12 +562,12 @@ void Channel::Impl::onWriteOfPayload_(SendOperation& op, uint64_t length) {
   sendOperations_.pop_front();
 }
 
-void Channel::Impl::onReadOfPayload_(RecvOperation& op, uint64_t length) {
+void Channel::Impl::onReadOfPayload_(RecvOperation& op) {
   TP_DCHECK(loop_.inLoop());
   TP_DCHECK_EQ(state_, ESTABLISHED);
 
-  op.lengthBeingRead -= length;
-  if (op.lengthBeingRead > 0) {
+  --op.numChunksBeingRead;
+  if (op.numChunksBeingRead > 0) {
     return;
   }
 
@@ -587,10 +595,12 @@ void Channel::Impl::handleError_() {
 
   if (state_ != ESTABLISHED) {
     for (SendOperation& op : sendOperations_) {
+      TP_DCHECK_EQ(op.numChunksBeingWritten, 0);
       op.callback(error_);
     }
     sendOperations_.clear();
     for (RecvOperation& op : recvOperations_) {
+      TP_DCHECK_EQ(op.numChunksBeingRead, 0);
       op.callback(error_);
     }
     recvOperations_.clear();
