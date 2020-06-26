@@ -22,7 +22,11 @@ namespace uv {
 void TCPHandle::initFromLoop() {
   TP_DCHECK(this->loop_.inLoopThread());
   leak();
-  uv_tcp_init(loop_.ptr(), this->ptr());
+  int rv;
+  rv = uv_tcp_init(loop_.ptr(), this->ptr());
+  TP_THROW_UV_IF(rv < 0, rv);
+  rv = uv_tcp_nodelay(this->ptr(), 1);
+  TP_THROW_UV_IF(rv < 0, rv);
 }
 
 int TCPHandle::bindFromLoop(const Sockaddr& addr) {
