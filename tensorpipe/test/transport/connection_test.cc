@@ -18,49 +18,38 @@ using namespace tensorpipe::transport;
 TEST_P(TransportTest, Connection_Initialization) {
   constexpr size_t numBytes = 13;
   std::array<char, numBytes> garbage;
-  std::promise<void> writeCompletedProm;
-  std::promise<void> readCompletedProm;
-  std::future<void> writeCompletedFuture = writeCompletedProm.get_future();
-  std::future<void> readCompletedFuture = readCompletedProm.get_future();
 
-  this->testConnection(
+  testConnection(
       [&](std::shared_ptr<Connection> conn) {
-        this->doRead(
+        doRead(
             conn,
-            [&, conn](
-                const Error& error, const void* /* unused */, size_t len) {
+            [&](const Error& error, const void* /* unused */, size_t len) {
               ASSERT_FALSE(error) << error.what();
               ASSERT_EQ(len, garbage.size());
-              readCompletedProm.set_value();
+              peers_->done(PeerGroup::kServer);
             });
-        writeCompletedFuture.wait();
-        readCompletedFuture.wait();
+        peers_->join(PeerGroup::kServer);
       },
       [&](std::shared_ptr<Connection> conn) {
-        this->doWrite(
-            conn,
-            garbage.data(),
-            garbage.size(),
-            [&, conn](const Error& error) {
-              ASSERT_FALSE(error) << error.what();
-              writeCompletedProm.set_value();
-            });
-        writeCompletedFuture.wait();
-        readCompletedFuture.wait();
+        doWrite(conn, garbage.data(), garbage.size(), [&](const Error& error) {
+          ASSERT_FALSE(error) << error.what();
+          peers_->done(PeerGroup::kClient);
+        });
+        peers_->join(PeerGroup::kClient);
       });
 }
 
 TEST_P(TransportTest, Connection_InitializationError) {
   int numRequests = 10;
 
-  this->testConnection(
+  testConnection(
       [&](std::shared_ptr<Connection> /* unused */) {
         // Closes connection
       },
       [&](std::shared_ptr<Connection> conn) {
         for (int i = 0; i < numRequests; i++) {
           std::promise<void> readCompletedProm;
-          this->doRead(
+          doRead(
               conn,
               [&, conn](
                   const Error& error,
@@ -76,7 +65,7 @@ TEST_P(TransportTest, Connection_InitializationError) {
 
 // Disabled because no one really knows what this test was meant to check.
 TEST_P(TransportTest, DISABLED_Connection_DestroyConnectionFromCallback) {
-  this->testConnection(
+  testConnection(
       [&](std::shared_ptr<Connection> /* unused */) {
         // Closes connection
       },
@@ -87,7 +76,7 @@ TEST_P(TransportTest, DISABLED_Connection_DestroyConnectionFromCallback) {
         // the only instance we have from the callback itself. This
         // tests that the transport keeps the connection alive as long
         // as it's executing a callback.
-        this->doRead(
+        doRead(
             conn,
             [conn](
                 const Error& /* unused */,
@@ -102,22 +91,17 @@ TEST_P(TransportTest, DISABLED_Connection_DestroyConnectionFromCallback) {
 
 TEST_P(TransportTest, Connection_ProtobufWrite) {
   constexpr size_t kSize = 0x42;
-  std::promise<void> writeCompletedProm;
-  std::promise<void> readCompletedProm;
-  std::future<void> writeCompletedFuture = writeCompletedProm.get_future();
-  std::future<void> readCompletedFuture = readCompletedProm.get_future();
 
-  this->testConnection(
+  testConnection(
       [&](std::shared_ptr<Connection> conn) {
         auto message = std::make_shared<
             tensorpipe::proto::MessageDescriptor::PayloadDescriptor>();
         conn->read(*message, [&, conn, message](const Error& error) {
           ASSERT_FALSE(error) << error.what();
           ASSERT_EQ(message->size_in_bytes(), kSize);
-          readCompletedProm.set_value();
+          peers_->done(PeerGroup::kServer);
         });
-        writeCompletedFuture.wait();
-        readCompletedFuture.wait();
+        peers_->join(PeerGroup::kServer);
       },
       [&](std::shared_ptr<Connection> conn) {
         auto message = std::make_shared<
@@ -125,49 +109,43 @@ TEST_P(TransportTest, Connection_ProtobufWrite) {
         message->set_size_in_bytes(kSize);
         conn->write(*message, [&, conn, message](const Error& error) {
           ASSERT_FALSE(error) << error.what();
-          writeCompletedProm.set_value();
+          peers_->done(PeerGroup::kClient);
         });
-        writeCompletedFuture.wait();
-        readCompletedFuture.wait();
+        peers_->join(PeerGroup::kClient);
       });
 }
 
 TEST_P(TransportTest, Connection_QueueWritesBeforeReads) {
   constexpr int kMsgSize = 16 * 1024;
   constexpr int numMsg = 10;
+  const std::string kReady = "ready";
   std::string msg[numMsg];
 
   for (int i = 0; i < numMsg; i++) {
     msg[i] = std::string(kMsgSize, static_cast<char>(i));
   }
-  std::promise<void> writeScheduledProm;
-  std::promise<void> writeCompletedProm;
-  std::promise<void> readCompletedProm;
-  std::future<void> writeCompletedFuture = writeCompletedProm.get_future();
-  std::future<void> readCompletedFuture = readCompletedProm.get_future();
 
-  this->testConnection(
+  testConnection(
       [&](std::shared_ptr<Connection> conn) {
         for (int i = 0; i < numMsg; i++) {
-          this->doWrite(
+          doWrite(
               conn,
               msg[i].c_str(),
               msg[i].length(),
               [&, conn, i](const Error& error) {
                 ASSERT_FALSE(error) << error.what();
                 if (i == numMsg - 1) {
-                  writeCompletedProm.set_value();
+                  peers_->send(PeerGroup::kClient, kReady);
+                  peers_->done(PeerGroup::kServer);
                 }
               });
         }
-        writeScheduledProm.set_value();
-        writeCompletedFuture.wait();
-        readCompletedFuture.wait();
+        peers_->join(PeerGroup::kServer);
       },
       [&](std::shared_ptr<Connection> conn) {
-        writeScheduledProm.get_future().get();
+        ASSERT_EQ(kReady, peers_->recv(PeerGroup::kClient));
         for (int i = 0; i < numMsg; i++) {
-          this->doRead(
+          doRead(
               conn,
               [&, conn, i](const Error& error, const void* data, size_t len) {
                 ASSERT_FALSE(error) << error.what();
@@ -179,12 +157,11 @@ TEST_P(TransportTest, Connection_QueueWritesBeforeReads) {
                                           << " of " << msg[i].length();
                 }
                 if (i == numMsg - 1) {
-                  readCompletedProm.set_value();
+                  peers_->done(PeerGroup::kClient);
                 }
               });
         }
-        writeCompletedFuture.wait();
-        readCompletedFuture.wait();
+        peers_->join(PeerGroup::kClient);
       });
 }
 
@@ -192,19 +169,15 @@ TEST_P(TransportTest, Connection_QueueWritesBeforeReads) {
 TEST_P(TransportTest, DISABLED_Connection_EmptyBuffer) {
   constexpr size_t numBytes = 13;
   std::array<char, numBytes> garbage;
-  std::promise<void> writeCompletedProm;
-  std::promise<void> readCompletedProm;
-  std::future<void> writeCompletedFuture = writeCompletedProm.get_future();
-  std::future<void> readCompletedFuture = readCompletedProm.get_future();
   int ioNum = 100;
 
-  this->testConnection(
+  testConnection(
       [&](std::shared_ptr<Connection> conn) {
         std::atomic<int> n(ioNum);
         for (int i = 0; i < ioNum; i++) {
           if (i % 2 == 0) {
             // Empty buffer
-            this->doRead(
+            doRead(
                 conn,
                 nullptr,
                 0,
@@ -213,52 +186,52 @@ TEST_P(TransportTest, DISABLED_Connection_EmptyBuffer) {
                   ASSERT_EQ(len, 0);
                   ASSERT_EQ(ptr, nullptr);
                   if (--n == 0) {
-                    readCompletedProm.set_value();
+                    peers_->done(PeerGroup::kServer);
                   }
                 });
           } else {
             // Garbage buffer
-            this->doRead(
+            doRead(
                 conn,
                 [&, conn](
                     const Error& error, const void* /* unused */, size_t len) {
                   ASSERT_FALSE(error) << error.what();
                   ASSERT_EQ(len, garbage.size());
                   if (--n == 0) {
-                    readCompletedProm.set_value();
+                    peers_->done(PeerGroup::kServer);
                   }
                 });
           }
         }
-        writeCompletedFuture.wait();
-        readCompletedFuture.wait();
+
+        peers_->join(PeerGroup::kServer);
       },
       [&](std::shared_ptr<Connection> conn) {
         std::atomic<int> n(ioNum);
         for (int i = 0; i < ioNum; i++) {
           if ((i & 1) == 0) {
             // Empty buffer
-            this->doWrite(conn, nullptr, 0, [&, conn](const Error& error) {
+            doWrite(conn, nullptr, 0, [&, conn](const Error& error) {
               ASSERT_FALSE(error) << error.what();
               if (--n == 0) {
-                writeCompletedProm.set_value();
+                peers_->done(PeerGroup::kClient);
               }
             });
           } else {
             // Garbage buffer
-            this->doWrite(
+            doWrite(
                 conn,
                 garbage.data(),
                 garbage.size(),
                 [&, conn](const Error& error) {
                   ASSERT_FALSE(error) << error.what();
                   if (--n == 0) {
-                    writeCompletedProm.set_value();
+                    peers_->done(PeerGroup::kClient);
                   }
                 });
           }
         }
-        writeCompletedFuture.wait();
-        readCompletedFuture.wait();
+
+        peers_->join(PeerGroup::kClient);
       });
 }

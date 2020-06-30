@@ -53,8 +53,10 @@ jobs:
       - run:
           name: Test
           command: |
+            export CTEST_OUTPUT_ON_FAILURE=1
+            export TSAN_OPTIONS="suppressions=$(realpath ./tsan_suppressions.txt)"
             cd build
-            CTEST_OUTPUT_ON_FAILURE=1 make test
+            make test
       - run:
           name: Install
           command: |
