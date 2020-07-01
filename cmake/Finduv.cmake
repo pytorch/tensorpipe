@@ -30,7 +30,9 @@ find_package(PkgConfig QUIET)
 
 if((NOT TP_BUILD_LIBUV) AND PkgConfig_FOUND)
   pkg_check_modules(uv QUIET IMPORTED_TARGET GLOBAL libuv)
-  add_library(uv::uv ALIAS PkgConfig::uv)
+  if(uv_FOUND)
+    add_library(uv::uv ALIAS PkgConfig::uv)
+  endif()
 endif()
 
 if(NOT uv_FOUND)
