@@ -226,8 +226,8 @@ TEST_P(ChannelTest, NullPointer) {
   testConnection(
       [&](std::shared_ptr<transport::Connection> conn) {
         std::shared_ptr<Context> ctx = GetParam()->makeContext("server");
-        auto channel = ctx->createChannel(
-            std::move(conn), Channel::Endpoint::kListen);
+        auto channel =
+            ctx->createChannel(std::move(conn), Channel::Endpoint::kListen);
 
         // Perform send and wait for completion.
         std::future<std::tuple<Error, Channel::TDescriptor>> descriptorFuture;
@@ -249,8 +249,8 @@ TEST_P(ChannelTest, NullPointer) {
       },
       [&](std::shared_ptr<transport::Connection> conn) {
         std::shared_ptr<Context> ctx = GetParam()->makeContext("client");
-        auto channel = ctx->createChannel(
-            std::move(conn), Channel::Endpoint::kConnect);
+        auto channel =
+            ctx->createChannel(std::move(conn), Channel::Endpoint::kConnect);
 
         // Perform recv and wait for completion.
         auto descriptor = peers_->recv(PeerGroup::kClient);
@@ -272,8 +272,8 @@ TEST_P(ChannelTest, EmptyTensor) {
   testConnection(
       [&](std::shared_ptr<transport::Connection> conn) {
         std::shared_ptr<Context> ctx = GetParam()->makeContext("server");
-        auto channel = ctx->createChannel(
-            std::move(conn), Channel::Endpoint::kListen);
+        auto channel =
+            ctx->createChannel(std::move(conn), Channel::Endpoint::kListen);
 
         // Allocate a non-empty vector so that its .data() pointer is non-null.
         std::vector<uint8_t> data(1);
@@ -298,8 +298,8 @@ TEST_P(ChannelTest, EmptyTensor) {
       },
       [&](std::shared_ptr<transport::Connection> conn) {
         std::shared_ptr<Context> ctx = GetParam()->makeContext("client");
-        auto channel = ctx->createChannel(
-            std::move(conn), Channel::Endpoint::kConnect);
+        auto channel =
+            ctx->createChannel(std::move(conn), Channel::Endpoint::kConnect);
 
         // Allocate a non-empty vector so that its .data() pointer is non-null.
         std::vector<uint8_t> data(1);
