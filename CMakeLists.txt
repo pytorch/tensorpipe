@@ -4,21 +4,16 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-if(PYTORCH_BUILD)
-  include(cmake/pytorch.cmake)
-  return()
-endif()
+cmake_minimum_required(VERSION 3.5 FATAL_ERROR)
 
-cmake_minimum_required(VERSION 3.17 FATAL_ERROR)
-
-project(tensorpipe
-  DESCRIPTION "A tensor-aware point-to-point communication library for machine learning"
-  HOMEPAGE_URL "https://github.com/pytorch/tensorpipe"
-  LANGUAGES C CXX)
+project(tensorpipe LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 14)
 
 list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
+
+# Enable protobuf_generate() polyfill.
+include(cmake/ProtobufGenerate.cmake)
 
 # Expose build options.
 include(Options)

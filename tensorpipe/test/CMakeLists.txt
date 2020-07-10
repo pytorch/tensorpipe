@@ -44,11 +44,8 @@ if(TP_ENABLE_CMA)
     )
 endif()
 
-
-include(FetchContent)
-FetchContent_Declare(googletest
-  URL "https://github.com/google/googletest/archive/release-1.10.0.tar.gz")
-FetchContent_MakeAvailable(googletest)
+add_subdirectory(${PROJECT_SOURCE_DIR}/third_party/googletest
+  ${PROJECT_BINARY_DIR}/third_party/googletest)
 
 # Support `#include <tensorpipe/proto/foo.pb.h>`
 target_include_directories(tensorpipe_test PRIVATE ${PROJECT_BINARY_DIR})
