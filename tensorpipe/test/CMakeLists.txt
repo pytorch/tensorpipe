@@ -55,7 +55,3 @@ target_link_libraries(tensorpipe_test PRIVATE
   uv::uv
   protobuf::libprotobuf-lite
   gtest_main)
-
-# Defines `gtest_discover_tests()`.
-include(GoogleTest)
-gtest_discover_tests(tensorpipe_test)

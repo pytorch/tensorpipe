@@ -21,9 +21,6 @@ include(Options)
 # Define sanitizer option, if specified.
 include(Sanitize)
 
-# CTest must be included in the top level to enable `make test` target.
-include(CTest)
-
 # We use the [[nodiscard]] attribute, which GCC 5 complains about.
 # Silence this warning if GCC 5 is used.
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
