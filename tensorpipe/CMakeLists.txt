@@ -4,33 +4,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-set(TENSORPIPE_PUBLIC_HEADERS
-  core/error.h
-  core/listener.h
-  core/context.h
-  core/message.h
-  core/pipe.h
-  channel/error.h
-  channel/channel.h
-  channel/context.h
-  channel/helpers.h
-  common/error_macros.h
-  common/error.h
-  common/defs.h
-  common/address.h
-  common/optional.h
-  common/system.h
-  common/callback.h
-  common/queue.h
-  transport/connection.h
-  transport/context.h
-  transport/defs.h
-  transport/error.h
-  transport/listener.h
-  transport/registry.h
-  util/registry/registry.h
-  tensorpipe.h)
-
 add_library(tensorpipe
   channel/error.cc
   channel/helpers.cc
@@ -61,14 +34,12 @@ target_include_directories(tensorpipe PRIVATE ${PROJECT_BINARY_DIR}/tensorpipe)
 
 ### basic
 
-list(APPEND TENSORPIPE_PUBLIC_HEADERS channel/basic/context.h)
 target_sources(tensorpipe PRIVATE
   channel/basic/channel.cc
   channel/basic/context.cc)
 
 ### xth
 
-list(APPEND TENSORPIPE_PUBLIC_HEADERS channel/xth/context.h)
 target_sources(tensorpipe PRIVATE
   channel/xth/channel.cc
   channel/xth/context.cc
@@ -77,7 +48,6 @@ target_sources(tensorpipe PRIVATE
 ### cma
 
 if(TP_ENABLE_CMA)
-  list(APPEND TENSORPIPE_PUBLIC_HEADERS channel/cma/context.h)
   target_sources(tensorpipe PRIVATE
     channel/cma/channel.cc
     channel/cma/context.cc
@@ -87,7 +57,6 @@ endif()
 
 ### mpt
 
-list(APPEND TENSORPIPE_PUBLIC_HEADERS channel/mpt/context.h)
 target_sources(tensorpipe PRIVATE
   channel/mpt/channel.cc
   channel/mpt/context.cc
@@ -98,7 +67,6 @@ target_sources(tensorpipe PRIVATE
 
 ### uv
 
-list(APPEND TENSORPIPE_PUBLIC_HEADERS transport/uv/context.h)
 target_sources(tensorpipe PRIVATE
   transport/uv/connection.cc
   transport/uv/context.cc
@@ -113,7 +81,6 @@ target_link_libraries(tensorpipe PRIVATE uv::uv)
 ### shm
 
 if(TP_ENABLE_SHM)
-  list(APPEND TENSORPIPE_PUBLIC_HEADERS transport/shm/context.h)
   target_sources(tensorpipe PRIVATE
     transport/shm/context.cc
     transport/shm/connection.cc
@@ -166,16 +133,3 @@ add_subdirectory(benchmark)
 if(BUILD_TESTING)
   add_subdirectory(test)
 endif()
-
-
-## Installing
-
-include(GNUInstallDirs)
-foreach (file ${TENSORPIPE_PUBLIC_HEADERS})
-  get_filename_component(dir ${file} DIRECTORY)
-  install(FILES ${file}
-          DESTINATION ${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_INCLUDEDIR}/tensorpipe/${dir})
-endforeach()
-install(TARGETS tensorpipe
-        LIBRARY DESTINATION ${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}
-        ARCHIVE DESTINATION ${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR})
