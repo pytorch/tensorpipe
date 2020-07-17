@@ -39,11 +39,44 @@ if(NOT uv_FOUND)
   set(uv_VERSION "1.37.0")
   set(uv_LIBRARY_DIRS "submodule")
 
-  add_subdirectory(${PROJECT_SOURCE_DIR}/third_party/libuv
+  set(libuv_DIR ${PROJECT_SOURCE_DIR}/third_party/libuv)
+  add_subdirectory(${libuv_DIR}
     ${PROJECT_BINARY_DIR}/third_party/libuv)
 
-  add_library(uv::uv ALIAS uv_a)
-  set_target_properties(uv_a PROPERTIES POSITION_INDEPENDENT_CODE 1)
+  # This hack duplicates the `uv_a`PROJECT_SOURCE_DIR}/third_party/libuv target, so that we can call
+  # install(TARGETS ... EXPORT) on it, which is not possible when the target is
+  # defined in a subdirectory in CMake 3.5.
+  get_target_property(_uv_sources uv_a SOURCES)
+  set(_uv_sources_abs)
+  foreach(_uv_src ${_uv_sources})
+    list(APPEND _uv_sources_abs "${libuv_DIR}/${_uv_src}")
+  endforeach()
+
+  add_library(_uv_a STATIC ${_uv_sources_abs})
+  if(BUILD_SHARED_LIBS)
+    set_target_properties(_uv_a PROPERTIES POSITION_INDEPENDENT_CODE 1)
+  endif()
+
+  get_target_property(_link_libs uv_a LINK_LIBRARIES)
+  target_link_libraries(_uv_a PRIVATE ${_link_libs})
+
+  get_target_property(_include_dirs uv_a INCLUDE_DIRECTORIES)
+  target_include_directories(_uv_a PRIVATE ${_include_dirs})
+  target_include_directories(_uv_a PUBLIC $<BUILD_INTERFACE:${libuv_DIR}/include>)
+
+  get_target_property(_compile_definitions uv_a COMPILE_DEFINITIONS)
+  target_compile_definitions(_uv_a PRIVATE ${_compile_definitions})
+
+  get_target_property(_compile_options uv_a COMPILE_OPTIONS)
+  target_compile_options(_uv_a PRIVATE ${_compile_options})
+
+  install(TARGETS _uv_a
+          EXPORT libuv-targets
+          ARCHIVE DESTINATION ${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR})
+  install(EXPORT libuv-targets
+          DESTINATION share/cmake/libuv-unofficial)
+
+  add_library(uv::uv ALIAS _uv_a)
 endif()
 
 include(FindPackageHandleStandardArgs)

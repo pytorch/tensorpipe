@@ -137,16 +137,12 @@ endif()
 
 ## Install
 
-# NOTE: We only support install for the dynamic library, as installing a static
-# library requires exporting its dependencies, which is not done in libuv.
-if(BUILD_SHARED_LIBS)
-  include(GNUInstallDirs)
-  install(TARGETS tensorpipe
-    EXPORT tensorpipe-targets
-    LIBRARY DESTINATION ${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}
-    ARCHIVE DESTINATION ${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR})
+include(GNUInstallDirs)
+install(TARGETS tensorpipe
+        EXPORT tensorpipe-targets
+        LIBRARY DESTINATION ${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR})
 
-  install(EXPORT tensorpipe-targets
-          DESTINATION share/cmake/tensorpipe
-          FILE TensorpipeTargets.cmake)
-endif()
+install(EXPORT tensorpipe-targets
+        DESTINATION share/cmake/tensorpipe
+        FILE TensorpipeTargets.cmake)
