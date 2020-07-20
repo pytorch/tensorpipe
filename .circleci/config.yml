@@ -18,6 +18,9 @@ jobs:
       cmake_args:
         type: string
         default: ""
+      nproc:
+        type: integer
+        default: 20
     docker:
       - image: << parameters.docker_image >>
     steps:
@@ -49,7 +52,7 @@ jobs:
               -DCMAKE_CXX_COMPILER=<< parameters.cxx_compiler >> \
               -DTP_ENABLE_CMA=OFF \
               << parameters.cmake_args >>
-            make -j
+            make -j<<parameters.nproc>>
       - run:
           name: Test
           command: |
