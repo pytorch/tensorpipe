@@ -43,7 +43,7 @@ if(NOT uv_FOUND)
   add_subdirectory(${libuv_DIR}
     ${PROJECT_BINARY_DIR}/third_party/libuv)
 
-  # This hack duplicates the `uv_a`PROJECT_SOURCE_DIR}/third_party/libuv target, so that we can call
+  # This hack duplicates the `uv_a` target, so that we can call
   # install(TARGETS ... EXPORT) on it, which is not possible when the target is
   # defined in a subdirectory in CMake 3.5.
   get_target_property(_uv_sources uv_a SOURCES)
