@@ -131,7 +131,8 @@ class Context::Impl : public Context::PrivateIface,
 Context::Context() : impl_(std::make_shared<Context::Impl>()) {}
 
 Context::Impl::Impl()
-    : domainDescriptor_(generateDomainDescriptor()), requests_(INT_MAX) {
+    : domainDescriptor_(generateDomainDescriptor()),
+      requests_(std::numeric_limits<int>::max()) {
   thread_ = std::thread(&Impl::handleCopyRequests_, this);
 }
 
