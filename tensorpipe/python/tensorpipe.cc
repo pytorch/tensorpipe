@@ -14,26 +14,13 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
-#include <tensorpipe/channel/basic/context.h>
-#ifdef TP_ENABLE_CMA
-#include <tensorpipe/channel/cma/context.h>
-#endif // TP_ENABLE_CMA
 #include <tensorpipe/common/defs.h>
-#include <tensorpipe/common/optional.h>
-#include <tensorpipe/core/context.h>
-#include <tensorpipe/core/listener.h>
-#include <tensorpipe/core/message.h>
-#include <tensorpipe/core/pipe.h>
-#ifdef TP_ENABLE_SHM
-#include <tensorpipe/transport/shm/context.h>
-#endif // TP_ENABLE_SHM
-#include <tensorpipe/transport/uv/context.h>
+#include <tensorpipe/tensorpipe.h>
 
 namespace py = pybind11;
 
 namespace {
 
-using tensorpipe::nullopt;
 using tensorpipe::optional;
 
 // RAII wrapper to reliably release every buffer we get.
@@ -438,11 +425,11 @@ PYBIND11_MODULE(pytensorpipe, module) {
       module, "UvTransport");
   uvTransport.def(py::init<>());
 
-#ifdef TP_ENABLE_SHM
+#if TENSORPIPE_HAS_SHM_TRANSPORT
   transport_class_<tensorpipe::transport::shm::Context> shmTransport(
       module, "ShmTransport");
   shmTransport.def(py::init<>());
-#endif // TP_ENABLE_SHM
+#endif // TENSORPIPE_HAS_SHM_TRANSPORT
 
   context.def(
       "register_transport",
@@ -458,11 +445,11 @@ PYBIND11_MODULE(pytensorpipe, module) {
       module, "BasicChannel");
   basicChannel.def(py::init<>());
 
-#ifdef TP_ENABLE_CMA
+#if TENSORPIPE_HAS_CMA_CHANNEL
   channel_class_<tensorpipe::channel::cma::Context> cmaChannel(
       module, "CmaChannel");
   cmaChannel.def(py::init<>());
-#endif // TP_ENABLE_CMA
+#endif // TENSORPIPE_HAS_CMA_CHANNEL
 
   context.def(
       "register_channel",
