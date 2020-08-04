@@ -72,7 +72,7 @@ if(NOT uv_FOUND)
 
   install(TARGETS _uv_a
           EXPORT TensorpipeTargets
-          ARCHIVE DESTINATION ${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR})
+          ARCHIVE DESTINATION ${TP_INSTALL_LIBDIR})
 
   add_library(uv::uv ALIAS _uv_a)
 endif()
