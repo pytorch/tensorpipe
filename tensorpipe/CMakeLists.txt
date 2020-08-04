@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 add_library(tensorpipe
+  ${TP_STATIC_OR_SHARED}
   channel/error.cc
   channel/helpers.cc
   channel/registry.cc
@@ -118,6 +119,11 @@ endif()
 
 target_link_libraries(tensorpipe PRIVATE protobuf::libprotobuf)
 protobuf_generate(TARGET tensorpipe)
+
+
+if(BUILD_SHARED_LIBS)
+  set_target_properties(tensorpipe PROPERTIES POSITION_INDEPENDENT_CODE 1)
+endif()
 
 
 ## Config
