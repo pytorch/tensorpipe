@@ -41,7 +41,8 @@ if(NOT uv_FOUND)
 
   set(libuv_DIR ${PROJECT_SOURCE_DIR}/third_party/libuv)
   add_subdirectory(${libuv_DIR}
-    ${PROJECT_BINARY_DIR}/third_party/libuv)
+    ${PROJECT_BINARY_DIR}/third_party/libuv
+    EXCLUDE_FROM_ALL)
 
   # This hack duplicates the `uv_a` target, so that we can call
   # install(TARGETS ... EXPORT) on it, which is not possible when the target is
