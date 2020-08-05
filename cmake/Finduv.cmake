@@ -71,10 +71,8 @@ if(NOT uv_FOUND)
   target_compile_options(_uv_a PRIVATE ${_compile_options})
 
   install(TARGETS _uv_a
-          EXPORT libuv-targets
+          EXPORT TensorpipeTargets
           ARCHIVE DESTINATION ${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR})
-  install(EXPORT libuv-targets
-          DESTINATION share/cmake/libuv-unofficial)
 
   add_library(uv::uv ALIAS _uv_a)
 endif()
