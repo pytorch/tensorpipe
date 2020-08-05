@@ -148,10 +148,6 @@ endif()
 
 include(GNUInstallDirs)
 install(TARGETS tensorpipe
-        EXPORT tensorpipe-targets
+        EXPORT TensorpipeTargets
         LIBRARY DESTINATION ${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}
         ARCHIVE DESTINATION ${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR})
-
-install(EXPORT tensorpipe-targets
-        DESTINATION share/cmake/tensorpipe
-        FILE TensorpipeTargets.cmake)

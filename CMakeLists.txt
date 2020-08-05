@@ -30,3 +30,7 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
 endif()
 
 add_subdirectory(tensorpipe)
+
+install(EXPORT TensorpipeTargets
+        DESTINATION share/cmake/Tensorpipe
+        FILE TensorpipeTargets.cmake)
