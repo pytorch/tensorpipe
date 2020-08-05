@@ -23,3 +23,8 @@ option(TP_BUILD_TESTING "Build tests" OFF)
 
 # Force to build libuv from the included submodule
 option(TP_BUILD_LIBUV "Build libuv from source" OFF)
+
+# Directories
+include(GNUInstallDirs)
+set(TP_INSTALL_LIBDIR ${CMAKE_INSTALL_LIBDIR} CACHE STRING "Directory in which to install libraries")
+mark_as_advanced(TP_INSTALL_LIBDIR)
