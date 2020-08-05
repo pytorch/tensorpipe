@@ -53,29 +53,29 @@ if(NOT uv_FOUND)
     list(APPEND _uv_sources_abs "${libuv_DIR}/${_uv_src}")
   endforeach()
 
-  add_library(_uv_a STATIC ${_uv_sources_abs})
+  add_library(tensorpipe_uv STATIC ${_uv_sources_abs})
   if(BUILD_SHARED_LIBS)
-    set_target_properties(_uv_a PROPERTIES POSITION_INDEPENDENT_CODE 1)
+    set_target_properties(tensorpipe_uv PROPERTIES POSITION_INDEPENDENT_CODE 1)
   endif()
 
   get_target_property(_link_libs uv_a LINK_LIBRARIES)
-  target_link_libraries(_uv_a PRIVATE ${_link_libs})
+  target_link_libraries(tensorpipe_uv PRIVATE ${_link_libs})
 
   get_target_property(_include_dirs uv_a INCLUDE_DIRECTORIES)
-  target_include_directories(_uv_a PRIVATE ${_include_dirs})
-  target_include_directories(_uv_a PUBLIC $<BUILD_INTERFACE:${libuv_DIR}/include>)
+  target_include_directories(tensorpipe_uv PRIVATE ${_include_dirs})
+  target_include_directories(tensorpipe_uv PUBLIC $<BUILD_INTERFACE:${libuv_DIR}/include>)
 
   get_target_property(_compile_definitions uv_a COMPILE_DEFINITIONS)
-  target_compile_definitions(_uv_a PRIVATE ${_compile_definitions})
+  target_compile_definitions(tensorpipe_uv PRIVATE ${_compile_definitions})
 
   get_target_property(_compile_options uv_a COMPILE_OPTIONS)
-  target_compile_options(_uv_a PRIVATE ${_compile_options})
+  target_compile_options(tensorpipe_uv PRIVATE ${_compile_options})
 
-  install(TARGETS _uv_a
+  install(TARGETS tensorpipe_uv
           EXPORT TensorpipeTargets
           ARCHIVE DESTINATION ${TP_INSTALL_LIBDIR})
 
-  add_library(uv::uv ALIAS _uv_a)
+  add_library(uv::uv ALIAS tensorpipe_uv)
 endif()
 
 include(FindPackageHandleStandardArgs)
