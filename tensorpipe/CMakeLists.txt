@@ -134,12 +134,14 @@ endif()
 
 ## Benchmarks
 
-add_subdirectory(benchmark)
+if (TP_BUILD_BENCHMARK)
+  add_subdirectory(benchmark)
+endif()
 
 
 ## Tests
 
-if(BUILD_TESTING)
+if(TP_BUILD_TESTING)
   add_subdirectory(test)
 endif()
 
