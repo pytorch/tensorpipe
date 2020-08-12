@@ -24,6 +24,8 @@ class Context : public channel::Context {
  public:
   Context();
 
+  bool isViable() const override;
+
   const std::string& domainDescriptor() const override;
 
   std::shared_ptr<Channel> createChannel(

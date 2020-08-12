@@ -53,6 +53,7 @@ if(TP_ENABLE_CMA)
     channel/cma/channel.cc
     channel/cma/context.cc
     proto/channel/cma.proto)
+  target_link_libraries(tensorpipe PRIVATE cap)
   set(TENSORPIPE_HAS_CMA_CHANNEL 1)
 else()
   set(TENSORPIPE_HAS_CMA_CHANNEL 0)

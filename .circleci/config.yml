@@ -29,7 +29,7 @@ jobs:
           name: Install apt packages
           command: |
             apt-get update
-            apt-get install -y git-core build-essential cmake libprotobuf-dev protobuf-compiler << parameters.apt_get >>
+            apt-get install -y git-core build-essential cmake libcap-dev libprotobuf-dev protobuf-compiler << parameters.apt_get >>
       - run:
           name: Initialize submodules
           command: |
@@ -45,7 +45,6 @@ jobs:
               -DCMAKE_CXX_FLAGS="-Werror -Wno-deprecated-declarations" \
               -DCMAKE_C_COMPILER=<< parameters.c_compiler >> \
               -DCMAKE_CXX_COMPILER=<< parameters.cxx_compiler >> \
-              -DTP_ENABLE_CMA=OFF \
               -DTP_BUILD_TESTING=ON \
               << parameters.cmake_args >>
             make -j<<parameters.nproc>>
@@ -109,7 +108,7 @@ jobs:
           name: Install apt packages
           command: |
             apt-get update
-            apt-get install -y git-core build-essential cmake libprotobuf-dev protobuf-compiler python3-dev python3-venv << parameters.apt_get >>
+            apt-get install -y git-core build-essential cmake libcap-dev libprotobuf-dev protobuf-compiler python3-dev python3-venv << parameters.apt_get >>
       - run:
           name: Initialize submodules
           command: |
@@ -120,7 +119,7 @@ jobs:
           command: |
             python3 -m venv venv
             source venv/bin/activate
-            TP_ENABLE_CMA=OFF python3 setup.py install
+            python3 setup.py install
       - run:
           name: Test
           command: |

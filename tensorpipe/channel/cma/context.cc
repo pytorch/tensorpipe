@@ -8,6 +8,8 @@
 
 #include <tensorpipe/channel/cma/context.h>
 
+#include <sys/capability.h>
+#include <sys/prctl.h>
 #include <sys/types.h>
 #include <sys/uio.h>
 #include <unistd.h>
@@ -47,14 +49,15 @@ std::string generateDomainDescriptor() {
   // effective, and saved-set user IDs of the target match the caller's real
   // user ID, and the same for group IDs. Since channels are bidirectional, we
   // end up needing these IDs to all be the same on both processes.
+  // The channel context already checks the capabilities, the LSM and the
+  // equality between real, effective and saved-set IDs (and marks itself as
+  // non-viable if any check fails). So the only check left to do is to compare
+  // the real IDs of the two endpoints.
 
-  // Combine boot ID, effective UID, and effective GID.
+  // Combine boot ID, real UID, and real GID.
   oss << bootID.value();
-  // FIXME As domain descriptors are just compared for equality, we only include
-  // the effective IDs, but we should abide by the rules above and make sure
-  // that they match the real and saved-set ones too.
-  oss << "/" << geteuid();
-  oss << "/" << getegid();
+  oss << "/" << getuid();
+  oss << "/" << getgid();
   return oss.str();
 }
 
@@ -64,12 +67,134 @@ std::shared_ptr<Context> makeCmaChannel() {
 
 TP_REGISTER_CREATOR(TensorpipeChannelRegistry, cma, makeCmaChannel);
 
+int getYamaPtraceScope() {
+  int scope;
+  std::ifstream f;
+  f.open("/proc/sys/kernel/yama/ptrace_scope");
+  if (f.fail()) {
+    // Assume that failing to open the file means it doesn't exist, and that
+    // thus Yama Linux Security Module isn't being used. The classic ptrace
+    // permissions therefore apply, which are represented as a scope of zero by
+    // Yama.
+    return 0;
+  }
+  f >> scope;
+  if (f.fail()) {
+    // The file could be opened but we couldn't obtain its value. We deduce that
+    // Yama is on but we don't know in which state. To play it safe we report it
+    // as being in the strictest state (which will mean the channel won't be
+    // viable).
+    return 3;
+  }
+  f.close();
+  if (f.fail()) {
+    // Same as above.
+    return 3;
+  }
+  return scope;
+}
+
+// The value to give to PR_GET_DUMPABLE to make a process dumpable.
+// See man 2 prctl.
+constexpr int SUID_DUMP_USER = 1;
+
+bool checkPermissions() {
+  // The process_vm_readv syscall requires the calling process to have the
+  // PTRACE_MODE_ATTACH_REALCREDS permission w.r.t. the target process. We try
+  // to simulate such a check the best we can in order to keep the channel
+  // disabled when it would fail. Our check is split in two parts: one done by
+  // each process in isolation (this function; which marks the entire context as
+  // non-viable) and one done during the handshake (by matching the descriptors;
+  // which will deactivate the channel for that one pipe). For best accuracy we
+  // should perform the entire check during the handshake but the simplicity of
+  // the descriptor matching prevents that. Thus we have this function to try to
+  // cope with that.
+  // As each channel must be bidirectional we must check that both endpoints
+  // have that permission for each other. Yet, some checks concern the ability
+  // of one process to trace another, and other checks affect the ability to be
+  // traced. The interplay between them isn't trivial. So, to simplify, we can
+  // assume that the two endpoints are identical and thus checks are symmetric.
+
+  int rv;
+
+  // Processes with the CAP_SYS_PTRACE capability skip all checks and can attach
+  // to any other process. Check this first and short-cut in case.
+  cap_t caps = cap_init();
+  TP_THROW_SYSTEM_IF(caps == NULL, errno) << "Failed call to cap_init";
+  cap_flag_value_t capValue;
+  rv = cap_get_flag(caps, CAP_SYS_PTRACE, CAP_EFFECTIVE, &capValue);
+  TP_THROW_SYSTEM_IF(rv != 0, errno) << "Failed call to cap_get_flag";
+  rv = cap_free(caps);
+  TP_THROW_SYSTEM_IF(rv != 0, errno) << "Failed call to cap_free";
+
+  if (capValue == CAP_SET) {
+    return true;
+  }
+
+  // The first check that is performed matches the attaching process's real UID
+  // and GID against the target process's real, effective, and saved-set UID and
+  // GID. When matching the descriptors we'll check whether the read IDs match
+  // but we must preliminarly check that the real IDs match the effective and
+  // saved-set ones.
+  uid_t ruid, euid, suid;
+  rv = getresuid(&ruid, &euid, &suid);
+  TP_THROW_SYSTEM_IF(rv != 0, errno) << "Failed call to getresuid";
+  if (ruid != euid || ruid != suid) {
+    return false;
+  }
+  gid_t rgid, egid, sgid;
+  rv = getresgid(&rgid, &egid, &sgid);
+  TP_THROW_SYSTEM_IF(rv != 0, errno) << "Failed call to getresgid";
+  if (rgid != egid || rgid != sgid) {
+    return false;
+  }
+
+  // The second check makes sure that the target process is dumpable.
+  rv = prctl(PR_SET_DUMPABLE, SUID_DUMP_USER);
+  TP_THROW_SYSTEM_IF(rv != 0, errno)
+      << "Failed call to prctl(PR_SET_DUMPABLE, SUID_DUMP_USER)";
+
+  // The third check defers to the kernel's Linux Security Module. We can't
+  // possibly support all of them. We'll focus on the Yama one, as it's a common
+  // one (shipped by default on Ubuntu) and it gives some headaches.
+  // TODO Support the commoncap LSM too.
+  int yamaScope = getYamaPtraceScope();
+  switch (yamaScope) {
+    case 0:
+      // The Yama LSM doesn't add any additional constraints in this case.
+      break;
+    case 1:
+      // In this case a process can only trace its descendants and processes
+      // that have explicitly declared they allow that first process to attach
+      // to them or, as well, that they allow any process to do that. This is
+      // exactly what we'll do here.
+      rv = prctl(PR_SET_PTRACER, PR_SET_PTRACER_ANY);
+      TP_THROW_SYSTEM_IF(rv != 0, errno)
+          << "Failed call to prctl(PR_SET_PTRACER, PR_SET_PTRACER_ANY)";
+      break;
+    case 2:
+      // Only processes with the CAP_SYS_PTRACE capability can attach to other
+      // processes. We already checked for that, which means that if we arrived
+      // here we don't have that capability.
+      return false;
+    case 3:
+      // Attaching is always forbidden in this case.
+      return false;
+    default:
+      TP_THROW_ASSERT() << "Yama ptrace scope out of range: " << yamaScope;
+  }
+
+  return true;
+}
+
 } // namespace
 
 class Context::Impl : public Context::PrivateIface,
                       public std::enable_shared_from_this<Context::Impl> {
  public:
   Impl();
+
+  bool isViable() const;
 
   const std::string& domainDescriptor() const;
 
@@ -105,6 +230,7 @@ class Context::Impl : public Context::PrivateIface,
     copy_request_callback_fn callback;
   };
 
+  bool isViable_;
   std::string domainDescriptor_;
   std::thread thread_;
   Queue<optional<CopyRequest>> requests_;
@@ -131,8 +257,11 @@ class Context::Impl : public Context::PrivateIface,
 Context::Context() : impl_(std::make_shared<Context::Impl>()) {}
 
 Context::Impl::Impl()
-    : domainDescriptor_(generateDomainDescriptor()),
+    : isViable_(checkPermissions()),
+      domainDescriptor_(generateDomainDescriptor()),
       requests_(std::numeric_limits<int>::max()) {
+  // FIXME Set the context in an error state if non-viable, and don't even
+  // bother starting the thread as it will be joined right away.
   thread_ = std::thread(&Impl::handleCopyRequests_, this);
 }
 
@@ -183,6 +312,14 @@ void Context::Impl::setId(std::string id) {
 
 ClosingEmitter& Context::Impl::getClosingEmitter() {
   return closingEmitter_;
+}
+
+bool Context::isViable() const {
+  return impl_->isViable();
+}
+
+bool Context::Impl::isViable() const {
+  return checkPermissions();
 }
 
 const std::string& Context::domainDescriptor() const {
