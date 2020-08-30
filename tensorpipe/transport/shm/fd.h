@@ -8,6 +8,7 @@
 
 #pragma once
 
+#include <stdexcept>
 #include <type_traits>
 
 #include <unistd.h>
