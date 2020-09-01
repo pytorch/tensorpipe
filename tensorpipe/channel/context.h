@@ -67,5 +67,11 @@ class Context {
   std::string name_;
 };
 
+using CpuContext = Context<CpuTensor>;
+
+#if TENSORPIPE_HAS_CUDA_IPC_CHANNEL
+using CudaContext = Context<CudaTensor>;
+#endif // TENSORPIPE_HAS_CUDA_IPC_CHANNEL
+
 } // namespace channel
 } // namespace tensorpipe

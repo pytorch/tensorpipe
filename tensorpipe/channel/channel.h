@@ -62,23 +62,11 @@ class Channel {
       TDescriptorCallback descriptorCallback,
       TSendCallback callback) = 0;
 
-  void send(
-      const void* ptr,
-      size_t length,
-      TDescriptorCallback descriptorCallback,
-      TSendCallback callback);
-
   // Receive memory region from peer.
   virtual void recv(
       TDescriptor descriptor,
       const TTensor& tensor,
       TRecvCallback callback) = 0;
-
-  void recv(
-      TDescriptor descriptor,
-      void* ptr,
-      size_t length,
-      TRecvCallback callback);
 
   // Tell the channel what its identifier is.
   //
@@ -93,6 +81,12 @@ class Channel {
 
   virtual ~Channel() = default;
 };
+
+using CpuChannel = Channel<CpuTensor>;
+
+#if TENSORPIPE_HAS_CUDA_IPC_CHANNEL
+using CudaChannel = Channel < CudaTensor;
+#endif // TENSORPIPE_HAS_CUDA_IPC_CHANNEL
 
 } // namespace channel
 } // namespace tensorpipe

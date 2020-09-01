@@ -101,8 +101,8 @@ void parseDescriptorOfMessage(
     tensorBeingAllocated.descriptor = pbTensorDescriptor.channel_descriptor();
     message.tensors.push_back(std::move(tensor));
     op.tensors.push_back(std::move(tensorBeingAllocated));
-  } // namespace
-} // namespace tensorpipe
+  }
+}
 
 // Raise an error if the number or sizes of the payloads and the tensors in
 // the message do not match the ones that are expected by the ReadOperation.
