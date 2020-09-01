@@ -45,29 +45,40 @@
 namespace tensorpipe {
 namespace channel {
 
+enum class Endpoint : bool { kConnect, kListen };
+
+using TDescriptor = std::string;
+using TDescriptorCallback = std::function<void(const Error&, TDescriptor)>;
+using TSendCallback = std::function<void(const Error&)>;
+using TRecvCallback = std::function<void(const Error&)>;
+
 // Abstract base class for channel classes.
+template <typename TTensor>
 class Channel {
  public:
-  using TDescriptor = std::string;
-  using TDescriptorCallback = std::function<void(const Error&, TDescriptor)>;
-  using TSendCallback = std::function<void(const Error&)>;
-  using TRecvCallback = std::function<void(const Error&)>;
-
-  enum class Endpoint : bool { kConnect, kListen };
-
   // Send memory region to peer.
   virtual void send(
+      const TTensor& tensor,
+      TDescriptorCallback descriptorCallback,
+      TSendCallback callback) = 0;
+
+  void send(
       const void* ptr,
       size_t length,
       TDescriptorCallback descriptorCallback,
-      TSendCallback callback) = 0;
+      TSendCallback callback);
 
   // Receive memory region from peer.
   virtual void recv(
       TDescriptor descriptor,
+      const TTensor& tensor,
+      TRecvCallback callback) = 0;
+
+  void recv(
+      TDescriptor descriptor,
       void* ptr,
       size_t length,
-      TRecvCallback callback) = 0;
+      TRecvCallback callback);
 
   // Tell the channel what its identifier is.
   //

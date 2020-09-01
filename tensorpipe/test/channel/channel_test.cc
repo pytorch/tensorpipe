@@ -16,8 +16,10 @@ using namespace tensorpipe;
 using namespace tensorpipe::channel;
 
 TEST_P(ChannelTest, DomainDescriptor) {
-  std::shared_ptr<Context> context1 = GetParam()->makeContext("ctx1");
-  std::shared_ptr<Context> context2 = GetParam()->makeContext("ctx2");
+  std::shared_ptr<Context<CpuTensor>> context1 =
+      GetParam()->makeContext("ctx1");
+  std::shared_ptr<Context<CpuTensor>> context2 =
+      GetParam()->makeContext("ctx2");
   EXPECT_FALSE(context1->domainDescriptor().empty());
   EXPECT_FALSE(context2->domainDescriptor().empty());
   EXPECT_EQ(context1->domainDescriptor(), context2->domainDescriptor());
@@ -28,21 +30,21 @@ TEST_P(ChannelTest, ClientToServer) {
 
   testConnection(
       [&](std::shared_ptr<transport::Connection> conn) {
-        std::shared_ptr<Context> ctx = GetParam()->makeContext("server");
-        auto channel =
-            ctx->createChannel(std::move(conn), Channel::Endpoint::kListen);
+        std::shared_ptr<Context<CpuTensor>> ctx =
+            GetParam()->makeContext("server");
+        auto channel = ctx->createChannel(std::move(conn), Endpoint::kListen);
 
         // Initialize with sequential values.
         std::vector<uint8_t> data(dataSize);
         std::iota(data.begin(), data.end(), 0);
 
         // Perform send and wait for completion.
-        std::future<std::tuple<Error, Channel::TDescriptor>> descriptorFuture;
+        std::future<std::tuple<Error, TDescriptor>> descriptorFuture;
         std::future<Error> sendFuture;
         std::tie(descriptorFuture, sendFuture) =
-            sendWithFuture(channel, data.data(), data.size());
+            sendWithFuture(channel, CpuTensor{data.data(), data.size()});
         Error descriptorError;
-        Channel::TDescriptor descriptor;
+        TDescriptor descriptor;
         std::tie(descriptorError, descriptor) = descriptorFuture.get();
         EXPECT_FALSE(descriptorError) << descriptorError.what();
         peers_->send(PeerGroup::kClient, descriptor);
@@ -55,9 +57,9 @@ TEST_P(ChannelTest, ClientToServer) {
         ctx->join();
       },
       [&](std::shared_ptr<transport::Connection> conn) {
-        std::shared_ptr<Context> ctx = GetParam()->makeContext("client");
-        auto channel =
-            ctx->createChannel(std::move(conn), Channel::Endpoint::kConnect);
+        std::shared_ptr<Context<CpuTensor>> ctx =
+            GetParam()->makeContext("client");
+        auto channel = ctx->createChannel(std::move(conn), Endpoint::kConnect);
 
         // Initialize with zeroes.
         std::vector<uint8_t> data(dataSize);
@@ -65,8 +67,8 @@ TEST_P(ChannelTest, ClientToServer) {
 
         // Perform recv and wait for completion.
         auto descriptor = peers_->recv(PeerGroup::kClient);
-        std::future<Error> recvFuture =
-            recvWithFuture(channel, descriptor, data.data(), dataSize);
+        std::future<Error> recvFuture = recvWithFuture(
+            channel, descriptor, CpuTensor{data.data(), dataSize});
         Error recvError = recvFuture.get();
         EXPECT_FALSE(recvError) << recvError.what();
 
@@ -87,9 +89,9 @@ TEST_P(ChannelTest, ServerToClient) {
 
   testConnection(
       [&](std::shared_ptr<transport::Connection> conn) {
-        std::shared_ptr<Context> ctx = GetParam()->makeContext("server");
-        auto channel =
-            ctx->createChannel(std::move(conn), Channel::Endpoint::kListen);
+        std::shared_ptr<Context<CpuTensor>> ctx =
+            GetParam()->makeContext("server");
+        auto channel = ctx->createChannel(std::move(conn), Endpoint::kListen);
 
         // Initialize with zeroes.
         std::vector<uint8_t> data(dataSize);
@@ -97,8 +99,8 @@ TEST_P(ChannelTest, ServerToClient) {
 
         // Perform recv and wait for completion.
         auto descriptor = peers_->recv(PeerGroup::kServer);
-        std::future<Error> recvFuture =
-            recvWithFuture(channel, descriptor, data.data(), data.size());
+        std::future<Error> recvFuture = recvWithFuture(
+            channel, descriptor, CpuTensor{data.data(), data.size()});
         Error recvError = recvFuture.get();
         EXPECT_FALSE(recvError) << recvError.what();
 
@@ -113,21 +115,21 @@ TEST_P(ChannelTest, ServerToClient) {
         ctx->join();
       },
       [&](std::shared_ptr<transport::Connection> conn) {
-        std::shared_ptr<Context> ctx = GetParam()->makeContext("client");
-        auto channel =
-            ctx->createChannel(std::move(conn), Channel::Endpoint::kConnect);
+        std::shared_ptr<Context<CpuTensor>> ctx =
+            GetParam()->makeContext("client");
+        auto channel = ctx->createChannel(std::move(conn), Endpoint::kConnect);
 
         // Initialize with sequential values.
         std::vector<uint8_t> data(dataSize);
         std::iota(data.begin(), data.end(), 0);
 
         // Perform send and wait for completion.
-        std::future<std::tuple<Error, Channel::TDescriptor>> descriptorFuture;
+        std::future<std::tuple<Error, TDescriptor>> descriptorFuture;
         std::future<Error> sendFuture;
         std::tie(descriptorFuture, sendFuture) =
-            sendWithFuture(channel, data.data(), data.size());
+            sendWithFuture(channel, CpuTensor{data.data(), data.size()});
         Error descriptorError;
-        Channel::TDescriptor descriptor;
+        TDescriptor descriptor;
         std::tie(descriptorError, descriptor) = descriptorFuture.get();
         EXPECT_FALSE(descriptorError) << descriptorError.what();
         peers_->send(PeerGroup::kServer, descriptor);
@@ -147,9 +149,9 @@ TEST_P(ChannelTest, SendMultipleTensors) {
 
   testConnection(
       [&](std::shared_ptr<transport::Connection> conn) {
-        std::shared_ptr<Context> ctx = GetParam()->makeContext("server");
-        auto channel =
-            ctx->createChannel(std::move(conn), Channel::Endpoint::kListen);
+        std::shared_ptr<Context<CpuTensor>> ctx =
+            GetParam()->makeContext("server");
+        auto channel = ctx->createChannel(std::move(conn), Endpoint::kListen);
 
         // Initialize with sequential values.
         std::vector<uint8_t> data(dataSize);
@@ -160,12 +162,12 @@ TEST_P(ChannelTest, SendMultipleTensors) {
 
         // Perform send and wait for completion.
         for (int i = 0; i < numTensors; i++) {
-          std::future<std::tuple<Error, Channel::TDescriptor>> descriptorFuture;
+          std::future<std::tuple<Error, TDescriptor>> descriptorFuture;
           std::future<Error> sendFuture;
           std::tie(descriptorFuture, sendFuture) =
-              sendWithFuture(channel, data.data(), data.size());
+              sendWithFuture(channel, CpuTensor{data.data(), data.size()});
           Error descriptorError;
-          Channel::TDescriptor descriptor;
+          TDescriptor descriptor;
           std::tie(descriptorError, descriptor) = descriptorFuture.get();
           EXPECT_FALSE(descriptorError) << descriptorError.what();
           peers_->send(PeerGroup::kClient, descriptor);
@@ -182,9 +184,9 @@ TEST_P(ChannelTest, SendMultipleTensors) {
         ctx->join();
       },
       [&](std::shared_ptr<transport::Connection> conn) {
-        std::shared_ptr<Context> ctx = GetParam()->makeContext("client");
-        auto channel =
-            ctx->createChannel(std::move(conn), Channel::Endpoint::kConnect);
+        std::shared_ptr<Context<CpuTensor>> ctx =
+            GetParam()->makeContext("client");
+        auto channel = ctx->createChannel(std::move(conn), Endpoint::kConnect);
 
         // Initialize with zeroes.
         std::vector<std::vector<uint8_t>> dataVec(
@@ -196,8 +198,8 @@ TEST_P(ChannelTest, SendMultipleTensors) {
         // Perform recv and wait for completion.
         for (int i = 0; i < numTensors; i++) {
           auto descriptor = peers_->recv(PeerGroup::kClient);
-          std::future<Error> recvFuture =
-              recvWithFuture(channel, descriptor, dataVec[i].data(), dataSize);
+          std::future<Error> recvFuture = recvWithFuture(
+              channel, descriptor, CpuTensor{dataVec[i].data(), dataSize});
           recvFutures.push_back(std::move(recvFuture));
         }
         for (auto& recvFuture : recvFutures) {
@@ -225,17 +227,17 @@ TEST_P(ChannelTest, NullPointer) {
 
   testConnection(
       [&](std::shared_ptr<transport::Connection> conn) {
-        std::shared_ptr<Context> ctx = GetParam()->makeContext("server");
-        auto channel =
-            ctx->createChannel(std::move(conn), Channel::Endpoint::kListen);
+        std::shared_ptr<Context<CpuTensor>> ctx =
+            GetParam()->makeContext("server");
+        auto channel = ctx->createChannel(std::move(conn), Endpoint::kListen);
 
         // Perform send and wait for completion.
-        std::future<std::tuple<Error, Channel::TDescriptor>> descriptorFuture;
+        std::future<std::tuple<Error, TDescriptor>> descriptorFuture;
         std::future<Error> sendFuture;
         std::tie(descriptorFuture, sendFuture) =
-            sendWithFuture(channel, nullptr, 0);
+            sendWithFuture(channel, CpuTensor{nullptr, 0});
         Error descriptorError;
-        Channel::TDescriptor descriptor;
+        TDescriptor descriptor;
         std::tie(descriptorError, descriptor) = descriptorFuture.get();
         EXPECT_FALSE(descriptorError) << descriptorError.what();
         peers_->send(PeerGroup::kClient, descriptor);
@@ -248,14 +250,14 @@ TEST_P(ChannelTest, NullPointer) {
         ctx->join();
       },
       [&](std::shared_ptr<transport::Connection> conn) {
-        std::shared_ptr<Context> ctx = GetParam()->makeContext("client");
-        auto channel =
-            ctx->createChannel(std::move(conn), Channel::Endpoint::kConnect);
+        std::shared_ptr<Context<CpuTensor>> ctx =
+            GetParam()->makeContext("client");
+        auto channel = ctx->createChannel(std::move(conn), Endpoint::kConnect);
 
         // Perform recv and wait for completion.
         auto descriptor = peers_->recv(PeerGroup::kClient);
         std::future<Error> recvFuture =
-            recvWithFuture(channel, descriptor, nullptr, 0);
+            recvWithFuture(channel, descriptor, CpuTensor{nullptr, 0});
         Error recvError = recvFuture.get();
         EXPECT_FALSE(recvError) << recvError.what();
 
@@ -271,20 +273,20 @@ TEST_P(ChannelTest, EmptyTensor) {
 
   testConnection(
       [&](std::shared_ptr<transport::Connection> conn) {
-        std::shared_ptr<Context> ctx = GetParam()->makeContext("server");
-        auto channel =
-            ctx->createChannel(std::move(conn), Channel::Endpoint::kListen);
+        std::shared_ptr<Context<CpuTensor>> ctx =
+            GetParam()->makeContext("server");
+        auto channel = ctx->createChannel(std::move(conn), Endpoint::kListen);
 
         // Allocate a non-empty vector so that its .data() pointer is non-null.
         std::vector<uint8_t> data(1);
 
         // Perform send and wait for completion.
-        std::future<std::tuple<Error, Channel::TDescriptor>> descriptorFuture;
+        std::future<std::tuple<Error, TDescriptor>> descriptorFuture;
         std::future<Error> sendFuture;
         std::tie(descriptorFuture, sendFuture) =
-            sendWithFuture(channel, data.data(), 0);
+            sendWithFuture(channel, CpuTensor{data.data(), 0});
         Error descriptorError;
-        Channel::TDescriptor descriptor;
+        TDescriptor descriptor;
         std::tie(descriptorError, descriptor) = descriptorFuture.get();
         EXPECT_FALSE(descriptorError) << descriptorError.what();
         peers_->send(PeerGroup::kClient, descriptor);
@@ -297,9 +299,9 @@ TEST_P(ChannelTest, EmptyTensor) {
         ctx->join();
       },
       [&](std::shared_ptr<transport::Connection> conn) {
-        std::shared_ptr<Context> ctx = GetParam()->makeContext("client");
-        auto channel =
-            ctx->createChannel(std::move(conn), Channel::Endpoint::kConnect);
+        std::shared_ptr<Context<CpuTensor>> ctx =
+            GetParam()->makeContext("client");
+        auto channel = ctx->createChannel(std::move(conn), Endpoint::kConnect);
 
         // Allocate a non-empty vector so that its .data() pointer is non-null.
         std::vector<uint8_t> data(1);
@@ -307,7 +309,7 @@ TEST_P(ChannelTest, EmptyTensor) {
         // Perform recv and wait for completion.
         auto descriptor = peers_->recv(PeerGroup::kClient);
         std::future<Error> recvFuture =
-            recvWithFuture(channel, descriptor, data.data(), 0);
+            recvWithFuture(channel, descriptor, CpuTensor{data.data(), 0});
         Error recvError = recvFuture.get();
         EXPECT_FALSE(recvError) << recvError.what();
 
@@ -323,14 +325,16 @@ TEST_P(ChannelTest, contextIsNotJoined) {
 
   testConnection(
       [&](std::shared_ptr<transport::Connection> conn) {
-        std::shared_ptr<Context> context = GetParam()->makeContext("server");
+        std::shared_ptr<Context<CpuTensor>> context =
+            GetParam()->makeContext("server");
         peers_->send(PeerGroup::kClient, kReady);
-        context->createChannel(std::move(conn), Channel::Endpoint::kListen);
+        context->createChannel(std::move(conn), Endpoint::kListen);
       },
       [&](std::shared_ptr<transport::Connection> conn) {
-        std::shared_ptr<Context> context = GetParam()->makeContext("client");
+        std::shared_ptr<Context<CpuTensor>> context =
+            GetParam()->makeContext("client");
         EXPECT_EQ(kReady, peers_->recv(PeerGroup::kClient));
-        context->createChannel(std::move(conn), Channel::Endpoint::kConnect);
+        context->createChannel(std::move(conn), Endpoint::kConnect);
       });
 }
 
@@ -345,24 +349,22 @@ TEST_P(ChannelTest, CallbacksAreDeferred) {
 
   testConnection(
       [&](std::shared_ptr<transport::Connection> conn) {
-        std::shared_ptr<Context> ctx = GetParam()->makeContext("server");
-        auto channel =
-            ctx->createChannel(std::move(conn), Channel::Endpoint::kListen);
+        std::shared_ptr<Context<CpuTensor>> ctx =
+            GetParam()->makeContext("server");
+        auto channel = ctx->createChannel(std::move(conn), Endpoint::kListen);
 
         // Initialize with sequential values.
         std::vector<uint8_t> data(dataSize);
         std::iota(data.begin(), data.end(), 0);
 
         // Perform send and wait for completion.
-        std::promise<std::tuple<Error, Channel::TDescriptor>> descriptorPromise;
+        std::promise<std::tuple<Error, TDescriptor>> descriptorPromise;
         std::promise<Error> sendPromise;
         std::mutex mutex;
         std::unique_lock<std::mutex> callerLock(mutex);
         channel->send(
-            data.data(),
-            data.size(),
-            [&descriptorPromise](
-                const Error& error, Channel::TDescriptor descriptor) {
+            CpuTensor{data.data(), data.size()},
+            [&descriptorPromise](const Error& error, TDescriptor descriptor) {
               descriptorPromise.set_value(
                   std::make_tuple(error, std::move(descriptor)));
             },
@@ -372,7 +374,7 @@ TEST_P(ChannelTest, CallbacksAreDeferred) {
             });
         callerLock.unlock();
         Error descriptorError;
-        Channel::TDescriptor descriptor;
+        TDescriptor descriptor;
         std::tie(descriptorError, descriptor) =
             descriptorPromise.get_future().get();
         EXPECT_FALSE(descriptorError) << descriptorError.what();
@@ -386,9 +388,9 @@ TEST_P(ChannelTest, CallbacksAreDeferred) {
         ctx->join();
       },
       [&](std::shared_ptr<transport::Connection> conn) {
-        std::shared_ptr<Context> ctx = GetParam()->makeContext("client");
-        auto channel =
-            ctx->createChannel(std::move(conn), Channel::Endpoint::kConnect);
+        std::shared_ptr<Context<CpuTensor>> ctx =
+            GetParam()->makeContext("client");
+        auto channel = ctx->createChannel(std::move(conn), Endpoint::kConnect);
 
         // Initialize with zeroes.
         std::vector<uint8_t> data(dataSize);
@@ -401,8 +403,7 @@ TEST_P(ChannelTest, CallbacksAreDeferred) {
         auto descriptor = peers_->recv(PeerGroup::kClient);
         channel->recv(
             descriptor,
-            data.data(),
-            data.size(),
+            CpuTensor{data.data(), data.size()},
             [&recvPromise, &mutex](const Error& error) {
               std::unique_lock<std::mutex> calleeLock(mutex);
               recvPromise.set_value(error);

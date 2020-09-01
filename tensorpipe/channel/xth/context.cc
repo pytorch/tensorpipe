@@ -58,9 +58,9 @@ class Context::Impl : public Context::PrivateIface,
 
   const std::string& domainDescriptor() const;
 
-  std::shared_ptr<channel::Channel> createChannel(
+  std::shared_ptr<channel::Channel<CpuTensor>> createChannel(
       std::shared_ptr<transport::Connection>,
-      Channel::Endpoint);
+      Endpoint);
 
   void setId(std::string id);
 
@@ -176,15 +176,15 @@ const std::string& Context::Impl::domainDescriptor() const {
   return domainDescriptor_;
 }
 
-std::shared_ptr<channel::Channel> Context::createChannel(
+std::shared_ptr<channel::Channel<CpuTensor>> Context::createChannel(
     std::shared_ptr<transport::Connection> connection,
-    Channel::Endpoint endpoint) {
+    Endpoint endpoint) {
   return impl_->createChannel(std::move(connection), endpoint);
 }
 
-std::shared_ptr<channel::Channel> Context::Impl::createChannel(
+std::shared_ptr<channel::Channel<CpuTensor>> Context::Impl::createChannel(
     std::shared_ptr<transport::Connection> connection,
-    Channel::Endpoint /* unused */) {
+    Endpoint /* unused */) {
   TP_THROW_ASSERT_IF(joined_);
   std::string channelId = id_ + ".c" + std::to_string(channelCounter_++);
   TP_VLOG(4) << "Channel context " << id_ << " is opening channel "

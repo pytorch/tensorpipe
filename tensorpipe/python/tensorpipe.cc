@@ -115,8 +115,8 @@ tensorpipe::Message prepareToWrite(std::shared_ptr<OutgoingMessage> pyMessage) {
   tpMessage.tensors.reserve(pyMessage->tensors.size());
   for (const auto& pyTensor : pyMessage->tensors) {
     tensorpipe::Message::Tensor tpTensor{
-        pyTensor->buffer.ptr(),
-        pyTensor->buffer.length(),
+        tensorpipe::CpuTensor{
+            pyTensor->buffer.ptr(), pyTensor->buffer.length()},
         {reinterpret_cast<char*>(pyTensor->metadata.ptr()),
          pyTensor->metadata.length()}};
     tpMessage.tensors.push_back(std::move(tpTensor));
@@ -187,9 +187,9 @@ std::shared_ptr<IncomingMessage> prepareToAllocate(
   std::vector<std::shared_ptr<IncomingTensor>> pyTensors;
   pyTensors.reserve(tpMessage.tensors.size());
   for (const auto& tpTensor : tpMessage.tensors) {
-    TP_DCHECK(tpTensor.data == nullptr);
-    pyTensors.push_back(
-        std::make_shared<IncomingTensor>(tpTensor.length, tpTensor.metadata));
+    TP_DCHECK(tpTensor.data.cpu.data == nullptr);
+    pyTensors.push_back(std::make_shared<IncomingTensor>(
+        tpTensor.data.cpu.length, tpTensor.metadata));
   }
   auto pyMessage = std::make_shared<IncomingMessage>(
       tpMessage.metadata, std::move(pyPayloads), std::move(pyTensors));
@@ -201,15 +201,15 @@ tensorpipe::Message prepareToRead(std::shared_ptr<IncomingMessage> pyMessage) {
   tpMessage.payloads.reserve(pyMessage->payloads.size());
   for (const auto& pyPayload : pyMessage->payloads) {
     TP_THROW_ASSERT_IF(!pyPayload->buffer.has_value()) << "No buffer";
-    tensorpipe::Message::Payload tpPayload{pyPayload->buffer.value().ptr(),
-                                           pyPayload->buffer.value().length()};
+    tensorpipe::Message::Payload tpPayload{
+        pyPayload->buffer.value().ptr(), pyPayload->buffer.value().length()};
     tpMessage.payloads.push_back(std::move(tpPayload));
   }
   tpMessage.tensors.reserve(pyMessage->tensors.size());
   for (const auto& pyTensor : pyMessage->tensors) {
     TP_THROW_ASSERT_IF(!pyTensor->buffer.has_value()) << "No buffer";
-    tensorpipe::Message::Tensor tpTensor{pyTensor->buffer.value().ptr(),
-                                         pyTensor->buffer.value().length()};
+    tensorpipe::Message::Tensor tpTensor{CpuTensor{
+        pyTensor->buffer.value().ptr(), pyTensor->buffer.value().length()}};
     tpMessage.tensors.push_back(std::move(tpTensor));
   }
   return tpMessage;
@@ -438,7 +438,7 @@ PYBIND11_MODULE(pytensorpipe, module) {
       py::arg("name"),
       py::arg("transport"));
 
-  shared_ptr_class_<tensorpipe::channel::Context> abstractChannel(
+  shared_ptr_class_<tensorpipe::channel::Context<CpuTensor>> abstractChannel(
       module, "AbstractChannel");
 
   channel_class_<tensorpipe::channel::basic::Context> basicChannel(
@@ -453,7 +453,7 @@ PYBIND11_MODULE(pytensorpipe, module) {
 
   context.def(
       "register_channel",
-      &tensorpipe::Context::registerChannel,
+      &tensorpipe::Context<CpuTensor>::registerChannel,
       py::arg("priority"),
       py::arg("name"),
       py::arg("channel"));

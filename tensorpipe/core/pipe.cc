@@ -55,7 +55,7 @@ struct ReadOperation {
   struct Tensor {
     ssize_t length{-1};
     std::string channelName;
-    channel::Channel::TDescriptor descriptor;
+    channel::TDescriptor descriptor;
   };
   std::vector<Tensor> tensors;
 
@@ -87,21 +87,25 @@ void parseDescriptorOfMessage(
   }
   for (const auto& pbTensorDescriptor :
        pbMessageDescriptor.tensor_descriptors()) {
-    Message::Tensor tensor;
+    Message::Tensor tensor{
+        .data =
+            CpuTensor{
+                nullptr,
+                static_cast<size_t>(pbTensorDescriptor.size_in_bytes())},
+        .metadata = pbTensorDescriptor.metadata(),
+    };
     ReadOperation::Tensor tensorBeingAllocated;
-    tensor.length = pbTensorDescriptor.size_in_bytes();
-    tensorBeingAllocated.length = tensor.length;
-    tensor.metadata = pbTensorDescriptor.metadata();
+    tensorBeingAllocated.length = tensor.data.cpu.length;
     tensorBeingAllocated.channelName = pbTensorDescriptor.channel_name();
     // FIXME If the protobuf wasn't const we could move the string out...
     tensorBeingAllocated.descriptor = pbTensorDescriptor.channel_descriptor();
     message.tensors.push_back(std::move(tensor));
     op.tensors.push_back(std::move(tensorBeingAllocated));
-  }
-}
+  } // namespace
+} // namespace tensorpipe
 
-// Raise an error if the number or sizes of the payloads and the tensors in the
-// message do not match the ones that are expected by the ReadOperation.
+// Raise an error if the number or sizes of the payloads and the tensors in
+// the message do not match the ones that are expected by the ReadOperation.
 void checkAllocationCompatibility(
     const ReadOperation& op,
     const Message& message) {
@@ -120,7 +124,7 @@ void checkAllocationCompatibility(
     const Message::Tensor& tensor = message.tensors[tensorIdx];
     const ReadOperation::Tensor& tensorBeingAllocated = op.tensors[tensorIdx];
     TP_DCHECK_GE(tensorBeingAllocated.length, 0);
-    TP_THROW_ASSERT_IF(tensor.length != tensorBeingAllocated.length);
+    TP_THROW_ASSERT_IF(tensor.data.cpu.length != tensorBeingAllocated.length);
   }
 }
 
@@ -148,7 +152,7 @@ struct WriteOperation {
   // Tensor descriptors collected from the channels.
   struct Tensor {
     std::string channelName;
-    channel::Channel::TDescriptor descriptor;
+    channel::TDescriptor descriptor;
   };
   std::vector<Tensor> tensors;
 };
@@ -180,7 +184,7 @@ std::shared_ptr<proto::Packet> makeDescriptorForMessage(
     proto::MessageDescriptor::TensorDescriptor* pbTensorDescriptor =
         pbMessageDescriptor->add_tensor_descriptors();
     pbTensorDescriptor->set_device_type(proto::DeviceType::DEVICE_TYPE_CPU);
-    pbTensorDescriptor->set_size_in_bytes(tensor.length);
+    pbTensorDescriptor->set_size_in_bytes(tensor.data.cpu.length);
     pbTensorDescriptor->set_metadata(tensor.metadata);
     pbTensorDescriptor->set_channel_name(otherTensor.channelName);
     // FIXME In principle we could move here.
@@ -258,7 +262,8 @@ class Pipe::Impl : public std::enable_shared_from_this<Pipe::Impl> {
 
   std::string transport_;
   std::shared_ptr<transport::Connection> connection_;
-  std::unordered_map<std::string, std::shared_ptr<channel::Channel>> channels_;
+  std::unordered_map<std::string, std::shared_ptr<channel::Channel<CpuTensor>>>
+      channels_;
 
   // The server will set this up when it tell the client to switch to a
   // different connection or to open some channels.
@@ -351,10 +356,7 @@ class Pipe::Impl : public std::enable_shared_from_this<Pipe::Impl> {
       std::string,
       std::shared_ptr<transport::Connection>);
   void onReadOfMessageDescriptor_(ReadOperation&, const proto::Packet&);
-  void onDescriptorOfTensor_(
-      WriteOperation&,
-      int64_t,
-      channel::Channel::TDescriptor);
+  void onDescriptorOfTensor_(WriteOperation&, int64_t, channel::TDescriptor);
   void onReadOfPayload_(ReadOperation&);
   void onRecvOfTensor_(ReadOperation&);
   void onWriteOfPayload_(WriteOperation&);
@@ -478,7 +480,7 @@ void Pipe::Impl::initFromLoop_() {
         pbBrochure->mutable_channel_advertisement();
     for (const auto& channelContextIter : context_->getOrderedChannels()) {
       const std::string& channelName = std::get<0>(channelContextIter.second);
-      const channel::Context& channelContext =
+      const channel::Context<CpuTensor>& channelContext =
           *(std::get<1>(channelContextIter.second));
       proto::ChannelAdvertisement* pbChannelAdvertisement =
           &(*pbAllChannelAdvertisements)[channelName];
@@ -668,14 +670,13 @@ void Pipe::Impl::readPayloadsAndReceiveTensorsOfMessage(ReadOperation& op) {
        tensorIdx++) {
     Message::Tensor& tensor = op.message.tensors[tensorIdx];
     ReadOperation::Tensor& tensorBeingAllocated = op.tensors[tensorIdx];
-    std::shared_ptr<channel::Channel> channel =
+    std::shared_ptr<channel::Channel<CpuTensor>> channel =
         channels_.at(tensorBeingAllocated.channelName);
     TP_VLOG(3) << "Pipe " << id_ << " is receiving tensor #"
                << op.sequenceNumber << "." << tensorIdx;
     channel->recv(
         std::move(tensorBeingAllocated.descriptor),
-        tensor.data,
-        tensor.length,
+        tensor.data.cpu,
         eagerCallbackWrapper_([&op, tensorIdx](Impl& impl) {
           TP_VLOG(3) << "Pipe " << impl.id_ << " done receiving tensor #"
                      << op.sequenceNumber << "." << tensorIdx;
@@ -1075,20 +1076,19 @@ void Pipe::Impl::sendTensorsOfMessage_(WriteOperation& op) {
       if (channelIter == channels_.cend()) {
         continue;
       }
-      channel::Channel& channel = *(channelIter->second);
+      channel::Channel<CpuTensor>& channel = *(channelIter->second);
 
       TP_VLOG(3) << "Pipe " << id_ << " is sending tensor #"
                  << op.sequenceNumber << "." << tensorIdx;
       channel.send(
-          tensor.data,
-          tensor.length,
-          eagerCallbackWrapper_([&op, tensorIdx](
-                                    Impl& impl,
-                                    channel::Channel::TDescriptor descriptor) {
-            TP_VLOG(3) << "Pipe " << impl.id_ << " got tensor descriptor #"
-                       << op.sequenceNumber << "." << tensorIdx;
-            impl.onDescriptorOfTensor_(op, tensorIdx, std::move(descriptor));
-          }),
+          tensor.data.cpu,
+          eagerCallbackWrapper_(
+              [&op, tensorIdx](Impl& impl, channel::TDescriptor descriptor) {
+                TP_VLOG(3) << "Pipe " << impl.id_ << " got tensor descriptor #"
+                           << op.sequenceNumber << "." << tensorIdx;
+                impl.onDescriptorOfTensor_(
+                    op, tensorIdx, std::move(descriptor));
+              }),
           eagerCallbackWrapper_([&op, tensorIdx](Impl& impl) {
             TP_VLOG(3) << "Pipe " << impl.id_ << " done sending tensor #"
                        << op.sequenceNumber << "." << tensorIdx;
@@ -1219,7 +1219,7 @@ void Pipe::Impl::onReadWhileServerWaitingForBrochure_(
   auto pbAllChannelSelections = pbBrochureAnswer->mutable_channel_selection();
   for (const auto& channelContextIter : context_->getOrderedChannels()) {
     const std::string& channelName = std::get<0>(channelContextIter.second);
-    const channel::Context& channelContext =
+    const channel::Context<CpuTensor>& channelContext =
         *(std::get<1>(channelContextIter.second));
 
     const auto pbChannelAdvertisementIter =
@@ -1311,7 +1311,7 @@ void Pipe::Impl::onReadWhileClientWaitingForBrochureAnswer_(
     const proto::ChannelSelection& pbChannelSelection =
         pbChannelSelectionIter.second;
 
-    std::shared_ptr<channel::Context> channelContext =
+    std::shared_ptr<channel::Context<CpuTensor>> channelContext =
         context_->getChannel(channelName);
 
     TP_VLOG(3) << "Pipe " << id_ << " is opening connection (for channel "
@@ -1332,8 +1332,9 @@ void Pipe::Impl::onReadWhileClientWaitingForBrochureAnswer_(
                      << " done writing proto (requested connection)";
         }));
 
-    std::shared_ptr<channel::Channel> channel = channelContext->createChannel(
-        std::move(connection), channel::Channel::Endpoint::kConnect);
+    std::shared_ptr<channel::Channel<CpuTensor>> channel =
+        channelContext->createChannel(
+            std::move(connection), channel::Endpoint::kConnect);
     channel->setId(id_ + ".ch_" + channelName);
     channels_.emplace(channelName, std::move(channel));
   }
@@ -1379,11 +1380,12 @@ void Pipe::Impl::onAcceptWhileServerWaitingForChannel_(
   auto channelIter = channels_.find(channelName);
   TP_DCHECK(channelIter == channels_.end());
 
-  std::shared_ptr<channel::Context> channelContext =
+  std::shared_ptr<channel::Context<CpuTensor>> channelContext =
       context_->getChannel(channelName);
 
-  std::shared_ptr<channel::Channel> channel = channelContext->createChannel(
-      std::move(receivedConnection), channel::Channel::Endpoint::kListen);
+  std::shared_ptr<channel::Channel<CpuTensor>> channel =
+      channelContext->createChannel(
+          std::move(receivedConnection), channel::Endpoint::kListen);
   channel->setId(id_ + ".ch_" + channelName);
   channels_.emplace(channelName, std::move(channel));
 
@@ -1410,7 +1412,7 @@ void Pipe::Impl::onReadOfMessageDescriptor_(
 void Pipe::Impl::onDescriptorOfTensor_(
     WriteOperation& op,
     int64_t tensorIdx,
-    channel::Channel::TDescriptor descriptor) {
+    channel::TDescriptor descriptor) {
   TP_DCHECK(loop_.inLoop());
 
   TP_DCHECK_EQ(

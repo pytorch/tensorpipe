@@ -10,4 +10,4 @@
 
 TP_DEFINE_SHARED_REGISTRY(
     TensorpipeChannelRegistry,
-    tensorpipe::channel::Context);
+    tensorpipe::channel::Context<tensorpipe::CpuTensor>);

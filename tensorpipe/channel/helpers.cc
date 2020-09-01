@@ -13,16 +13,14 @@
 namespace tensorpipe {
 namespace channel {
 
-Channel::TDescriptor saveDescriptor(const google::protobuf::MessageLite& pb) {
-  Channel::TDescriptor out;
+TDescriptor saveDescriptor(const google::protobuf::MessageLite& pb) {
+  TDescriptor out;
   const auto success = pb.SerializeToString(&out);
   TP_DCHECK(success) << "Failed to serialize protobuf message";
   return out;
 }
 
-void loadDescriptor(
-    google::protobuf::MessageLite& pb,
-    const Channel::TDescriptor& in) {
+void loadDescriptor(google::protobuf::MessageLite& pb, const TDescriptor& in) {
   const auto success = pb.ParseFromString(in);
   TP_DCHECK(success) << "Failed to parse protobuf message";
 }

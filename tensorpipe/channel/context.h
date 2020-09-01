@@ -25,6 +25,7 @@ namespace channel {
 // context. All registered instances are assumed to be eligible
 // channels for all pairs.
 //
+template <typename TTensor>
 class Context {
  public:
   // Return string to describe the domain for this channel.
@@ -42,9 +43,9 @@ class Context {
   // initialized yet, take care to queue these operations to execute
   // as soon as initialization has completed.
   //
-  virtual std::shared_ptr<Channel> createChannel(
+  virtual std::shared_ptr<Channel<TTensor>> createChannel(
       std::shared_ptr<transport::Connection>,
-      Channel::Endpoint) = 0;
+      Endpoint) = 0;
 
   // Tell the context what its identifier is.
   //

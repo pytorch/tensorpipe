@@ -15,20 +15,21 @@
 #include <tensorpipe/channel/context.h>
 #include <tensorpipe/common/callback.h>
 #include <tensorpipe/common/error.h>
+#include <tensorpipe/common/tensor.h>
 
 namespace tensorpipe {
 namespace channel {
 namespace cma {
 
-class Context : public channel::Context {
+class Context : public channel::Context<CpuTensor> {
  public:
   Context();
 
   const std::string& domainDescriptor() const override;
 
-  std::shared_ptr<Channel> createChannel(
+  std::shared_ptr<Channel<tensorpipe::CpuTensor>> createChannel(
       std::shared_ptr<transport::Connection>,
-      Channel::Endpoint) override;
+      Endpoint) override;
 
   void setId(std::string id) override;
 

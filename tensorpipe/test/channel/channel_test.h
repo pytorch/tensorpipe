@@ -16,6 +16,7 @@
 #include <gtest/gtest.h>
 
 #include <tensorpipe/channel/context.h>
+#include <tensorpipe/common/tensor.h>
 #include <tensorpipe/test/peer_group.h>
 #include <tensorpipe/transport/uv/context.h>
 
@@ -23,8 +24,8 @@ class ChannelTestHelper {
  public:
   virtual ~ChannelTestHelper() = default;
 
-  virtual std::shared_ptr<tensorpipe::channel::Context> makeContext(
-      std::string id) = 0;
+  virtual std::shared_ptr<tensorpipe::channel::Context<tensorpipe::CpuTensor>>
+  makeContext(std::string id) = 0;
 
   virtual std::shared_ptr<PeerGroup> makePeerGroup() {
     return std::make_shared<ThreadPeerGroup>();
@@ -79,45 +80,42 @@ class ChannelTest : public ::testing::TestWithParam<ChannelTestHelper*> {
   }
 
   [[nodiscard]] std::pair<
-      std::future<std::tuple<
-          tensorpipe::Error,
-          tensorpipe::channel::Channel::TDescriptor>>,
+      std::future<
+          std::tuple<tensorpipe::Error, tensorpipe::channel::TDescriptor>>,
       std::future<tensorpipe::Error>>
   sendWithFuture(
-      std::shared_ptr<tensorpipe::channel::Channel> channel,
-      const void* ptr,
-      size_t length) {
+      std::shared_ptr<tensorpipe::channel::Channel<tensorpipe::CpuTensor>>
+          channel,
+      const tensorpipe::CpuTensor& tensor) {
     auto descriptorPromise = std::make_shared<
         std::promise<std::tuple<tensorpipe::Error, std::string>>>();
     auto promise = std::make_shared<std::promise<tensorpipe::Error>>();
     auto descriptorFuture = descriptorPromise->get_future();
     auto future = promise->get_future();
     channel->send(
-        ptr,
-        length,
+        tensor,
         [descriptorPromise{std::move(descriptorPromise)}](
             const tensorpipe::Error& error, std::string descriptor) {
           descriptorPromise->set_value(
               std::make_tuple(error, std::move(descriptor)));
         },
-        [promise{std::move(promise)}](const tensorpipe::Error& error) {
+        [promise{std::move(promise)}, tensor](const tensorpipe::Error& error) {
           promise->set_value(error);
         });
     return {std::move(descriptorFuture), std::move(future)};
   }
 
   [[nodiscard]] std::future<tensorpipe::Error> recvWithFuture(
-      std::shared_ptr<tensorpipe::channel::Channel> channel,
-      tensorpipe::channel::Channel::TDescriptor descriptor,
-      void* ptr,
-      size_t length) {
+      std::shared_ptr<tensorpipe::channel::Channel<tensorpipe::CpuTensor>>
+          channel,
+      tensorpipe::channel::TDescriptor descriptor,
+      const tensorpipe::CpuTensor& tensor) {
     auto promise = std::make_shared<std::promise<tensorpipe::Error>>();
     auto future = promise->get_future();
     channel->recv(
         std::move(descriptor),
-        ptr,
-        length,
-        [promise{std::move(promise)}](const tensorpipe::Error& error) {
+        tensor,
+        [promise{std::move(promise)}, tensor](const tensorpipe::Error& error) {
           promise->set_value(error);
         });
     return future;

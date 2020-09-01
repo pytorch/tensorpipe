@@ -17,11 +17,9 @@
 namespace tensorpipe {
 namespace channel {
 
-Channel::TDescriptor saveDescriptor(const google::protobuf::MessageLite& pb);
+TDescriptor saveDescriptor(const google::protobuf::MessageLite& pb);
 
-void loadDescriptor(
-    google::protobuf::MessageLite& pb,
-    const Channel::TDescriptor& in);
+void loadDescriptor(google::protobuf::MessageLite& pb, const TDescriptor& in);
 
 } // namespace channel
 } // namespace tensorpipe
