@@ -208,7 +208,7 @@ tensorpipe::Message prepareToRead(std::shared_ptr<IncomingMessage> pyMessage) {
   tpMessage.tensors.reserve(pyMessage->tensors.size());
   for (const auto& pyTensor : pyMessage->tensors) {
     TP_THROW_ASSERT_IF(!pyTensor->buffer.has_value()) << "No buffer";
-    tensorpipe::Message::Tensor tpTensor{CpuTensor{
+    tensorpipe::Message::Tensor tpTensor{tensorpipe::CpuTensor{
         pyTensor->buffer.value().ptr(), pyTensor->buffer.value().length()}};
     tpMessage.tensors.push_back(std::move(tpTensor));
   }
@@ -223,8 +223,10 @@ using transport_class_ =
     py::class_<T, tensorpipe::transport::Context, std::shared_ptr<T>>;
 
 template <typename T>
-using channel_class_ =
-    py::class_<T, tensorpipe::channel::Context, std::shared_ptr<T>>;
+using channel_class_ = py::class_<
+    T,
+    tensorpipe::channel::Context<tensorpipe::CpuTensor>,
+    std::shared_ptr<T>>;
 
 } // namespace
 
@@ -438,8 +440,8 @@ PYBIND11_MODULE(pytensorpipe, module) {
       py::arg("name"),
       py::arg("transport"));
 
-  shared_ptr_class_<tensorpipe::channel::Context<CpuTensor>> abstractChannel(
-      module, "AbstractChannel");
+  shared_ptr_class_<tensorpipe::channel::Context<tensorpipe::CpuTensor>>
+      abstractChannel(module, "AbstractChannel");
 
   channel_class_<tensorpipe::channel::basic::Context> basicChannel(
       module, "BasicChannel");
@@ -453,7 +455,7 @@ PYBIND11_MODULE(pytensorpipe, module) {
 
   context.def(
       "register_channel",
-      &tensorpipe::Context<CpuTensor>::registerChannel,
+      &tensorpipe::Context<tensorpipe::CpuTensor>::registerChannel,
       py::arg("priority"),
       py::arg("name"),
       py::arg("channel"));
