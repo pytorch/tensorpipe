@@ -455,7 +455,7 @@ PYBIND11_MODULE(pytensorpipe, module) {
 
   context.def(
       "register_channel",
-      &tensorpipe::Context<tensorpipe::CpuTensor>::registerChannel,
+      &tensorpipe::Context::registerChannel,
       py::arg("priority"),
       py::arg("name"),
       py::arg("channel"));
