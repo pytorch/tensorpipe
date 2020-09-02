@@ -86,7 +86,7 @@ class Channel {
 using CpuChannel = Channel<CpuTensor>;
 
 #if TENSORPIPE_HAS_CUDA_IPC_CHANNEL
-using CudaChannel = Channel < CudaTensor;
+using CudaChannel = Channel<CudaTensor>;
 #endif // TENSORPIPE_HAS_CUDA_IPC_CHANNEL
 
 } // namespace channel
