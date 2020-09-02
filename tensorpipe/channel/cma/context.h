@@ -21,7 +21,7 @@ namespace tensorpipe {
 namespace channel {
 namespace cma {
 
-class Context : public channel::Context<CpuTensor> {
+class Context : public channel::CpuContext {
  public:
   Context();
 

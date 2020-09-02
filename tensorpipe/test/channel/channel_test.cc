@@ -16,9 +16,9 @@ using namespace tensorpipe;
 using namespace tensorpipe::channel;
 
 TEST_P(ChannelTest, DomainDescriptor) {
-  std::shared_ptr<Context<CpuTensor>> context1 =
+  std::shared_ptr<CpuContext> context1 =
       GetParam()->makeContext("ctx1");
-  std::shared_ptr<Context<CpuTensor>> context2 =
+  std::shared_ptr<CpuContext> context2 =
       GetParam()->makeContext("ctx2");
   EXPECT_FALSE(context1->domainDescriptor().empty());
   EXPECT_FALSE(context2->domainDescriptor().empty());
@@ -30,7 +30,7 @@ TEST_P(ChannelTest, ClientToServer) {
 
   testConnection(
       [&](std::shared_ptr<transport::Connection> conn) {
-        std::shared_ptr<Context<CpuTensor>> ctx =
+        std::shared_ptr<CpuContext> ctx =
             GetParam()->makeContext("server");
         auto channel = ctx->createChannel(std::move(conn), Endpoint::kListen);
 
@@ -57,7 +57,7 @@ TEST_P(ChannelTest, ClientToServer) {
         ctx->join();
       },
       [&](std::shared_ptr<transport::Connection> conn) {
-        std::shared_ptr<Context<CpuTensor>> ctx =
+        std::shared_ptr<CpuContext> ctx =
             GetParam()->makeContext("client");
         auto channel = ctx->createChannel(std::move(conn), Endpoint::kConnect);
 
@@ -89,7 +89,7 @@ TEST_P(ChannelTest, ServerToClient) {
 
   testConnection(
       [&](std::shared_ptr<transport::Connection> conn) {
-        std::shared_ptr<Context<CpuTensor>> ctx =
+        std::shared_ptr<CpuContext> ctx =
             GetParam()->makeContext("server");
         auto channel = ctx->createChannel(std::move(conn), Endpoint::kListen);
 
@@ -115,7 +115,7 @@ TEST_P(ChannelTest, ServerToClient) {
         ctx->join();
       },
       [&](std::shared_ptr<transport::Connection> conn) {
-        std::shared_ptr<Context<CpuTensor>> ctx =
+        std::shared_ptr<CpuContext> ctx =
             GetParam()->makeContext("client");
         auto channel = ctx->createChannel(std::move(conn), Endpoint::kConnect);
 
@@ -149,7 +149,7 @@ TEST_P(ChannelTest, SendMultipleTensors) {
 
   testConnection(
       [&](std::shared_ptr<transport::Connection> conn) {
-        std::shared_ptr<Context<CpuTensor>> ctx =
+        std::shared_ptr<CpuContext> ctx =
             GetParam()->makeContext("server");
         auto channel = ctx->createChannel(std::move(conn), Endpoint::kListen);
 
@@ -184,7 +184,7 @@ TEST_P(ChannelTest, SendMultipleTensors) {
         ctx->join();
       },
       [&](std::shared_ptr<transport::Connection> conn) {
-        std::shared_ptr<Context<CpuTensor>> ctx =
+        std::shared_ptr<CpuContext> ctx =
             GetParam()->makeContext("client");
         auto channel = ctx->createChannel(std::move(conn), Endpoint::kConnect);
 
@@ -227,7 +227,7 @@ TEST_P(ChannelTest, NullPointer) {
 
   testConnection(
       [&](std::shared_ptr<transport::Connection> conn) {
-        std::shared_ptr<Context<CpuTensor>> ctx =
+        std::shared_ptr<CpuContext> ctx =
             GetParam()->makeContext("server");
         auto channel = ctx->createChannel(std::move(conn), Endpoint::kListen);
 
@@ -250,7 +250,7 @@ TEST_P(ChannelTest, NullPointer) {
         ctx->join();
       },
       [&](std::shared_ptr<transport::Connection> conn) {
-        std::shared_ptr<Context<CpuTensor>> ctx =
+        std::shared_ptr<CpuContext> ctx =
             GetParam()->makeContext("client");
         auto channel = ctx->createChannel(std::move(conn), Endpoint::kConnect);
 
@@ -273,7 +273,7 @@ TEST_P(ChannelTest, EmptyTensor) {
 
   testConnection(
       [&](std::shared_ptr<transport::Connection> conn) {
-        std::shared_ptr<Context<CpuTensor>> ctx =
+        std::shared_ptr<CpuContext> ctx =
             GetParam()->makeContext("server");
         auto channel = ctx->createChannel(std::move(conn), Endpoint::kListen);
 
@@ -299,7 +299,7 @@ TEST_P(ChannelTest, EmptyTensor) {
         ctx->join();
       },
       [&](std::shared_ptr<transport::Connection> conn) {
-        std::shared_ptr<Context<CpuTensor>> ctx =
+        std::shared_ptr<CpuContext> ctx =
             GetParam()->makeContext("client");
         auto channel = ctx->createChannel(std::move(conn), Endpoint::kConnect);
 
@@ -325,13 +325,13 @@ TEST_P(ChannelTest, contextIsNotJoined) {
 
   testConnection(
       [&](std::shared_ptr<transport::Connection> conn) {
-        std::shared_ptr<Context<CpuTensor>> context =
+        std::shared_ptr<CpuContext> context =
             GetParam()->makeContext("server");
         peers_->send(PeerGroup::kClient, kReady);
         context->createChannel(std::move(conn), Endpoint::kListen);
       },
       [&](std::shared_ptr<transport::Connection> conn) {
-        std::shared_ptr<Context<CpuTensor>> context =
+        std::shared_ptr<CpuContext> context =
             GetParam()->makeContext("client");
         EXPECT_EQ(kReady, peers_->recv(PeerGroup::kClient));
         context->createChannel(std::move(conn), Endpoint::kConnect);
@@ -349,7 +349,7 @@ TEST_P(ChannelTest, CallbacksAreDeferred) {
 
   testConnection(
       [&](std::shared_ptr<transport::Connection> conn) {
-        std::shared_ptr<Context<CpuTensor>> ctx =
+        std::shared_ptr<CpuContext> ctx =
             GetParam()->makeContext("server");
         auto channel = ctx->createChannel(std::move(conn), Endpoint::kListen);
 
@@ -388,7 +388,7 @@ TEST_P(ChannelTest, CallbacksAreDeferred) {
         ctx->join();
       },
       [&](std::shared_ptr<transport::Connection> conn) {
-        std::shared_ptr<Context<CpuTensor>> ctx =
+        std::shared_ptr<CpuContext> ctx =
             GetParam()->makeContext("client");
         auto channel = ctx->createChannel(std::move(conn), Endpoint::kConnect);
 

@@ -262,7 +262,7 @@ class Pipe::Impl : public std::enable_shared_from_this<Pipe::Impl> {
 
   std::string transport_;
   std::shared_ptr<transport::Connection> connection_;
-  std::unordered_map<std::string, std::shared_ptr<channel::Channel<CpuTensor>>>
+  std::unordered_map<std::string, std::shared_ptr<channel::CpuChannel>>
       channels_;
 
   // The server will set this up when it tell the client to switch to a
@@ -480,7 +480,7 @@ void Pipe::Impl::initFromLoop_() {
         pbBrochure->mutable_channel_advertisement();
     for (const auto& channelContextIter : context_->getOrderedChannels()) {
       const std::string& channelName = std::get<0>(channelContextIter.second);
-      const channel::Context<CpuTensor>& channelContext =
+      const channel::CpuContext& channelContext =
           *(std::get<1>(channelContextIter.second));
       proto::ChannelAdvertisement* pbChannelAdvertisement =
           &(*pbAllChannelAdvertisements)[channelName];
@@ -670,7 +670,7 @@ void Pipe::Impl::readPayloadsAndReceiveTensorsOfMessage(ReadOperation& op) {
        tensorIdx++) {
     Message::Tensor& tensor = op.message.tensors[tensorIdx];
     ReadOperation::Tensor& tensorBeingAllocated = op.tensors[tensorIdx];
-    std::shared_ptr<channel::Channel<CpuTensor>> channel =
+    std::shared_ptr<channel::CpuChannel> channel =
         channels_.at(tensorBeingAllocated.channelName);
     TP_VLOG(3) << "Pipe " << id_ << " is receiving tensor #"
                << op.sequenceNumber << "." << tensorIdx;
@@ -1081,7 +1081,7 @@ void Pipe::Impl::sendTensorsOfMessage_(WriteOperation& op) {
       if (channelIter == channels_.cend()) {
         continue;
       }
-      channel::Channel<CpuTensor>& channel = *(channelIter->second);
+      channel::CpuChannel& channel = *(channelIter->second);
 
       TP_VLOG(3) << "Pipe " << id_ << " is sending tensor #"
                  << op.sequenceNumber << "." << tensorIdx;
@@ -1229,7 +1229,7 @@ void Pipe::Impl::onReadWhileServerWaitingForBrochure_(
   auto pbAllChannelSelections = pbBrochureAnswer->mutable_channel_selection();
   for (const auto& channelContextIter : context_->getOrderedChannels()) {
     const std::string& channelName = std::get<0>(channelContextIter.second);
-    const channel::Context<CpuTensor>& channelContext =
+    const channel::CpuContext& channelContext =
         *(std::get<1>(channelContextIter.second));
 
     const auto pbChannelAdvertisementIter =
@@ -1321,7 +1321,7 @@ void Pipe::Impl::onReadWhileClientWaitingForBrochureAnswer_(
     const proto::ChannelSelection& pbChannelSelection =
         pbChannelSelectionIter.second;
 
-    std::shared_ptr<channel::Context<CpuTensor>> channelContext =
+    std::shared_ptr<channel::CpuContext> channelContext =
         context_->getChannel(channelName);
 
     TP_VLOG(3) << "Pipe " << id_ << " is opening connection (for channel "
@@ -1342,7 +1342,7 @@ void Pipe::Impl::onReadWhileClientWaitingForBrochureAnswer_(
                      << " done writing proto (requested connection)";
         }));
 
-    std::shared_ptr<channel::Channel<CpuTensor>> channel =
+    std::shared_ptr<channel::CpuChannel> channel =
         channelContext->createChannel(
             std::move(connection), channel::Endpoint::kConnect);
     channel->setId(id_ + ".ch_" + channelName);
@@ -1390,10 +1390,10 @@ void Pipe::Impl::onAcceptWhileServerWaitingForChannel_(
   auto channelIter = channels_.find(channelName);
   TP_DCHECK(channelIter == channels_.end());
 
-  std::shared_ptr<channel::Context<CpuTensor>> channelContext =
+  std::shared_ptr<channel::CpuContext> channelContext =
       context_->getChannel(channelName);
 
-  std::shared_ptr<channel::Channel<CpuTensor>> channel =
+  std::shared_ptr<channel::CpuChannel> channel =
       channelContext->createChannel(
           std::move(receivedConnection), channel::Endpoint::kListen);
   channel->setId(id_ + ".ch_" + channelName);

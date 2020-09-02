@@ -21,7 +21,7 @@ namespace tensorpipe {
 namespace channel {
 namespace mpt {
 
-class Context : public channel::Context<CpuTensor> {
+class Context : public channel::CpuContext {
  public:
   Context(
       std::vector<std::shared_ptr<transport::Context>>,
@@ -29,7 +29,7 @@ class Context : public channel::Context<CpuTensor> {
 
   const std::string& domainDescriptor() const override;
 
-  std::shared_ptr<Channel<CpuTensor>> createChannel(
+  std::shared_ptr<CpuChannel> createChannel(
       std::shared_ptr<transport::Connection>,
       Endpoint) override;
 
