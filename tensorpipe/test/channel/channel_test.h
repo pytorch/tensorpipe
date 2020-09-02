@@ -99,7 +99,7 @@ class ChannelTest : public ::testing::TestWithParam<ChannelTestHelper*> {
           descriptorPromise->set_value(
               std::make_tuple(error, std::move(descriptor)));
         },
-        [promise{std::move(promise)}, tensor](const tensorpipe::Error& error) {
+        [promise{std::move(promise)}](const tensorpipe::Error& error) {
           promise->set_value(error);
         });
     return {std::move(descriptorFuture), std::move(future)};
@@ -115,7 +115,7 @@ class ChannelTest : public ::testing::TestWithParam<ChannelTestHelper*> {
     channel->recv(
         std::move(descriptor),
         tensor,
-        [promise{std::move(promise)}, tensor](const tensorpipe::Error& error) {
+        [promise{std::move(promise)}](const tensorpipe::Error& error) {
           promise->set_value(error);
         });
     return future;

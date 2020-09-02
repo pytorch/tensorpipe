@@ -31,15 +31,13 @@ class Channel : public channel::Channel<CpuTensor> {
 
   // Send memory region to peer.
   void send(
-      const CpuTensor& tensor,
+      const CpuTensor tensor,
       TDescriptorCallback descriptorCallback,
       TSendCallback callback) override;
 
   // Receive memory region from peer.
-  void recv(
-      TDescriptor descriptor,
-      const CpuTensor& tensor,
-      TRecvCallback callback) override;
+  void recv(TDescriptor descriptor, CpuTensor tensor, TRecvCallback callback)
+      override;
 
   // Tell the channel what its identifier is.
   void setId(std::string id) override;

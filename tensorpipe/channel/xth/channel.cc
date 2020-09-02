@@ -31,14 +31,11 @@ class Channel::Impl : public std::enable_shared_from_this<Channel::Impl> {
   void init();
 
   void send(
-      const CpuTensor& tensor,
+      const CpuTensor tensor,
       TDescriptorCallback descriptorCallback,
       TSendCallback callback);
 
-  void recv(
-      TDescriptor descriptor,
-      const CpuTensor& tensor,
-      TRecvCallback callback);
+  void recv(TDescriptor descriptor, CpuTensor tensor, TRecvCallback callback);
 
   // Tell the channel what its identifier is.
   void setId(std::string id);
@@ -52,14 +49,14 @@ class Channel::Impl : public std::enable_shared_from_this<Channel::Impl> {
 
   // Send memory region to peer.
   void sendFromLoop_(
-      const CpuTensor& tensor,
+      const CpuTensor tensor,
       TDescriptorCallback descriptorCallback,
       TSendCallback callback);
 
   // Receive memory region from peer.
   void recvFromLoop_(
       TDescriptor descriptor,
-      const CpuTensor& tensor,
+      CpuTensor tensor,
       TRecvCallback callback);
 
   void setIdFromLoop_(std::string id);
@@ -130,14 +127,14 @@ void Channel::Impl::initFromLoop_() {
 }
 
 void Channel::send(
-    const CpuTensor& tensor,
+    const CpuTensor tensor,
     TDescriptorCallback descriptorCallback,
     TSendCallback callback) {
   impl_->send(tensor, std::move(descriptorCallback), std::move(callback));
 }
 
 void Channel::Impl::send(
-    const CpuTensor& tensor,
+    const CpuTensor tensor,
     TDescriptorCallback descriptorCallback,
     TSendCallback callback) {
   loop_.deferToLoop([this,
@@ -149,7 +146,7 @@ void Channel::Impl::send(
 }
 
 void Channel::Impl::sendFromLoop_(
-    const CpuTensor& tensor,
+    const CpuTensor tensor,
     TDescriptorCallback descriptorCallback,
     TSendCallback callback) {
   TP_DCHECK(loop_.inLoop());
@@ -208,14 +205,14 @@ void Channel::Impl::sendFromLoop_(
 // Receive memory region from peer.
 void Channel::recv(
     TDescriptor descriptor,
-    const CpuTensor& tensor,
+    CpuTensor tensor,
     TRecvCallback callback) {
   impl_->recv(std::move(descriptor), tensor, std::move(callback));
 }
 
 void Channel::Impl::recv(
     TDescriptor descriptor,
-    const CpuTensor& tensor,
+    CpuTensor tensor,
     TRecvCallback callback) {
   loop_.deferToLoop([this,
                      descriptor{std::move(descriptor)},
@@ -227,7 +224,7 @@ void Channel::Impl::recv(
 
 void Channel::Impl::recvFromLoop_(
     TDescriptor descriptor,
-    const CpuTensor& tensor,
+    CpuTensor tensor,
     TRecvCallback callback) {
   TP_DCHECK(loop_.inLoop());
 

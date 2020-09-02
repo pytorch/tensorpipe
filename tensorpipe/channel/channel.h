@@ -59,14 +59,14 @@ class Channel {
  public:
   // Send memory region to peer.
   virtual void send(
-      const TTensor& tensor,
+      const TTensor tensor,
       TDescriptorCallback descriptorCallback,
       TSendCallback callback) = 0;
 
   // Receive memory region from peer.
   virtual void recv(
       TDescriptor descriptor,
-      const TTensor& tensor,
+      TTensor tensor,
       TRecvCallback callback) = 0;
 
   // Tell the channel what its identifier is.
