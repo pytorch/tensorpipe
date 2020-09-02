@@ -88,14 +88,14 @@ void parseDescriptorOfMessage(
   for (const auto& pbTensorDescriptor :
        pbMessageDescriptor.tensor_descriptors()) {
     Message::Tensor tensor{
-        .data =
+        .tensor =
             CpuTensor{
                 nullptr,
                 static_cast<size_t>(pbTensorDescriptor.size_in_bytes())},
         .metadata = pbTensorDescriptor.metadata(),
     };
     ReadOperation::Tensor tensorBeingAllocated;
-    tensorBeingAllocated.length = tensor.data.cpu.length;
+    tensorBeingAllocated.length = tensor.tensor.cpu.length;
     tensorBeingAllocated.channelName = pbTensorDescriptor.channel_name();
     // FIXME If the protobuf wasn't const we could move the string out...
     tensorBeingAllocated.descriptor = pbTensorDescriptor.channel_descriptor();
@@ -124,7 +124,7 @@ void checkAllocationCompatibility(
     const Message::Tensor& tensor = message.tensors[tensorIdx];
     const ReadOperation::Tensor& tensorBeingAllocated = op.tensors[tensorIdx];
     TP_DCHECK_GE(tensorBeingAllocated.length, 0);
-    TP_THROW_ASSERT_IF(tensor.data.cpu.length != tensorBeingAllocated.length);
+    TP_THROW_ASSERT_IF(tensor.tensor.cpu.length != tensorBeingAllocated.length);
   }
 }
 
@@ -184,7 +184,7 @@ std::shared_ptr<proto::Packet> makeDescriptorForMessage(
     proto::MessageDescriptor::TensorDescriptor* pbTensorDescriptor =
         pbMessageDescriptor->add_tensor_descriptors();
     pbTensorDescriptor->set_device_type(proto::DeviceType::DEVICE_TYPE_CPU);
-    pbTensorDescriptor->set_size_in_bytes(tensor.data.cpu.length);
+    pbTensorDescriptor->set_size_in_bytes(tensor.tensor.cpu.length);
     pbTensorDescriptor->set_metadata(tensor.metadata);
     pbTensorDescriptor->set_channel_name(otherTensor.channelName);
     // FIXME In principle we could move here.
@@ -674,9 +674,14 @@ void Pipe::Impl::readPayloadsAndReceiveTensorsOfMessage(ReadOperation& op) {
         channels_.at(tensorBeingAllocated.channelName);
     TP_VLOG(3) << "Pipe " << id_ << " is receiving tensor #"
                << op.sequenceNumber << "." << tensorIdx;
+
+    // Temporary workaround until tensor.data/tensor.length are removed.
+    auto cpu_tensor = (tensor.data == nullptr)
+        ? tensor.tensor.cpu
+        : CpuTensor{.ptr = tensor.data, .length = tensor.length};
     channel->recv(
         std::move(tensorBeingAllocated.descriptor),
-        tensor.data.cpu,
+        cpu_tensor,
         eagerCallbackWrapper_([&op, tensorIdx](Impl& impl) {
           TP_VLOG(3) << "Pipe " << impl.id_ << " done receiving tensor #"
                      << op.sequenceNumber << "." << tensorIdx;
@@ -1080,8 +1085,13 @@ void Pipe::Impl::sendTensorsOfMessage_(WriteOperation& op) {
 
       TP_VLOG(3) << "Pipe " << id_ << " is sending tensor #"
                  << op.sequenceNumber << "." << tensorIdx;
+
+      // Temporary workaround until tensor.data/tensor.length are removed.
+      auto cpu_tensor = (tensor.data == nullptr)
+          ? tensor.tensor.cpu
+          : CpuTensor{.ptr = tensor.data, .length = tensor.length};
       channel.send(
-          tensor.data.cpu,
+          cpu_tensor,
           eagerCallbackWrapper_(
               [&op, tensorIdx](Impl& impl, channel::TDescriptor descriptor) {
                 TP_VLOG(3) << "Pipe " << impl.id_ << " got tensor descriptor #"
