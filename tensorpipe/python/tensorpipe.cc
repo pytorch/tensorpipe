@@ -187,7 +187,7 @@ std::shared_ptr<IncomingMessage> prepareToAllocate(
   std::vector<std::shared_ptr<IncomingTensor>> pyTensors;
   pyTensors.reserve(tpMessage.tensors.size());
   for (const auto& tpTensor : tpMessage.tensors) {
-    TP_DCHECK(tpTensor.data.cpu.data == nullptr);
+    TP_DCHECK(tpTensor.data.cpu.ptr == nullptr);
     pyTensors.push_back(std::make_shared<IncomingTensor>(
         tpTensor.data.cpu.length, tpTensor.metadata));
   }

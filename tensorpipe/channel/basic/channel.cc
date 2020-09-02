@@ -182,7 +182,7 @@ void Channel::Impl::sendFromLoop_(
   TP_VLOG(6) << "Channel " << id_ << " is writing payload (#" << sequenceNumber
              << ")";
   connection_->write(
-      tensor.data,
+      tensor.ptr,
       tensor.length,
       eagerCallbackWrapper_(
           [sequenceNumber, callback{std::move(callback)}](Impl& impl) {
@@ -244,7 +244,7 @@ void Channel::Impl::recvFromLoop_(
   TP_VLOG(6) << "Channel " << id_ << " is reading payload (#" << sequenceNumber
              << ")";
   connection_->read(
-      tensor.data,
+      tensor.ptr,
       tensor.length,
       eagerCallbackWrapper_(
           [sequenceNumber, callback{std::move(callback)}](

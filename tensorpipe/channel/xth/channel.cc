@@ -200,7 +200,7 @@ void Channel::Impl::sendFromLoop_(
           }));
 
   proto::Descriptor pbDescriptor;
-  pbDescriptor.set_ptr(reinterpret_cast<std::uintptr_t>(tensor.data));
+  pbDescriptor.set_ptr(reinterpret_cast<std::uintptr_t>(tensor.ptr));
 
   descriptorCallback(Error::kSuccess, saveDescriptor(pbDescriptor));
 }
@@ -256,7 +256,7 @@ void Channel::Impl::recvFromLoop_(
              << ")";
   context_->requestCopy(
       remotePtr,
-      tensor.data,
+      tensor.ptr,
       tensor.length,
       eagerCallbackWrapper_([sequenceNumber,
                              callback{std::move(callback)}](Impl& impl) {

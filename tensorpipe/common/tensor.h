@@ -22,13 +22,13 @@ enum class DeviceType {
 };
 
 struct CpuTensor {
-  void* data{nullptr};
+  void* ptr{nullptr};
   size_t length{0};
 };
 
 #if TENSORPIPE_HAS_CUDA_IPC_CHANNEL
 struct CudaTensor {
-  void* data{nullptr};
+  void* ptr{nullptr};
   size_t length{0};
   cudaStream_t stream{cudaStreamDefault};
 };

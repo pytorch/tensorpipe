@@ -78,9 +78,9 @@ namespace {
   }
   for (size_t idx = 0; idx < m1.tensors.size(); idx++) {
     EXPECT_TRUE(buffersAreEqual(
-        m1.tensors[idx].data.cpu.data,
+        m1.tensors[idx].data.cpu.ptr,
         m1.tensors[idx].data.cpu.length,
-        m2.tensors[idx].data.cpu.data,
+        m2.tensors[idx].data.cpu.ptr,
         m2.tensors[idx].data.cpu.length));
   }
   return ::testing::AssertionSuccess();
@@ -102,8 +102,7 @@ Message makeMessage(int numPayloads, int numTensors) {
     Message::Tensor tensor{
         .data = CpuTensor{
             reinterpret_cast<void*>(const_cast<char*>(kTensorData.data())),
-            .length = kTensorData.length(),
-        }};
+            kTensorData.length()}};
     message.tensors.push_back(std::move(tensor));
   }
   return message;
@@ -193,7 +192,7 @@ TEST(Context, ClientPingSerial) {
   }
   for (auto& tensor : message.tensors) {
     auto tensorData = std::make_unique<uint8_t[]>(tensor.data.cpu.length);
-    tensor.data.cpu.data = tensorData.get();
+    tensor.data.cpu.ptr = tensorData.get();
     buffers.push_back(std::move(tensorData));
   }
 
@@ -262,7 +261,7 @@ TEST(Context, ClientPingInline) {
       }
       for (auto& tensor : message.tensors) {
         auto tensorData = std::make_unique<uint8_t[]>(tensor.data.cpu.length);
-        tensor.data.cpu.data = tensorData.get();
+        tensor.data.cpu.ptr = tensorData.get();
         buffers.push_back(std::move(tensorData));
       }
       serverPipe->read(
@@ -363,7 +362,7 @@ TEST(Context, ServerPingPongTwice) {
               for (auto& tensor : message.tensors) {
                 auto tensorData =
                     std::make_unique<uint8_t[]>(tensor.data.cpu.length);
-                tensor.data.cpu.data = tensorData.get();
+                tensor.data.cpu.ptr = tensorData.get();
                 buffers.push_back(std::move(tensorData));
               }
               serverPipe->read(
@@ -407,7 +406,7 @@ TEST(Context, ServerPingPongTwice) {
       }
       for (auto& tensor : message.tensors) {
         auto tensorData = std::make_unique<uint8_t[]>(tensor.data.cpu.length);
-        tensor.data.cpu.data = tensorData.get();
+        tensor.data.cpu.ptr = tensorData.get();
         buffers.push_back(std::move(tensorData));
       }
       clientPipe->read(
@@ -461,7 +460,7 @@ static void pipeRead(
     }
     for (auto& tensor : message.tensors) {
       auto tensorData = std::make_unique<uint8_t[]>(tensor.data.cpu.length);
-      tensor.data.cpu.data = tensorData.get();
+      tensor.data.cpu.ptr = tensorData.get();
       buffers.push_back(std::move(tensorData));
     }
     pipe->read(

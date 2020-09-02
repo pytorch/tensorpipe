@@ -309,7 +309,7 @@ void Channel::Impl::sendFromLoop_(
   sendOperations_.emplace_back();
   SendOperation& op = sendOperations_.back();
   op.sequenceNumber = sequenceNumber;
-  op.ptr = tensor.data;
+  op.ptr = tensor.ptr;
   op.length = tensor.length;
   op.callback = std::move(callback);
 
@@ -369,7 +369,7 @@ void Channel::Impl::recvFromLoop_(
   recvOperations_.emplace_back();
   RecvOperation& op = recvOperations_.back();
   op.sequenceNumber = sequenceNumber;
-  op.ptr = tensor.data;
+  op.ptr = tensor.ptr;
   op.length = tensor.length;
   op.callback = std::move(callback);
 
