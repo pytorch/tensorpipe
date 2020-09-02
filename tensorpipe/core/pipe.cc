@@ -89,9 +89,8 @@ void parseDescriptorOfMessage(
        pbMessageDescriptor.tensor_descriptors()) {
     Message::Tensor tensor{
         .tensor =
-            CpuTensor{
-                nullptr,
-                static_cast<size_t>(pbTensorDescriptor.size_in_bytes())},
+            CpuTensor{nullptr,
+                      static_cast<size_t>(pbTensorDescriptor.size_in_bytes())},
         .metadata = pbTensorDescriptor.metadata(),
     };
     ReadOperation::Tensor tensorBeingAllocated;
