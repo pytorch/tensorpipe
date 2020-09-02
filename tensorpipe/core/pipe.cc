@@ -1393,9 +1393,8 @@ void Pipe::Impl::onAcceptWhileServerWaitingForChannel_(
   std::shared_ptr<channel::CpuContext> channelContext =
       context_->getChannel(channelName);
 
-  std::shared_ptr<channel::CpuChannel> channel =
-      channelContext->createChannel(
-          std::move(receivedConnection), channel::Endpoint::kListen);
+  std::shared_ptr<channel::CpuChannel> channel = channelContext->createChannel(
+      std::move(receivedConnection), channel::Endpoint::kListen);
   channel->setId(id_ + ".ch_" + channelName);
   channels_.emplace(channelName, std::move(channel));
 

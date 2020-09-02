@@ -63,8 +63,7 @@ class Context::Impl : public Context::PrivateIface,
   ClosingEmitter& getClosingEmitter() override;
 
   std::shared_ptr<transport::Context> getTransport(const std::string&) override;
-  std::shared_ptr<channel::CpuContext> getChannel(
-      const std::string&) override;
+  std::shared_ptr<channel::CpuContext> getChannel(const std::string&) override;
 
   using PrivateIface::TOrderedTransports;
 
