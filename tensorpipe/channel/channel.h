@@ -13,6 +13,7 @@
 #include <vector>
 
 #include <tensorpipe/common/optional.h>
+#include <tensorpipe/common/tensor.h>
 #include <tensorpipe/transport/connection.h>
 
 // Channels are an out of band mechanism to transfer data between
