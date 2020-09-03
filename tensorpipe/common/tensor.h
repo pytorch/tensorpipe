@@ -15,7 +15,7 @@
 namespace tensorpipe {
 
 enum class DeviceType {
-  kCpu = 0,
+  kCpu,
 #if TENSORPIPE_HAS_CUDA_IPC_CHANNEL
   kCuda,
 #endif // TENSORPIPE_HAS_CUDA_IPC_CHANNEL
