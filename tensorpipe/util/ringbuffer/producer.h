@@ -119,7 +119,7 @@ class Producer : public RingBufferWrapper {
     return writeInTx(sizeof(T), &d);
   }
 
-  [[nodiscard]] std::pair<ssize_t, void*> reserveContiguousInTx(
+  [[nodiscard]] std::pair<ssize_t, uint8_t*> reserveContiguousInTx(
       const size_t size) {
     if (unlikely(size == 0)) {
       TP_LOG_WARNING() << "Reserve of size zero is not supported. "
@@ -173,9 +173,7 @@ class Producer : public RingBufferWrapper {
     TP_THROW_IF_NULLPTR(d);
 
     if (unlikely(size == 0)) {
-      TP_LOG_WARNING() << "Copies of size zero are not supported. "
-                       << "Is size set correctly?";
-      return -EINVAL;
+      return 0;
     }
 
     if (unlikely(size > this->header_.kDataPoolByteSize)) {

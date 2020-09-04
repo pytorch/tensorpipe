@@ -13,6 +13,8 @@
 #include <nop/utility/buffer_reader.h>
 #include <nop/utility/buffer_writer.h>
 
+#include <tensorpipe/common/defs.h>
+
 namespace tensorpipe {
 
 // Libnop makes heavy use of templates, whereas TensorPipe is designed around
@@ -44,6 +46,152 @@ namespace tensorpipe {
 // patterns we think are most likely to come up: reading/writing to a temporary
 // contiguous buffer, and reading/writing to a ringbuffer.
 
+// This reader and writer can operate either on one single buffer (ptr + len) or
+// on two buffers: in the latter case, they first consume the first one and,
+// when that fills up, they "spill over" into the second one. This is needed in
+// order to support the "wrap around" point in ringbuffers.
+
+class NopReader final {
+ public:
+  NopReader(const uint8_t* ptr, size_t len) : ptr1_(ptr), len1_(len) {}
+
+  NopReader(const uint8_t* ptr1, size_t len1, const uint8_t* ptr2, size_t len2)
+      : ptr1_(ptr1), len1_(len1), ptr2_(ptr2), len2_(len2) {}
+
+  nop::Status<void> Ensure(size_t size) {
+    if (likely(size <= len1_ + len2_)) {
+      return nop::ErrorStatus::None;
+    } else {
+      return nop::ErrorStatus::ReadLimitReached;
+    }
+  }
+
+  nop::Status<void> Read(uint8_t* byte) {
+    if (unlikely(len1_ == 0)) {
+      ptr1_ = ptr2_;
+      len1_ = len2_;
+      ptr2_ = nullptr;
+      len2_ = 0;
+    }
+
+    *byte = *ptr1_;
+    ptr1_++;
+    len1_--;
+    return nop::ErrorStatus::None;
+  }
+
+  nop::Status<void> Read(void* begin, void* end) {
+    size_t size =
+        reinterpret_cast<uint8_t*>(end) - reinterpret_cast<uint8_t*>(begin);
+
+    if (unlikely(len1_ < size)) {
+      std::memcpy(begin, ptr1_, len1_);
+      begin = reinterpret_cast<uint8_t*>(begin) + len1_;
+      size -= len1_;
+      ptr1_ = ptr2_;
+      len1_ = len2_;
+      ptr2_ = nullptr;
+      len2_ = 0;
+    }
+
+    std::memcpy(begin, ptr1_, size);
+    ptr1_ += size;
+    len1_ -= size;
+    return nop::ErrorStatus::None;
+  }
+
+  nop::Status<void> Skip(size_t padding_bytes) {
+    if (unlikely(len1_ < padding_bytes)) {
+      padding_bytes -= len1_;
+      ptr1_ = ptr2_;
+      len1_ = len2_;
+      ptr2_ = nullptr;
+      len2_ = 0;
+    }
+
+    ptr1_ += padding_bytes;
+    len1_ -= padding_bytes;
+    return nop::ErrorStatus::None;
+  }
+
+ private:
+  const uint8_t* ptr1_ = nullptr;
+  size_t len1_ = 0;
+  const uint8_t* ptr2_ = nullptr;
+  size_t len2_ = 0;
+};
+
+class NopWriter final {
+ public:
+  NopWriter(uint8_t* ptr, size_t len) : ptr1_(ptr), len1_(len) {}
+  NopWriter(uint8_t* ptr1, size_t len1, uint8_t* ptr2, size_t len2)
+      : ptr1_(ptr1), len1_(len1), ptr2_(ptr2), len2_(len2) {}
+
+  nop::Status<void> Prepare(size_t size) {
+    if (likely(size <= len1_ + len2_)) {
+      return nop::ErrorStatus::None;
+    } else {
+      return nop::ErrorStatus::WriteLimitReached;
+    }
+  }
+
+  nop::Status<void> Write(uint8_t byte) {
+    if (unlikely(len1_ == 0)) {
+      ptr1_ = ptr2_;
+      len1_ = len2_;
+      ptr2_ = nullptr;
+      len2_ = 0;
+    }
+
+    *ptr1_ = byte;
+    ptr1_++;
+    len1_--;
+    return nop::ErrorStatus::None;
+  }
+
+  nop::Status<void> Write(const void* begin, const void* end) {
+    size_t size = reinterpret_cast<const uint8_t*>(end) -
+        reinterpret_cast<const uint8_t*>(begin);
+
+    if (unlikely(len1_ < size)) {
+      std::memcpy(ptr1_, begin, len1_);
+      begin = reinterpret_cast<const uint8_t*>(begin) + len1_;
+      size -= len1_;
+      ptr1_ = ptr2_;
+      len1_ = len2_;
+      ptr2_ = nullptr;
+      len2_ = 0;
+    }
+
+    std::memcpy(ptr1_, begin, size);
+    ptr1_ += size;
+    len1_ -= size;
+    return nop::ErrorStatus::None;
+  }
+
+  nop::Status<void> Skip(size_t padding_bytes, uint8_t padding_value) {
+    if (unlikely(len1_ < padding_bytes)) {
+      std::memset(ptr1_, padding_value, padding_bytes);
+      padding_bytes -= len1_;
+      ptr1_ = ptr2_;
+      len1_ = len2_;
+      ptr2_ = nullptr;
+      len2_ = 0;
+    }
+
+    std::memset(ptr1_, padding_value, padding_bytes);
+    ptr1_ += padding_bytes;
+    len1_ -= padding_bytes;
+    return nop::ErrorStatus::None;
+  }
+
+ private:
+  uint8_t* ptr1_ = nullptr;
+  size_t len1_ = 0;
+  uint8_t* ptr2_ = nullptr;
+  size_t len2_ = 0;
+};
+
 // The helpers to perform type erasure of the object type: a untemplated base
 // class exposing the methods we need for (de)serialization, and then templated
 // subclasses allowing to create a holder for each concrete libnop type.
@@ -51,8 +199,8 @@ namespace tensorpipe {
 class AbstractNopHolder {
  public:
   virtual size_t getSize() const = 0;
-  virtual nop::Status<void> write(nop::BufferWriter& writer) const = 0;
-  virtual nop::Status<void> read(nop::BufferReader& reader) = 0;
+  virtual nop::Status<void> write(NopWriter& writer) const = 0;
+  virtual nop::Status<void> read(NopReader& reader) = 0;
   virtual ~AbstractNopHolder() = default;
 };
 
@@ -71,11 +219,11 @@ class NopHolder : public AbstractNopHolder {
     return nop::Encoding<T>::Size(object_);
   }
 
-  nop::Status<void> write(nop::BufferWriter& writer) const override {
+  nop::Status<void> write(NopWriter& writer) const override {
     return nop::Encoding<T>::Write(object_, &writer);
   }
 
-  nop::Status<void> read(nop::BufferReader& reader) override {
+  nop::Status<void> read(NopReader& reader) override {
     return nop::Encoding<T>::Read(&object_, &reader);
   }
 

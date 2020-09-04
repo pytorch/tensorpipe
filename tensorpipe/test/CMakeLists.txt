@@ -32,7 +32,6 @@ if(TP_ENABLE_SHM)
     transport/shm/sockaddr_test.cc
     transport/shm/shm_test.cc
     util/ringbuffer/shm_ringbuffer_test.cc
-    util/ringbuffer/protobuf_streams_test.cc
     util/ringbuffer/ringbuffer_test.cc
     util/shm/segment_test.cc
     )

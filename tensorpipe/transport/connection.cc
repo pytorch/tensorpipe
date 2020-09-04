@@ -17,7 +17,7 @@ void Connection::read(AbstractNopHolder& object, read_nop_callback_fn fn) {
   read([&object, fn{std::move(fn)}](
            const Error& error, const void* ptr, size_t len) {
     if (!error) {
-      nop::BufferReader reader(reinterpret_cast<const uint8_t*>(ptr), len);
+      NopReader reader(reinterpret_cast<const uint8_t*>(ptr), len);
       nop::Status<void> status = object.read(reader);
       TP_THROW_ASSERT_IF(status.has_error())
           << "Error reading nop object: " << status.GetErrorMessage();
@@ -40,7 +40,7 @@ void Connection::write(const AbstractNopHolder& object, write_callback_fn fn) {
       new uint8_t[len], std::default_delete<uint8_t[]>());
   auto ptr = buf.get();
 
-  nop::BufferWriter writer(ptr, len);
+  NopWriter writer(ptr, len);
   nop::Status<void> status = object.write(writer);
   TP_THROW_ASSERT_IF(status.has_error())
       << "Error writing nop object: " << status.GetErrorMessage();

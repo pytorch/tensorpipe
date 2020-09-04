@@ -17,7 +17,7 @@ namespace channel {
 Channel::TDescriptor saveDescriptor(const AbstractNopHolder& object) {
   const size_t len = object.getSize();
   Channel::TDescriptor out(len, '\0');
-  nop::BufferWriter writer(reinterpret_cast<uint8_t*>(out.data()), len);
+  NopWriter writer(reinterpret_cast<uint8_t*>(out.data()), len);
 
   nop::Status<void> status = object.write(writer);
   TP_THROW_ASSERT_IF(status.has_error())
@@ -28,7 +28,7 @@ Channel::TDescriptor saveDescriptor(const AbstractNopHolder& object) {
 
 void loadDescriptor(AbstractNopHolder& object, const Channel::TDescriptor& in) {
   const size_t len = in.size();
-  nop::BufferReader reader(reinterpret_cast<const uint8_t*>(in.data()), len);
+  NopReader reader(reinterpret_cast<const uint8_t*>(in.data()), len);
 
   nop::Status<void> status = object.read(reader);
   TP_THROW_ASSERT_IF(status.has_error())

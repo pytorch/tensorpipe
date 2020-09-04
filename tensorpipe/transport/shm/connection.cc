@@ -13,8 +13,6 @@
 #include <deque>
 #include <vector>
 
-#include <google/protobuf/message_lite.h>
-
 #include <tensorpipe/common/callback.h>
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/error_macros.h>
@@ -24,7 +22,6 @@
 #include <tensorpipe/transport/shm/socket.h>
 #include <tensorpipe/util/ringbuffer/consumer.h>
 #include <tensorpipe/util/ringbuffer/producer.h>
-#include <tensorpipe/util/ringbuffer/protobuf_streams.h>
 #include <tensorpipe/util/ringbuffer/shm.h>
 
 namespace tensorpipe {
@@ -307,14 +304,12 @@ class Connection::Impl : public std::enable_shared_from_this<Connection::Impl>,
 
   // Queue a read operation.
   void read(read_callback_fn fn);
-  void read(google::protobuf::MessageLite& message, read_proto_callback_fn fn);
+  void read(AbstractNopHolder& object, read_nop_callback_fn fn);
   void read(void* ptr, size_t length, read_callback_fn fn);
 
   // Perform a write operation.
   void write(const void* ptr, size_t length, write_callback_fn fn);
-  void write(
-      const google::protobuf::MessageLite& message,
-      write_callback_fn fn);
+  void write(const AbstractNopHolder& object, write_callback_fn fn);
 
   // Tell the connection what its identifier is.
   void setId(std::string id);
@@ -331,16 +326,12 @@ class Connection::Impl : public std::enable_shared_from_this<Connection::Impl>,
 
   // Queue a read operation.
   void readFromLoop(read_callback_fn fn);
-  void readFromLoop(
-      google::protobuf::MessageLite& message,
-      read_proto_callback_fn fn);
+  void readFromLoop(AbstractNopHolder& object, read_nop_callback_fn fn);
   void readFromLoop(void* ptr, size_t length, read_callback_fn fn);
 
   // Perform a write operation.
   void writeFromLoop(const void* ptr, size_t length, write_callback_fn fn);
-  void writeFromLoop(
-      const google::protobuf::MessageLite& message,
-      write_callback_fn fn);
+  void writeFromLoop(const AbstractNopHolder& object, write_callback_fn fn);
 
   void setIdFromLoop_(std::string id);
 
@@ -588,38 +579,37 @@ void Connection::Impl::readFromLoop(read_callback_fn fn) {
   processReadOperationsFromLoop();
 }
 
-void Connection::read(
-    google::protobuf::MessageLite& message,
-    read_proto_callback_fn fn) {
-  impl_->read(message, std::move(fn));
+void Connection::read(AbstractNopHolder& object, read_nop_callback_fn fn) {
+  impl_->read(object, std::move(fn));
 }
 
 void Connection::Impl::read(
-    google::protobuf::MessageLite& message,
-    read_proto_callback_fn fn) {
+    AbstractNopHolder& object,
+    read_nop_callback_fn fn) {
   context_->deferToLoop(
-      [impl{shared_from_this()}, &message, fn{std::move(fn)}]() mutable {
-        impl->readFromLoop(message, std::move(fn));
+      [impl{shared_from_this()}, &object, fn{std::move(fn)}]() mutable {
+        impl->readFromLoop(object, std::move(fn));
       });
 }
 
 void Connection::Impl::readFromLoop(
-    google::protobuf::MessageLite& message,
-    read_proto_callback_fn fn) {
+    AbstractNopHolder& object,
+    read_nop_callback_fn fn) {
   TP_DCHECK(context_->inLoopThread());
 
   uint64_t sequenceNumber = nextBufferBeingRead_++;
-  TP_VLOG(7) << "Connection " << id_ << " received a proto read request (#"
+  TP_VLOG(7) << "Connection " << id_ << " received a nop object read request (#"
              << sequenceNumber << ")";
 
   fn = [this, sequenceNumber, fn{std::move(fn)}](const Error& error) {
     TP_DCHECK_EQ(sequenceNumber, nextReadCallbackToCall_++);
-    TP_VLOG(7) << "Connection " << id_ << " is calling a proto read callback (#"
-               << sequenceNumber << ")";
+    TP_VLOG(7) << "Connection " << id_
+               << " is calling a nop object read callback (#" << sequenceNumber
+               << ")";
     fn(error);
     TP_VLOG(7) << "Connection " << id_
-               << " done calling a proto read callback (#" << sequenceNumber
-               << ")";
+               << " done calling a nop object read callback (#"
+               << sequenceNumber << ")";
   };
 
   if (error_) {
@@ -628,7 +618,7 @@ void Connection::Impl::readFromLoop(
   }
 
   readOperations_.emplace_back(
-      [&message](util::ringbuffer::Consumer& inbox) -> ssize_t {
+      [&object](util::ringbuffer::Consumer& inbox) -> ssize_t {
         uint32_t len;
         {
           const auto ret = inbox.copyInTx(sizeof(len), &len);
@@ -642,13 +632,33 @@ void Connection::Impl::readFromLoop(
           return -EPERM;
         }
 
-        util::ringbuffer::ZeroCopyInputStream is(&inbox, len);
-        if (!message.ParseFromZeroCopyStream(&is)) {
-          return -ENODATA;
+        const uint8_t* ptr1;
+        ssize_t len1;
+        const uint8_t* ptr2 = nullptr;
+        ssize_t len2 = 0;
+        std::tie(len1, ptr1) = inbox.readContiguousAtMostInTx(len);
+        if (unlikely(len1 < 0)) {
+          return len1;
+        }
+        if (unlikely(len1 < len)) {
+          std::tie(len2, ptr2) = inbox.readContiguousAtMostInTx(len - len1);
+          if (unlikely(len2 < 0)) {
+            return len2;
+          }
+          if (unlikely(len1 + len2 < len)) {
+            return -ENODATA;
+          }
         }
 
-        TP_DCHECK_EQ(len, is.ByteCount());
-        return is.ByteCount();
+        NopReader reader(ptr1, len1, ptr2, len2);
+        nop::Status<void> status = object.read(reader);
+        if (status.error() == nop::ErrorStatus::ReadLimitReached) {
+          return -ENODATA;
+        } else if (status.has_error()) {
+          return -EINVAL;
+        }
+
+        return len;
       },
       [fn{std::move(fn)}](
           const Error& error, const void* /* unused */, size_t /* unused */) {
@@ -749,39 +759,38 @@ void Connection::Impl::writeFromLoop(
   processWriteOperationsFromLoop();
 }
 
-void Connection::write(
-    const google::protobuf::MessageLite& message,
-    write_callback_fn fn) {
-  impl_->write(message, std::move(fn));
+void Connection::write(const AbstractNopHolder& object, write_callback_fn fn) {
+  impl_->write(object, std::move(fn));
 }
 
 void Connection::Impl::write(
-    const google::protobuf::MessageLite& message,
+    const AbstractNopHolder& object,
     write_callback_fn fn) {
   context_->deferToLoop(
-      [impl{shared_from_this()}, &message, fn{std::move(fn)}]() mutable {
-        impl->writeFromLoop(message, std::move(fn));
+      [impl{shared_from_this()}, &object, fn{std::move(fn)}]() mutable {
+        impl->writeFromLoop(object, std::move(fn));
       });
 }
 
 void Connection::Impl::writeFromLoop(
-    const google::protobuf::MessageLite& message,
+    const AbstractNopHolder& object,
     write_callback_fn fn) {
   TP_DCHECK(context_->inLoopThread());
 
   uint64_t sequenceNumber = nextBufferBeingWritten_++;
-  TP_VLOG(7) << "Connection " << id_ << " received a proto write request (#"
-             << sequenceNumber << ")";
+  TP_VLOG(7) << "Connection " << id_
+             << " received a nop object write request (#" << sequenceNumber
+             << ")";
 
   fn = [this, sequenceNumber, fn{std::move(fn)}](const Error& error) {
     TP_DCHECK_EQ(sequenceNumber, nextWriteCallbackToCall_++);
     TP_VLOG(7) << "Connection " << id_
-               << " is calling a proto write callback (#" << sequenceNumber
+               << " is calling a nop object write callback (#" << sequenceNumber
                << ")";
     fn(error);
     TP_VLOG(7) << "Connection " << id_
-               << " done calling a proto write callback (#" << sequenceNumber
-               << ")";
+               << " done calling a nop object write callback (#"
+               << sequenceNumber << ")";
   };
 
   if (error_) {
@@ -790,8 +799,8 @@ void Connection::Impl::writeFromLoop(
   }
 
   writeOperations_.emplace_back(
-      [&message](util::ringbuffer::Producer& outbox) -> ssize_t {
-        size_t len = message.ByteSize();
+      [&object](util::ringbuffer::Producer& outbox) -> ssize_t {
+        size_t len = object.getSize();
         if (len + sizeof(uint32_t) > kBufferSize) {
           return -EPERM;
         }
@@ -801,14 +810,33 @@ void Connection::Impl::writeFromLoop(
           return ret;
         }
 
-        util::ringbuffer::ZeroCopyOutputStream os(&outbox, len);
-        if (!message.SerializeToZeroCopyStream(&os)) {
-          return -ENOSPC;
+        uint8_t* ptr1;
+        ssize_t len1;
+        uint8_t* ptr2 = nullptr;
+        ssize_t len2 = 0;
+        std::tie(len1, ptr1) = outbox.reserveContiguousInTx(len);
+        if (unlikely(len1 < 0)) {
+          return len1;
+        }
+        if (unlikely(len1 < len)) {
+          std::tie(len2, ptr2) = outbox.reserveContiguousInTx(len - len1);
+          if (unlikely(len2 < 0)) {
+            return len2;
+          }
+          if (unlikely(len1 + len2 < len)) {
+            return -ENODATA;
+          }
         }
 
-        TP_DCHECK_EQ(len, os.ByteCount());
+        NopWriter writer(ptr1, len1, ptr2, len2);
+        nop::Status<void> status = object.write(writer);
+        if (status.error() == nop::ErrorStatus::WriteLimitReached) {
+          return -ENOSPC;
+        } else if (status.has_error()) {
+          return -EINVAL;
+        }
 
-        return os.ByteCount();
+        return len;
       },
       std::move(fn));
 
