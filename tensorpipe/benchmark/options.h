@@ -22,7 +22,9 @@ struct Options {
   std::string channel; // basic
   std::string address; // address for listen or connect
   int numRoundTrips{0}; // number of write/read pairs
+  size_t numPayloads{0};
   size_t payloadSize{0};
+  size_t numTensors{0};
   size_t tensorSize{0};
   size_t metadataSize{0};
 };

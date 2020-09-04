@@ -59,7 +59,9 @@ static void usage(int status, const char* argv0) {
   X("--channel=CHANNEL               Channel backend [basic]");
   X("--address=ADDRESS               Address to listen or connect to");
   X("--num-round-trips=NUM           Number of write/read pairs to perform");
+  X("--num-payloads=NUM [optional]   Number of payloads of each write/read pair");
   X("--payload-size=SIZE [optional]  Size of payload of each write/read pair");
+  X("--num-tensors=NUM [optional]    Number of tensors of each write/read pair");
   X("--tensor-size=SIZE [optional]   Size of tensor of each write/read pair");
   X("--metadata-size=SIZE [optional] Size of metadata of each write/read pair");
 
@@ -81,7 +83,7 @@ static void validateOptions(Options options, const char* argv0) {
     status = EXIT_FAILURE;
   }
   if (options.numRoundTrips <= 0) {
-    fprintf(stderr, "Missing argument: --io-num must be set\n");
+    fprintf(stderr, "Missing argument: --num-round-trips must be set\n");
     status = EXIT_FAILURE;
   }
   if (status != EXIT_SUCCESS) {
@@ -100,7 +102,9 @@ struct Options parseOptions(int argc, char** argv) {
     CHANNEL,
     ADDRESS,
     NUM_ROUND_TRIPS,
+    NUM_PAYLOADS,
     PAYLOAD_SIZE,
+    NUM_TENSORS,
     TENSOR_SIZE,
     METADATA_SIZE,
     HELP,
@@ -112,7 +116,9 @@ struct Options parseOptions(int argc, char** argv) {
       {"channel", required_argument, &flag, CHANNEL},
       {"address", required_argument, &flag, ADDRESS},
       {"num-round-trips", required_argument, &flag, NUM_ROUND_TRIPS},
+      {"num-payloads", required_argument, &flag, NUM_PAYLOADS},
       {"payload-size", required_argument, &flag, PAYLOAD_SIZE},
+      {"num-tensors", required_argument, &flag, NUM_TENSORS},
       {"tensor-size", required_argument, &flag, TENSOR_SIZE},
       {"metadata-size", required_argument, &flag, METADATA_SIZE},
       {"help", no_argument, &flag, HELP},
@@ -148,8 +154,14 @@ struct Options parseOptions(int argc, char** argv) {
       case NUM_ROUND_TRIPS:
         options.numRoundTrips = atoi(optarg);
         break;
+      case NUM_PAYLOADS:
+        options.numPayloads = atoi(optarg);
+        break;
       case PAYLOAD_SIZE:
         options.payloadSize = atoi(optarg);
+        break;
+      case NUM_TENSORS:
+        options.numTensors = atoi(optarg);
         break;
       case TENSOR_SIZE:
         options.tensorSize = atoi(optarg);

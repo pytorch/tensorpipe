@@ -25,12 +25,18 @@ using namespace tensorpipe::benchmark;
 Measurements measurements;
 
 struct Data {
-  std::unique_ptr<uint8_t[]> expectedPayload;
-  std::unique_ptr<uint8_t[]> temporaryPayload;
+  size_t numPayloads;
   size_t payloadSize;
-  std::unique_ptr<uint8_t[]> expectedTensor;
-  std::unique_ptr<uint8_t[]> temporaryTensor;
+  std::vector<std::unique_ptr<uint8_t[]>> expectedPayload;
+  std::vector<std::string> expectedPayloadMetadata;
+  std::vector<std::unique_ptr<uint8_t[]>> temporaryPayload;
+
+  size_t numTensors;
   size_t tensorSize;
+  std::vector<std::unique_ptr<uint8_t[]>> expectedTensor;
+  std::vector<std::string> expectedTensorMetadata;
+  std::vector<std::unique_ptr<uint8_t[]>> temporaryTensor;
+
   std::string expectedMetadata;
 };
 
@@ -78,16 +84,27 @@ static void serverPongPingNonBlock(
     TP_THROW_ASSERT_IF(error) << error.what();
     TP_DCHECK_EQ(message.metadata, data.expectedMetadata);
     if (data.payloadSize > 0) {
-      TP_DCHECK_EQ(message.payloads.size(), 1);
-      TP_DCHECK_EQ(message.payloads[0].length, data.payloadSize);
-      message.payloads[0].data = data.temporaryPayload.get();
+      TP_DCHECK_EQ(message.payloads.size(), data.numPayloads);
+      for (size_t payloadIdx = 0; payloadIdx < data.numPayloads; payloadIdx++) {
+        TP_DCHECK_EQ(
+            message.payloads[payloadIdx].metadata,
+            data.expectedPayloadMetadata[payloadIdx]);
+        TP_DCHECK_EQ(message.payloads[payloadIdx].length, data.payloadSize);
+        message.payloads[payloadIdx].data =
+            data.temporaryPayload[payloadIdx].get();
+      }
     } else {
       TP_DCHECK_EQ(message.payloads.size(), 0);
     }
     if (data.tensorSize > 0) {
-      TP_DCHECK_EQ(message.tensors.size(), 1);
-      TP_DCHECK_EQ(message.tensors[0].length, data.tensorSize);
-      message.tensors[0].data = data.temporaryTensor.get();
+      TP_DCHECK_EQ(message.tensors.size(), data.numTensors);
+      for (size_t tensorIdx = 0; tensorIdx < data.numTensors; tensorIdx++) {
+        TP_DCHECK_EQ(
+            message.tensors[tensorIdx].metadata,
+            data.expectedTensorMetadata[tensorIdx]);
+        TP_DCHECK_EQ(message.tensors[tensorIdx].length, data.tensorSize);
+        message.tensors[tensorIdx].data = data.temporaryTensor[tensorIdx].get();
+      }
     } else {
       TP_DCHECK_EQ(message.tensors.size(), 0);
     }
@@ -97,26 +114,33 @@ static void serverPongPingNonBlock(
             const Error& error, Message&& message) {
           TP_THROW_ASSERT_IF(error) << error.what();
           if (data.payloadSize > 0) {
-            TP_DCHECK_EQ(message.payloads.size(), 1);
-            TP_DCHECK_EQ(message.payloads[0].length, data.payloadSize);
-            TP_DCHECK_EQ(
-                memcmp(
-                    message.payloads[0].data,
-                    data.expectedPayload.get(),
-                    message.payloads[0].length),
-                0);
+            TP_DCHECK_EQ(message.payloads.size(), data.numPayloads);
+            for (size_t payloadIdx = 0; payloadIdx < data.numPayloads;
+                 payloadIdx++) {
+              TP_DCHECK_EQ(
+                  message.payloads[payloadIdx].length, data.payloadSize);
+              TP_DCHECK_EQ(
+                  memcmp(
+                      message.payloads[payloadIdx].data,
+                      data.expectedPayload[payloadIdx].get(),
+                      message.payloads[payloadIdx].length),
+                  0);
+            }
           } else {
             TP_DCHECK_EQ(message.tensors.size(), 0);
           }
           if (data.tensorSize > 0) {
-            TP_DCHECK_EQ(message.tensors.size(), 1);
-            TP_DCHECK_EQ(message.tensors[0].length, data.tensorSize);
-            TP_DCHECK_EQ(
-                memcmp(
-                    message.tensors[0].data,
-                    data.expectedTensor.get(),
-                    message.tensors[0].length),
-                0);
+            TP_DCHECK_EQ(message.tensors.size(), data.numTensors);
+            for (size_t tensorIdx = 0; tensorIdx < data.numTensors;
+                 tensorIdx++) {
+              TP_DCHECK_EQ(message.tensors[tensorIdx].length, data.tensorSize);
+              TP_DCHECK_EQ(
+                  memcmp(
+                      message.tensors[tensorIdx].data,
+                      data.expectedTensor[tensorIdx].get(),
+                      message.tensors[tensorIdx].length),
+                  0);
+            }
           } else {
             TP_DCHECK_EQ(message.tensors.size(), 0);
           }
@@ -140,15 +164,28 @@ static void serverPongPingNonBlock(
 static void runServer(const Options& options) {
   std::string addr = options.address;
   int numRoundTrips = options.numRoundTrips;
-  Data data = {
-      createData(options.payloadSize),
-      std::make_unique<uint8_t[]>(options.payloadSize),
-      options.payloadSize,
-      createData(options.tensorSize),
-      std::make_unique<uint8_t[]>(options.tensorSize),
-      options.tensorSize,
-      std::string(options.metadataSize, 0x42),
-  };
+
+  Data data;
+  data.numPayloads = options.numPayloads;
+  data.payloadSize = options.payloadSize;
+  for (size_t payloadIdx = 0; payloadIdx < options.numPayloads; payloadIdx++) {
+    data.expectedPayload.push_back(createData(options.payloadSize));
+    data.expectedPayloadMetadata.push_back(
+        std::string(options.metadataSize, 0x42));
+    data.temporaryPayload.push_back(
+        std::make_unique<uint8_t[]>(options.payloadSize));
+  }
+  data.numTensors = options.numTensors;
+  data.tensorSize = options.tensorSize;
+  for (size_t tensorIdx = 0; tensorIdx < options.numTensors; tensorIdx++) {
+    data.expectedTensor.push_back(createData(options.tensorSize));
+    data.expectedTensorMetadata.push_back(
+        std::string(options.metadataSize, 0x42));
+    data.temporaryTensor.push_back(
+        std::make_unique<uint8_t[]>(options.tensorSize));
+  }
+  data.expectedMetadata = std::string(options.metadataSize, 0x42);
+
   Measurements measurements;
   measurements.reserve(options.numRoundTrips);
 
@@ -189,18 +226,22 @@ static void clientPingPongNonBlock(
   Message message;
   message.metadata = data.expectedMetadata;
   if (data.payloadSize > 0) {
-    Message::Payload payload;
-    payload.data = data.expectedPayload.get();
-    payload.length = data.payloadSize;
-    message.payloads.push_back(std::move(payload));
+    for (size_t payloadIdx = 0; payloadIdx < data.numPayloads; payloadIdx++) {
+      Message::Payload payload;
+      payload.data = data.expectedPayload[payloadIdx].get();
+      payload.length = data.payloadSize;
+      message.payloads.push_back(std::move(payload));
+    }
   } else {
     TP_DCHECK_EQ(message.tensors.size(), 0);
   }
   if (data.tensorSize > 0) {
-    Message::Tensor tensor;
-    tensor.data = data.expectedTensor.get();
-    tensor.length = data.tensorSize;
-    message.tensors.push_back(std::move(tensor));
+    for (size_t tensorIdx = 0; tensorIdx < data.numTensors; tensorIdx++) {
+      Message::Tensor tensor;
+      tensor.data = data.expectedTensor[tensorIdx].get();
+      tensor.length = data.tensorSize;
+      message.tensors.push_back(std::move(tensor));
+    }
   } else {
     TP_DCHECK_EQ(message.tensors.size(), 0);
   }
@@ -215,16 +256,32 @@ static void clientPingPongNonBlock(
               TP_THROW_ASSERT_IF(error) << error.what();
               TP_DCHECK_EQ(message.metadata, data.expectedMetadata);
               if (data.payloadSize > 0) {
-                TP_DCHECK_EQ(message.payloads.size(), 1);
-                TP_DCHECK_EQ(message.payloads[0].length, data.payloadSize);
-                message.payloads[0].data = data.temporaryPayload.get();
+                TP_DCHECK_EQ(message.payloads.size(), data.numPayloads);
+                for (size_t payloadIdx = 0; payloadIdx < data.numPayloads;
+                     payloadIdx++) {
+                  TP_DCHECK_EQ(
+                      message.payloads[payloadIdx].metadata,
+                      data.expectedPayloadMetadata[payloadIdx]);
+                  TP_DCHECK_EQ(
+                      message.payloads[payloadIdx].length, data.payloadSize);
+                  message.payloads[payloadIdx].data =
+                      data.temporaryPayload[payloadIdx].get();
+                }
               } else {
                 TP_DCHECK_EQ(message.payloads.size(), 0);
               }
               if (data.tensorSize > 0) {
-                TP_DCHECK_EQ(message.tensors.size(), 1);
-                TP_DCHECK_EQ(message.tensors[0].length, data.tensorSize);
-                message.tensors[0].data = data.temporaryTensor.get();
+                TP_DCHECK_EQ(message.tensors.size(), data.numTensors);
+                for (size_t tensorIdx = 0; tensorIdx < data.numTensors;
+                     tensorIdx++) {
+                  TP_DCHECK_EQ(
+                      message.tensors[tensorIdx].metadata,
+                      data.expectedTensorMetadata[tensorIdx]);
+                  TP_DCHECK_EQ(
+                      message.tensors[tensorIdx].length, data.tensorSize);
+                  message.tensors[tensorIdx].data =
+                      data.temporaryTensor[tensorIdx].get();
+                }
               } else {
                 TP_DCHECK_EQ(message.tensors.size(), 0);
               }
@@ -235,24 +292,30 @@ static void clientPingPongNonBlock(
                     measurements.markStop();
                     TP_THROW_ASSERT_IF(error) << error.what();
                     if (data.payloadSize > 0) {
-                      TP_DCHECK_EQ(message.payloads.size(), 1);
-                      TP_DCHECK_EQ(
-                          memcmp(
-                              message.payloads[0].data,
-                              data.expectedPayload.get(),
-                              message.payloads[0].length),
-                          0);
+                      TP_DCHECK_EQ(message.payloads.size(), data.numPayloads);
+                      for (size_t payloadIdx = 0; payloadIdx < data.numPayloads;
+                           payloadIdx++) {
+                        TP_DCHECK_EQ(
+                            memcmp(
+                                message.payloads[payloadIdx].data,
+                                data.expectedPayload[payloadIdx].get(),
+                                message.payloads[payloadIdx].length),
+                            0);
+                      }
                     } else {
                       TP_DCHECK_EQ(message.payloads.size(), 0);
                     }
                     if (data.tensorSize > 0) {
-                      TP_DCHECK_EQ(message.tensors.size(), 1);
-                      TP_DCHECK_EQ(
-                          memcmp(
-                              message.tensors[0].data,
-                              data.expectedTensor.get(),
-                              message.tensors[0].length),
-                          0);
+                      TP_DCHECK_EQ(message.tensors.size(), data.numTensors);
+                      for (size_t tensorIdx = 0; tensorIdx < data.numTensors;
+                           tensorIdx++) {
+                        TP_DCHECK_EQ(
+                            memcmp(
+                                message.tensors[tensorIdx].data,
+                                data.expectedTensor[tensorIdx].get(),
+                                message.tensors[tensorIdx].length),
+                            0);
+                      }
                     } else {
                       TP_DCHECK_EQ(message.tensors.size(), 0);
                     }
@@ -272,15 +335,28 @@ static void clientPingPongNonBlock(
 static void runClient(const Options& options) {
   std::string addr = options.address;
   int numRoundTrips = options.numRoundTrips;
-  Data data = {
-      createData(options.payloadSize),
-      std::make_unique<uint8_t[]>(options.payloadSize),
-      options.payloadSize,
-      createData(options.tensorSize),
-      std::make_unique<uint8_t[]>(options.tensorSize),
-      options.tensorSize,
-      std::string(options.metadataSize, 0x42),
-  };
+
+  Data data;
+  data.numPayloads = options.numPayloads;
+  data.payloadSize = options.payloadSize;
+  for (size_t payloadIdx = 0; payloadIdx < options.numPayloads; payloadIdx++) {
+    data.expectedPayload.push_back(createData(options.payloadSize));
+    data.expectedPayloadMetadata.push_back(
+        std::string(options.metadataSize, 0x42));
+    data.temporaryPayload.push_back(
+        std::make_unique<uint8_t[]>(options.payloadSize));
+  }
+  data.numTensors = options.numTensors;
+  data.tensorSize = options.tensorSize;
+  for (size_t tensorIdx = 0; tensorIdx < options.numTensors; tensorIdx++) {
+    data.expectedTensor.push_back(createData(options.tensorSize));
+    data.expectedTensorMetadata.push_back(
+        std::string(options.metadataSize, 0x42));
+    data.temporaryTensor.push_back(
+        std::make_unique<uint8_t[]>(options.tensorSize));
+  }
+  data.expectedMetadata = std::string(options.metadataSize, 0x42);
+
   Measurements measurements;
   measurements.reserve(options.numRoundTrips);
 
@@ -311,7 +387,9 @@ int main(int argc, char** argv) {
   std::cout << "channel = " << x.channel << "\n";
   std::cout << "address = " << x.address << "\n";
   std::cout << "num_round_trips = " << x.numRoundTrips << "\n";
+  std::cout << "num_payloads = " << x.numPayloads << "\n";
   std::cout << "payload_size = " << x.payloadSize << "\n";
+  std::cout << "num_tensors = " << x.numTensors << "\n";
   std::cout << "tensor_size = " << x.tensorSize << "\n";
   std::cout << "metadata_size = " << x.metadataSize << "\n";
 
