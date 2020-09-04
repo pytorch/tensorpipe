@@ -112,8 +112,10 @@ configure_file(tensorpipe.h.in tensorpipe.h)
 
 ## Libnop
 
-# Keep libnop headers private as they should not be exposed to downstream users.
-target_include_directories(tensorpipe PRIVATE ${PROJECT_SOURCE_DIR}/third_party/libnop/include)
+# We should keep libnop headers private as they should not be exposed to downstream users,
+# but they're currently transitively included by tensorpipe/transport/connection.h (which
+# is still unclear whether it should be a public or private header).
+target_include_directories(tensorpipe PUBLIC $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/third_party/libnop/include>)
 
 
 ## Python bindings
