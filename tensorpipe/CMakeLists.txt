@@ -43,16 +43,14 @@ target_sources(tensorpipe PRIVATE
 
 target_sources(tensorpipe PRIVATE
   channel/xth/channel.cc
-  channel/xth/context.cc
-  proto/channel/xth.proto)
+  channel/xth/context.cc)
 
 ### cma
 
 if(TP_ENABLE_CMA)
   target_sources(tensorpipe PRIVATE
     channel/cma/channel.cc
-    channel/cma/context.cc
-    proto/channel/cma.proto)
+    channel/cma/context.cc)
   set(TENSORPIPE_HAS_CMA_CHANNEL 1)
 else()
   set(TENSORPIPE_HAS_CMA_CHANNEL 0)
@@ -129,6 +127,12 @@ endif()
 ## Config
 
 configure_file(tensorpipe.h.in tensorpipe.h)
+
+
+## Libnop
+
+# Keep libnop headers private as they should not be exposed to downstream users.
+target_include_directories(tensorpipe PRIVATE ${PROJECT_SOURCE_DIR}/third_party/libnop/include)
 
 
 ## Python bindings

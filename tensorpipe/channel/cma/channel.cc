@@ -17,6 +17,9 @@
 #include <list>
 #include <mutex>
 
+#include <nop/serializer.h>
+#include <nop/structure.h>
+
 #include <tensorpipe/channel/error.h>
 #include <tensorpipe/channel/helpers.h>
 #include <tensorpipe/common/callback.h>
@@ -26,11 +29,20 @@
 #include <tensorpipe/common/optional.h>
 #include <tensorpipe/common/queue.h>
 #include <tensorpipe/common/system.h>
-#include <tensorpipe/proto/channel/cma.pb.h>
 
 namespace tensorpipe {
 namespace channel {
 namespace cma {
+
+namespace {
+
+struct Descriptor {
+  uint32_t pid;
+  uint64_t ptr;
+  NOP_STRUCTURE(Descriptor, pid, ptr);
+};
+
+} // namespace
 
 class Channel::Impl : public std::enable_shared_from_this<Channel::Impl> {
  public:
@@ -221,11 +233,12 @@ void Channel::Impl::sendFromLoop_(
             callback(impl.error_);
           }));
 
-  proto::Descriptor pbDescriptor;
-  pbDescriptor.set_pid(getpid());
-  pbDescriptor.set_ptr(reinterpret_cast<uint64_t>(ptr));
+  NopHolder<Descriptor> nopHolder;
+  Descriptor& nopDescriptor = nopHolder.getObject();
+  nopDescriptor.pid = getpid();
+  nopDescriptor.ptr = reinterpret_cast<uint64_t>(ptr);
 
-  descriptorCallback(Error::kSuccess, saveDescriptor(pbDescriptor));
+  descriptorCallback(Error::kSuccess, saveDescriptor(nopHolder));
 }
 
 // Receive memory region from peer.
@@ -277,10 +290,11 @@ void Channel::Impl::recvFromLoop_(
     return;
   }
 
-  proto::Descriptor pbDescriptor;
-  loadDescriptor(pbDescriptor, descriptor);
-  pid_t remotePid = pbDescriptor.pid();
-  void* remotePtr = reinterpret_cast<void*>(pbDescriptor.ptr());
+  NopHolder<Descriptor> nopHolder;
+  loadDescriptor(nopHolder, descriptor);
+  Descriptor& nopDescriptor = nopHolder.getObject();
+  pid_t remotePid = nopDescriptor.pid;
+  void* remotePtr = reinterpret_cast<void*>(nopDescriptor.ptr);
 
   TP_VLOG(6) << "Channel " << id_ << " is copying payload (#" << sequenceNumber
              << ")";
