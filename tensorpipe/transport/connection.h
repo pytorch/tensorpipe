@@ -11,14 +11,7 @@
 #include <functional>
 
 #include <tensorpipe/common/error.h>
-
-namespace google {
-namespace protobuf {
-
-class MessageLite;
-
-} // namespace protobuf
-} // namespace google
+#include <tensorpipe/common/nop.h>
 
 namespace tensorpipe {
 namespace transport {
@@ -37,10 +30,10 @@ class Connection {
   virtual void write(const void* ptr, size_t length, write_callback_fn fn) = 0;
 
   //
-  // Helper functions for reading/writing protobuf messages.
+  // Helper functions for reading/writing nop objects.
   //
 
-  // Read and parse protobuf message.
+  // Read and parse a nop object.
   //
   // This function may be overridden by a subclass.
   //
@@ -48,13 +41,11 @@ class Connection {
   // temporary buffer and instead instead read directly from its peer's
   // ring buffer. This saves an allocation and a memory copy.
   //
-  using read_proto_callback_fn = std::function<void(const Error& error)>;
+  using read_nop_callback_fn = std::function<void(const Error& error)>;
 
-  virtual void read(
-      google::protobuf::MessageLite& message,
-      read_proto_callback_fn fn);
+  virtual void read(AbstractNopHolder& object, read_nop_callback_fn fn);
 
-  // Serialize and write protobuf message.
+  // Serialize and write nop object.
   //
   // This function may be overridden by a subclass.
   //
@@ -62,9 +53,7 @@ class Connection {
   // into a temporary buffer and instead instead serialize directly into
   // its peer's ring buffer. This saves an allocation and a memory copy.
   //
-  virtual void write(
-      const google::protobuf::MessageLite& message,
-      write_callback_fn fn);
+  virtual void write(const AbstractNopHolder& object, write_callback_fn fn);
 
   // Tell the connection what its identifier is.
   //

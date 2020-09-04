@@ -13,10 +13,10 @@
 
 #include <tensorpipe/channel/error.h>
 #include <tensorpipe/channel/helpers.h>
+#include <tensorpipe/channel/mpt/nop_types.h>
 #include <tensorpipe/common/callback.h>
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/error_macros.h>
-#include <tensorpipe/proto/channel/mpt.pb.h>
 #include <tensorpipe/transport/context.h>
 #include <tensorpipe/transport/error.h>
 #include <tensorpipe/transport/listener.h>
@@ -103,7 +103,7 @@ class Channel::Impl : public std::enable_shared_from_this<Channel::Impl> {
   void closeFromLoop_();
 
   // Called when client reads the server's hello on backbone connection
-  void onClientReadHelloOnConnection_(const proto::Packet& pbPacketIn);
+  void onClientReadHelloOnConnection_(const Packet& nopPacketIn);
 
   // Called when server accepts new client connection for lane
   void onServerAcceptOfLane_(
@@ -209,23 +209,27 @@ void Channel::Impl::initFromLoop_() {
   TP_DCHECK_EQ(state_, UNINITIALIZED);
   if (endpoint_ == Endpoint::kConnect) {
     state_ = CLIENT_READING_HELLO;
-    auto packet = std::make_shared<proto::Packet>();
-    TP_VLOG(6) << "Channel " << id_ << " reading proto (server hello)";
-    connection_->read(*packet, lazyCallbackWrapper_([packet](Impl& impl) {
-      TP_VLOG(6) << "Channel " << impl.id_
-                 << " done reading proto (server hello)";
-      impl.onClientReadHelloOnConnection_(*packet);
-    }));
+    auto nopHolderIn = std::make_shared<NopHolder<Packet>>();
+    TP_VLOG(6) << "Channel " << id_ << " reading nop object (server hello)";
+    connection_->read(
+        *nopHolderIn, lazyCallbackWrapper_([nopHolderIn](Impl& impl) {
+          TP_VLOG(6) << "Channel " << impl.id_
+                     << " done reading nop object (server hello)";
+          impl.onClientReadHelloOnConnection_(nopHolderIn->getObject());
+        }));
   } else if (endpoint_ == Endpoint::kListen) {
     state_ = SERVER_ACCEPTING_LANES;
     const std::vector<std::string>& addresses = context_->addresses();
     TP_DCHECK_EQ(addresses.size(), numLanes_);
-    auto packet = std::make_shared<proto::Packet>();
-    proto::ServerHello* pbServerHello = packet->mutable_server_hello();
+    auto nopHolderOut = std::make_shared<NopHolder<Packet>>();
+    Packet& nopPacket = nopHolderOut->getObject();
+    nopPacket.Become(nopPacket.index_of<ServerHello>());
+    ServerHello& nopServerHello = *nopPacket.get<ServerHello>();
     for (uint64_t laneIdx = 0; laneIdx < numLanes_; ++laneIdx) {
-      proto::LaneAdvertisement* pbLaneAdvertisement =
-          pbServerHello->add_lane_advertisements();
-      pbLaneAdvertisement->set_address(addresses[laneIdx]);
+      nopServerHello.laneAdvertisements.emplace_back();
+      LaneAdvertisement& nopLaneAdvertisement =
+          nopServerHello.laneAdvertisements.back();
+      nopLaneAdvertisement.address = addresses[laneIdx];
       TP_VLOG(6) << "Channel " << id_ << " requesting connection (for lane "
                  << laneIdx << ")";
       uint64_t token = context_->registerConnectionRequest(
@@ -240,14 +244,15 @@ void Channel::Impl::initFromLoop_() {
                 impl.onServerAcceptOfLane_(laneIdx, std::move(connection));
               }));
       laneRegistrationIds_.emplace(laneIdx, token);
-      pbLaneAdvertisement->set_registration_id(token);
+      nopLaneAdvertisement.registrationId = token;
       numLanesBeingAccepted_++;
     }
-    TP_VLOG(6) << "Channel " << id_ << " writing proto (server hello)";
-    connection_->write(*packet, lazyCallbackWrapper_([packet](Impl& impl) {
-      TP_VLOG(6) << "Channel " << impl.id_
-                 << " done writing proto (server hello)";
-    }));
+    TP_VLOG(6) << "Channel " << id_ << " writing nop object (server hello)";
+    connection_->write(
+        *nopHolderOut, lazyCallbackWrapper_([nopHolderOut](Impl& impl) {
+          TP_VLOG(6) << "Channel " << impl.id_
+                     << " done writing nop object (server hello)";
+        }));
   } else {
     TP_THROW_ASSERT() << "unknown endpoint";
   }
@@ -406,29 +411,31 @@ void Channel::Impl::setIdFromLoop_(std::string id) {
   id_ = std::move(id);
 }
 
-void Channel::Impl::onClientReadHelloOnConnection_(
-    const proto::Packet& pbPacketIn) {
+void Channel::Impl::onClientReadHelloOnConnection_(const Packet& nopPacketIn) {
   TP_DCHECK(loop_.inLoop());
   TP_DCHECK_EQ(state_, CLIENT_READING_HELLO);
-  TP_DCHECK_EQ(pbPacketIn.type_case(), proto::Packet::kServerHello);
+  TP_DCHECK_EQ(nopPacketIn.index(), nopPacketIn.index_of<ServerHello>());
 
-  const proto::ServerHello& pbServerHello = pbPacketIn.server_hello();
-  TP_DCHECK_EQ(pbServerHello.lane_advertisements().size(), numLanes_);
+  const ServerHello& nopServerHello = *nopPacketIn.get<ServerHello>();
+  TP_DCHECK_EQ(nopServerHello.laneAdvertisements.size(), numLanes_);
   lanes_.resize(numLanes_);
   for (uint64_t laneIdx = 0; laneIdx < numLanes_; ++laneIdx) {
-    const proto::LaneAdvertisement& pbLaneAdvertisement =
-        pbServerHello.lane_advertisements().Get(laneIdx);
+    const LaneAdvertisement& nopLaneAdvertisement =
+        nopServerHello.laneAdvertisements[laneIdx];
     std::shared_ptr<transport::Connection> lane =
-        context_->connect(laneIdx, pbLaneAdvertisement.address());
-    auto pbPacketOut = std::make_shared<proto::Packet>();
-    proto::ClientHello* pbClientHello = pbPacketOut->mutable_client_hello();
-    pbClientHello->set_registration_id(pbLaneAdvertisement.registration_id());
-    TP_VLOG(6) << "Channel " << id_ << " writing proto (client hello) on lane "
-               << laneIdx;
+        context_->connect(laneIdx, nopLaneAdvertisement.address);
+    auto nopHolderOut = std::make_shared<NopHolder<Packet>>();
+    Packet& nopPacket = nopHolderOut->getObject();
+    nopPacket.Become(nopPacket.index_of<ClientHello>());
+    ClientHello& nopClientHello = *nopPacket.get<ClientHello>();
+    nopClientHello.registrationId = nopLaneAdvertisement.registrationId;
+    TP_VLOG(6) << "Channel " << id_
+               << " writing nop object (client hello) on lane " << laneIdx;
     lane->write(
-        *pbPacketOut, lazyCallbackWrapper_([laneIdx, pbPacketOut](Impl& impl) {
+        *nopHolderOut,
+        lazyCallbackWrapper_([laneIdx, nopHolderOut](Impl& impl) {
           TP_VLOG(6) << "Channel " << impl.id_
-                     << " done writing proto (client hello) on lane "
+                     << " done writing nop object (client hello) on lane "
                      << laneIdx;
         }));
     lanes_[laneIdx] = std::move(lane);

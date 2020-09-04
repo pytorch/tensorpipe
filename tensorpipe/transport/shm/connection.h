@@ -14,6 +14,14 @@
 #include <tensorpipe/transport/defs.h>
 #include <tensorpipe/transport/shm/context.h>
 
+namespace google {
+namespace protobuf {
+
+class MessageLite;
+
+} // namespace protobuf
+} // namespace google
+
 namespace tensorpipe {
 namespace transport {
 namespace shm {
@@ -44,14 +52,17 @@ class Connection final : public transport::Connection {
 
   // Queue a read operation.
   void read(read_callback_fn fn) override;
-  void read(google::protobuf::MessageLite& message, read_proto_callback_fn fn)
-      override;
+  using transport::Connection::read;
+  using read_proto_callback_fn = std::function<void(const Error& error)>;
+  void read(google::protobuf::MessageLite& message, read_proto_callback_fn fn);
   void read(void* ptr, size_t length, read_callback_fn fn) override;
 
   // Perform a write operation.
   void write(const void* ptr, size_t length, write_callback_fn fn) override;
-  void write(const google::protobuf::MessageLite& message, write_callback_fn fn)
-      override;
+  using transport::Connection::write;
+  void write(
+      const google::protobuf::MessageLite& message,
+      write_callback_fn fn);
 
   // Tell the connection what its identifier is.
   void setId(std::string id) override;

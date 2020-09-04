@@ -10,7 +10,8 @@
 
 #include <array>
 
-#include <tensorpipe/proto/core.pb.h>
+#include <nop/serializer.h>
+#include <nop/structure.h>
 
 using namespace tensorpipe;
 using namespace tensorpipe::transport;
@@ -89,25 +90,34 @@ TEST_P(TransportTest, DISABLED_Connection_DestroyConnectionFromCallback) {
       });
 }
 
-TEST_P(TransportTest, Connection_ProtobufWrite) {
+namespace {
+
+struct MyNopType {
+  uint32_t myIntField;
+  NOP_STRUCTURE(MyNopType, myIntField);
+};
+
+} // namespace
+
+TEST_P(TransportTest, Connection_NopWrite) {
   constexpr size_t kSize = 0x42;
 
   testConnection(
       [&](std::shared_ptr<Connection> conn) {
-        auto message = std::make_shared<
-            tensorpipe::proto::MessageDescriptor::PayloadDescriptor>();
-        conn->read(*message, [&, conn, message](const Error& error) {
+        auto holder = std::make_shared<NopHolder<MyNopType>>();
+        MyNopType& object = holder->getObject();
+        conn->read(*holder, [&, conn, holder](const Error& error) {
           ASSERT_FALSE(error) << error.what();
-          ASSERT_EQ(message->size_in_bytes(), kSize);
+          ASSERT_EQ(object.myIntField, kSize);
           peers_->done(PeerGroup::kServer);
         });
         peers_->join(PeerGroup::kServer);
       },
       [&](std::shared_ptr<Connection> conn) {
-        auto message = std::make_shared<
-            tensorpipe::proto::MessageDescriptor::PayloadDescriptor>();
-        message->set_size_in_bytes(kSize);
-        conn->write(*message, [&, conn, message](const Error& error) {
+        auto holder = std::make_shared<NopHolder<MyNopType>>();
+        MyNopType& object = holder->getObject();
+        object.myIntField = kSize;
+        conn->write(*holder, [&, conn, holder](const Error& error) {
           ASSERT_FALSE(error) << error.what();
           peers_->done(PeerGroup::kClient);
         });

@@ -17,11 +17,11 @@
 #include <tensorpipe/channel/error.h>
 #include <tensorpipe/channel/helpers.h>
 #include <tensorpipe/channel/mpt/channel.h>
+#include <tensorpipe/channel/mpt/nop_types.h>
 #include <tensorpipe/channel/registry.h>
 #include <tensorpipe/common/callback.h>
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/error_macros.h>
-#include <tensorpipe/proto/channel/mpt.pb.h>
 #include <tensorpipe/transport/context.h>
 #include <tensorpipe/transport/error.h>
 #include <tensorpipe/transport/listener.h>
@@ -96,7 +96,7 @@ class Context::Impl : public Context::PrivateIface,
   void onAcceptOfLane_(std::shared_ptr<transport::Connection>);
   void onReadClientHelloOnLane_(
       std::shared_ptr<transport::Connection>,
-      const proto::Packet&);
+      const Packet&);
 
   void setError_(Error error);
 
@@ -157,8 +157,8 @@ Context::Impl::Impl(
   TP_THROW_ASSERT_IF(contexts_.size() != listeners_.size());
   numLanes_ = contexts_.size();
   // FIXME Escape the contexts' domain descriptors in case they contain a colon?
-  // Or put them all in a protobuf, that'll do the escaping for us.
-  // But is it okay to compare protobufs by equality bitwise?
+  // Or put them all in a nop object, that'll do the escaping for us.
+  // But is it okay to compare nop objects by equality bitwise?
   std::ostringstream ss;
   ss << contexts_.size();
   for (const auto& context : contexts_) {
@@ -308,42 +308,40 @@ void Context::Impl::onAcceptOfLane_(
 
   // Keep it alive until we figure out what to do with it.
   connectionsWaitingForHello_.insert(connection);
-  auto pbPacketIn = std::make_shared<proto::Packet>();
-  TP_VLOG(6) << "Channel context " << id_ << " reading proto (client hello)";
+  auto npHolderIn = std::make_shared<NopHolder<Packet>>();
+  TP_VLOG(6) << "Channel context " << id_
+             << " reading nop object (client hello)";
   connection->read(
-      *pbPacketIn,
-      lazyCallbackWrapper_([pbPacketIn,
+      *npHolderIn,
+      lazyCallbackWrapper_([npHolderIn,
                             weakConnection{std::weak_ptr<transport::Connection>(
                                 connection)}](Impl& impl) mutable {
         TP_VLOG(6) << "Channel context " << impl.id_
-                   << " done reading proto (client hello)";
+                   << " done reading nop object (client hello)";
         std::shared_ptr<transport::Connection> connection =
             weakConnection.lock();
         TP_DCHECK(connection);
         impl.connectionsWaitingForHello_.erase(connection);
-        impl.onReadClientHelloOnLane_(std::move(connection), *pbPacketIn);
+        impl.onReadClientHelloOnLane_(
+            std::move(connection), npHolderIn->getObject());
       }));
 }
 
 void Context::Impl::onReadClientHelloOnLane_(
     std::shared_ptr<transport::Connection> connection,
-    const proto::Packet& pbPacketIn) {
+    const Packet& nopPacketIn) {
   TP_DCHECK(loop_.inLoop());
+  TP_DCHECK_EQ(nopPacketIn.index(), nopPacketIn.index_of<ClientHello>());
 
-  if (pbPacketIn.has_client_hello()) {
-    const proto::ClientHello& pbClientHello = pbPacketIn.client_hello();
-    uint64_t registrationId = pbClientHello.registration_id();
-    auto iter = connectionRequestRegistrations_.find(registrationId);
-    // The connection request may have already been deregistered, for example
-    // because the channel may have been closed.
-    if (iter != connectionRequestRegistrations_.end()) {
-      auto fn = std::move(iter->second);
-      connectionRequestRegistrations_.erase(iter);
-      fn(Error::kSuccess, std::move(connection));
-    }
-  } else {
-    TP_LOG_ERROR() << "packet contained unknown content: "
-                   << pbPacketIn.type_case();
+  const ClientHello& nopClientHello = *nopPacketIn.get<ClientHello>();
+  uint64_t registrationId = nopClientHello.registrationId;
+  auto iter = connectionRequestRegistrations_.find(registrationId);
+  // The connection request may have already been deregistered, for example
+  // because the channel may have been closed.
+  if (iter != connectionRequestRegistrations_.end()) {
+    auto fn = std::move(iter->second);
+    connectionRequestRegistrations_.erase(iter);
+    fn(Error::kSuccess, std::move(connection));
   }
 }
 

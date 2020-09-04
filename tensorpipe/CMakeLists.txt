@@ -60,8 +60,7 @@ endif()
 
 target_sources(tensorpipe PRIVATE
   channel/mpt/channel.cc
-  channel/mpt/context.cc
-  proto/channel/mpt.proto)
+  channel/mpt/context.cc)
 
 
 ## Transports

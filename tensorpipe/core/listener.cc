@@ -17,8 +17,8 @@
 #include <tensorpipe/common/error_macros.h>
 #include <tensorpipe/common/optional.h>
 #include <tensorpipe/core/error.h>
+#include <tensorpipe/core/nop_types.h>
 #include <tensorpipe/core/pipe.h>
-#include <tensorpipe/proto/core.pb.h>
 #include <tensorpipe/transport/connection.h>
 #include <tensorpipe/transport/listener.h>
 
@@ -141,7 +141,7 @@ class Listener::Impl : public Listener::PrivateIface,
   void onConnectionHelloRead_(
       std::string,
       std::shared_ptr<transport::Connection>,
-      const proto::Packet&);
+      const Packet&);
 
   template <typename T>
   friend class LazyCallbackWrapper;
@@ -386,24 +386,26 @@ void Listener::Impl::onAccept_(
   TP_DCHECK(loop_.inLoop());
   // Keep it alive until we figure out what to do with it.
   connectionsWaitingForHello_.insert(connection);
-  auto pbPacketIn = std::make_shared<proto::Packet>();
+  auto nopHolderIn = std::make_shared<NopHolder<Packet>>();
   TP_VLOG(3) << "Listener " << id_
-             << " is reading proto (spontaneous or requested connection)";
+             << " is reading nop object (spontaneous or requested connection)";
   connection->read(
-      *pbPacketIn,
-      lazyCallbackWrapper_([pbPacketIn,
+      *nopHolderIn,
+      lazyCallbackWrapper_([nopHolderIn,
                             transport{std::move(transport)},
                             weakConnection{std::weak_ptr<transport::Connection>(
                                 connection)}](Impl& impl) mutable {
         TP_VLOG(3)
             << "Listener " << impl.id_
-            << " done reading proto (spontaneous or requested connection)";
+            << " done reading nop object (spontaneous or requested connection)";
         std::shared_ptr<transport::Connection> connection =
             weakConnection.lock();
         TP_DCHECK(connection);
         impl.connectionsWaitingForHello_.erase(connection);
         impl.onConnectionHelloRead_(
-            std::move(transport), std::move(connection), *pbPacketIn);
+            std::move(transport),
+            std::move(connection),
+            nopHolderIn->getObject());
       }));
 }
 
@@ -429,16 +431,15 @@ void Listener::Impl::armListener_(std::string transport) {
 void Listener::Impl::onConnectionHelloRead_(
     std::string transport,
     std::shared_ptr<transport::Connection> connection,
-    const proto::Packet& pbPacketIn) {
+    const Packet& nopPacketIn) {
   TP_DCHECK(loop_.inLoop());
-  if (pbPacketIn.has_spontaneous_connection()) {
-    const proto::SpontaneousConnection& pbSpontaneousConnection =
-        pbPacketIn.spontaneous_connection();
+  if (nopPacketIn.is<SpontaneousConnection>()) {
+    const SpontaneousConnection& nopSpontaneousConnection =
+        *nopPacketIn.get<SpontaneousConnection>();
     TP_VLOG(3) << "Listener " << id_ << " got spontaneous connection";
     std::string pipeId = id_ + ".p" + std::to_string(pipeCounter_++);
     TP_VLOG(1) << "Listener " << id_ << " is opening pipe " << pipeId;
-    const std::string& remoteContextName =
-        pbSpontaneousConnection.context_name();
+    const std::string& remoteContextName = nopSpontaneousConnection.contextName;
     if (remoteContextName != "") {
       std::string aliasPipeId = id_ + "_from_" + remoteContextName;
       TP_VLOG(1) << "Pipe " << pipeId << " aliased as " << aliasPipeId;
@@ -453,10 +454,10 @@ void Listener::Impl::onConnectionHelloRead_(
         std::move(transport),
         std::move(connection));
     acceptCallback_.trigger(Error::kSuccess, std::move(pipe));
-  } else if (pbPacketIn.has_requested_connection()) {
-    const proto::RequestedConnection& pbRequestedConnection =
-        pbPacketIn.requested_connection();
-    uint64_t registrationId = pbRequestedConnection.registration_id();
+  } else if (nopPacketIn.is<RequestedConnection>()) {
+    const RequestedConnection& nopRequestedConnection =
+        *nopPacketIn.get<RequestedConnection>();
+    uint64_t registrationId = nopRequestedConnection.registrationId;
     TP_VLOG(3) << "Listener " << id_ << " got requested connection (#"
                << registrationId << ")";
     auto iter = connectionRequestRegistrations_.find(registrationId);
@@ -469,7 +470,7 @@ void Listener::Impl::onConnectionHelloRead_(
     }
   } else {
     TP_LOG_ERROR() << "packet contained unknown content: "
-                   << pbPacketIn.type_case();
+                   << nopPacketIn.index();
   }
 }
 

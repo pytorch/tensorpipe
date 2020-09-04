@@ -6,10 +6,11 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <tensorpipe/proto/core.pb.h>
 #include <tensorpipe/test/transport/shm/shm_test.h>
 
 #include <gtest/gtest.h>
+#include <nop/serializer.h>
+#include <nop/structure.h>
 
 using namespace tensorpipe;
 using namespace tensorpipe::transport;
@@ -132,18 +133,26 @@ TEST_P(ShmTransportTest, QueueWrites) {
       });
 }
 
-TEST_P(ShmTransportTest, ProtobufWriteWrapAround) {
+namespace {
+
+struct MyNopType {
+  std::string myStringField;
+  NOP_STRUCTURE(MyNopType, myStringField);
+};
+
+} // namespace
+
+TEST_P(ShmTransportTest, NopWriteWrapAround) {
   constexpr int numMsg = 2;
   constexpr size_t kSize = (3 * kBufferSize) / 4;
 
   testConnection(
       [&](std::shared_ptr<Connection> conn) {
         for (int i = 0; i < numMsg; ++i) {
-          auto message =
-              std::make_shared<tensorpipe::proto::ChannelAdvertisement>();
-          conn->read(*message, [&, conn, message, i](const Error& error) {
+          auto holder = std::make_shared<NopHolder<MyNopType>>();
+          conn->read(*holder, [&, conn, holder, i](const Error& error) {
             ASSERT_FALSE(error) << error.what();
-            ASSERT_EQ(message->domain_descriptor().length(), kSize);
+            ASSERT_EQ(holder->getObject().myStringField.length(), kSize);
             if (i == numMsg - 1) {
               peers_->done(PeerGroup::kServer);
             }
@@ -153,10 +162,9 @@ TEST_P(ShmTransportTest, ProtobufWriteWrapAround) {
       },
       [&](std::shared_ptr<Connection> conn) {
         for (int i = 0; i < numMsg; ++i) {
-          auto message =
-              std::make_shared<tensorpipe::proto::ChannelAdvertisement>();
-          message->set_domain_descriptor(std::string(kSize, 'B'));
-          conn->write(*message, [&, conn, message, i](const Error& error) {
+          auto holder = std::make_shared<NopHolder<MyNopType>>();
+          holder->getObject().myStringField = std::string(kSize, 'B');
+          conn->write(*holder, [&, conn, holder, i](const Error& error) {
             ASSERT_FALSE(error) << error.what();
             if (i == numMsg - 1) {
               peers_->done(PeerGroup::kClient);

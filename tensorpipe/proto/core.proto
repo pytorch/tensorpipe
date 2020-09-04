@@ -10,14 +10,6 @@ syntax = "proto3";
 
 package tensorpipe.proto;
 
-message SpontaneousConnection {
-  string context_name = 1;
-}
-
-message RequestedConnection {
-  uint64 registration_id = 1;
-}
-
 message TransportAdvertisement {
   string domain_descriptor = 1;
 }
@@ -31,49 +23,10 @@ message Brochure {
   map<string, ChannelAdvertisement> channel_advertisement = 2;
 }
 
-message ChannelSelection {
-  uint64 registration_id = 1;
-}
-
-message BrochureAnswer {
-  string transport = 1;
-  string address = 2;
-  uint64 registration_id = 3;
-
-  map<string, ChannelSelection> channel_selection = 4;
-}
-
-enum DeviceType {
-  DEVICE_TYPE_UNSPECIFIED = 0;
-  DEVICE_TYPE_CPU = 1;
-}
-
 message MessageDescriptor {
   message PayloadDescriptor {
     int64 size_in_bytes = 1;
-    bytes metadata = 2;
   }
 
-  message TensorDescriptor {
-    int64 size_in_bytes = 1;
-    bytes metadata = 2;
-
-    DeviceType device_type = 3;
-    string channel_name = 4;
-    bytes channel_descriptor = 5;
-  }
-
-  bytes metadata = 1;
   repeated PayloadDescriptor payload_descriptors = 2;
-  repeated TensorDescriptor tensor_descriptors = 3;
-}
-
-message Packet {
-  oneof type {
-    SpontaneousConnection spontaneous_connection = 1;
-    RequestedConnection requested_connection = 2;
-    Brochure brochure = 3;
-    BrochureAnswer brochure_answer = 4;
-    MessageDescriptor message_descriptor = 5;
-  }
 }

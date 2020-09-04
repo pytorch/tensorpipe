@@ -20,7 +20,7 @@
 #include <tensorpipe/common/optional.h>
 #include <tensorpipe/core/error.h>
 #include <tensorpipe/core/listener.h>
-#include <tensorpipe/proto/core.pb.h>
+#include <tensorpipe/core/nop_types.h>
 
 namespace tensorpipe {
 
@@ -64,37 +64,35 @@ struct ReadOperation {
 };
 
 // Copy the payload and tensors sizes, the tensor descriptors, etc. from the
-// message descriptor that is contained in the protobuf to the ReadOperation.
-void parseDescriptorOfMessage(
-    ReadOperation& op,
-    const proto::Packet& pbPacketIn) {
+// message descriptor that is contained in the nop object to the ReadOperation.
+void parseDescriptorOfMessage(ReadOperation& op, const Packet& nopPacketIn) {
   Message& message = op.message;
 
-  TP_DCHECK_EQ(pbPacketIn.type_case(), proto::Packet::kMessageDescriptor);
-  const proto::MessageDescriptor& pbMessageDescriptor =
-      pbPacketIn.message_descriptor();
+  TP_DCHECK_EQ(nopPacketIn.index(), nopPacketIn.index_of<MessageDescriptor>());
+  const MessageDescriptor& nopMessageDescriptor =
+      *nopPacketIn.get<MessageDescriptor>();
 
-  message.metadata = pbMessageDescriptor.metadata();
-  for (const auto& pbPayloadDescriptor :
-       pbMessageDescriptor.payload_descriptors()) {
+  message.metadata = nopMessageDescriptor.metadata;
+  for (const auto& nopPayloadDescriptor :
+       nopMessageDescriptor.payloadDescriptors) {
     Message::Payload payload;
     ReadOperation::Payload payloadBeingAllocated;
-    payload.length = pbPayloadDescriptor.size_in_bytes();
+    payload.length = nopPayloadDescriptor.sizeInBytes;
     payloadBeingAllocated.length = payload.length;
-    payload.metadata = pbPayloadDescriptor.metadata();
+    payload.metadata = nopPayloadDescriptor.metadata;
     message.payloads.push_back(std::move(payload));
     op.payloads.push_back(std::move(payloadBeingAllocated));
   }
-  for (const auto& pbTensorDescriptor :
-       pbMessageDescriptor.tensor_descriptors()) {
+  for (const auto& nopTensorDescriptor :
+       nopMessageDescriptor.tensorDescriptors) {
     Message::Tensor tensor;
     ReadOperation::Tensor tensorBeingAllocated;
-    tensor.length = pbTensorDescriptor.size_in_bytes();
+    tensor.length = nopTensorDescriptor.sizeInBytes;
     tensorBeingAllocated.length = tensor.length;
-    tensor.metadata = pbTensorDescriptor.metadata();
-    tensorBeingAllocated.channelName = pbTensorDescriptor.channel_name();
-    // FIXME If the protobuf wasn't const we could move the string out...
-    tensorBeingAllocated.descriptor = pbTensorDescriptor.channel_descriptor();
+    tensor.metadata = nopTensorDescriptor.metadata;
+    tensorBeingAllocated.channelName = nopTensorDescriptor.channelName;
+    // FIXME If the nop object wasn't const we could move the string out...
+    tensorBeingAllocated.descriptor = nopTensorDescriptor.channelDescriptor;
     message.tensors.push_back(std::move(tensor));
     op.tensors.push_back(std::move(tensorBeingAllocated));
   }
@@ -153,41 +151,45 @@ struct WriteOperation {
   std::vector<Tensor> tensors;
 };
 
-// Produce a protobuf containing a message descriptor using the information
+// Produce a nop object containing a message descriptor using the information
 // contained in the WriteOperation: number and sizes of payloads and tensors,
 // tensor descriptors, ...
-std::shared_ptr<proto::Packet> makeDescriptorForMessage(
+std::shared_ptr<NopHolder<Packet>> makeDescriptorForMessage(
     const WriteOperation& op) {
-  auto pbPacketOut = std::make_shared<proto::Packet>();
-  proto::MessageDescriptor* pbMessageDescriptor =
-      pbPacketOut->mutable_message_descriptor();
+  auto nopHolderOut = std::make_shared<NopHolder<Packet>>();
+  Packet& nopPacketOut = nopHolderOut->getObject();
+  nopPacketOut.Become(nopPacketOut.index_of<MessageDescriptor>());
+  MessageDescriptor& nopMessageDescriptor =
+      *nopPacketOut.get<MessageDescriptor>();
 
-  pbMessageDescriptor->set_metadata(op.message.metadata);
+  nopMessageDescriptor.metadata = op.message.metadata;
 
   for (int payloadIdx = 0; payloadIdx < op.message.payloads.size();
        ++payloadIdx) {
     const Message::Payload& payload = op.message.payloads[payloadIdx];
-    proto::MessageDescriptor::PayloadDescriptor* pbPayloadDescriptor =
-        pbMessageDescriptor->add_payload_descriptors();
-    pbPayloadDescriptor->set_size_in_bytes(payload.length);
-    pbPayloadDescriptor->set_metadata(payload.metadata);
+    nopMessageDescriptor.payloadDescriptors.emplace_back();
+    MessageDescriptor::PayloadDescriptor& nopPayloadDescriptor =
+        nopMessageDescriptor.payloadDescriptors.back();
+    nopPayloadDescriptor.sizeInBytes = payload.length;
+    nopPayloadDescriptor.metadata = payload.metadata;
   }
 
   TP_DCHECK_EQ(op.message.tensors.size(), op.tensors.size());
   for (int tensorIdx = 0; tensorIdx < op.tensors.size(); ++tensorIdx) {
     const Message::Tensor& tensor = op.message.tensors[tensorIdx];
     const WriteOperation::Tensor& otherTensor = op.tensors[tensorIdx];
-    proto::MessageDescriptor::TensorDescriptor* pbTensorDescriptor =
-        pbMessageDescriptor->add_tensor_descriptors();
-    pbTensorDescriptor->set_device_type(proto::DeviceType::DEVICE_TYPE_CPU);
-    pbTensorDescriptor->set_size_in_bytes(tensor.length);
-    pbTensorDescriptor->set_metadata(tensor.metadata);
-    pbTensorDescriptor->set_channel_name(otherTensor.channelName);
+    nopMessageDescriptor.tensorDescriptors.emplace_back();
+    MessageDescriptor::TensorDescriptor& nopTensorDescriptor =
+        nopMessageDescriptor.tensorDescriptors.back();
+    nopTensorDescriptor.deviceType = DeviceType::DEVICE_TYPE_CPU;
+    nopTensorDescriptor.sizeInBytes = tensor.length;
+    nopTensorDescriptor.metadata = tensor.metadata;
+    nopTensorDescriptor.channelName = otherTensor.channelName;
     // FIXME In principle we could move here.
-    pbTensorDescriptor->set_channel_descriptor(otherTensor.descriptor);
+    nopTensorDescriptor.channelDescriptor = otherTensor.descriptor;
   }
 
-  return pbPacketOut;
+  return nopHolderOut;
 }
 
 } // namespace
@@ -341,8 +343,8 @@ class Pipe::Impl : public std::enable_shared_from_this<Pipe::Impl> {
   void readPayloadsAndReceiveTensorsOfMessage(ReadOperation&);
   void sendTensorsOfMessage_(WriteOperation&);
   void writeDescriptorAndPayloadsOfMessage_(WriteOperation&);
-  void onReadWhileServerWaitingForBrochure_(const proto::Packet&);
-  void onReadWhileClientWaitingForBrochureAnswer_(const proto::Packet&);
+  void onReadWhileServerWaitingForBrochure_(const Packet&);
+  void onReadWhileClientWaitingForBrochureAnswer_(const Packet&);
   void onAcceptWhileServerWaitingForConnection_(
       std::string,
       std::shared_ptr<transport::Connection>);
@@ -350,7 +352,7 @@ class Pipe::Impl : public std::enable_shared_from_this<Pipe::Impl> {
       std::string,
       std::string,
       std::shared_ptr<transport::Connection>);
-  void onReadOfMessageDescriptor_(ReadOperation&, const proto::Packet&);
+  void onReadOfMessageDescriptor_(ReadOperation&, const Packet&);
   void onDescriptorOfTensor_(
       WriteOperation&,
       int64_t,
@@ -447,66 +449,68 @@ void Pipe::Impl::initFromLoop_() {
   TP_DCHECK(loop_.inLoop());
   closingReceiver_.activate(*this);
   if (state_ == CLIENT_ABOUT_TO_SEND_HELLO_AND_BROCHURE) {
-    auto pbPacketOut = std::make_shared<proto::Packet>();
-    // This makes the packet contain a SpontaneousConnection message.
-    proto::SpontaneousConnection* pbSpontaneousConnection =
-        pbPacketOut->mutable_spontaneous_connection();
-    pbSpontaneousConnection->set_context_name(context_->getName());
+    auto nopHolderOut = std::make_shared<NopHolder<Packet>>();
+    Packet& nopPacketOut = nopHolderOut->getObject();
+    nopPacketOut.Become(nopPacketOut.index_of<SpontaneousConnection>());
+    SpontaneousConnection& nopSpontaneousConnection =
+        *nopPacketOut.get<SpontaneousConnection>();
+    nopSpontaneousConnection.contextName = context_->getName();
     TP_VLOG(3) << "Pipe " << id_
-               << " is writing proto (spontaneous connection)";
+               << " is writing nop object (spontaneous connection)";
     connection_->write(
-        *pbPacketOut, lazyCallbackWrapper_([pbPacketOut](Impl& impl) {
+        *nopHolderOut, lazyCallbackWrapper_([nopHolderOut](Impl& impl) {
           TP_VLOG(3) << "Pipe " << impl.id_
-                     << " done writing proto (spontaneous connection)";
+                     << " done writing nop object (spontaneous connection)";
         }));
 
-    auto pbPacketOut2 = std::make_shared<proto::Packet>();
-    proto::Brochure* pbBrochure = pbPacketOut2->mutable_brochure();
-    auto pbAllTransportAdvertisements =
-        pbBrochure->mutable_transport_advertisement();
+    auto nopHolderOut2 = std::make_shared<NopHolder<Packet>>();
+    Packet& nopPacketOut2 = nopHolderOut2->getObject();
+    nopPacketOut2.Become(nopPacketOut2.index_of<Brochure>());
+    Brochure& nopBrochure = *nopPacketOut2.get<Brochure>();
     for (const auto& transportContextIter : context_->getOrderedTransports()) {
       const std::string& transportName =
           std::get<0>(transportContextIter.second);
       const transport::Context& transportContext =
           *(std::get<1>(transportContextIter.second));
-      proto::TransportAdvertisement* pbTransportAdvertisement =
-          &(*pbAllTransportAdvertisements)[transportName];
-      pbTransportAdvertisement->set_domain_descriptor(
-          transportContext.domainDescriptor());
+      TransportAdvertisement& nopTransportAdvertisement =
+          nopBrochure.transportAdvertisement[transportName];
+      nopTransportAdvertisement.domainDescriptor =
+          transportContext.domainDescriptor();
     }
-    auto pbAllChannelAdvertisements =
-        pbBrochure->mutable_channel_advertisement();
     for (const auto& channelContextIter : context_->getOrderedChannels()) {
       const std::string& channelName = std::get<0>(channelContextIter.second);
       const channel::Context& channelContext =
           *(std::get<1>(channelContextIter.second));
-      proto::ChannelAdvertisement* pbChannelAdvertisement =
-          &(*pbAllChannelAdvertisements)[channelName];
-      pbChannelAdvertisement->set_domain_descriptor(
-          channelContext.domainDescriptor());
+      ChannelAdvertisement& nopChannelAdvertisement =
+          nopBrochure.channelAdvertisement[channelName];
+      nopChannelAdvertisement.domainDescriptor =
+          channelContext.domainDescriptor();
     }
-    TP_VLOG(3) << "Pipe " << id_ << " is writing proto (brochure)";
+    TP_VLOG(3) << "Pipe " << id_ << " is writing nop object (brochure)";
     connection_->write(
-        *pbPacketOut2, lazyCallbackWrapper_([pbPacketOut2](Impl& impl) {
-          TP_VLOG(3) << "Pipe " << impl.id_ << " done writing proto (brochure)";
+        *nopHolderOut2, lazyCallbackWrapper_([nopHolderOut2](Impl& impl) {
+          TP_VLOG(3) << "Pipe " << impl.id_
+                     << " done writing nop object (brochure)";
         }));
     state_ = CLIENT_WAITING_FOR_BROCHURE_ANSWER;
-    auto pbPacketIn = std::make_shared<proto::Packet>();
-    TP_VLOG(3) << "Pipe " << id_ << " is reading proto (brochure answer)";
+    auto nopHolderIn = std::make_shared<NopHolder<Packet>>();
+    TP_VLOG(3) << "Pipe " << id_ << " is reading nop object (brochure answer)";
     connection_->read(
-        *pbPacketIn, lazyCallbackWrapper_([pbPacketIn](Impl& impl) {
+        *nopHolderIn, lazyCallbackWrapper_([nopHolderIn](Impl& impl) {
           TP_VLOG(3) << "Pipe " << impl.id_
-                     << " done reading proto (brochure answer)";
-          impl.onReadWhileClientWaitingForBrochureAnswer_(*pbPacketIn);
+                     << " done reading nop object (brochure answer)";
+          impl.onReadWhileClientWaitingForBrochureAnswer_(
+              nopHolderIn->getObject());
         }));
   }
   if (state_ == SERVER_WAITING_FOR_BROCHURE) {
-    auto pbPacketIn = std::make_shared<proto::Packet>();
-    TP_VLOG(3) << "Pipe " << id_ << " is reading proto (brochure)";
+    auto nopHolderIn = std::make_shared<NopHolder<Packet>>();
+    TP_VLOG(3) << "Pipe " << id_ << " is reading nop object (brochure)";
     connection_->read(
-        *pbPacketIn, lazyCallbackWrapper_([pbPacketIn](Impl& impl) {
-          TP_VLOG(3) << "Pipe " << impl.id_ << " done reading proto (brochure)";
-          impl.onReadWhileServerWaitingForBrochure_(*pbPacketIn);
+        *nopHolderIn, lazyCallbackWrapper_([nopHolderIn](Impl& impl) {
+          TP_VLOG(3) << "Pipe " << impl.id_
+                     << " done reading nop object (brochure)";
+          impl.onReadWhileServerWaitingForBrochure_(nopHolderIn->getObject());
         }));
   }
 }
@@ -1042,15 +1046,15 @@ void Pipe::Impl::readDescriptorOfMessage_(ReadOperation& op) {
 
   TP_DCHECK_EQ(connectionState_, AWAITING_DESCRIPTOR);
   TP_DCHECK_EQ(messageBeingReadFromConnection_, op.sequenceNumber);
-  auto pbPacketIn = std::make_shared<proto::Packet>();
-  TP_VLOG(3) << "Pipe " << id_ << " is reading proto (message descriptor #"
+  auto nopHolderIn = std::make_shared<NopHolder<Packet>>();
+  TP_VLOG(3) << "Pipe " << id_ << " is reading nop object (message descriptor #"
              << op.sequenceNumber << ")";
   connection_->read(
-      *pbPacketIn, lazyCallbackWrapper_([&op, pbPacketIn](Impl& impl) {
+      *nopHolderIn, lazyCallbackWrapper_([&op, nopHolderIn](Impl& impl) {
         TP_VLOG(3) << "Pipe " << impl.id_
-                   << " done reading proto (message descriptor #"
+                   << " done reading nop object (message descriptor #"
                    << op.sequenceNumber << ")";
-        impl.onReadOfMessageDescriptor_(op, *pbPacketIn);
+        impl.onReadOfMessageDescriptor_(op, nopHolderIn->getObject());
       }));
   connectionState_ = AWAITING_PAYLOADS;
 }
@@ -1117,16 +1121,16 @@ void Pipe::Impl::writeDescriptorAndPayloadsOfMessage_(WriteOperation& op) {
              << " is writing descriptor and payloads of message #"
              << op.sequenceNumber;
 
-  std::shared_ptr<proto::Packet> pbPacketOut = makeDescriptorForMessage(op);
+  std::shared_ptr<NopHolder<Packet>> holder = makeDescriptorForMessage(op);
 
-  TP_VLOG(3) << "Pipe " << id_ << " is writing proto (message descriptor #"
+  TP_VLOG(3) << "Pipe " << id_ << " is writing nop object (message descriptor #"
              << op.sequenceNumber << ")";
   connection_->write(
-      *pbPacketOut,
+      *holder,
       lazyCallbackWrapper_(
-          [sequenceNumber{op.sequenceNumber}, pbPacketOut](Impl& impl) {
+          [sequenceNumber{op.sequenceNumber}, holder](Impl& impl) {
             TP_VLOG(3) << "Pipe " << impl.id_
-                       << " done writing proto (message descriptor #"
+                       << " done writing nop object (message descriptor #"
                        << sequenceNumber << ")";
           }));
 
@@ -1148,15 +1152,16 @@ void Pipe::Impl::writeDescriptorAndPayloadsOfMessage_(WriteOperation& op) {
 }
 
 void Pipe::Impl::onReadWhileServerWaitingForBrochure_(
-    const proto::Packet& pbPacketIn) {
+    const Packet& nopPacketIn) {
   TP_DCHECK(loop_.inLoop());
   TP_DCHECK_EQ(state_, SERVER_WAITING_FOR_BROCHURE);
-  TP_DCHECK_EQ(pbPacketIn.type_case(), proto::Packet::kBrochure);
-  const proto::Brochure& pbBrochure = pbPacketIn.brochure();
+  TP_DCHECK_EQ(nopPacketIn.index(), nopPacketIn.index_of<Brochure>());
+  const Brochure& nopBrochure = *nopPacketIn.get<Brochure>();
 
-  auto pbPacketOut = std::make_shared<proto::Packet>();
-  proto::BrochureAnswer* pbBrochureAnswer =
-      pbPacketOut->mutable_brochure_answer();
+  auto nopHolderOut = std::make_shared<NopHolder<Packet>>();
+  Packet& nopPacketOut = nopHolderOut->getObject();
+  nopPacketOut.Become(nopPacketOut.index_of<BrochureAnswer>());
+  BrochureAnswer& nopBrochureAnswer = *nopPacketOut.get<BrochureAnswer>();
   bool needToWaitForConnections = false;
 
   bool foundATransport = false;
@@ -1174,22 +1179,22 @@ void Pipe::Impl::onReadWhileServerWaitingForBrochure_(
     }
     const std::string& address = addressIter->second;
 
-    const auto pbTransportAdvertisementIter =
-        pbBrochure.transport_advertisement().find(transportName);
-    if (pbTransportAdvertisementIter ==
-        pbBrochure.transport_advertisement().cend()) {
+    const auto nopTransportAdvertisementIter =
+        nopBrochure.transportAdvertisement.find(transportName);
+    if (nopTransportAdvertisementIter ==
+        nopBrochure.transportAdvertisement.cend()) {
       continue;
     }
-    const proto::TransportAdvertisement& pbTransportAdvertisement =
-        pbTransportAdvertisementIter->second;
+    const TransportAdvertisement& nopTransportAdvertisement =
+        nopTransportAdvertisementIter->second;
     const std::string& domainDescriptor =
-        pbTransportAdvertisement.domain_descriptor();
+        nopTransportAdvertisement.domainDescriptor;
     if (domainDescriptor != transportContext.domainDescriptor()) {
       continue;
     }
 
-    pbBrochureAnswer->set_transport(transportName);
-    pbBrochureAnswer->set_address(address);
+    nopBrochureAnswer.transport = transportName;
+    nopBrochureAnswer.address = address;
 
     if (transportName != transport_) {
       transport_ = transportName;
@@ -1208,7 +1213,7 @@ void Pipe::Impl::onReadWhileServerWaitingForBrochure_(
               }));
       registrationId_.emplace(token);
       needToWaitForConnections = true;
-      pbBrochureAnswer->set_registration_id(token);
+      nopBrochureAnswer.registrationId = token;
     }
 
     foundATransport = true;
@@ -1216,22 +1221,21 @@ void Pipe::Impl::onReadWhileServerWaitingForBrochure_(
   }
   TP_THROW_ASSERT_IF(!foundATransport);
 
-  auto pbAllChannelSelections = pbBrochureAnswer->mutable_channel_selection();
   for (const auto& channelContextIter : context_->getOrderedChannels()) {
     const std::string& channelName = std::get<0>(channelContextIter.second);
     const channel::Context& channelContext =
         *(std::get<1>(channelContextIter.second));
 
-    const auto pbChannelAdvertisementIter =
-        pbBrochure.channel_advertisement().find(channelName);
-    if (pbChannelAdvertisementIter ==
-        pbBrochure.channel_advertisement().cend()) {
+    const auto nopChannelAdvertisementIter =
+        nopBrochure.channelAdvertisement.find(channelName);
+    if (nopChannelAdvertisementIter ==
+        nopBrochure.channelAdvertisement.cend()) {
       continue;
     }
-    const proto::ChannelAdvertisement& pbChannelAdvertisement =
-        pbChannelAdvertisementIter->second;
+    const ChannelAdvertisement& nopChannelAdvertisement =
+        nopChannelAdvertisementIter->second;
     const std::string& domainDescriptor =
-        pbChannelAdvertisement.domain_descriptor();
+        nopChannelAdvertisement.domainDescriptor;
     if (domainDescriptor != channelContext.domainDescriptor()) {
       continue;
     }
@@ -1251,16 +1255,16 @@ void Pipe::Impl::onReadWhileServerWaitingForBrochure_(
         }));
     channelRegistrationIds_[channelName] = token;
     needToWaitForConnections = true;
-    proto::ChannelSelection* pbChannelSelection =
-        &(*pbAllChannelSelections)[channelName];
-    pbChannelSelection->set_registration_id(token);
+    ChannelSelection& nopChannelSelection =
+        nopBrochureAnswer.channelSelection[channelName];
+    nopChannelSelection.registrationId = token;
   }
 
-  TP_VLOG(3) << "Pipe " << id_ << " is writing proto (brochure answer)";
+  TP_VLOG(3) << "Pipe " << id_ << " is writing nop object (brochure answer)";
   connection_->write(
-      *pbPacketOut, lazyCallbackWrapper_([pbPacketOut](Impl& impl) {
+      *nopHolderOut, lazyCallbackWrapper_([nopHolderOut](Impl& impl) {
         TP_VLOG(3) << "Pipe " << impl.id_
-                   << " done writing proto (brochure answer)";
+                   << " done writing nop object (brochure answer)";
       }));
 
   if (!needToWaitForConnections) {
@@ -1273,14 +1277,14 @@ void Pipe::Impl::onReadWhileServerWaitingForBrochure_(
 }
 
 void Pipe::Impl::onReadWhileClientWaitingForBrochureAnswer_(
-    const proto::Packet& pbPacketIn) {
+    const Packet& nopPacketIn) {
   TP_DCHECK(loop_.inLoop());
   TP_DCHECK_EQ(state_, CLIENT_WAITING_FOR_BROCHURE_ANSWER);
-  TP_DCHECK_EQ(pbPacketIn.type_case(), proto::Packet::kBrochureAnswer);
+  TP_DCHECK_EQ(nopPacketIn.index(), nopPacketIn.index_of<BrochureAnswer>());
 
-  const proto::BrochureAnswer& pbBrochureAnswer = pbPacketIn.brochure_answer();
-  const std::string& transport = pbBrochureAnswer.transport();
-  std::string address = pbBrochureAnswer.address();
+  const BrochureAnswer& nopBrochureAnswer = *nopPacketIn.get<BrochureAnswer>();
+  const std::string& transport = nopBrochureAnswer.transport;
+  std::string address = nopBrochureAnswer.address;
   std::shared_ptr<transport::Context> transportContext =
       context_->getTransport(transport);
 
@@ -1289,27 +1293,30 @@ void Pipe::Impl::onReadWhileClientWaitingForBrochureAnswer_(
     std::shared_ptr<transport::Connection> connection =
         transportContext->connect(address);
     connection->setId(id_ + ".tr_" + transport);
-    auto pbPacketOut = std::make_shared<proto::Packet>();
-    proto::RequestedConnection* pbRequestedConnection =
-        pbPacketOut->mutable_requested_connection();
-    uint64_t token = pbBrochureAnswer.registration_id();
-    pbRequestedConnection->set_registration_id(token);
-    TP_VLOG(3) << "Pipe " << id_ << " is writing proto (requested connection)";
+    auto nopHolderOut = std::make_shared<NopHolder<Packet>>();
+    Packet& nopPacketOut = nopHolderOut->getObject();
+    nopPacketOut.Become(nopPacketOut.index_of<RequestedConnection>());
+    RequestedConnection& nopRequestedConnection =
+        *nopPacketOut.get<RequestedConnection>();
+    uint64_t token = nopBrochureAnswer.registrationId;
+    nopRequestedConnection.registrationId = token;
+    TP_VLOG(3) << "Pipe " << id_
+               << " is writing nop object (requested connection)";
     connection->write(
-        *pbPacketOut, lazyCallbackWrapper_([pbPacketOut](Impl& impl) {
+        *nopHolderOut, lazyCallbackWrapper_([nopHolderOut](Impl& impl) {
           TP_VLOG(3) << "Pipe " << impl.id_
-                     << " done writing proto (requested connection)";
+                     << " done writing nop object (requested connection)";
         }));
 
     transport_ = transport;
     connection_ = std::move(connection);
   }
 
-  for (const auto& pbChannelSelectionIter :
-       pbBrochureAnswer.channel_selection()) {
-    const std::string& channelName = pbChannelSelectionIter.first;
-    const proto::ChannelSelection& pbChannelSelection =
-        pbChannelSelectionIter.second;
+  for (const auto& nopChannelSelectionIter :
+       nopBrochureAnswer.channelSelection) {
+    const std::string& channelName = nopChannelSelectionIter.first;
+    const ChannelSelection& nopChannelSelection =
+        nopChannelSelectionIter.second;
 
     std::shared_ptr<channel::Context> channelContext =
         context_->getChannel(channelName);
@@ -1320,16 +1327,19 @@ void Pipe::Impl::onReadWhileClientWaitingForBrochureAnswer_(
         transportContext->connect(address);
     connection->setId(id_ + ".ch_" + channelName);
 
-    auto pbPacketOut = std::make_shared<proto::Packet>();
-    proto::RequestedConnection* pbRequestedConnection =
-        pbPacketOut->mutable_requested_connection();
-    uint64_t token = pbChannelSelection.registration_id();
-    pbRequestedConnection->set_registration_id(token);
-    TP_VLOG(3) << "Pipe " << id_ << " is writing proto (requested connection)";
+    auto nopHolderOut = std::make_shared<NopHolder<Packet>>();
+    Packet& nopPacketOut = nopHolderOut->getObject();
+    nopPacketOut.Become(nopPacketOut.index_of<RequestedConnection>());
+    RequestedConnection& nopRequestedConnection =
+        *nopPacketOut.get<RequestedConnection>();
+    uint64_t token = nopChannelSelection.registrationId;
+    nopRequestedConnection.registrationId = token;
+    TP_VLOG(3) << "Pipe " << id_
+               << " is writing nop object (requested connection)";
     connection->write(
-        *pbPacketOut, lazyCallbackWrapper_([pbPacketOut](Impl& impl) {
+        *nopHolderOut, lazyCallbackWrapper_([nopHolderOut](Impl& impl) {
           TP_VLOG(3) << "Pipe " << impl.id_
-                     << " done writing proto (requested connection)";
+                     << " done writing nop object (requested connection)";
         }));
 
     std::shared_ptr<channel::Channel> channel = channelContext->createChannel(
@@ -1396,12 +1406,12 @@ void Pipe::Impl::onAcceptWhileServerWaitingForChannel_(
 
 void Pipe::Impl::onReadOfMessageDescriptor_(
     ReadOperation& op,
-    const proto::Packet& pbPacketIn) {
+    const Packet& nopPacketIn) {
   TP_DCHECK(loop_.inLoop());
   TP_DCHECK_EQ(state_, ESTABLISHED);
 
   TP_DCHECK_EQ(op.state, ReadOperation::READING_DESCRIPTOR);
-  parseDescriptorOfMessage(op, pbPacketIn);
+  parseDescriptorOfMessage(op, nopPacketIn);
   op.doneReadingDescriptor = true;
 
   advanceReadOperation_(op);
