@@ -20,6 +20,8 @@ namespace channel {
 namespace mpt {
 
 struct LaneAdvertisement {
+  LaneAdvertisement() {};
+
   std::string address;
   uint64_t registrationId;
   NOP_STRUCTURE(LaneAdvertisement, address, registrationId);

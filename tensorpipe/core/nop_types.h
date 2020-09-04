@@ -67,12 +67,16 @@ enum class DeviceType { DEVICE_TYPE_UNSPECIFIED, DEVICE_TYPE_CPU };
 
 struct MessageDescriptor {
   struct PayloadDescriptor {
+    PayloadDescriptor() {};
+
     int64_t sizeInBytes;
     std::string metadata;
     NOP_STRUCTURE(PayloadDescriptor, sizeInBytes, metadata);
   };
 
   struct TensorDescriptor {
+    TensorDescriptor() {};
+
     int64_t sizeInBytes;
     std::string metadata;
 
