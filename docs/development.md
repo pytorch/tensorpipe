@@ -7,9 +7,6 @@ TensorPipe uses CMake for its build system.
 To build TensorPipe, you need:
 
 * C++14 compatible compiler (GCC >= 5.5 or Clang >= 6)
-* Protobuf version 3 (note: if you have compiled protobuf yourself and
-  installed it at a non-standard location, please see the note about
-  `CMAKE_PREFIX_PATH` below).
 
 ## Clone the repository
 
@@ -54,9 +51,6 @@ Useful CMake variables:
 * `CMAKE_C_FLAGS` -- Additional flags for the C compiler.
 * `CMAKE_CXX_FLAGS` -- Additional flags for the C++ compiler.
 * `CMAKE_BUILD_TYPE` -- For example: `release`, `debug`.
-* `CMAKE_PREFIX_PATH` -- If you have compiled protobuf yourself and
-  installed it at a non-standard location, you can use this variable
-  to make CMake find it.
 
 Useful TensorPipe specific variables:
 

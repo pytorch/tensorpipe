@@ -12,9 +12,6 @@ set(CMAKE_CXX_STANDARD 14)
 
 list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
 
-# Enable protobuf_generate() polyfill.
-include(cmake/ProtobufGenerate.cmake)
-
 # Expose build options.
 include(Options)
 

@@ -15,7 +15,6 @@ add_executable(tensorpipe_test
   transport/uv/sockaddr_test.cc
   transport/listener_test.cc
   core/context_test.cc
-  proto/core_test.cc
   channel/basic/basic_test.cc
   channel/xth/xth_test.cc
   channel/mpt/mpt_test.cc
@@ -46,11 +45,7 @@ endif()
 add_subdirectory(${PROJECT_SOURCE_DIR}/third_party/googletest
   ${PROJECT_BINARY_DIR}/third_party/googletest)
 
-# Support `#include <tensorpipe/proto/foo.pb.h>`
-target_include_directories(tensorpipe_test PRIVATE ${PROJECT_BINARY_DIR})
-
 target_link_libraries(tensorpipe_test PRIVATE
   tensorpipe
   uv::uv
-  protobuf::libprotobuf-lite
   gtest_main)
