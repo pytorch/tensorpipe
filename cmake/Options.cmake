@@ -15,6 +15,7 @@ option(TP_ENABLE_SHM "Enable shm transport" ${LINUX})
 
 # Channels
 option(TP_ENABLE_CMA "Enable cma channel" ${LINUX})
+option(TP_ENABLE_CUDA_IPC "Enable CUDA IPC channel" ${LINUX})
 
 # Optional features
 option(TP_BUILD_BENCHMARK "Build benchmarks" OFF)

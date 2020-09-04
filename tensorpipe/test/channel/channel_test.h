@@ -19,9 +19,48 @@
 #include <tensorpipe/test/peer_group.h>
 #include <tensorpipe/transport/uv/context.h>
 
+class DataWrapper {
+ public:
+  virtual ~DataWrapper() = default;
+  virtual void* data() = 0;
+  virtual size_t size() = 0;
+  virtual void wrap(const void* ptr) = 0;
+  virtual void unwrap(void* ptr) = 0;
+};
+
+class IdWrapper : public DataWrapper {
+ public:
+  explicit IdWrapper(size_t len) : size_(len) {}
+
+  void* data() override {
+    return data_;
+  }
+
+  size_t size() override {
+    return size_;
+  }
+
+  void wrap(const void* ptr) override {
+    data_ = const_cast<void*>(ptr);
+  }
+
+  void unwrap(void* ptr) override {
+    ASSERT_EQ(data_, ptr);
+  }
+
+ private:
+  void* data_;
+  size_t size_;
+};
+
 class ChannelTestHelper {
  public:
   virtual ~ChannelTestHelper() = default;
+
+  // FIXME: This is needed for a workaround to avoid running a generic test
+  // against CUDA channels. It should be removed once the channel (and test)
+  // hierarchies are separated.
+  virtual std::string channelName() = 0;
 
   virtual std::shared_ptr<tensorpipe::channel::Context> makeContext(
       std::string id) = 0;
@@ -29,14 +68,19 @@ class ChannelTestHelper {
   virtual std::shared_ptr<PeerGroup> makePeerGroup() {
     return std::make_shared<ThreadPeerGroup>();
   }
+
+  virtual std::shared_ptr<DataWrapper> makeBuffer(size_t len) {
+    return std::make_shared<IdWrapper>(len);
+  }
 };
 
 class ChannelTest : public ::testing::TestWithParam<ChannelTestHelper*> {
  protected:
+  ChannelTestHelper* helper_;
   std::shared_ptr<PeerGroup> peers_;
 
  public:
-  ChannelTest() : peers_(GetParam()->makePeerGroup()) {}
+  ChannelTest() : helper_(GetParam()), peers_(helper_->makePeerGroup()) {}
 
   void testConnection(
       std::function<void(std::shared_ptr<tensorpipe::transport::Connection>)>
@@ -92,15 +136,18 @@ class ChannelTest : public ::testing::TestWithParam<ChannelTestHelper*> {
     auto promise = std::make_shared<std::promise<tensorpipe::Error>>();
     auto descriptorFuture = descriptorPromise->get_future();
     auto future = promise->get_future();
+    auto buffer = helper_->makeBuffer(length);
+    buffer->wrap(ptr);
+
     channel->send(
-        ptr,
-        length,
+        buffer->data(),
+        buffer->size(),
         [descriptorPromise{std::move(descriptorPromise)}](
             const tensorpipe::Error& error, std::string descriptor) {
           descriptorPromise->set_value(
               std::make_tuple(error, std::move(descriptor)));
         },
-        [promise{std::move(promise)}](const tensorpipe::Error& error) {
+        [promise{std::move(promise)}, buffer](const tensorpipe::Error& error) {
           promise->set_value(error);
         });
     return {std::move(descriptorFuture), std::move(future)};
@@ -113,11 +160,16 @@ class ChannelTest : public ::testing::TestWithParam<ChannelTestHelper*> {
       size_t length) {
     auto promise = std::make_shared<std::promise<tensorpipe::Error>>();
     auto future = promise->get_future();
+    auto buffer = helper_->makeBuffer(length);
+    buffer->wrap(ptr);
+
     channel->recv(
         std::move(descriptor),
-        ptr,
-        length,
-        [promise{std::move(promise)}](const tensorpipe::Error& error) {
+        buffer->data(),
+        buffer->size(),
+        [promise{std::move(promise)}, buffer, ptr](
+            const tensorpipe::Error& error) {
+          buffer->unwrap(ptr);
           promise->set_value(error);
         });
     return future;

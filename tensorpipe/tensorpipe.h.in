@@ -42,3 +42,8 @@
 #if TENSORPIPE_HAS_CMA_CHANNEL
 #include <tensorpipe/channel/cma/context.h>
 #endif // TENSORPIPE_HAS_CMA_CHANNEL
+
+#cmakedefine01 TENSORPIPE_HAS_CUDA_IPC_CHANNEL
+#if TENSORPIPE_HAS_CUDA_IPC_CHANNEL
+#include <tensorpipe/channel/cuda_ipc/context.h>
+#endif // TENSORPIPE_HAS_CUDA_IPC_CHANNEL

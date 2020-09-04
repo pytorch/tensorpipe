@@ -59,14 +59,12 @@ TEST_P(ChannelTest, ClientToServer) {
         auto channel =
             ctx->createChannel(std::move(conn), Channel::Endpoint::kConnect);
 
-        // Initialize with zeroes.
         std::vector<uint8_t> data(dataSize);
-        std::fill(data.begin(), data.end(), 0);
 
         // Perform recv and wait for completion.
         auto descriptor = peers_->recv(PeerGroup::kClient);
         std::future<Error> recvFuture =
-            recvWithFuture(channel, descriptor, data.data(), dataSize);
+            recvWithFuture(channel, descriptor, data.data(), data.size());
         Error recvError = recvFuture.get();
         EXPECT_FALSE(recvError) << recvError.what();
 
@@ -91,9 +89,7 @@ TEST_P(ChannelTest, ServerToClient) {
         auto channel =
             ctx->createChannel(std::move(conn), Channel::Endpoint::kListen);
 
-        // Initialize with zeroes.
         std::vector<uint8_t> data(dataSize);
-        std::fill(data.begin(), data.end(), 0);
 
         // Perform recv and wait for completion.
         auto descriptor = peers_->recv(PeerGroup::kServer);
@@ -186,9 +182,8 @@ TEST_P(ChannelTest, SendMultipleTensors) {
         auto channel =
             ctx->createChannel(std::move(conn), Channel::Endpoint::kConnect);
 
-        // Initialize with zeroes.
         std::vector<std::vector<uint8_t>> dataVec(
-            numTensors, std::vector<uint8_t>(dataSize, 0));
+            numTensors, std::vector<uint8_t>(dataSize));
 
         // Error futures
         std::vector<std::future<Error>> recvFutures;
@@ -196,8 +191,8 @@ TEST_P(ChannelTest, SendMultipleTensors) {
         // Perform recv and wait for completion.
         for (int i = 0; i < numTensors; i++) {
           auto descriptor = peers_->recv(PeerGroup::kClient);
-          std::future<Error> recvFuture =
-              recvWithFuture(channel, descriptor, dataVec[i].data(), dataSize);
+          std::future<Error> recvFuture = recvWithFuture(
+              channel, descriptor, dataVec[i].data(), dataVec[i].size());
           recvFutures.push_back(std::move(recvFuture));
         }
         for (auto& recvFuture : recvFutures) {
@@ -208,9 +203,114 @@ TEST_P(ChannelTest, SendMultipleTensors) {
         // Validate contents of vector.
         for (auto& data : dataVec) {
           for (int i = 0; i < data.size(); i++) {
-            uint8_t value = i;
-            EXPECT_EQ(data[i], value);
+            EXPECT_EQ(data[i], i % 256);
           }
+        }
+
+        peers_->done(PeerGroup::kClient);
+        peers_->join(PeerGroup::kClient);
+
+        ctx->join();
+      });
+}
+
+TEST_P(ChannelTest, SendTensorsBothWays) {
+  constexpr auto dataSize = 256;
+
+  testConnection(
+      [&](std::shared_ptr<transport::Connection> conn) {
+        std::shared_ptr<Context> ctx = GetParam()->makeContext("server");
+        auto channel =
+            ctx->createChannel(std::move(conn), Channel::Endpoint::kListen);
+
+        // Initialize sendBuffer with sequential values.
+        std::vector<uint8_t> sendData(dataSize);
+        std::iota(sendData.begin(), sendData.end(), 0);
+
+        // Recv buffer.
+        std::vector<uint8_t> recvData(dataSize);
+
+        std::future<Error> sendFuture;
+        std::future<Error> recvFuture;
+
+        // Perform send.
+        {
+          std::future<std::tuple<Error, Channel::TDescriptor>> descriptorFuture;
+          std::tie(descriptorFuture, sendFuture) =
+              sendWithFuture(channel, sendData.data(), sendData.size());
+          Error descriptorError;
+          Channel::TDescriptor descriptor;
+          std::tie(descriptorError, descriptor) = descriptorFuture.get();
+          EXPECT_FALSE(descriptorError) << descriptorError.what();
+          peers_->send(PeerGroup::kClient, descriptor);
+        }
+
+        // Perform recv.
+        {
+          auto descriptor = peers_->recv(PeerGroup::kServer);
+          recvFuture = recvWithFuture(
+              channel, descriptor, recvData.data(), recvData.size());
+        }
+
+        // Wait for completion of both.
+        Error sendError = sendFuture.get();
+        EXPECT_FALSE(sendError) << sendError.what();
+        Error recvError = recvFuture.get();
+        EXPECT_FALSE(recvError) << recvError.what();
+
+        // Verify recvd buffers.
+        for (int i = 0; i < recvData.size(); i++) {
+          EXPECT_EQ(recvData[i], i % 256);
+        }
+
+        peers_->done(PeerGroup::kServer);
+        peers_->join(PeerGroup::kServer);
+
+        ctx->join();
+      },
+      [&](std::shared_ptr<transport::Connection> conn) {
+        std::shared_ptr<Context> ctx = GetParam()->makeContext("client");
+        auto channel =
+            ctx->createChannel(std::move(conn), Channel::Endpoint::kConnect);
+
+        // Initialize sendBuffer with sequential values.
+        std::vector<uint8_t> sendData(dataSize);
+        std::iota(sendData.begin(), sendData.end(), 0);
+
+        // Recv buffer.
+        std::vector<uint8_t> recvData(dataSize);
+
+        std::future<Error> sendFuture;
+        std::future<Error> recvFuture;
+
+        // Perform send.
+        {
+          std::future<std::tuple<Error, Channel::TDescriptor>> descriptorFuture;
+          std::tie(descriptorFuture, sendFuture) =
+              sendWithFuture(channel, sendData.data(), sendData.size());
+          Error descriptorError;
+          Channel::TDescriptor descriptor;
+          std::tie(descriptorError, descriptor) = descriptorFuture.get();
+          EXPECT_FALSE(descriptorError) << descriptorError.what();
+          peers_->send(PeerGroup::kServer, descriptor);
+        }
+
+        // Perform recv.
+        {
+          auto descriptor = peers_->recv(PeerGroup::kClient);
+          recvFuture = recvWithFuture(
+              channel, descriptor, recvData.data(), recvData.size());
+        }
+
+        // Wait for completion of both.
+        Error sendError = sendFuture.get();
+        EXPECT_FALSE(sendError) << sendError.what();
+        Error recvError = recvFuture.get();
+        EXPECT_FALSE(recvError) << recvError.what();
+
+        // Verify recvd buffers.
+        for (int i = 0; i < recvData.size(); i++) {
+          EXPECT_EQ(recvData[i], i % 256);
         }
 
         peers_->done(PeerGroup::kClient);
@@ -343,6 +443,14 @@ TEST_P(ChannelTest, CallbacksAreDeferred) {
   // recv method. We do so by having that behavior cause a deadlock.
   constexpr auto dataSize = 256;
 
+  // This test is disabled for the CudaIpc channel, as the callback is invoked
+  // inline although the actual heavy lifting happens asynchronously on the
+  // device.
+  if (GetParam()->channelName() == "cuda_ipc") {
+    SUCCEED();
+    return;
+  }
+
   testConnection(
       [&](std::shared_ptr<transport::Connection> conn) {
         std::shared_ptr<Context> ctx = GetParam()->makeContext("server");
@@ -352,6 +460,8 @@ TEST_P(ChannelTest, CallbacksAreDeferred) {
         // Initialize with sequential values.
         std::vector<uint8_t> data(dataSize);
         std::iota(data.begin(), data.end(), 0);
+        auto buffer = helper_->makeBuffer(dataSize);
+        buffer->wrap(data.data());
 
         // Perform send and wait for completion.
         std::promise<std::tuple<Error, Channel::TDescriptor>> descriptorPromise;
@@ -359,8 +469,8 @@ TEST_P(ChannelTest, CallbacksAreDeferred) {
         std::mutex mutex;
         std::unique_lock<std::mutex> callerLock(mutex);
         channel->send(
-            data.data(),
-            data.size(),
+            buffer->data(),
+            buffer->size(),
             [&descriptorPromise](
                 const Error& error, Channel::TDescriptor descriptor) {
               descriptorPromise.set_value(
@@ -393,6 +503,8 @@ TEST_P(ChannelTest, CallbacksAreDeferred) {
         // Initialize with zeroes.
         std::vector<uint8_t> data(dataSize);
         std::fill(data.begin(), data.end(), 0);
+        auto buffer = helper_->makeBuffer(dataSize);
+        buffer->wrap(data.data());
 
         // Perform recv and wait for completion.
         std::promise<Error> recvPromise;
@@ -401,10 +513,12 @@ TEST_P(ChannelTest, CallbacksAreDeferred) {
         auto descriptor = peers_->recv(PeerGroup::kClient);
         channel->recv(
             descriptor,
-            data.data(),
-            data.size(),
-            [&recvPromise, &mutex](const Error& error) {
+            buffer->data(),
+            buffer->size(),
+            [&recvPromise, &mutex, &buffer, ptr{data.data()}](
+                const Error& error) {
               std::unique_lock<std::mutex> calleeLock(mutex);
+              buffer->unwrap(ptr);
               recvPromise.set_value(error);
             });
         callerLock.unlock();

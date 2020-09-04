@@ -13,6 +13,10 @@ namespace {
 
 class XthChannelTestHelper : public ChannelTestHelper {
  public:
+  std::string channelName() override {
+    return "xth";
+  }
+
   std::shared_ptr<tensorpipe::channel::Context> makeContext(
       std::string id) override {
     auto context = std::make_shared<tensorpipe::channel::xth::Context>();
