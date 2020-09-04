@@ -67,12 +67,22 @@ enum class DeviceType { DEVICE_TYPE_UNSPECIFIED, DEVICE_TYPE_CPU };
 
 struct MessageDescriptor {
   struct PayloadDescriptor {
+    // This pointless constructor is needed to work around a bug in GCC 5.5 (and
+    // possibly other versions). It appears to be needed in the nop types that
+    // are used inside std::vectors.
+    PayloadDescriptor(){};
+
     int64_t sizeInBytes;
     std::string metadata;
     NOP_STRUCTURE(PayloadDescriptor, sizeInBytes, metadata);
   };
 
   struct TensorDescriptor {
+    // This pointless constructor is needed to work around a bug in GCC 5.5 (and
+    // possibly other versions). It appears to be needed in the nop types that
+    // are used inside std::vectors.
+    TensorDescriptor(){};
+
     int64_t sizeInBytes;
     std::string metadata;
 
