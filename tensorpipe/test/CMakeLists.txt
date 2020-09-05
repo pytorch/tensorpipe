@@ -42,6 +42,19 @@ if(TP_ENABLE_CMA)
     )
 endif()
 
+if(TP_ENABLE_CUDA_IPC)
+  find_package(CUDA REQUIRED)
+  target_link_libraries(tensorpipe_test PRIVATE ${CUDA_LIBRARIES})
+  target_include_directories(tensorpipe_test PRIVATE ${CUDA_INCLUDE_DIRS})
+
+  target_sources(tensorpipe_test PRIVATE
+    channel/cuda_ipc/cuda_ipc_test.cc
+    )
+  cuda_add_library(tensorpipe_cuda_ipc_kernel channel/cuda_ipc/kernel.cu)
+  target_link_libraries(tensorpipe_test PRIVATE tensorpipe_cuda_ipc_kernel)
+endif()
+
+
 add_subdirectory(${PROJECT_SOURCE_DIR}/third_party/googletest
   ${PROJECT_BINARY_DIR}/third_party/googletest)
 

@@ -13,6 +13,10 @@ namespace {
 
 class CmaChannelTestHelper : public ChannelTestHelper {
  public:
+  std::string channelName() override {
+    return "cma";
+  }
+
   std::shared_ptr<tensorpipe::channel::Context> makeContext(
       std::string id) override {
     auto context = std::make_shared<tensorpipe::channel::cma::Context>();

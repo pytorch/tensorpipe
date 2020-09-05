@@ -58,6 +58,19 @@ target_sources(tensorpipe PRIVATE
   channel/mpt/channel.cc
   channel/mpt/context.cc)
 
+### cuda_ipc
+
+if(TP_ENABLE_CUDA_IPC)
+  target_sources(tensorpipe PRIVATE
+    channel/cuda_ipc/channel.cc
+    channel/cuda_ipc/context.cc
+    proto/channel/cuda_ipc.proto)
+  set(TENSORPIPE_HAS_CUDA_IPC_CHANNEL 1)
+
+  find_package(CUDA REQUIRED)
+  target_link_libraries(tensorpipe PUBLIC ${CUDA_LIBRARIES})
+  target_include_directories(tensorpipe PUBLIC ${CUDA_INCLUDE_DIRS})
+endif()
 
 ## Transports
 

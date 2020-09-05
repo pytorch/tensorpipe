@@ -22,8 +22,8 @@
 #include <system_error>
 
 // Branch hint macros. C++20 will include them as part of language.
-#define likely(x) __builtin_expect(!!(x), 1)
-#define unlikely(x) __builtin_expect(!!(x), 0)
+#define likely(x) __builtin_expect((x) ? 1 : 0, 1)
+#define unlikely(x) __builtin_expect((x) ? 1 : 0, 0)
 
 /// Auxiliar class to build exception, fill up it's what message and throw
 /// in a single line. Usually uses as r-value so that destructor is called
