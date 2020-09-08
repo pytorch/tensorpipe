@@ -63,8 +63,7 @@ target_sources(tensorpipe PRIVATE
 if(TP_ENABLE_CUDA_IPC)
   target_sources(tensorpipe PRIVATE
     channel/cuda_ipc/channel.cc
-    channel/cuda_ipc/context.cc
-    proto/channel/cuda_ipc.proto)
+    channel/cuda_ipc/context.cc)
   set(TENSORPIPE_HAS_CUDA_IPC_CHANNEL 1)
 
   find_package(CUDA REQUIRED)
