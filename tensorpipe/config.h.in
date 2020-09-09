@@ -1,0 +1,16 @@
+/*
+ * Copyright (c) Facebook, Inc. and its affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+#pragma once
+
+#cmakedefine01 TENSORPIPE_HAS_CUDA
+
+#cmakedefine01 TENSORPIPE_HAS_SHM_TRANSPORT
+
+#cmakedefine01 TENSORPIPE_HAS_CMA_CHANNEL
+#cmakedefine01 TENSORPIPE_HAS_CUDA_IPC_CHANNEL

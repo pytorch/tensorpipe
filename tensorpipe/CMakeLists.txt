@@ -58,17 +58,22 @@ target_sources(tensorpipe PRIVATE
   channel/mpt/channel.cc
   channel/mpt/context.cc)
 
-### cuda_ipc
+## CUDA channels
 
-if(TP_ENABLE_CUDA_IPC)
-  target_sources(tensorpipe PRIVATE
-    channel/cuda_ipc/channel.cc
-    channel/cuda_ipc/context.cc)
-  set(TENSORPIPE_HAS_CUDA_IPC_CHANNEL 1)
-
+if(TP_ENABLE_CUDA)
   find_package(CUDA REQUIRED)
   target_link_libraries(tensorpipe PUBLIC ${CUDA_LIBRARIES})
   target_include_directories(tensorpipe PUBLIC ${CUDA_INCLUDE_DIRS})
+  set(TENSORPIPE_HAS_CUDA 1)
+
+  ### cuda_ipc
+
+  if(TP_ENABLE_CUDA_IPC)
+    target_sources(tensorpipe PRIVATE
+      channel/cuda_ipc/channel.cc
+      channel/cuda_ipc/context.cc)
+    set(TENSORPIPE_HAS_CUDA_IPC_CHANNEL 1)
+  endif()
 endif()
 
 ## Transports
@@ -119,7 +124,7 @@ endif()
 
 ## Config
 
-configure_file(tensorpipe.h.in tensorpipe.h)
+configure_file(config.h.in config.h)
 
 
 ## Libnop
