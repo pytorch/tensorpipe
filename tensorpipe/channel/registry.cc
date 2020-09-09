@@ -11,3 +11,9 @@
 TP_DEFINE_SHARED_REGISTRY(
     TensorpipeChannelRegistry,
     tensorpipe::channel::Context<tensorpipe::CpuTensor>);
+
+#if TENSORPIPE_HAS_CUDA
+TP_DEFINE_SHARED_REGISTRY(
+    TensorpipeCudaChannelRegistry,
+    tensorpipe::channel::Context<tensorpipe::CudaTensor>);
+#endif // TENSORPIPE_HAS_CUDA

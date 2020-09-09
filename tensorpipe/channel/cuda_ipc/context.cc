@@ -45,8 +45,10 @@ std::shared_ptr<CudaContext> makeCudaIpcChannel() {
   return std::make_shared<Context>();
 }
 
-// TODO: Make separate CUDA channel registry.
-// TP_REGISTER_CREATOR(TensorpipeChannelRegistry, cuda_ipc, makeCudaIpcChannel);
+TP_REGISTER_CREATOR(
+    TensorpipeCudaChannelRegistry,
+    cuda_ipc,
+    makeCudaIpcChannel);
 
 } // namespace
 

@@ -8,10 +8,18 @@
 
 #pragma once
 
+#include <tensorpipe/config.h>
+
 #include <tensorpipe/channel/context.h>
 #include <tensorpipe/common/tensor.h>
 #include <tensorpipe/util/registry/registry.h>
 
 TP_DECLARE_SHARED_REGISTRY(
     TensorpipeChannelRegistry,
-    tensorpipe::channel::Context<tensorpipe::CpuTensor>);
+    tensorpipe::channel::CpuContext);
+
+#if TENSORPIPE_HAS_CUDA
+TP_DECLARE_SHARED_REGISTRY(
+    TensorpipeCudaChannelRegistry,
+    tensorpipe::channel::CudaContext);
+#endif // TENSORPIPE_HAS_CUDA
