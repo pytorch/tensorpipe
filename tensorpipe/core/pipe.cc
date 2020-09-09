@@ -88,7 +88,9 @@ void parseDescriptorOfMessage(ReadOperation& op, const Packet& nopPacketIn) {
     Message::Tensor tensor{
         .tensor =
             CpuTensor{
-                nullptr, static_cast<size_t>(nopTensorDescriptor.sizeInBytes)},
+                .ptr = nullptr,
+                .length = static_cast<size_t>(nopTensorDescriptor.sizeInBytes),
+            },
         .metadata = nopTensorDescriptor.metadata,
     };
     ReadOperation::Tensor tensorBeingAllocated;
