@@ -61,10 +61,6 @@ class CudaWrapper : public DataWrapper {
 
 // class CudaChannelTestHelper : public ChannelTestHelper {
 //  public:
-//   std::string channelName() override {
-//     return "cuda_ipc";
-//   }
-
 //   std::shared_ptr<tensorpipe::channel::Context> makeContext(
 //       std::string id) override {
 //     auto context =

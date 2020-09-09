@@ -449,14 +449,6 @@ TEST_P(ChannelTest, CallbacksAreDeferred) {
   // recv method. We do so by having that behavior cause a deadlock.
   constexpr auto dataSize = 256;
 
-  // This test is disabled for the CudaIpc channel, as the callback is invoked
-  // inline although the actual heavy lifting happens asynchronously on the
-  // device.
-  if (GetParam()->channelName() == "cuda_ipc") {
-    SUCCEED();
-    return;
-  }
-
   testConnection(
       [&](std::shared_ptr<transport::Connection> conn) {
         std::shared_ptr<CpuContext> ctx = GetParam()->makeContext("server");

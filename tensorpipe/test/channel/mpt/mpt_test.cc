@@ -13,10 +13,6 @@ namespace {
 
 class MptChannelTestHelper : public ChannelTestHelper {
  public:
-  std::string channelName() override {
-    return "mpt";
-  }
-
   std::shared_ptr<tensorpipe::channel::Context<tensorpipe::CpuTensor>>
   makeContext(std::string id) override {
     std::vector<std::shared_ptr<tensorpipe::transport::Context>> contexts = {

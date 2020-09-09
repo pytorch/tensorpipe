@@ -58,11 +58,6 @@ class ChannelTestHelper {
  public:
   virtual ~ChannelTestHelper() = default;
 
-  // FIXME: This is needed for a workaround to avoid running a generic test
-  // against CUDA channels. It should be removed once the channel (and test)
-  // hierarchies are separated.
-  virtual std::string channelName() = 0;
-
   virtual std::shared_ptr<tensorpipe::channel::CpuContext> makeContext(
       std::string id) = 0;
 
