@@ -11,7 +11,7 @@
 
 namespace {
 
-class CmaChannelTestHelper : public ChannelTestHelper {
+class CmaChannelTestHelper : public ChannelTestHelper<tensorpipe::CpuTensor> {
  public:
   std::shared_ptr<tensorpipe::channel::Context<tensorpipe::CpuTensor>>
   makeContext(std::string id) override {
@@ -25,4 +25,4 @@ CmaChannelTestHelper helper;
 
 } // namespace
 
-INSTANTIATE_TEST_CASE_P(Cma, ChannelTest, ::testing::Values(&helper));
+INSTANTIATE_TEST_CASE_P(Cma, CpuChannelTest, ::testing::Values(&helper));
