@@ -17,8 +17,8 @@ class BasicChannelTestHelper : public ChannelTestHelper {
     return "basic";
   }
 
-  std::shared_ptr<tensorpipe::channel::Context> makeContext(
-      std::string id) override {
+  std::shared_ptr<tensorpipe::channel::Context<tensorpipe::CpuTensor>>
+  makeContext(std::string id) override {
     auto context = std::make_shared<tensorpipe::channel::basic::Context>();
     context->setId(std::move(id));
     return context;

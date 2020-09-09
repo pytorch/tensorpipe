@@ -16,6 +16,7 @@
 
 #include <tensorpipe/channel/context.h>
 #include <tensorpipe/common/callback.h>
+#include <tensorpipe/common/tensor.h>
 #include <tensorpipe/transport/context.h>
 
 namespace tensorpipe {
@@ -58,7 +59,10 @@ class Context final {
       std::string,
       std::shared_ptr<transport::Context>);
 
-  void registerChannel(int64_t, std::string, std::shared_ptr<channel::Context>);
+  void registerChannel(
+      int64_t,
+      std::string,
+      std::shared_ptr<channel::CpuContext>);
 
   std::shared_ptr<Listener> listen(const std::vector<std::string>&);
 
@@ -84,7 +88,7 @@ class Context final {
     virtual std::shared_ptr<transport::Context> getTransport(
         const std::string&) = 0;
 
-    virtual std::shared_ptr<channel::Context> getChannel(
+    virtual std::shared_ptr<channel::CpuContext> getChannel(
         const std::string&) = 0;
 
     using TOrderedTransports = std::map<
@@ -95,7 +99,7 @@ class Context final {
 
     using TOrderedChannels = std::map<
         int64_t,
-        std::tuple<std::string, std::shared_ptr<channel::Context>>>;
+        std::tuple<std::string, std::shared_ptr<channel::CpuContext>>>;
 
     virtual const TOrderedChannels& getOrderedChannels() = 0;
 

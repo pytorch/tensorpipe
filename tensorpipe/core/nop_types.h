@@ -16,6 +16,8 @@
 #include <nop/structure.h>
 #include <nop/types/variant.h>
 
+#include <tensorpipe/common/tensor.h>
+
 namespace tensorpipe {
 
 struct SpontaneousConnection {
@@ -62,8 +64,6 @@ struct BrochureAnswer {
       registrationId,
       channelSelection);
 };
-
-enum class DeviceType { DEVICE_TYPE_UNSPECIFIED, DEVICE_TYPE_CPU };
 
 struct MessageDescriptor {
   struct PayloadDescriptor {

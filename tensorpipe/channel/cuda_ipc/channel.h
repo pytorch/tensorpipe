@@ -19,7 +19,7 @@ namespace tensorpipe {
 namespace channel {
 namespace cuda_ipc {
 
-class Channel : public channel::Channel {
+class Channel : public channel::CudaChannel {
   // Use the passkey idiom to allow make_shared to call what should be a private
   // constructor. See https://abseil.io/tips/134 for more information.
   struct ConstructorToken {};
@@ -33,31 +33,13 @@ class Channel : public channel::Channel {
 
   // Send memory region to peer.
   void send(
-      const void* ptr,
-      size_t length,
+      const CudaTensor tensor,
       TDescriptorCallback descriptorCallback,
       TSendCallback callback) override;
 
-  void send(
-      const void* ptr,
-      size_t length,
-      TDescriptorCallback descriptorCallback,
-      TSendCallback callback,
-      cudaStream_t stream);
-
   // Receive memory region from peer.
-  void recv(
-      TDescriptor descriptor,
-      void* ptr,
-      size_t length,
-      TRecvCallback callback) override;
-
-  void recv(
-      TDescriptor descriptor,
-      void* ptr,
-      size_t length,
-      TRecvCallback callback,
-      cudaStream_t stream);
+  void recv(TDescriptor descriptor, CudaTensor tensor, TRecvCallback callback)
+      override;
 
   // Tell the channel what its identifier is.
   void setId(std::string id) override;

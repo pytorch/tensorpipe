@@ -13,6 +13,7 @@
 #include <vector>
 
 #include <tensorpipe/common/optional.h>
+#include <tensorpipe/common/tensor.h>
 #include <tensorpipe/transport/connection.h>
 
 // Channels are an out of band mechanism to transfer data between
@@ -53,20 +54,19 @@ using TSendCallback = std::function<void(const Error&)>;
 using TRecvCallback = std::function<void(const Error&)>;
 
 // Abstract base class for channel classes.
+template <typename TTensor>
 class Channel {
  public:
   // Send memory region to peer.
   virtual void send(
-      const void* ptr,
-      size_t length,
+      const TTensor tensor,
       TDescriptorCallback descriptorCallback,
       TSendCallback callback) = 0;
 
   // Receive memory region from peer.
   virtual void recv(
       TDescriptor descriptor,
-      void* ptr,
-      size_t length,
+      TTensor tensor,
       TRecvCallback callback) = 0;
 
   // Tell the channel what its identifier is.
@@ -82,6 +82,12 @@ class Channel {
 
   virtual ~Channel() = default;
 };
+
+using CpuChannel = Channel<CpuTensor>;
+
+#if TENSORPIPE_HAS_CUDA
+using CudaChannel = Channel<CudaTensor>;
+#endif // TENSORPIPE_HAS_CUDA
 
 } // namespace channel
 } // namespace tensorpipe

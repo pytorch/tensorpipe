@@ -115,8 +115,8 @@ tensorpipe::Message prepareToWrite(std::shared_ptr<OutgoingMessage> pyMessage) {
   tpMessage.tensors.reserve(pyMessage->tensors.size());
   for (const auto& pyTensor : pyMessage->tensors) {
     tensorpipe::Message::Tensor tpTensor{
-        pyTensor->buffer.ptr(),
-        pyTensor->buffer.length(),
+        tensorpipe::CpuTensor{pyTensor->buffer.ptr(),
+                              pyTensor->buffer.length()},
         {reinterpret_cast<char*>(pyTensor->metadata.ptr()),
          pyTensor->metadata.length()}};
     tpMessage.tensors.push_back(std::move(tpTensor));
@@ -187,9 +187,9 @@ std::shared_ptr<IncomingMessage> prepareToAllocate(
   std::vector<std::shared_ptr<IncomingTensor>> pyTensors;
   pyTensors.reserve(tpMessage.tensors.size());
   for (const auto& tpTensor : tpMessage.tensors) {
-    TP_DCHECK(tpTensor.data == nullptr);
-    pyTensors.push_back(
-        std::make_shared<IncomingTensor>(tpTensor.length, tpTensor.metadata));
+    TP_DCHECK(tpTensor.tensor.cpu.ptr == nullptr);
+    pyTensors.push_back(std::make_shared<IncomingTensor>(
+        tpTensor.tensor.cpu.length, tpTensor.metadata));
   }
   auto pyMessage = std::make_shared<IncomingMessage>(
       tpMessage.metadata, std::move(pyPayloads), std::move(pyTensors));
@@ -208,8 +208,8 @@ tensorpipe::Message prepareToRead(std::shared_ptr<IncomingMessage> pyMessage) {
   tpMessage.tensors.reserve(pyMessage->tensors.size());
   for (const auto& pyTensor : pyMessage->tensors) {
     TP_THROW_ASSERT_IF(!pyTensor->buffer.has_value()) << "No buffer";
-    tensorpipe::Message::Tensor tpTensor{pyTensor->buffer.value().ptr(),
-                                         pyTensor->buffer.value().length()};
+    tensorpipe::Message::Tensor tpTensor{tensorpipe::CpuTensor{
+        pyTensor->buffer.value().ptr(), pyTensor->buffer.value().length()}};
     tpMessage.tensors.push_back(std::move(tpTensor));
   }
   return tpMessage;
@@ -223,8 +223,10 @@ using transport_class_ =
     py::class_<T, tensorpipe::transport::Context, std::shared_ptr<T>>;
 
 template <typename T>
-using channel_class_ =
-    py::class_<T, tensorpipe::channel::Context, std::shared_ptr<T>>;
+using channel_class_ = py::class_<
+    T,
+    tensorpipe::channel::Context<tensorpipe::CpuTensor>,
+    std::shared_ptr<T>>;
 
 } // namespace
 
@@ -438,8 +440,8 @@ PYBIND11_MODULE(pytensorpipe, module) {
       py::arg("name"),
       py::arg("transport"));
 
-  shared_ptr_class_<tensorpipe::channel::Context> abstractChannel(
-      module, "AbstractChannel");
+  shared_ptr_class_<tensorpipe::channel::Context<tensorpipe::CpuTensor>>
+      abstractChannel(module, "AbstractChannel");
 
   channel_class_<tensorpipe::channel::basic::Context> basicChannel(
       module, "BasicChannel");

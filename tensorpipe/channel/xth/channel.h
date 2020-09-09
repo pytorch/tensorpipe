@@ -17,7 +17,7 @@ namespace tensorpipe {
 namespace channel {
 namespace xth {
 
-class Channel : public channel::Channel {
+class Channel : public channel::CpuChannel {
   // Use the passkey idiom to allow make_shared to call what should be a private
   // constructor. See https://abseil.io/tips/134 for more information.
   struct ConstructorToken {};
@@ -31,17 +31,13 @@ class Channel : public channel::Channel {
 
   // Send memory region to peer.
   void send(
-      const void* ptr,
-      size_t length,
+      const CpuTensor tensor,
       TDescriptorCallback descriptorCallback,
       TSendCallback callback) override;
 
   // Receive memory region from peer.
-  void recv(
-      TDescriptor descriptor,
-      void* ptr,
-      size_t length,
-      TRecvCallback callback) override;
+  void recv(TDescriptor descriptor, CpuTensor tensor, TRecvCallback callback)
+      override;
 
   // Tell the channel what its identifier is.
   void setId(std::string id) override;

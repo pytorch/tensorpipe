@@ -197,18 +197,11 @@ class Channel::Impl : public std::enable_shared_from_this<Channel::Impl> {
   void init();
 
   void send(
-      const void* ptr,
-      size_t length,
+      const CudaTensor tensor,
       TDescriptorCallback descriptorCallback,
-      TSendCallback callback,
-      cudaStream_t stream);
+      TSendCallback callback);
 
-  void recv(
-      TDescriptor descriptor,
-      void* ptr,
-      size_t length,
-      TRecvCallback callback,
-      cudaStream_t stream);
+  void recv(TDescriptor descriptor, CudaTensor tensor, TRecvCallback callback);
 
   // Tell the channel what its identifier is.
   void setId(std::string id);
@@ -222,19 +215,15 @@ class Channel::Impl : public std::enable_shared_from_this<Channel::Impl> {
 
   // Send memory region to peer.
   void sendFromLoop_(
-      const void* ptr,
-      size_t length,
+      const CudaTensor tensor,
       TDescriptorCallback descriptorCallback,
-      TSendCallback callback,
-      cudaStream_t stream);
+      TSendCallback callback);
 
   // Receive memory region from peer.
   void recvFromLoop_(
       TDescriptor descriptor,
-      void* ptr,
-      size_t length,
-      TRecvCallback callback,
-      cudaStream_t stream);
+      CudaTensor tensor,
+      TRecvCallback callback);
 
   void readPackets_();
   void onReply_(const Reply& nopReply);
@@ -312,55 +301,28 @@ void Channel::Impl::initFromLoop_() {
 }
 
 void Channel::send(
-    const void* ptr,
-    size_t length,
+    const CudaTensor tensor,
     TDescriptorCallback descriptorCallback,
     TSendCallback callback) {
-  send(
-      ptr,
-      length,
-      std::move(descriptorCallback),
-      std::move(callback),
-      cudaStreamDefault);
-}
-
-void Channel::send(
-    const void* ptr,
-    size_t length,
-    TDescriptorCallback descriptorCallback,
-    TSendCallback callback,
-    cudaStream_t stream) {
-  impl_->send(
-      ptr, length, std::move(descriptorCallback), std::move(callback), stream);
+  impl_->send(tensor, std::move(descriptorCallback), std::move(callback));
 }
 
 void Channel::Impl::send(
-    const void* ptr,
-    size_t length,
+    const CudaTensor tensor,
     TDescriptorCallback descriptorCallback,
-    TSendCallback callback,
-    cudaStream_t stream) {
+    TSendCallback callback) {
   loop_.deferToLoop([this,
-                     ptr,
-                     length,
-                     stream,
+                     tensor,
                      descriptorCallback{std::move(descriptorCallback)},
                      callback{std::move(callback)}]() mutable {
-    sendFromLoop_(
-        ptr,
-        length,
-        std::move(descriptorCallback),
-        std::move(callback),
-        stream);
+    sendFromLoop_(tensor, std::move(descriptorCallback), std::move(callback));
   });
 }
 
 void Channel::Impl::sendFromLoop_(
-    const void* ptr,
-    size_t length,
+    const CudaTensor tensor,
     TDescriptorCallback descriptorCallback,
-    TSendCallback callback,
-    cudaStream_t stream) {
+    TSendCallback callback) {
   TP_DCHECK(loop_.inLoop());
 
   const uint64_t sequenceNumber = nextTensorBeingSent_++;
@@ -388,14 +350,14 @@ void Channel::Impl::sendFromLoop_(
                << sequenceNumber << ")";
   };
 
-  if (error_ || length == 0) {
+  if (error_ || tensor.length == 0) {
     descriptorCallback(error_, std::string());
     callback(error_);
     return;
   }
 
   sendOperations_.emplace_back(
-      sequenceNumber, std::move(callback), ptr, stream);
+      sequenceNumber, std::move(callback), tensor.ptr, tensor.stream);
   auto& op = sendOperations_.back();
 
   NopHolder<Descriptor> nopHolder;
@@ -406,49 +368,28 @@ void Channel::Impl::sendFromLoop_(
 // Receive memory region from peer.
 void Channel::recv(
     TDescriptor descriptor,
-    void* ptr,
-    size_t length,
+    CudaTensor tensor,
     TRecvCallback callback) {
-  recv(
-      std::move(descriptor),
-      ptr,
-      length,
-      std::move(callback),
-      cudaStreamDefault);
-}
-
-void Channel::recv(
-    TDescriptor descriptor,
-    void* ptr,
-    size_t length,
-    TRecvCallback callback,
-    cudaStream_t stream) {
-  impl_->recv(std::move(descriptor), ptr, length, std::move(callback), stream);
+  impl_->recv(std::move(descriptor), std::move(tensor), std::move(callback));
 }
 
 void Channel::Impl::recv(
     TDescriptor descriptor,
-    void* ptr,
-    size_t length,
-    TRecvCallback callback,
-    cudaStream_t stream) {
+    CudaTensor tensor,
+    TRecvCallback callback) {
   loop_.deferToLoop([this,
                      descriptor{std::move(descriptor)},
-                     ptr,
-                     length,
-                     stream,
+                     tensor{std::move(tensor)},
                      callback{std::move(callback)}]() mutable {
     recvFromLoop_(
-        std::move(descriptor), ptr, length, std::move(callback), stream);
+        std::move(descriptor), std::move(tensor), std::move(callback));
   });
 }
 
 void Channel::Impl::recvFromLoop_(
     TDescriptor descriptor,
-    void* ptr,
-    size_t length,
-    TRecvCallback callback,
-    cudaStream_t stream) {
+    CudaTensor tensor,
+    TRecvCallback callback) {
   TP_DCHECK(loop_.inLoop());
 
   const uint64_t sequenceNumber = nextTensorBeingReceived_++;
@@ -463,12 +404,13 @@ void Channel::Impl::recvFromLoop_(
                << sequenceNumber << ")";
   };
 
-  if (error_ || length == 0) {
+  if (error_ || tensor.length == 0) {
     callback(error_);
     return;
   }
 
-  recvOperations_.emplace_back(sequenceNumber, ptr, stream, length);
+  recvOperations_.emplace_back(
+      sequenceNumber, tensor.ptr, tensor.stream, tensor.length);
   auto& op = recvOperations_.back();
 
   NopHolder<Descriptor> nopHolder;

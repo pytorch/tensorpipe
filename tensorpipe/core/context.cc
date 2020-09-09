@@ -51,7 +51,10 @@ class Context::Impl : public Context::PrivateIface,
       std::string,
       std::shared_ptr<transport::Context>);
 
-  void registerChannel(int64_t, std::string, std::shared_ptr<channel::Context>);
+  void registerChannel(
+      int64_t,
+      std::string,
+      std::shared_ptr<channel::CpuContext>);
 
   std::shared_ptr<Listener> listen(const std::vector<std::string>&);
 
@@ -60,7 +63,7 @@ class Context::Impl : public Context::PrivateIface,
   ClosingEmitter& getClosingEmitter() override;
 
   std::shared_ptr<transport::Context> getTransport(const std::string&) override;
-  std::shared_ptr<channel::Context> getChannel(const std::string&) override;
+  std::shared_ptr<channel::CpuContext> getChannel(const std::string&) override;
 
   using PrivateIface::TOrderedTransports;
 
@@ -102,7 +105,8 @@ class Context::Impl : public Context::PrivateIface,
 
   std::unordered_map<std::string, std::shared_ptr<transport::Context>>
       transports_;
-  std::unordered_map<std::string, std::shared_ptr<channel::Context>> channels_;
+  std::unordered_map<std::string, std::shared_ptr<channel::CpuContext>>
+      channels_;
 
   TOrderedTransports transportsByPriority_;
   TOrderedChannels channelsByPriority_;
@@ -150,14 +154,14 @@ void Context::Impl::registerTransport(
 void Context::registerChannel(
     int64_t priority,
     std::string channel,
-    std::shared_ptr<channel::Context> context) {
+    std::shared_ptr<channel::CpuContext> context) {
   impl_->registerChannel(priority, std::move(channel), std::move(context));
 }
 
 void Context::Impl::registerChannel(
     int64_t priority,
     std::string channel,
-    std::shared_ptr<channel::Context> context) {
+    std::shared_ptr<channel::CpuContext> context) {
   TP_THROW_ASSERT_IF(channel.empty());
   TP_THROW_ASSERT_IF(channels_.find(channel) != channels_.end())
       << "channel " << channel << " already registered";
@@ -227,7 +231,7 @@ std::shared_ptr<transport::Context> Context::Impl::getTransport(
   return iter->second;
 }
 
-std::shared_ptr<channel::Context> Context::Impl::getChannel(
+std::shared_ptr<channel::CpuContext> Context::Impl::getChannel(
     const std::string& channel) {
   auto iter = channels_.find(channel);
   if (iter == channels_.end()) {

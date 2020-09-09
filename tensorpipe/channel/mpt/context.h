@@ -14,13 +14,14 @@
 
 #include <tensorpipe/channel/context.h>
 #include <tensorpipe/common/callback.h>
+#include <tensorpipe/common/tensor.h>
 #include <tensorpipe/transport/context.h>
 
 namespace tensorpipe {
 namespace channel {
 namespace mpt {
 
-class Context : public channel::Context {
+class Context : public channel::CpuContext {
  public:
   Context(
       std::vector<std::shared_ptr<transport::Context>>,
@@ -28,7 +29,7 @@ class Context : public channel::Context {
 
   const std::string& domainDescriptor() const override;
 
-  std::shared_ptr<Channel> createChannel(
+  std::shared_ptr<CpuChannel> createChannel(
       std::shared_ptr<transport::Connection>,
       Endpoint) override;
 

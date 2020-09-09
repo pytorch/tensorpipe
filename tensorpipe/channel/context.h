@@ -25,6 +25,7 @@ namespace channel {
 // context. All registered instances are assumed to be eligible
 // channels for all pairs.
 //
+template <typename TTensor>
 class Context {
  public:
   // Return string to describe the domain for this channel.
@@ -42,7 +43,7 @@ class Context {
   // initialized yet, take care to queue these operations to execute
   // as soon as initialization has completed.
   //
-  virtual std::shared_ptr<Channel> createChannel(
+  virtual std::shared_ptr<Channel<TTensor>> createChannel(
       std::shared_ptr<transport::Connection>,
       Endpoint) = 0;
 
@@ -65,6 +66,12 @@ class Context {
  private:
   std::string name_;
 };
+
+using CpuContext = Context<CpuTensor>;
+
+#if TENSORPIPE_HAS_CUDA
+using CudaContext = Context<CudaTensor>;
+#endif // TENSORPIPE_HAS_CUDA
 
 } // namespace channel
 } // namespace tensorpipe
