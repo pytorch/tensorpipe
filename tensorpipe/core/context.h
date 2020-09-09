@@ -91,17 +91,28 @@ class Context final {
     virtual std::shared_ptr<channel::CpuContext> getChannel(
         const std::string&) = 0;
 
+#if TENSORPIPE_HAS_CUDA
+    virtual std::shared_ptr<channel::CudaContext> getCudaChannel(
+        const std::string&) = 0;
+#endif // TENSORPIPE_HAS_CUDA
+
     using TOrderedTransports = std::map<
         int64_t,
         std::tuple<std::string, std::shared_ptr<transport::Context>>>;
 
     virtual const TOrderedTransports& getOrderedTransports() = 0;
 
-    using TOrderedChannels = std::map<
-        int64_t,
-        std::tuple<std::string, std::shared_ptr<channel::CpuContext>>>;
+    template <typename TContext>
+    using TOrderedChannels =
+        std::map<int64_t, std::tuple<std::string, std::shared_ptr<TContext>>>;
 
-    virtual const TOrderedChannels& getOrderedChannels() = 0;
+    virtual const TOrderedChannels<channel::CpuContext>&
+    getOrderedChannels() = 0;
+
+#if TENSORPIPE_HAS_CUDA
+    virtual const TOrderedChannels<channel::CudaContext>&
+    getOrderedCudaChannels() = 0;
+#endif // TENSORPIPE_HAS_CUDA
 
     // Return the name given to the context's constructor. It will be retrieved
     // by the pipes and listener in order to attach it to logged messages.

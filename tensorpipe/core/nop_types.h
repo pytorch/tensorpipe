@@ -44,7 +44,18 @@ struct Brochure {
   std::unordered_map<std::string, TransportAdvertisement>
       transportAdvertisement;
   std::unordered_map<std::string, ChannelAdvertisement> channelAdvertisement;
-  NOP_STRUCTURE(Brochure, transportAdvertisement, channelAdvertisement);
+#if TENSORPIPE_HAS_CUDA
+  std::unordered_map<std::string, ChannelAdvertisement>
+      cudaChannelAdvertisement;
+#endif // TENSORPIPE_HAS_CUDA
+  NOP_STRUCTURE(
+      Brochure,
+      transportAdvertisement,
+      channelAdvertisement,
+#if TENSORPIPE_HAS_CUDA
+      cudaChannelAdvertisement,
+#endif // TENSORPIPE_HAS_CUDA
+  );
 };
 
 struct ChannelSelection {
@@ -57,6 +68,9 @@ struct BrochureAnswer {
   std::string address;
   uint64_t registrationId;
   std::unordered_map<std::string, ChannelSelection> channelSelection;
+#if TENSORPIPE_HAS_CUDA
+  std::unordered_map<std::string, ChannelSelection> cudaChannelSelection;
+#endif // TENSORPIPE_HAS_CUDA
   NOP_STRUCTURE(
       BrochureAnswer,
       transport,

@@ -64,6 +64,10 @@ class Context::Impl : public Context::PrivateIface,
 
   std::shared_ptr<transport::Context> getTransport(const std::string&) override;
   std::shared_ptr<channel::CpuContext> getChannel(const std::string&) override;
+#if TENSORPIPE_HAS_CUDA
+  std::shared_ptr<channel::CudaContext> getCudaChannel(
+      const std::string&) override;
+#endif // TENSORPIPE_HAS_CUDA
 
   using PrivateIface::TOrderedTransports;
 
@@ -71,7 +75,11 @@ class Context::Impl : public Context::PrivateIface,
 
   using PrivateIface::TOrderedChannels;
 
-  const TOrderedChannels& getOrderedChannels() override;
+  const TOrderedChannels<channel::CpuContext>& getOrderedChannels() override;
+#if TENSORPIPE_HAS_CUDA
+  const TOrderedChannels<channel::CudaContext>& getOrderedCudaChannels()
+      override;
+#endif // TENSORPIPE_HAS_CUDA
 
   const std::string& getName() override;
 
@@ -107,9 +115,16 @@ class Context::Impl : public Context::PrivateIface,
       transports_;
   std::unordered_map<std::string, std::shared_ptr<channel::CpuContext>>
       channels_;
+#if TENSORPIPE_HAS_CUDA
+  std::unordered_map<std::string, std::shared_ptr<channel::CudaContext>>
+      cudaChannels_;
+#endif // TENSORPIPE_HAS_CUDA
 
   TOrderedTransports transportsByPriority_;
-  TOrderedChannels channelsByPriority_;
+  TOrderedChannels<channel::CpuContext> channelsByPriority_;
+#if TENSORPIPE_HAS_CUDA
+  TOrderedChannels<channel::CudaContext> cudaChannelsByPriority_;
+#endif // TENSORPIPE_HAS_CUDA
 
   ClosingEmitter closingEmitter_;
 };
@@ -240,13 +255,32 @@ std::shared_ptr<channel::CpuContext> Context::Impl::getChannel(
   return iter->second;
 }
 
+#if TENSORPIPE_HAS_CUDA
+std::shared_ptr<channel::CudaContext> Context::Impl::getCudaChannel(
+    const std::string& channel) {
+  auto iter = cudaChannels_.find(channel);
+  if (iter == cudaChannels_.end()) {
+    TP_THROW_EINVAL() << "unsupported channel " << channel;
+  }
+  return iter->second;
+}
+#endif // TENSORPIPE_HAS_CUDA
+
 const Context::Impl::TOrderedTransports& Context::Impl::getOrderedTransports() {
   return transportsByPriority_;
 }
 
-const Context::Impl::TOrderedChannels& Context::Impl::getOrderedChannels() {
+const Context::Impl::TOrderedChannels<channel::CpuContext>& Context::Impl::
+    getOrderedChannels() {
   return channelsByPriority_;
 }
+
+#if TENSORPIPE_HAS_CUDA
+const Context::Impl::TOrderedChannels<channel::CudaContext>& Context::Impl::
+    getOrderedCudaChannels() {
+  return cudaChannelsByPriority_;
+}
+#endif // TENSORPIPE_HAS_CUDA
 
 const std::string& Context::Impl::getName() {
   return name_;
