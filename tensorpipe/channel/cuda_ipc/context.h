@@ -28,7 +28,7 @@ class Context : public channel::Context {
 
   std::shared_ptr<Channel> createChannel(
       std::shared_ptr<transport::Connection>,
-      Channel::Endpoint) override;
+      Endpoint) override;
 
   void setId(std::string id) override;
 

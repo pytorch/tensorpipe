@@ -107,11 +107,11 @@ int cudaDeviceForPointer(const void* ptr) {
 class SendOperation {
  public:
   uint64_t sequenceNumber;
-  Channel::TSendCallback callback;
+  TSendCallback callback;
 
   SendOperation(
       uint64_t sequenceNumber,
-      Channel::TSendCallback callback,
+      TSendCallback callback,
       const void* ptr,
       cudaStream_t stream)
       : sequenceNumber(sequenceNumber),

@@ -16,9 +16,9 @@
 namespace tensorpipe {
 namespace channel {
 
-Channel::TDescriptor saveDescriptor(const AbstractNopHolder& object);
+TDescriptor saveDescriptor(const AbstractNopHolder& object);
 
-void loadDescriptor(AbstractNopHolder& object, const Channel::TDescriptor& in);
+void loadDescriptor(AbstractNopHolder& object, const TDescriptor& in);
 
 } // namespace channel
 } // namespace tensorpipe
