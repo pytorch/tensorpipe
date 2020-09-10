@@ -13,7 +13,7 @@
 
 #include <tensorpipe/channel/context.h>
 #include <tensorpipe/common/callback.h>
-#include <tensorpipe/common/tensor.h>
+#include <tensorpipe/common/buffer.h>
 
 namespace tensorpipe {
 namespace channel {

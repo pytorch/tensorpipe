@@ -13,7 +13,7 @@
 #include <string>
 #include <vector>
 
-#include <tensorpipe/common/tensor.h>
+#include <tensorpipe/common/buffer.h>
 
 namespace tensorpipe {
 
@@ -51,12 +51,12 @@ class Message final {
   std::vector<Payload> payloads;
 
   struct Tensor {
-    tensorpipe::Tensor tensor;
+    tensorpipe::Buffer buffer;
     // Users may include arbitrary metadata in the following field.
     // This may contain allocation hints for the receiver, for example.
     std::string metadata;
 
-    // The following fields are marked for deprecation. Use `tensor` instead.
+    // The following fields are marked for deprecation. Use `buffer` instead.
     void* data{nullptr};
     size_t length{0};
   };
