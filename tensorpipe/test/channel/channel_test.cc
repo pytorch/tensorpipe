@@ -230,11 +230,7 @@ TEST_P(ChannelTest, SendTensorsBothWays) {
         {
           std::future<std::tuple<Error, TDescriptor>> descriptorFuture;
           std::tie(descriptorFuture, sendFuture) = sendWithFuture(
-              channel,
-              CpuBuffer{
-                  .ptr = sendData.data(),
-                  .length = sendData.size(),
-              });
+              channel, CpuBuffer{sendData.data(), sendData.size()});
           Error descriptorError;
           TDescriptor descriptor;
           std::tie(descriptorError, descriptor) = descriptorFuture.get();
@@ -246,12 +242,7 @@ TEST_P(ChannelTest, SendTensorsBothWays) {
         {
           auto descriptor = peers_->recv(PeerGroup::kServer);
           recvFuture = recvWithFuture(
-              channel,
-              descriptor,
-              CpuBuffer{
-                  .ptr = recvData.data(),
-                  .length = recvData.size(),
-              });
+              channel, descriptor, CpuBuffer{recvData.data(), recvData.size()});
         }
 
         // Wait for completion of both.
@@ -288,11 +279,7 @@ TEST_P(ChannelTest, SendTensorsBothWays) {
         {
           std::future<std::tuple<Error, TDescriptor>> descriptorFuture;
           std::tie(descriptorFuture, sendFuture) = sendWithFuture(
-              channel,
-              CpuBuffer{
-                  .ptr = sendData.data(),
-                  .length = sendData.size(),
-              });
+              channel, CpuBuffer{sendData.data(), sendData.size()});
           Error descriptorError;
           TDescriptor descriptor;
           std::tie(descriptorError, descriptor) = descriptorFuture.get();
@@ -304,12 +291,7 @@ TEST_P(ChannelTest, SendTensorsBothWays) {
         {
           auto descriptor = peers_->recv(PeerGroup::kClient);
           recvFuture = recvWithFuture(
-              channel,
-              descriptor,
-              CpuBuffer{
-                  .ptr = recvData.data(),
-                  .length = recvData.size(),
-              });
+              channel, descriptor, CpuBuffer{recvData.data(), recvData.size()});
         }
 
         // Wait for completion of both.
