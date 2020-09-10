@@ -10,10 +10,10 @@
 
 TP_DEFINE_SHARED_REGISTRY(
     TensorpipeChannelRegistry,
-    tensorpipe::channel::Context<tensorpipe::CpuTensor>);
+    tensorpipe::channel::CpuContext);
 
 #if TENSORPIPE_HAS_CUDA
 TP_DEFINE_SHARED_REGISTRY(
     TensorpipeCudaChannelRegistry,
-    tensorpipe::channel::Context<tensorpipe::CudaTensor>);
+    tensorpipe::channel::CudaContext);
 #endif // TENSORPIPE_HAS_CUDA
