@@ -27,7 +27,7 @@ class Context : public channel::CpuContext {
 
   const std::string& domainDescriptor() const override;
 
-  std::shared_ptr<Channel<tensorpipe::CpuTensor>> createChannel(
+  std::shared_ptr<CpuChannel> createChannel(
       std::shared_ptr<transport::Connection>,
       Endpoint) override;
 
