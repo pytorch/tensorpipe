@@ -17,7 +17,7 @@ class MptChannelTestHelper : public ChannelTestHelper {
     return "mpt";
   }
 
-  std::shared_ptr<tensorpipe::channel::Context<tensorpipe::CpuTensor>>
+  std::shared_ptr<tensorpipe::channel::CpuContext>
   makeContext(std::string id) override {
     std::vector<std::shared_ptr<tensorpipe::transport::Context>> contexts = {
         std::make_shared<tensorpipe::transport::uv::Context>(),

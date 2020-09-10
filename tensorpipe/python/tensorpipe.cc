@@ -223,10 +223,8 @@ using transport_class_ =
     py::class_<T, tensorpipe::transport::Context, std::shared_ptr<T>>;
 
 template <typename T>
-using channel_class_ = py::class_<
-    T,
-    tensorpipe::channel::Context<tensorpipe::CpuTensor>,
-    std::shared_ptr<T>>;
+using channel_class_ =
+    py::class_<T, tensorpipe::channel::CpuContext, std::shared_ptr<T>>;
 
 } // namespace
 
@@ -440,7 +438,7 @@ PYBIND11_MODULE(pytensorpipe, module) {
       py::arg("name"),
       py::arg("transport"));
 
-  shared_ptr_class_<tensorpipe::channel::Context<tensorpipe::CpuTensor>>
+  shared_ptr_class_<tensorpipe::channel::CpuContext>
       abstractChannel(module, "AbstractChannel");
 
   channel_class_<tensorpipe::channel::basic::Context> basicChannel(
