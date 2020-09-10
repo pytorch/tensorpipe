@@ -67,10 +67,10 @@ class Context {
   std::string name_;
 };
 
-using CpuContext = Context<CpuTensor>;
+using CpuContext = Context<CpuBuffer>;
 
 #if TENSORPIPE_HAS_CUDA
-using CudaContext = Context<CudaTensor>;
+using CudaContext = Context<CudaBuffer>;
 #endif // TENSORPIPE_HAS_CUDA
 
 } // namespace channel

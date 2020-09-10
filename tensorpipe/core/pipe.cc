@@ -97,8 +97,8 @@ void parseDescriptorOfMessage(ReadOperation& op, const Packet& nopPacketIn) {
     switch (nopTensorDescriptor.deviceType) {
       case DeviceType::kCpu: {
         Message::Tensor tensor{
-            .tensor =
-                CpuTensor{
+            .buffer =
+                CpuBuffer{
                     .ptr = nullptr,
                     .length = static_cast<size_t>(tensorBeingAllocated.length),
                 },
@@ -110,8 +110,8 @@ void parseDescriptorOfMessage(ReadOperation& op, const Packet& nopPacketIn) {
 #if TENSORPIPE_HAS_CUDA
       case DeviceType::kCuda: {
         Message::Tensor tensor{
-            .tensor =
-                CudaTensor{
+            .buffer =
+                CudaBuffer{
                     .ptr = nullptr,
                     .length = static_cast<size_t>(tensorBeingAllocated.length),
                     .stream = cudaStreamDefault,
@@ -148,17 +148,17 @@ void checkAllocationCompatibility(
     const Message::Tensor& tensor = message.tensors[tensorIdx];
     const ReadOperation::Tensor& tensorBeingAllocated = op.tensors[tensorIdx];
     TP_DCHECK_GE(tensorBeingAllocated.length, 0);
-    TP_THROW_ASSERT_IF(tensor.tensor.type != tensorBeingAllocated.deviceType);
-    switch (tensor.tensor.type) {
+    TP_THROW_ASSERT_IF(tensor.buffer.type != tensorBeingAllocated.deviceType);
+    switch (tensor.buffer.type) {
       case DeviceType::kCpu: {
         TP_THROW_ASSERT_IF(
-            tensor.tensor.cpu.length != tensorBeingAllocated.length);
+            tensor.buffer.cpu.length != tensorBeingAllocated.length);
         break;
       }
 #if TENSORPIPE_HAS_CUDA
       case DeviceType::kCuda: {
         TP_THROW_ASSERT_IF(
-            tensor.tensor.cuda.length != tensorBeingAllocated.length);
+            tensor.buffer.cuda.length != tensorBeingAllocated.length);
         break;
       }
 #endif // TENSORPIPE_HAS_CUDA
@@ -228,15 +228,15 @@ std::shared_ptr<NopHolder<Packet>> makeDescriptorForMessage(
     nopMessageDescriptor.tensorDescriptors.emplace_back();
     MessageDescriptor::TensorDescriptor& nopTensorDescriptor =
         nopMessageDescriptor.tensorDescriptors.back();
-    nopTensorDescriptor.deviceType = tensor.tensor.type;
-    switch (tensor.tensor.type) {
+    nopTensorDescriptor.deviceType = tensor.buffer.type;
+    switch (tensor.buffer.type) {
       case DeviceType::kCpu: {
-        nopTensorDescriptor.sizeInBytes = tensor.tensor.cpu.length;
+        nopTensorDescriptor.sizeInBytes = tensor.buffer.cpu.length;
         break;
       }
 #if TENSORPIPE_HAS_CUDA
       case DeviceType::kCuda: {
-        nopTensorDescriptor.sizeInBytes = tensor.tensor.cuda.length;
+        nopTensorDescriptor.sizeInBytes = tensor.buffer.cuda.length;
         break;
       }
 #endif // TENSORPIPE_HAS_CUDA
@@ -252,14 +252,14 @@ std::shared_ptr<NopHolder<Packet>> makeDescriptorForMessage(
   return nopHolderOut;
 }
 
-template <typename TTensor>
-std::pair<std::string, std::shared_ptr<channel::Channel<TTensor>>> findChannel(
+template <typename TBuffer>
+std::pair<std::string, std::shared_ptr<channel::Channel<TBuffer>>> findChannel(
     const std::unordered_map<
         std::string,
-        std::shared_ptr<channel::Channel<TTensor>>>& availableChannels,
+        std::shared_ptr<channel::Channel<TBuffer>>>& availableChannels,
     const std::map<
         int64_t,
-        std::tuple<std::string, std::shared_ptr<channel::Context<TTensor>>>>&
+        std::tuple<std::string, std::shared_ptr<channel::Context<TBuffer>>>>&
         orderedChannels) {
   for (const auto& channelContextIter : orderedChannels) {
     const std::string& channelName = std::get<0>(channelContextIter.second);
@@ -785,15 +785,15 @@ void Pipe::Impl::readPayloadsAndReceiveTensorsOfMessage(ReadOperation& op) {
                  << op.sequenceNumber << "." << tensorIdx;
       impl.onRecvOfTensor_(op);
     });
-    switch (tensor.tensor.type) {
+    switch (tensor.buffer.type) {
       case DeviceType::kCpu: {
         std::shared_ptr<channel::CpuChannel> channel =
             channels_.at(tensorBeingAllocated.channelName);
 
         // Temporary workaround until tensor.data/tensor.length are removed.
         auto cpu_tensor = (tensor.data == nullptr)
-            ? tensor.tensor.cpu
-            : CpuTensor{.ptr = tensor.data, .length = tensor.length};
+            ? tensor.buffer.cpu
+            : CpuBuffer{.ptr = tensor.data, .length = tensor.length};
         channel->recv(
             std::move(tensorBeingAllocated.descriptor),
             cpu_tensor,
@@ -806,7 +806,7 @@ void Pipe::Impl::readPayloadsAndReceiveTensorsOfMessage(ReadOperation& op) {
             cudaChannels_.at(tensorBeingAllocated.channelName);
         channel->recv(
             std::move(tensorBeingAllocated.descriptor),
-            tensor.tensor.cuda,
+            tensor.buffer.cuda,
             std::move(callback));
         break;
       }
@@ -1222,7 +1222,7 @@ void Pipe::Impl::sendTensorsOfMessage_(WriteOperation& op) {
                  << op.sequenceNumber << "." << tensorIdx;
       impl.onSendOfTensor_(op);
     });
-    switch (tensor.tensor.type) {
+    switch (tensor.buffer.type) {
       case DeviceType::kCpu: {
         std::shared_ptr<channel::CpuChannel> channel;
         std::string channelName;
@@ -1230,8 +1230,8 @@ void Pipe::Impl::sendTensorsOfMessage_(WriteOperation& op) {
             findChannel(channels_, context_->getOrderedChannels());
         // Temporary workaround until tensor.data/tensor.length are removed.
         auto cpu_tensor = (tensor.data == nullptr)
-            ? tensor.tensor.cpu
-            : CpuTensor{.ptr = tensor.data, .length = tensor.length};
+            ? tensor.buffer.cpu
+            : CpuBuffer{.ptr = tensor.data, .length = tensor.length};
         channel->send(
             cpu_tensor, std::move(descriptorCallback), std::move(callback));
         op.tensors.push_back(
@@ -1245,7 +1245,7 @@ void Pipe::Impl::sendTensorsOfMessage_(WriteOperation& op) {
         std::tie(channelName, channel) =
             findChannel(cudaChannels_, context_->getOrderedCudaChannels());
         channel->send(
-            tensor.tensor.cuda,
+            tensor.buffer.cuda,
             std::move(descriptorCallback),
             std::move(callback));
         op.tensors.push_back(

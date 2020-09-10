@@ -11,7 +11,7 @@
 
 namespace {
 
-class XthChannelTestHelper : public ChannelTestHelper<tensorpipe::CpuTensor> {
+class XthChannelTestHelper : public ChannelTestHelper<tensorpipe::CpuBuffer> {
  public:
   std::shared_ptr<tensorpipe::channel::CpuContext> makeContext(
       std::string id) override {
