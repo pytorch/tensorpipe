@@ -86,15 +86,15 @@ void parseDescriptorOfMessage(ReadOperation& op, const Packet& nopPacketIn) {
   for (const auto& nopTensorDescriptor :
        nopMessageDescriptor.tensorDescriptors) {
     Message::Tensor tensor{
-        .tensor =
-            CpuTensor{
+        .buffer =
+            CpuBuffer{
                 .ptr = nullptr,
                 .length = static_cast<size_t>(nopTensorDescriptor.sizeInBytes),
             },
         .metadata = nopTensorDescriptor.metadata,
     };
     ReadOperation::Tensor tensorBeingAllocated;
-    tensorBeingAllocated.length = tensor.tensor.cpu.length;
+    tensorBeingAllocated.length = tensor.buffer.cpu.length;
     tensorBeingAllocated.channelName = nopTensorDescriptor.channelName;
     // FIXME If the nop object wasn't const we could move the string out...
     tensorBeingAllocated.descriptor = nopTensorDescriptor.channelDescriptor;
@@ -123,7 +123,7 @@ void checkAllocationCompatibility(
     const Message::Tensor& tensor = message.tensors[tensorIdx];
     const ReadOperation::Tensor& tensorBeingAllocated = op.tensors[tensorIdx];
     TP_DCHECK_GE(tensorBeingAllocated.length, 0);
-    TP_THROW_ASSERT_IF(tensor.tensor.cpu.length != tensorBeingAllocated.length);
+    TP_THROW_ASSERT_IF(tensor.buffer.cpu.length != tensorBeingAllocated.length);
   }
 }
 
@@ -187,7 +187,7 @@ std::shared_ptr<NopHolder<Packet>> makeDescriptorForMessage(
     MessageDescriptor::TensorDescriptor& nopTensorDescriptor =
         nopMessageDescriptor.tensorDescriptors.back();
     nopTensorDescriptor.deviceType = DeviceType::kCpu;
-    nopTensorDescriptor.sizeInBytes = tensor.tensor.cpu.length;
+    nopTensorDescriptor.sizeInBytes = tensor.buffer.cpu.length;
     nopTensorDescriptor.metadata = tensor.metadata;
     nopTensorDescriptor.channelName = otherTensor.channelName;
     // FIXME In principle we could move here.
@@ -682,8 +682,8 @@ void Pipe::Impl::readPayloadsAndReceiveTensorsOfMessage(ReadOperation& op) {
 
     // Temporary workaround until tensor.data/tensor.length are removed.
     auto cpu_tensor = (tensor.data == nullptr)
-        ? tensor.tensor.cpu
-        : CpuTensor{.ptr = tensor.data, .length = tensor.length};
+        ? tensor.buffer.cpu
+        : CpuBuffer{.ptr = tensor.data, .length = tensor.length};
     channel->recv(
         std::move(tensorBeingAllocated.descriptor),
         cpu_tensor,
@@ -1093,8 +1093,8 @@ void Pipe::Impl::sendTensorsOfMessage_(WriteOperation& op) {
 
       // Temporary workaround until tensor.data/tensor.length are removed.
       auto cpu_tensor = (tensor.data == nullptr)
-          ? tensor.tensor.cpu
-          : CpuTensor{.ptr = tensor.data, .length = tensor.length};
+          ? tensor.buffer.cpu
+          : CpuBuffer{.ptr = tensor.data, .length = tensor.length};
       channel.send(
           cpu_tensor,
           eagerCallbackWrapper_(

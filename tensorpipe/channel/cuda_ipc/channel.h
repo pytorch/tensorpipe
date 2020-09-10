@@ -33,12 +33,12 @@ class Channel : public channel::CudaChannel {
 
   // Send memory region to peer.
   void send(
-      const CudaTensor tensor,
+      CudaBuffer tensor,
       TDescriptorCallback descriptorCallback,
       TSendCallback callback) override;
 
   // Receive memory region from peer.
-  void recv(TDescriptor descriptor, CudaTensor tensor, TRecvCallback callback)
+  void recv(TDescriptor descriptor, CudaBuffer tensor, TRecvCallback callback)
       override;
 
   // Tell the channel what its identifier is.

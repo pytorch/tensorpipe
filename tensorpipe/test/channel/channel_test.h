@@ -16,7 +16,7 @@
 #include <gtest/gtest.h>
 
 #include <tensorpipe/channel/context.h>
-#include <tensorpipe/common/tensor.h>
+#include <tensorpipe/common/buffer.h>
 #include <tensorpipe/test/peer_group.h>
 #include <tensorpipe/transport/uv/context.h>
 
@@ -124,7 +124,7 @@ class ChannelTest : public ::testing::TestWithParam<ChannelTestHelper*> {
       std::future<tensorpipe::Error>>
   sendWithFuture(
       std::shared_ptr<tensorpipe::channel::CpuChannel> channel,
-      const tensorpipe::CpuTensor& tensor) {
+      const tensorpipe::CpuBuffer& tensor) {
     auto descriptorPromise = std::make_shared<
         std::promise<std::tuple<tensorpipe::Error, std::string>>>();
     auto promise = std::make_shared<std::promise<tensorpipe::Error>>();
@@ -147,7 +147,7 @@ class ChannelTest : public ::testing::TestWithParam<ChannelTestHelper*> {
   [[nodiscard]] std::future<tensorpipe::Error> recvWithFuture(
       std::shared_ptr<tensorpipe::channel::CpuChannel> channel,
       tensorpipe::channel::TDescriptor descriptor,
-      const tensorpipe::CpuTensor& tensor) {
+      const tensorpipe::CpuBuffer& tensor) {
     auto promise = std::make_shared<std::promise<tensorpipe::Error>>();
     auto future = promise->get_future();
 

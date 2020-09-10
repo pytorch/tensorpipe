@@ -12,7 +12,7 @@
 
 #include <tensorpipe/channel/basic/context.h>
 #include <tensorpipe/channel/channel.h>
-#include <tensorpipe/common/tensor.h>
+#include <tensorpipe/common/buffer.h>
 
 namespace tensorpipe {
 namespace channel {
@@ -32,12 +32,12 @@ class Channel : public channel::CpuChannel {
 
   // Send memory region to peer.
   void send(
-      const CpuTensor tensor,
+      CpuBuffer tensor,
       TDescriptorCallback descriptorCallback,
       TSendCallback callback) override;
 
   // Receive memory region from peer.
-  void recv(TDescriptor descriptor, CpuTensor tensor, TRecvCallback callback)
+  void recv(TDescriptor descriptor, CpuBuffer tensor, TRecvCallback callback)
       override;
 
   // Tell the channel what its identifier is.

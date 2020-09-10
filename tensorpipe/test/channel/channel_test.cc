@@ -39,7 +39,7 @@ TEST_P(ChannelTest, ClientToServer) {
         std::future<std::tuple<Error, TDescriptor>> descriptorFuture;
         std::future<Error> sendFuture;
         std::tie(descriptorFuture, sendFuture) =
-            sendWithFuture(channel, CpuTensor{data.data(), data.size()});
+            sendWithFuture(channel, CpuBuffer{data.data(), data.size()});
         Error descriptorError;
         TDescriptor descriptor;
         std::tie(descriptorError, descriptor) = descriptorFuture.get();
@@ -62,7 +62,7 @@ TEST_P(ChannelTest, ClientToServer) {
         // Perform recv and wait for completion.
         auto descriptor = peers_->recv(PeerGroup::kClient);
         std::future<Error> recvFuture = recvWithFuture(
-            channel, descriptor, CpuTensor{data.data(), dataSize});
+            channel, descriptor, CpuBuffer{data.data(), data.size()});
         Error recvError = recvFuture.get();
         EXPECT_FALSE(recvError) << recvError.what();
 
@@ -91,7 +91,7 @@ TEST_P(ChannelTest, ServerToClient) {
         // Perform recv and wait for completion.
         auto descriptor = peers_->recv(PeerGroup::kServer);
         std::future<Error> recvFuture = recvWithFuture(
-            channel, descriptor, CpuTensor{data.data(), data.size()});
+            channel, descriptor, CpuBuffer{data.data(), data.size()});
         Error recvError = recvFuture.get();
         EXPECT_FALSE(recvError) << recvError.what();
 
@@ -117,7 +117,7 @@ TEST_P(ChannelTest, ServerToClient) {
         std::future<std::tuple<Error, TDescriptor>> descriptorFuture;
         std::future<Error> sendFuture;
         std::tie(descriptorFuture, sendFuture) =
-            sendWithFuture(channel, CpuTensor{data.data(), data.size()});
+            sendWithFuture(channel, CpuBuffer{data.data(), data.size()});
         Error descriptorError;
         TDescriptor descriptor;
         std::tie(descriptorError, descriptor) = descriptorFuture.get();
@@ -154,7 +154,7 @@ TEST_P(ChannelTest, SendMultipleTensors) {
           std::future<std::tuple<Error, TDescriptor>> descriptorFuture;
           std::future<Error> sendFuture;
           std::tie(descriptorFuture, sendFuture) =
-              sendWithFuture(channel, CpuTensor{data.data(), data.size()});
+              sendWithFuture(channel, CpuBuffer{data.data(), data.size()});
           Error descriptorError;
           TDescriptor descriptor;
           std::tie(descriptorError, descriptor) = descriptorFuture.get();
@@ -186,7 +186,7 @@ TEST_P(ChannelTest, SendMultipleTensors) {
         for (int i = 0; i < numTensors; i++) {
           auto descriptor = peers_->recv(PeerGroup::kClient);
           std::future<Error> recvFuture = recvWithFuture(
-              channel, descriptor, CpuTensor{dataVec[i].data(), dataSize});
+              channel, descriptor, CpuBuffer{dataVec[i].data(), dataSize});
           recvFutures.push_back(std::move(recvFuture));
         }
         for (auto& recvFuture : recvFutures) {
@@ -231,7 +231,7 @@ TEST_P(ChannelTest, SendTensorsBothWays) {
           std::future<std::tuple<Error, TDescriptor>> descriptorFuture;
           std::tie(descriptorFuture, sendFuture) = sendWithFuture(
               channel,
-              CpuTensor{
+              CpuBuffer{
                   .ptr = sendData.data(),
                   .length = sendData.size(),
               });
@@ -248,7 +248,7 @@ TEST_P(ChannelTest, SendTensorsBothWays) {
           recvFuture = recvWithFuture(
               channel,
               descriptor,
-              CpuTensor{
+              CpuBuffer{
                   .ptr = recvData.data(),
                   .length = recvData.size(),
               });
@@ -289,7 +289,7 @@ TEST_P(ChannelTest, SendTensorsBothWays) {
           std::future<std::tuple<Error, TDescriptor>> descriptorFuture;
           std::tie(descriptorFuture, sendFuture) = sendWithFuture(
               channel,
-              CpuTensor{
+              CpuBuffer{
                   .ptr = sendData.data(),
                   .length = sendData.size(),
               });
@@ -306,7 +306,7 @@ TEST_P(ChannelTest, SendTensorsBothWays) {
           recvFuture = recvWithFuture(
               channel,
               descriptor,
-              CpuTensor{
+              CpuBuffer{
                   .ptr = recvData.data(),
                   .length = recvData.size(),
               });
@@ -342,7 +342,7 @@ TEST_P(ChannelTest, NullPointer) {
         std::future<std::tuple<Error, TDescriptor>> descriptorFuture;
         std::future<Error> sendFuture;
         std::tie(descriptorFuture, sendFuture) =
-            sendWithFuture(channel, CpuTensor{nullptr, 0});
+            sendWithFuture(channel, CpuBuffer{nullptr, 0});
         Error descriptorError;
         TDescriptor descriptor;
         std::tie(descriptorError, descriptor) = descriptorFuture.get();
@@ -363,7 +363,7 @@ TEST_P(ChannelTest, NullPointer) {
         // Perform recv and wait for completion.
         auto descriptor = peers_->recv(PeerGroup::kClient);
         std::future<Error> recvFuture =
-            recvWithFuture(channel, descriptor, CpuTensor{nullptr, 0});
+            recvWithFuture(channel, descriptor, CpuBuffer{nullptr, 0});
         Error recvError = recvFuture.get();
         EXPECT_FALSE(recvError) << recvError.what();
 
@@ -389,7 +389,7 @@ TEST_P(ChannelTest, EmptyTensor) {
         std::future<std::tuple<Error, TDescriptor>> descriptorFuture;
         std::future<Error> sendFuture;
         std::tie(descriptorFuture, sendFuture) =
-            sendWithFuture(channel, CpuTensor{data.data(), 0});
+            sendWithFuture(channel, CpuBuffer{data.data(), 0});
         Error descriptorError;
         TDescriptor descriptor;
         std::tie(descriptorError, descriptor) = descriptorFuture.get();
@@ -413,7 +413,7 @@ TEST_P(ChannelTest, EmptyTensor) {
         // Perform recv and wait for completion.
         auto descriptor = peers_->recv(PeerGroup::kClient);
         std::future<Error> recvFuture =
-            recvWithFuture(channel, descriptor, CpuTensor{data.data(), 0});
+            recvWithFuture(channel, descriptor, CpuBuffer{data.data(), 0});
         Error recvError = recvFuture.get();
         EXPECT_FALSE(recvError) << recvError.what();
 
@@ -457,7 +457,7 @@ TEST_P(ChannelTest, CallbacksAreDeferred) {
         // Initialize with sequential values.
         std::vector<uint8_t> data(dataSize);
         std::iota(data.begin(), data.end(), 0);
-        auto buffer = helper_->makeBuffer(dataSize);
+        auto buffer = helper_->makeBuffer(data.size());
         buffer->wrap(data.data());
 
         // Perform send and wait for completion.
@@ -466,7 +466,7 @@ TEST_P(ChannelTest, CallbacksAreDeferred) {
         std::mutex mutex;
         std::unique_lock<std::mutex> callerLock(mutex);
         channel->send(
-            CpuTensor{data.data(), data.size()},
+            CpuBuffer{data.data(), data.size()},
             [&descriptorPromise](const Error& error, TDescriptor descriptor) {
               descriptorPromise.set_value(
                   std::make_tuple(error, std::move(descriptor)));
@@ -505,7 +505,7 @@ TEST_P(ChannelTest, CallbacksAreDeferred) {
         auto descriptor = peers_->recv(PeerGroup::kClient);
         channel->recv(
             descriptor,
-            CpuTensor{data.data(), data.size()},
+            CpuBuffer{data.data(), data.size()},
             [&recvPromise, &mutex](const Error& error) {
               std::unique_lock<std::mutex> calleeLock(mutex);
               recvPromise.set_value(error);

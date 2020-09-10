@@ -23,31 +23,31 @@ enum class DeviceType {
 #endif // TENSORPIPE_HAS_CUDA
 };
 
-struct CpuTensor {
+struct CpuBuffer {
   void* ptr{nullptr};
   size_t length{0};
 };
 
 #if TENSORPIPE_HAS_CUDA
-struct CudaTensor {
+struct CudaBuffer {
   void* ptr{nullptr};
   size_t length{0};
   cudaStream_t stream{cudaStreamDefault};
 };
 #endif // TENSORPIPE_HAS_CUDA
 
-struct Tensor {
-  Tensor(CpuTensor t) : type(DeviceType::kCpu), cpu(t) {}
+struct Buffer {
+  Buffer(CpuBuffer t) : type(DeviceType::kCpu), cpu(t) {}
 
 #if TENSORPIPE_HAS_CUDA
-  Tensor(CudaTensor t) : type(DeviceType::kCuda), cuda(t) {}
+  Buffer(CudaBuffer t) : type(DeviceType::kCuda), cuda(t) {}
 #endif // TENSORPIPE_HAS_CUDA
 
   DeviceType type;
   union {
-    CpuTensor cpu;
+    CpuBuffer cpu;
 #if TENSORPIPE_HAS_CUDA
-    CudaTensor cuda;
+    CudaBuffer cuda;
 #endif // TENSORPIPE_HAS_CUDA
   };
 };

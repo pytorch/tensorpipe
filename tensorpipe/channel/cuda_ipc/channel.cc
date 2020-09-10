@@ -197,11 +197,11 @@ class Channel::Impl : public std::enable_shared_from_this<Channel::Impl> {
   void init();
 
   void send(
-      const CudaTensor tensor,
+      CudaBuffer tensor,
       TDescriptorCallback descriptorCallback,
       TSendCallback callback);
 
-  void recv(TDescriptor descriptor, CudaTensor tensor, TRecvCallback callback);
+  void recv(TDescriptor descriptor, CudaBuffer tensor, TRecvCallback callback);
 
   // Tell the channel what its identifier is.
   void setId(std::string id);
@@ -215,14 +215,14 @@ class Channel::Impl : public std::enable_shared_from_this<Channel::Impl> {
 
   // Send memory region to peer.
   void sendFromLoop_(
-      const CudaTensor tensor,
+      CudaBuffer tensor,
       TDescriptorCallback descriptorCallback,
       TSendCallback callback);
 
   // Receive memory region from peer.
   void recvFromLoop_(
       TDescriptor descriptor,
-      CudaTensor tensor,
+      CudaBuffer tensor,
       TRecvCallback callback);
 
   void readPackets_();
@@ -301,26 +301,28 @@ void Channel::Impl::initFromLoop_() {
 }
 
 void Channel::send(
-    const CudaTensor tensor,
+    CudaBuffer tensor,
     TDescriptorCallback descriptorCallback,
     TSendCallback callback) {
-  impl_->send(tensor, std::move(descriptorCallback), std::move(callback));
+  impl_->send(
+      std::move(tensor), std::move(descriptorCallback), std::move(callback));
 }
 
 void Channel::Impl::send(
-    const CudaTensor tensor,
+    CudaBuffer tensor,
     TDescriptorCallback descriptorCallback,
     TSendCallback callback) {
   loop_.deferToLoop([this,
-                     tensor,
+                     tensor{std::move(tensor)},
                      descriptorCallback{std::move(descriptorCallback)},
                      callback{std::move(callback)}]() mutable {
-    sendFromLoop_(tensor, std::move(descriptorCallback), std::move(callback));
+    sendFromLoop_(
+        std::move(tensor), std::move(descriptorCallback), std::move(callback));
   });
 }
 
 void Channel::Impl::sendFromLoop_(
-    const CudaTensor tensor,
+    CudaBuffer tensor,
     TDescriptorCallback descriptorCallback,
     TSendCallback callback) {
   TP_DCHECK(loop_.inLoop());
@@ -368,14 +370,14 @@ void Channel::Impl::sendFromLoop_(
 // Receive memory region from peer.
 void Channel::recv(
     TDescriptor descriptor,
-    CudaTensor tensor,
+    CudaBuffer tensor,
     TRecvCallback callback) {
   impl_->recv(std::move(descriptor), std::move(tensor), std::move(callback));
 }
 
 void Channel::Impl::recv(
     TDescriptor descriptor,
-    CudaTensor tensor,
+    CudaBuffer tensor,
     TRecvCallback callback) {
   loop_.deferToLoop([this,
                      descriptor{std::move(descriptor)},
@@ -388,7 +390,7 @@ void Channel::Impl::recv(
 
 void Channel::Impl::recvFromLoop_(
     TDescriptor descriptor,
-    CudaTensor tensor,
+    CudaBuffer tensor,
     TRecvCallback callback) {
   TP_DCHECK(loop_.inLoop());
 
