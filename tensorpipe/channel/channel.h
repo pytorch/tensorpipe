@@ -13,7 +13,7 @@
 #include <vector>
 
 #include <tensorpipe/common/optional.h>
-#include <tensorpipe/common/tensor.h>
+#include <tensorpipe/common/buffer.h>
 #include <tensorpipe/transport/connection.h>
 
 // Channels are an out of band mechanism to transfer data between
@@ -59,7 +59,7 @@ class Channel {
  public:
   // Send memory region to peer.
   virtual void send(
-      const TTensor tensor,
+      TTensor tensor,
       TDescriptorCallback descriptorCallback,
       TSendCallback callback) = 0;
 
@@ -83,10 +83,10 @@ class Channel {
   virtual ~Channel() = default;
 };
 
-using CpuChannel = Channel<CpuTensor>;
+using CpuChannel = Channel<CpuBuffer>;
 
 #if TENSORPIPE_HAS_CUDA
-using CudaChannel = Channel<CudaTensor>;
+using CudaChannel = Channel<CudaBuffer>;
 #endif // TENSORPIPE_HAS_CUDA
 
 } // namespace channel

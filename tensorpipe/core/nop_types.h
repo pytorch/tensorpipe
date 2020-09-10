@@ -16,7 +16,7 @@
 #include <nop/structure.h>
 #include <nop/types/variant.h>
 
-#include <tensorpipe/common/tensor.h>
+#include <tensorpipe/common/buffer.h>
 
 namespace tensorpipe {
 
