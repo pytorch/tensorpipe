@@ -11,7 +11,7 @@
 #include <tensorpipe/config.h>
 
 #include <tensorpipe/channel/context.h>
-#include <tensorpipe/common/tensor.h>
+#include <tensorpipe/common/buffer.h>
 #include <tensorpipe/util/registry/registry.h>
 
 TP_DECLARE_SHARED_REGISTRY(

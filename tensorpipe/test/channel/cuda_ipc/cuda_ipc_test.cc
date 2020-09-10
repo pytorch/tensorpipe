@@ -17,7 +17,7 @@
 
 namespace {
 
-class CudaChannelTestHelper : public ChannelTestHelper<tensorpipe::CudaTensor> {
+class CudaChannelTestHelper : public ChannelTestHelper<tensorpipe::CudaBuffer> {
  public:
   std::shared_ptr<tensorpipe::channel::CudaContext> makeContext(
       std::string id) override {
@@ -46,7 +46,7 @@ using namespace tensorpipe::channel;
       << " (" << cudaGetErrorString(cudaPeekAtLastError()) << ")"
 
 class ReceiverWaitsForStartEventTest
-    : public ChannelTest<tensorpipe::CudaTensor> {
+    : public ChannelTest<tensorpipe::CudaBuffer> {
   static constexpr size_t kSize = 1024;
 
   void server(std::shared_ptr<transport::Connection> conn) override {
@@ -74,7 +74,7 @@ class ReceiverWaitsForStartEventTest
     auto sendFuture = sendPromise->get_future();
 
     channel->send(
-        CudaTensor{
+        CudaBuffer{
             .ptr = ptr,
             .length = kSize,
             .stream = sendStream,
@@ -123,7 +123,7 @@ class ReceiverWaitsForStartEventTest
 
     channel->recv(
         std::move(descriptor),
-        CudaTensor{
+        CudaBuffer{
             .ptr = ptr,
             .length = kSize,
             .stream = recvStream,
