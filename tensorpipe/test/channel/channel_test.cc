@@ -366,12 +366,8 @@ class NullPointerTest : public ChannelTest<TBuffer> {
     // Perform send and wait for completion.
     std::future<std::tuple<Error, TDescriptor>> descriptorFuture;
     std::future<Error> sendFuture;
-    std::tie(descriptorFuture, sendFuture) = sendWithFuture(
-        channel,
-        TBuffer{
-            .ptr = nullptr,
-            .length = 0,
-        });
+    std::tie(descriptorFuture, sendFuture) =
+        sendWithFuture(channel, TBuffer{nullptr, 0});
     Error descriptorError;
     TDescriptor descriptor;
     std::tie(descriptorError, descriptor) = descriptorFuture.get();
@@ -393,13 +389,8 @@ class NullPointerTest : public ChannelTest<TBuffer> {
 
     // Perform recv and wait for completion.
     auto descriptor = this->peers_->recv(PeerGroup::kClient);
-    std::future<Error> recvFuture = recvWithFuture(
-        channel,
-        descriptor,
-        TBuffer{
-            .ptr = nullptr,
-            .length = 0,
-        });
+    std::future<Error> recvFuture =
+        recvWithFuture(channel, descriptor, TBuffer{nullptr, 0});
     Error recvError = recvFuture.get();
     EXPECT_FALSE(recvError) << recvError.what();
 
@@ -515,10 +506,7 @@ class CallbacksAreDeferredTest : public ChannelTest<tensorpipe::CpuBuffer> {
     std::mutex mutex;
     std::unique_lock<std::mutex> callerLock(mutex);
     channel->send(
-        CpuBuffer{
-            .ptr = data.data(),
-            .length = data.size(),
-        },
+        CpuBuffer{data.data(), data.size()},
         [&descriptorPromise](const Error& error, TDescriptor descriptor) {
           descriptorPromise.set_value(
               std::make_tuple(error, std::move(descriptor)));
@@ -558,10 +546,7 @@ class CallbacksAreDeferredTest : public ChannelTest<tensorpipe::CpuBuffer> {
     auto descriptor = this->peers_->recv(PeerGroup::kClient);
     channel->recv(
         descriptor,
-        CpuBuffer{
-            .ptr = data.data(),
-            .length = data.size(),
-        },
+        CpuBuffer{data.data(), data.size()},
         [&recvPromise, &mutex](const Error& error) {
           std::unique_lock<std::mutex> calleeLock(mutex);
           recvPromise.set_value(error);
