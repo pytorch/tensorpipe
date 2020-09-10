@@ -13,9 +13,9 @@
 #include <string>
 
 #include <tensorpipe/channel/context.h>
+#include <tensorpipe/common/buffer.h>
 #include <tensorpipe/common/callback.h>
 #include <tensorpipe/common/error.h>
-#include <tensorpipe/common/buffer.h>
 
 namespace tensorpipe {
 namespace channel {
