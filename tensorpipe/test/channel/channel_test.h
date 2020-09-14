@@ -28,7 +28,7 @@ class DataWrapper<tensorpipe::CpuBuffer> {
  public:
   explicit DataWrapper(size_t length) : vector_(length) {}
 
-  explicit DataWrapper(const std::vector<uint8_t>& v) : vector_(v) {}
+  explicit DataWrapper(std::vector<uint8_t> v) : vector_(v) {}
 
   tensorpipe::CpuBuffer buffer() const {
     return tensorpipe::CpuBuffer{
@@ -74,6 +74,18 @@ class DataWrapper<tensorpipe::CudaBuffer> {
         stream_(other.stream_) {
     other.cudaPtr_ = nullptr;
     other.length_ = 0;
+    other.stream_ = cudaStreamDefault;
+  }
+
+  DataWrapper& operator=(DataWrapper&& other) {
+    cudaPtr_ = other.cudaPtr_;
+    length_ = other.length_;
+    stream_ = other.stream_;
+    other.cudaPtr_ = nullptr;
+    other.length_ = 0;
+    other.stream_ = cudaStreamDefault;
+
+    return *this;
   }
 
   tensorpipe::CudaBuffer buffer() const {
