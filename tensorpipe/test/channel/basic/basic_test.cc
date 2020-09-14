@@ -25,4 +25,4 @@ BasicChannelTestHelper helper;
 
 } // namespace
 
-INSTANTIATE_TEST_CASE_P(Basic, CpuChannelTest, ::testing::Values(&helper));
+INSTANTIATE_TEST_CASE_P(Basic, CpuChannelTestSuite, ::testing::Values(&helper));

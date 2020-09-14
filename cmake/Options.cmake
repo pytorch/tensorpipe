@@ -13,7 +13,7 @@ endif()
 include(CMakeDependentOption)
 
 # TODO: Default to ON if CUDA available.
-option(TP_ENABLE_CUDA "Enable support for CUDA tensors" OFF)
+option(TP_USE_CUDA "Enable support for CUDA tensors" OFF)
 
 # Transports
 option(TP_ENABLE_SHM "Enable shm transport" ${LINUX})
@@ -21,7 +21,7 @@ option(TP_ENABLE_SHM "Enable shm transport" ${LINUX})
 # Channels
 option(TP_ENABLE_CMA "Enable cma channel" ${LINUX})
 cmake_dependent_option(TP_ENABLE_CUDA_IPC "Enable CUDA IPC channel" ON
-                       TP_ENABLE_CUDA OFF)
+                       "TP_USE_CUDA" OFF)
 
 # Optional features
 option(TP_BUILD_BENCHMARK "Build benchmarks" OFF)

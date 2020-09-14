@@ -34,4 +34,4 @@ MptChannelTestHelper helper;
 
 } // namespace
 
-INSTANTIATE_TEST_CASE_P(Mpt, CpuChannelTest, ::testing::Values(&helper));
+INSTANTIATE_TEST_CASE_P(Mpt, CpuChannelTestSuite, ::testing::Values(&helper));

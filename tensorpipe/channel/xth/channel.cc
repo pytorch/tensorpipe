@@ -42,11 +42,11 @@ class Channel::Impl : public std::enable_shared_from_this<Channel::Impl> {
   void init();
 
   void send(
-      CpuBuffer tensor,
+      CpuBuffer buffer,
       TDescriptorCallback descriptorCallback,
       TSendCallback callback);
 
-  void recv(TDescriptor descriptor, CpuBuffer tensor, TRecvCallback callback);
+  void recv(TDescriptor descriptor, CpuBuffer buffer, TRecvCallback callback);
 
   // Tell the channel what its identifier is.
   void setId(std::string id);
@@ -60,14 +60,14 @@ class Channel::Impl : public std::enable_shared_from_this<Channel::Impl> {
 
   // Send memory region to peer.
   void sendFromLoop_(
-      CpuBuffer tensor,
+      CpuBuffer buffer,
       TDescriptorCallback descriptorCallback,
       TSendCallback callback);
 
   // Receive memory region from peer.
   void recvFromLoop_(
       TDescriptor descriptor,
-      CpuBuffer tensor,
+      CpuBuffer buffer,
       TRecvCallback callback);
 
   void setIdFromLoop_(std::string id);
@@ -138,28 +138,26 @@ void Channel::Impl::initFromLoop_() {
 }
 
 void Channel::send(
-    CpuBuffer tensor,
+    CpuBuffer buffer,
     TDescriptorCallback descriptorCallback,
     TSendCallback callback) {
-  impl_->send(
-      std::move(tensor), std::move(descriptorCallback), std::move(callback));
+  impl_->send(buffer, std::move(descriptorCallback), std::move(callback));
 }
 
 void Channel::Impl::send(
-    CpuBuffer tensor,
+    CpuBuffer buffer,
     TDescriptorCallback descriptorCallback,
     TSendCallback callback) {
   loop_.deferToLoop([this,
-                     tensor{std::move(tensor)},
+                     buffer,
                      descriptorCallback{std::move(descriptorCallback)},
                      callback{std::move(callback)}]() mutable {
-    sendFromLoop_(
-        std::move(tensor), std::move(descriptorCallback), std::move(callback));
+    sendFromLoop_(buffer, std::move(descriptorCallback), std::move(callback));
   });
 }
 
 void Channel::Impl::sendFromLoop_(
-    CpuBuffer tensor,
+    CpuBuffer buffer,
     TDescriptorCallback descriptorCallback,
     TSendCallback callback) {
   TP_DCHECK(loop_.inLoop());
@@ -211,7 +209,7 @@ void Channel::Impl::sendFromLoop_(
 
   NopHolder<Descriptor> nopHolder;
   Descriptor& nopDescriptor = nopHolder.getObject();
-  nopDescriptor.ptr = reinterpret_cast<std::uintptr_t>(tensor.ptr);
+  nopDescriptor.ptr = reinterpret_cast<std::uintptr_t>(buffer.ptr);
 
   descriptorCallback(Error::kSuccess, saveDescriptor(nopHolder));
 }
@@ -219,26 +217,26 @@ void Channel::Impl::sendFromLoop_(
 // Receive memory region from peer.
 void Channel::recv(
     TDescriptor descriptor,
-    CpuBuffer tensor,
+    CpuBuffer buffer,
     TRecvCallback callback) {
-  impl_->recv(std::move(descriptor), tensor, std::move(callback));
+  impl_->recv(std::move(descriptor), buffer, std::move(callback));
 }
 
 void Channel::Impl::recv(
     TDescriptor descriptor,
-    CpuBuffer tensor,
+    CpuBuffer buffer,
     TRecvCallback callback) {
   loop_.deferToLoop([this,
                      descriptor{std::move(descriptor)},
-                     tensor{std::move(tensor)},
+                     buffer,
                      callback{std::move(callback)}]() mutable {
-    recvFromLoop_(std::move(descriptor), tensor, std::move(callback));
+    recvFromLoop_(std::move(descriptor), buffer, std::move(callback));
   });
 }
 
 void Channel::Impl::recvFromLoop_(
     TDescriptor descriptor,
-    CpuBuffer tensor,
+    CpuBuffer buffer,
     TRecvCallback callback) {
   TP_DCHECK(loop_.inLoop());
 
@@ -268,8 +266,8 @@ void Channel::Impl::recvFromLoop_(
              << ")";
   context_->requestCopy(
       remotePtr,
-      tensor.ptr,
-      tensor.length,
+      buffer.ptr,
+      buffer.length,
       eagerCallbackWrapper_([sequenceNumber,
                              callback{std::move(callback)}](Impl& impl) {
         TP_VLOG(6) << "Channel " << impl.id_ << " done copying payload (#"
