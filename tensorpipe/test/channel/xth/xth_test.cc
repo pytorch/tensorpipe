@@ -25,4 +25,4 @@ XthChannelTestHelper helper;
 
 } // namespace
 
-INSTANTIATE_TEST_CASE_P(Xth, CpuChannelTest, ::testing::Values(&helper));
+INSTANTIATE_TEST_CASE_P(Xth, CpuChannelTestSuite, ::testing::Values(&helper));

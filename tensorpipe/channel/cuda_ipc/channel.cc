@@ -197,11 +197,11 @@ class Channel::Impl : public std::enable_shared_from_this<Channel::Impl> {
   void init();
 
   void send(
-      CudaBuffer tensor,
+      CudaBuffer buffer,
       TDescriptorCallback descriptorCallback,
       TSendCallback callback);
 
-  void recv(TDescriptor descriptor, CudaBuffer tensor, TRecvCallback callback);
+  void recv(TDescriptor descriptor, CudaBuffer buffer, TRecvCallback callback);
 
   // Tell the channel what its identifier is.
   void setId(std::string id);
@@ -215,14 +215,14 @@ class Channel::Impl : public std::enable_shared_from_this<Channel::Impl> {
 
   // Send memory region to peer.
   void sendFromLoop_(
-      CudaBuffer tensor,
+      CudaBuffer buffer,
       TDescriptorCallback descriptorCallback,
       TSendCallback callback);
 
   // Receive memory region from peer.
   void recvFromLoop_(
       TDescriptor descriptor,
-      CudaBuffer tensor,
+      CudaBuffer buffer,
       TRecvCallback callback);
 
   void readPackets_();
@@ -301,28 +301,26 @@ void Channel::Impl::initFromLoop_() {
 }
 
 void Channel::send(
-    CudaBuffer tensor,
+    CudaBuffer buffer,
     TDescriptorCallback descriptorCallback,
     TSendCallback callback) {
-  impl_->send(
-      std::move(tensor), std::move(descriptorCallback), std::move(callback));
+  impl_->send(buffer, std::move(descriptorCallback), std::move(callback));
 }
 
 void Channel::Impl::send(
-    CudaBuffer tensor,
+    CudaBuffer buffer,
     TDescriptorCallback descriptorCallback,
     TSendCallback callback) {
   loop_.deferToLoop([this,
-                     tensor{std::move(tensor)},
+                     buffer,
                      descriptorCallback{std::move(descriptorCallback)},
                      callback{std::move(callback)}]() mutable {
-    sendFromLoop_(
-        std::move(tensor), std::move(descriptorCallback), std::move(callback));
+    sendFromLoop_(buffer, std::move(descriptorCallback), std::move(callback));
   });
 }
 
 void Channel::Impl::sendFromLoop_(
-    CudaBuffer tensor,
+    CudaBuffer buffer,
     TDescriptorCallback descriptorCallback,
     TSendCallback callback) {
   TP_DCHECK(loop_.inLoop());
@@ -352,14 +350,14 @@ void Channel::Impl::sendFromLoop_(
                << sequenceNumber << ")";
   };
 
-  if (error_ || tensor.length == 0) {
+  if (error_ || buffer.length == 0) {
     descriptorCallback(error_, std::string());
     callback(error_);
     return;
   }
 
   sendOperations_.emplace_back(
-      sequenceNumber, std::move(callback), tensor.ptr, tensor.stream);
+      sequenceNumber, std::move(callback), buffer.ptr, buffer.stream);
   auto& op = sendOperations_.back();
 
   NopHolder<Descriptor> nopHolder;
@@ -370,27 +368,26 @@ void Channel::Impl::sendFromLoop_(
 // Receive memory region from peer.
 void Channel::recv(
     TDescriptor descriptor,
-    CudaBuffer tensor,
+    CudaBuffer buffer,
     TRecvCallback callback) {
-  impl_->recv(std::move(descriptor), std::move(tensor), std::move(callback));
+  impl_->recv(std::move(descriptor), buffer, std::move(callback));
 }
 
 void Channel::Impl::recv(
     TDescriptor descriptor,
-    CudaBuffer tensor,
+    CudaBuffer buffer,
     TRecvCallback callback) {
   loop_.deferToLoop([this,
                      descriptor{std::move(descriptor)},
-                     tensor{std::move(tensor)},
+                     buffer,
                      callback{std::move(callback)}]() mutable {
-    recvFromLoop_(
-        std::move(descriptor), std::move(tensor), std::move(callback));
+    recvFromLoop_(std::move(descriptor), buffer, std::move(callback));
   });
 }
 
 void Channel::Impl::recvFromLoop_(
     TDescriptor descriptor,
-    CudaBuffer tensor,
+    CudaBuffer buffer,
     TRecvCallback callback) {
   TP_DCHECK(loop_.inLoop());
 
@@ -406,13 +403,13 @@ void Channel::Impl::recvFromLoop_(
                << sequenceNumber << ")";
   };
 
-  if (error_ || tensor.length == 0) {
+  if (error_ || buffer.length == 0) {
     callback(error_);
     return;
   }
 
   recvOperations_.emplace_back(
-      sequenceNumber, tensor.ptr, tensor.stream, tensor.length);
+      sequenceNumber, buffer.ptr, buffer.stream, buffer.length);
   auto& op = recvOperations_.back();
 
   NopHolder<Descriptor> nopHolder;

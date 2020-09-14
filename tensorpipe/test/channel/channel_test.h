@@ -21,14 +21,7 @@
 #include <tensorpipe/transport/uv/context.h>
 
 template <typename TBuffer>
-class DataWrapper {
-  // Non-copyable.
-  DataWrapper(const DataWrapper&) = delete;
-  DataWrapper& operator=(const DataWrapper&) = delete;
-  // Non-movable.
-  DataWrapper(const DataWrapper&&) = delete;
-  DataWrapper& operator=(const DataWrapper&&) = delete;
-};
+class DataWrapper {};
 
 template <>
 class DataWrapper<tensorpipe::CpuBuffer> {
@@ -52,11 +45,15 @@ class DataWrapper<tensorpipe::CpuBuffer> {
   std::vector<uint8_t> vector_;
 };
 
-#if TENSORPIPE_HAS_CUDA
+#if TENSORPIPE_SUPPORTS_CUDA
 
 template <>
 class DataWrapper<tensorpipe::CudaBuffer> {
  public:
+  // Non-copyable.
+  DataWrapper(const DataWrapper&) = delete;
+  DataWrapper& operator=(const DataWrapper&) = delete;
+
   explicit DataWrapper(size_t length) : length_(length) {
     if (length_ > 0) {
       EXPECT_EQ(cudaSuccess, cudaSetDevice(0));
@@ -71,6 +68,14 @@ class DataWrapper<tensorpipe::CudaBuffer> {
           cudaSuccess,
           cudaMemcpy(cudaPtr_, v.data(), length_, cudaMemcpyDefault));
     }
+  }
+
+  explicit DataWrapper(DataWrapper&& other)
+      : cudaPtr_(other.cudaPtr_),
+        length_(other.length_),
+        stream_(other.stream_) {
+    other.cudaPtr_ = nullptr;
+    other.length_ = 0;
   }
 
   tensorpipe::CudaBuffer buffer() const {
@@ -104,7 +109,7 @@ class DataWrapper<tensorpipe::CudaBuffer> {
   cudaStream_t stream_{cudaStreamDefault};
 };
 
-#endif // TENSORPIPE_HAS_CUDA
+#endif // TENSORPIPE_SUPPORTS_CUDA
 
 template <typename TBuffer>
 class ChannelTestHelper {
@@ -126,7 +131,7 @@ template <typename TBuffer>
     std::future<tensorpipe::Error>>
 sendWithFuture(
     std::shared_ptr<tensorpipe::channel::Channel<TBuffer>> channel,
-    TBuffer tensor) {
+    TBuffer buffer) {
   auto descriptorPromise = std::make_shared<
       std::promise<std::tuple<tensorpipe::Error, std::string>>>();
   auto promise = std::make_shared<std::promise<tensorpipe::Error>>();
@@ -134,7 +139,7 @@ sendWithFuture(
   auto future = promise->get_future();
 
   channel->send(
-      std::move(tensor),
+      buffer,
       [descriptorPromise{std::move(descriptorPromise)}](
           const tensorpipe::Error& error, std::string descriptor) {
         descriptorPromise->set_value(
@@ -150,13 +155,13 @@ template <typename TBuffer>
 [[nodiscard]] std::future<tensorpipe::Error> recvWithFuture(
     std::shared_ptr<tensorpipe::channel::Channel<TBuffer>> channel,
     tensorpipe::channel::TDescriptor descriptor,
-    TBuffer tensor) {
+    TBuffer buffer) {
   auto promise = std::make_shared<std::promise<tensorpipe::Error>>();
   auto future = promise->get_future();
 
   channel->recv(
       std::move(descriptor),
-      std::move(tensor),
+      buffer,
       [promise{std::move(promise)}](const tensorpipe::Error& error) {
         promise->set_value(error);
       });
@@ -164,14 +169,19 @@ template <typename TBuffer>
 }
 
 template <typename TBuffer>
-class ChannelTest {
+class ChannelTestCase {
  public:
-  virtual void run(ChannelTestHelper<TBuffer>* helper) {
-    helper_ = helper;
-    peers_ = helper_->makePeerGroup();
+  virtual void run(ChannelTestHelper<TBuffer>* helper) = 0;
+};
 
+template <typename TBuffer>
+class ClientServerChannelTestCase : public ChannelTestCase<TBuffer> {
+ public:
+  void run(ChannelTestHelper<TBuffer>* helper) override {
     auto addr = "127.0.0.1";
 
+    helper_ = helper;
+    peers_ = helper_->makePeerGroup();
     peers_->spawn(
         [&] {
           auto context = std::make_shared<tensorpipe::transport::uv::Context>();
@@ -213,34 +223,36 @@ class ChannelTest {
   std::shared_ptr<PeerGroup> peers_;
 };
 
-class CpuChannelTest : public ::testing::TestWithParam<
-                           ChannelTestHelper<tensorpipe::CpuBuffer>*> {};
+class CpuChannelTestSuite : public ::testing::TestWithParam<
+                                ChannelTestHelper<tensorpipe::CpuBuffer>*> {};
 
-#if TENSORPIPE_HAS_CUDA
-class CudaChannelTest : public ::testing::TestWithParam<
-                            ChannelTestHelper<tensorpipe::CudaBuffer>*> {};
-#endif // TENSORPIPE_HAS_CUDA
+#if TENSORPIPE_SUPPORTS_CUDA
+class CudaChannelTestSuite : public ::testing::TestWithParam<
+                                 ChannelTestHelper<tensorpipe::CudaBuffer>*> {};
+#endif // TENSORPIPE_SUPPORTS_CUDA
 
-#define CHANNEL_TEST(type, name)    \
-  TEST_P(type##ChannelTest, name) { \
-    name##Test t;                   \
-    t.run(GetParam());              \
-  }
-
-#define _CHANNEL_TEST(type, name)           \
-  TEST_P(type##ChannelTest, name) {         \
+#define _CHANNEL_TEST(type, suite, name)    \
+  TEST_P(suite, name) {                     \
     name##Test<tensorpipe::type##Buffer> t; \
     t.run(GetParam());                      \
   }
 
-#define _CHANNEL_TEST_CPU(name) _CHANNEL_TEST(Cpu, name)
+#define _CHANNEL_TEST_CPU(name) _CHANNEL_TEST(Cpu, CpuChannelTestSuite, name)
 
-#if TENSORPIPE_HAS_CUDA
-#define _CHANNEL_TEST_CUDA(name) _CHANNEL_TEST(Cuda, name)
-#else // TENSORPIPE_HAS_CUDA
+#if TENSORPIPE_SUPPORTS_CUDA
+#define _CHANNEL_TEST_CUDA(name) _CHANNEL_TEST(Cuda, CudaChannelTestSuite, name)
+#else // TENSORPIPE_SUPPORTS_CUDA
 #define _CHANNEL_TEST_CUDA(name)
-#endif // TENSORPIPE_HAS_CUDA
+#endif // TENSORPIPE_SUPPORTS_CUDA
 
+// Register a generic (template) channel test.
 #define CHANNEL_TEST_GENERIC(name) \
   _CHANNEL_TEST_CPU(name);         \
   _CHANNEL_TEST_CUDA(name);
+
+// Register a (non-template) channel test.
+#define CHANNEL_TEST(suite, name) \
+  TEST_P(suite, name) {           \
+    name##Test t;                 \
+    t.run(GetParam());            \
+  }

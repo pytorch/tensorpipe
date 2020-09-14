@@ -25,4 +25,4 @@ CmaChannelTestHelper helper;
 
 } // namespace
 
-INSTANTIATE_TEST_CASE_P(Cma, CpuChannelTest, ::testing::Values(&helper));
+INSTANTIATE_TEST_CASE_P(Cma, CpuChannelTestSuite, ::testing::Values(&helper));
