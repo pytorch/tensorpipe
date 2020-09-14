@@ -10,17 +10,17 @@
 
 #include <tensorpipe/config.h>
 
-#if TENSORPIPE_HAS_CUDA
+#if TENSORPIPE_SUPPORTS_CUDA
 #include <cuda_runtime.h>
-#endif // TENSORPIPE_HAS_CUDA
+#endif // TENSORPIPE_SUPPORTS_CUDA
 
 namespace tensorpipe {
 
 enum class DeviceType {
   kCpu,
-#if TENSORPIPE_HAS_CUDA
+#if TENSORPIPE_SUPPORTS_CUDA
   kCuda,
-#endif // TENSORPIPE_HAS_CUDA
+#endif // TENSORPIPE_SUPPORTS_CUDA
 };
 
 struct CpuBuffer {
@@ -28,27 +28,27 @@ struct CpuBuffer {
   size_t length{0};
 };
 
-#if TENSORPIPE_HAS_CUDA
+#if TENSORPIPE_SUPPORTS_CUDA
 struct CudaBuffer {
   void* ptr{nullptr};
   size_t length{0};
   cudaStream_t stream{cudaStreamDefault};
 };
-#endif // TENSORPIPE_HAS_CUDA
+#endif // TENSORPIPE_SUPPORTS_CUDA
 
 struct Buffer {
-  Buffer(CpuBuffer t) : type(DeviceType::kCpu), cpu(t) {}
+  /* implicit */ Buffer(CpuBuffer t) : type(DeviceType::kCpu), cpu(t) {}
 
-#if TENSORPIPE_HAS_CUDA
-  Buffer(CudaBuffer t) : type(DeviceType::kCuda), cuda(t) {}
-#endif // TENSORPIPE_HAS_CUDA
+#if TENSORPIPE_SUPPORTS_CUDA
+  /* implicit */ Buffer(CudaBuffer t) : type(DeviceType::kCuda), cuda(t) {}
+#endif // TENSORPIPE_SUPPORTS_CUDA
 
   DeviceType type;
   union {
     CpuBuffer cpu;
-#if TENSORPIPE_HAS_CUDA
+#if TENSORPIPE_SUPPORTS_CUDA
     CudaBuffer cuda;
-#endif // TENSORPIPE_HAS_CUDA
+#endif // TENSORPIPE_SUPPORTS_CUDA
   };
 };
 

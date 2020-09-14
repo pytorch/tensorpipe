@@ -32,12 +32,12 @@ class Channel : public channel::CpuChannel {
 
   // Send memory region to peer.
   void send(
-      CpuBuffer tensor,
+      CpuBuffer buffer,
       TDescriptorCallback descriptorCallback,
       TSendCallback callback) override;
 
   // Receive memory region from peer.
-  void recv(TDescriptor descriptor, CpuBuffer tensor, TRecvCallback callback)
+  void recv(TDescriptor descriptor, CpuBuffer buffer, TRecvCallback callback)
       override;
 
   // Tell the channel what its identifier is.
