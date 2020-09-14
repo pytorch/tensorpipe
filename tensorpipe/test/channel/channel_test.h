@@ -124,7 +124,7 @@ class ChannelTest : public ::testing::TestWithParam<ChannelTestHelper*> {
       std::future<tensorpipe::Error>>
   sendWithFuture(
       std::shared_ptr<tensorpipe::channel::CpuChannel> channel,
-      const tensorpipe::CpuBuffer& tensor) {
+      const tensorpipe::CpuBuffer& buffer) {
     auto descriptorPromise = std::make_shared<
         std::promise<std::tuple<tensorpipe::Error, std::string>>>();
     auto promise = std::make_shared<std::promise<tensorpipe::Error>>();
@@ -132,7 +132,7 @@ class ChannelTest : public ::testing::TestWithParam<ChannelTestHelper*> {
     auto future = promise->get_future();
 
     channel->send(
-        tensor,
+        buffer,
         [descriptorPromise{std::move(descriptorPromise)}](
             const tensorpipe::Error& error, std::string descriptor) {
           descriptorPromise->set_value(
@@ -147,13 +147,13 @@ class ChannelTest : public ::testing::TestWithParam<ChannelTestHelper*> {
   [[nodiscard]] std::future<tensorpipe::Error> recvWithFuture(
       std::shared_ptr<tensorpipe::channel::CpuChannel> channel,
       tensorpipe::channel::TDescriptor descriptor,
-      const tensorpipe::CpuBuffer& tensor) {
+      const tensorpipe::CpuBuffer& buffer) {
     auto promise = std::make_shared<std::promise<tensorpipe::Error>>();
     auto future = promise->get_future();
 
     channel->recv(
         std::move(descriptor),
-        tensor,
+        buffer,
         [promise{std::move(promise)}](const tensorpipe::Error& error) {
           promise->set_value(error);
         });
