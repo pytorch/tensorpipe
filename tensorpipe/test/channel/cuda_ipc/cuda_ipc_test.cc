@@ -32,15 +32,9 @@ class CudaIpcChannelTestHelper
 
 CudaIpcChannelTestHelper helper;
 
-class CudaIpcChannelTestSuite : public CudaChannelTestSuite {};
-
 } // namespace
 
 INSTANTIATE_TEST_CASE_P(
     CudaIpc,
     CudaChannelTestSuite,
-    ::testing::Values(&helper));
-INSTANTIATE_TEST_CASE_P(
-    CudaIpc,
-    CudaIpcChannelTestSuite,
     ::testing::Values(&helper));
