@@ -60,11 +60,11 @@ target_sources(tensorpipe PRIVATE
 
 ## CUDA channels
 
-if(TP_ENABLE_CUDA)
+if(TP_USE_CUDA)
   find_package(CUDA REQUIRED)
   target_link_libraries(tensorpipe PUBLIC ${CUDA_LIBRARIES})
   target_include_directories(tensorpipe PUBLIC ${CUDA_INCLUDE_DIRS})
-  set(TENSORPIPE_HAS_CUDA 1)
+  set(TENSORPIPE_SUPPORTS_CUDA 1)
 
   ### cuda_ipc
 
