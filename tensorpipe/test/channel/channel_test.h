@@ -32,12 +32,10 @@ class DataWrapper<tensorpipe::CpuBuffer> {
 
   tensorpipe::CpuBuffer buffer() const {
     return tensorpipe::CpuBuffer{
-        .ptr = const_cast<uint8_t*>(vector_.data()),
-        .length = vector_.size(),
-    };
+        const_cast<uint8_t*>(vector_.data()), vector_.size()};
   }
 
-  std::vector<uint8_t> unwrap() {
+  const std::vector<uint8_t>& unwrap() {
     return vector_;
   }
 
@@ -62,7 +60,7 @@ class DataWrapper<tensorpipe::CudaBuffer> {
     }
   }
 
-  explicit DataWrapper(const std::vector<uint8_t>& v) : DataWrapper(v.size()) {
+  explicit DataWrapper(std::vector<uint8_t> v) : DataWrapper(v.size()) {
     if (length_ > 0) {
       EXPECT_EQ(
           cudaSuccess,
@@ -79,11 +77,7 @@ class DataWrapper<tensorpipe::CudaBuffer> {
   }
 
   tensorpipe::CudaBuffer buffer() const {
-    return tensorpipe::CudaBuffer{
-        .ptr = cudaPtr_,
-        .length = length_,
-        .stream = stream_,
-    };
+    return tensorpipe::CudaBuffer{cudaPtr_, length_, stream_};
   }
 
   std::vector<uint8_t> unwrap() {
@@ -100,6 +94,7 @@ class DataWrapper<tensorpipe::CudaBuffer> {
   ~DataWrapper() {
     if (length_ > 0) {
       EXPECT_EQ(cudaSuccess, cudaFree(cudaPtr_));
+      EXPECT_EQ(cudaSuccess, cudaStreamDestroy(stream_));
     }
   }
 

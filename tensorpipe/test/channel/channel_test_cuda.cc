@@ -15,7 +15,7 @@ using namespace tensorpipe;
 using namespace tensorpipe::channel;
 
 class ReceiverWaitsForStartEventTest
-    : public ClientServerChannelTestCase<tensorpipe::CudaBuffer> {
+    : public ClientServerChannelTestCase<CudaBuffer> {
   static constexpr size_t kSize = 1024;
 
   void server(std::shared_ptr<transport::Connection> conn) override {
