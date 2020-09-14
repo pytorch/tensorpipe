@@ -117,8 +117,7 @@ CHANNEL_TEST(CpuChannelTestSuite, EmptyTensor);
 // However, since we can't really check that behavior, we'll check a highly
 // correlated one: that the recv callback isn't called inline from within the
 // recv method. We do so by having that behavior cause a deadlock.
-class CallbacksAreDeferredTest
-    : public ClientServerChannelTestCase<tensorpipe::CpuBuffer> {
+class CallbacksAreDeferredTest : public ClientServerChannelTestCase<CpuBuffer> {
   static constexpr auto dataSize = 256;
 
  public:
