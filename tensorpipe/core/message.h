@@ -52,6 +52,7 @@ class Message final {
 
   struct Tensor {
     tensorpipe::Buffer buffer;
+
     // Users may include arbitrary metadata in the following field.
     // This may contain allocation hints for the receiver, for example.
     std::string metadata;
