@@ -71,4 +71,40 @@ class Error final {
   std::shared_ptr<BaseError> error_;
 };
 
+class SystemError final : public BaseError {
+ public:
+  explicit SystemError(const char* syscall, int error)
+      : syscall_(syscall), error_(error) {}
+
+  std::string what() const override;
+
+ private:
+  const char* syscall_;
+  const int error_;
+};
+
+class ShortReadError final : public BaseError {
+ public:
+  ShortReadError(ssize_t expected, ssize_t actual)
+      : expected_(expected), actual_(actual) {}
+
+  std::string what() const override;
+
+ private:
+  const ssize_t expected_;
+  const ssize_t actual_;
+};
+
+class ShortWriteError final : public BaseError {
+ public:
+  ShortWriteError(ssize_t expected, ssize_t actual)
+      : expected_(expected), actual_(actual) {}
+
+  std::string what() const override;
+
+ private:
+  const ssize_t expected_;
+  const ssize_t actual_;
+};
+
 } // namespace tensorpipe

@@ -17,13 +17,10 @@
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/error.h>
 #include <tensorpipe/common/error_macros.h>
+#include <tensorpipe/common/fd.h>
 #include <tensorpipe/common/optional.h>
-#include <tensorpipe/transport/error.h>
-#include <tensorpipe/transport/shm/fd.h>
 
 namespace tensorpipe {
-namespace transport {
-namespace shm {
 
 namespace {
 
@@ -83,9 +80,9 @@ template <typename T, typename... Fds>
   msg.msg_iovlen = sizeof(iov) / sizeof(iovec);
 
   // Build control message.
-  uint8_t buf[CMSG_SPACE(sizeof(TPayload) * sizeof...(Fds))];
-  msg.msg_control = &buf;
-  msg.msg_controllen = sizeof(buf);
+  std::array<uint8_t, CMSG_SPACE(sizeof(TPayload) * sizeof...(Fds))> buf;
+  msg.msg_control = buf.data();
+  msg.msg_controllen = buf.size();
 
   struct cmsghdr* cmsg;
   cmsg = CMSG_FIRSTHDR(&msg);
@@ -138,9 +135,9 @@ template <typename T, typename... Fds>
   msg.msg_iovlen = sizeof(iov) / sizeof(iovec);
 
   // Build control message.
-  uint8_t buf[CMSG_SPACE(sizeof(TPayload) * sizeof...(Fds))];
-  msg.msg_control = &buf;
-  msg.msg_controllen = sizeof(buf);
+  std::array<uint8_t, CMSG_SPACE(sizeof(TPayload) * sizeof...(Fds))> buf;
+  msg.msg_control = buf.data();
+  msg.msg_controllen = buf.size();
 
   // Receive message.
   for (;;) {
@@ -179,25 +176,13 @@ template <typename... Fds>
   return recvFromSocket(socketFd, dummy, dummy, fds...);
 }
 
-class Sockaddr final {
+class Sockaddr {
  public:
-  static Sockaddr createAbstractUnixAddr(const std::string& name);
+  virtual const struct sockaddr* addr() const = 0;
 
-  inline const struct sockaddr* addr() const {
-    return reinterpret_cast<const struct sockaddr*>(&addr_);
-  }
+  virtual socklen_t addrlen() const = 0;
 
-  inline socklen_t addrlen() const {
-    return addrlen_;
-  }
-
-  std::string str() const;
-
- private:
-  explicit Sockaddr(struct sockaddr* addr, socklen_t addrlen);
-
-  struct sockaddr_storage addr_;
-  socklen_t addrlen_;
+  virtual ~Sockaddr() = default;
 };
 
 class Socket final : public Fd {
@@ -258,6 +243,4 @@ class Socket final : public Fd {
   }
 };
 
-} // namespace shm
-} // namespace transport
 } // namespace tensorpipe

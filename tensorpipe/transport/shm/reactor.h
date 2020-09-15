@@ -18,8 +18,8 @@
 #include <vector>
 
 #include <tensorpipe/common/callback.h>
+#include <tensorpipe/common/fd.h>
 #include <tensorpipe/common/optional.h>
-#include <tensorpipe/transport/shm/fd.h>
 #include <tensorpipe/util/ringbuffer/consumer.h>
 #include <tensorpipe/util/ringbuffer/producer.h>
 #include <tensorpipe/util/shm/segment.h>
@@ -154,7 +154,7 @@ class Reactor final {
  public:
   class Trigger {
    public:
-    Trigger(Fd&& header, Fd&& data);
+    Trigger(Fd header, Fd data);
 
     void run(TToken token);
 

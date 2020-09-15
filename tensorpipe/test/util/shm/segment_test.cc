@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <tensorpipe/transport/shm/socket.h>
+#include <tensorpipe/common/socket.h>
 #include <tensorpipe/util/shm/segment.h>
 
 #include <sys/eventfd.h>
@@ -16,8 +16,8 @@
 
 #include <gtest/gtest.h>
 
+using namespace tensorpipe;
 using namespace tensorpipe::util::shm;
-using namespace tensorpipe::transport::shm;
 
 // Same process produces and consumes share memory through different mappings.
 TEST(Segment, SameProducerConsumer_Scalar) {
@@ -29,7 +29,7 @@ TEST(Segment, SameProducerConsumer_Scalar) {
   sched_setaffinity(0, sizeof(cpu_set_t), &cpuset);
 
   // This must stay alive for the file descriptor to remain open.
-  int fd = -1;
+  Fd fd;
   {
     // Producer part.
     Segment segment;
@@ -41,7 +41,7 @@ TEST(Segment, SameProducerConsumer_Scalar) {
 
     // Duplicate the file descriptor so that the shared memory remains alive
     // when the original fd is closed by the segment's destructor.
-    fd = ::dup(segment.getFd());
+    fd = Fd(::dup(segment.getFd()));
   }
 
   {
@@ -50,7 +50,7 @@ TEST(Segment, SameProducerConsumer_Scalar) {
     Segment segment;
     int* my_int_ptr;
     std::tie(segment, my_int_ptr) =
-        Segment::load<int>(fd, true, PageType::Default);
+        Segment::load<int>(std::move(fd), true, PageType::Default);
     EXPECT_EQ(segment.getSize(), sizeof(int));
     EXPECT_EQ(*my_int_ptr, 1000);
   }
@@ -110,7 +110,7 @@ TEST(SegmentManager, SingleProducer_SingleConsumer_Array) {
   }
 
   // parent, the consumer
-  int segment_fd;
+  Fd segment_fd;
   {
     auto err = recvFdsFromSocket(sock_fds[1], segment_fd);
     if (err) {
@@ -120,7 +120,7 @@ TEST(SegmentManager, SingleProducer_SingleConsumer_Array) {
   Segment segment;
   float* my_floats;
   std::tie(segment, my_floats) =
-      Segment::load<float[]>(segment_fd, false, PageType::Default);
+      Segment::load<float[]>(std::move(segment_fd), false, PageType::Default);
   EXPECT_EQ(num_floats * sizeof(float), segment.getSize());
   for (int i = 0; i < num_floats; ++i) {
     EXPECT_EQ(my_floats[i], i);

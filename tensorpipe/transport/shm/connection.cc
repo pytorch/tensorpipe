@@ -19,7 +19,7 @@
 #include <tensorpipe/transport/error.h>
 #include <tensorpipe/transport/shm/loop.h>
 #include <tensorpipe/transport/shm/reactor.h>
-#include <tensorpipe/transport/shm/socket.h>
+#include <tensorpipe/transport/shm/sockaddr.h>
 #include <tensorpipe/util/ringbuffer/consumer.h>
 #include <tensorpipe/util/ringbuffer/producer.h>
 #include <tensorpipe/util/ringbuffer/shm.h>
@@ -921,7 +921,7 @@ void Connection::Impl::handleEventInFromLoop() {
     // Load ringbuffer for outbox.
     std::tie(outboxHeaderSegment_, outboxDataSegment_, outboxRb_) =
         util::ringbuffer::shm::load(
-            outboxHeaderFd.release(), outboxDataFd.release());
+            std::move(outboxHeaderFd), std::move(outboxDataFd));
 
     // Initialize remote reactor trigger.
     peerReactorTrigger_.emplace(

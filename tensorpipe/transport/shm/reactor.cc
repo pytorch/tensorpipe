@@ -169,11 +169,11 @@ void Reactor::run() {
   }
 }
 
-Reactor::Trigger::Trigger(Fd&& headerFd, Fd&& dataFd) {
+Reactor::Trigger::Trigger(Fd headerFd, Fd dataFd) {
   // The header and data segment objects take over ownership
   // of file descriptors. Release them to avoid double close.
   std::tie(headerSegment_, dataSegment_, rb_) =
-      util::ringbuffer::shm::load(headerFd.release(), dataFd.release());
+      util::ringbuffer::shm::load(std::move(headerFd), std::move(dataFd));
 }
 
 void Reactor::Trigger::run(TToken token) {

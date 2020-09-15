@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <tensorpipe/transport/shm/socket.h>
+#include <tensorpipe/common/socket.h>
 #include <tensorpipe/util/ringbuffer/consumer.h>
 #include <tensorpipe/util/ringbuffer/producer.h>
 #include <tensorpipe/util/ringbuffer/ringbuffer.h>
@@ -21,14 +21,14 @@
 
 #include <gtest/gtest.h>
 
+using namespace tensorpipe;
 using namespace tensorpipe::util::ringbuffer;
 using namespace tensorpipe::util::shm;
-using namespace tensorpipe::transport::shm;
 
 // Same process produces and consumes share memory through different mappings.
 TEST(ShmRingBuffer, SameProducerConsumer) {
-  int header_fd = -1;
-  int data_fd = -1;
+  Fd header_fd;
+  Fd data_fd;
   {
     // Producer part.
     // Buffer large enough to fit all data and persistent
@@ -49,8 +49,8 @@ TEST(ShmRingBuffer, SameProducerConsumer) {
 
     // Duplicate the file descriptors so that the shared memory remains alive
     // when the original fds are closed by the segments' destructors.
-    header_fd = ::dup(header_segment.getFd());
-    data_fd = ::dup(data_segment.getFd());
+    header_fd = Fd(::dup(header_segment.getFd()));
+    data_fd = Fd(::dup(data_segment.getFd()));
   }
 
   {
@@ -59,7 +59,8 @@ TEST(ShmRingBuffer, SameProducerConsumer) {
     Segment header_segment;
     Segment data_segment;
     RingBuffer rb;
-    std::tie(header_segment, data_segment, rb) = shm::load(header_fd, data_fd);
+    std::tie(header_segment, data_segment, rb) =
+        shm::load(std::move(header_fd), std::move(data_fd));
     Consumer cons{rb};
 
     int i = 0;
@@ -137,8 +138,8 @@ TEST(ShmRingBuffer, SingleProducer_SingleConsumer) {
   // parent, the consumer
 
   // Wait for other process to create buffer.
-  int header_fd;
-  int data_fd;
+  Fd header_fd;
+  Fd data_fd;
   {
     auto err = recvFdsFromSocket(sock_fds[1], header_fd, data_fd);
     if (err) {
@@ -148,7 +149,8 @@ TEST(ShmRingBuffer, SingleProducer_SingleConsumer) {
   Segment header_segment;
   Segment data_segment;
   RingBuffer rb;
-  std::tie(header_segment, data_segment, rb) = shm::load(header_fd, data_fd);
+  std::tie(header_segment, data_segment, rb) =
+      shm::load(std::move(header_fd), std::move(data_fd));
   Consumer cons{rb};
 
   int i = 0;

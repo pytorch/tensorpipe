@@ -14,6 +14,7 @@
 #include <sstream>
 
 #include <tensorpipe/common/defs.h>
+#include <tensorpipe/common/fd.h>
 #include <tensorpipe/common/optional.h>
 
 //
@@ -71,7 +72,7 @@ class Segment {
 
   Segment(size_t byte_size, bool perm_write, optional<PageType> page_type);
 
-  Segment(int fd, bool perm_write, optional<PageType> page_type);
+  Segment(Fd fd, bool perm_write, optional<PageType> page_type);
 
   /// Allocate shared memory to contain an object of type T and construct it.
   ///
@@ -150,10 +151,10 @@ class Segment {
       typename TScalar = typename std::remove_extent<T>::type,
       std::enable_if_t<std::is_array<T>::value, int> = 0>
   static std::pair<Segment, TScalar*> load(
-      int fd,
+      Fd fd,
       bool perm_write,
       optional<PageType> page_type) {
-    Segment segment(fd, perm_write, page_type);
+    Segment segment(std::move(fd), perm_write, page_type);
     static_assert(
         std::rank<T>::value == 1,
         "Currently only rank one arrays are supported");
@@ -166,10 +167,10 @@ class Segment {
   /// T, where T is NOT an array type.
   template <class T, std::enable_if_t<!std::is_array<T>::value, int> = 0>
   static std::pair<Segment, T*> load(
-      int fd,
+      Fd fd,
       bool perm_write,
       optional<PageType> page_type) {
-    Segment segment(fd, perm_write, page_type);
+    Segment segment(std::move(fd), perm_write, page_type);
     const size_t size = segment.getSize();
     // XXX: Do some checking other than the size that we are loading
     // the right type.
@@ -186,7 +187,7 @@ class Segment {
   }
 
   const int getFd() const {
-    return fd_;
+    return fd_.fd();
   }
 
   void* getPtr() {
@@ -212,7 +213,7 @@ class Segment {
   PageType page_type_ = PageType::Default;
 
   // The file descriptor of the shared memory file.
-  int fd_ = -1;
+  Fd fd_;
 
   // Byte size of shared memory segment.
   size_t byte_size_ = 0;

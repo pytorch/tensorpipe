@@ -90,13 +90,14 @@ target_link_libraries(tensorpipe PRIVATE uv::uv)
 
 if(TP_ENABLE_SHM)
   target_sources(tensorpipe PRIVATE
+    common/fd.cc
+    common/socket.cc
     transport/shm/context.cc
     transport/shm/connection.cc
-    transport/shm/fd.cc
     transport/shm/listener.cc
     transport/shm/loop.cc
     transport/shm/reactor.cc
-    transport/shm/socket.cc
+    transport/shm/sockaddr.cc
     util/ringbuffer/shm.cc
     util/shm/segment.cc)
   set(TENSORPIPE_HAS_SHM_TRANSPORT 1)

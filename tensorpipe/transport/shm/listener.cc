@@ -19,7 +19,7 @@
 #include <tensorpipe/transport/error.h>
 #include <tensorpipe/transport/shm/connection.h>
 #include <tensorpipe/transport/shm/loop.h>
-#include <tensorpipe/transport/shm/socket.h>
+#include <tensorpipe/transport/shm/sockaddr.h>
 
 namespace tensorpipe {
 namespace transport {
