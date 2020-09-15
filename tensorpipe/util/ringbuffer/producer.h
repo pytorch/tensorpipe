@@ -19,15 +19,21 @@ namespace ringbuffer {
 ///
 /// Provides methods to write data into a ringbuffer.
 ///
-class Producer : public RingBufferWrapper {
+class Producer {
  public:
-  // Use base class constructor.
-  using RingBufferWrapper::RingBufferWrapper;
+  Producer() = delete;
+
+  Producer(RingBuffer& rb) : header_{rb.getHeader()}, data_{rb.getData()} {
+    TP_THROW_IF_NULLPTR(data_);
+  }
 
   Producer(const Producer&) = delete;
   Producer(Producer&&) = delete;
 
-  virtual ~Producer() noexcept {
+  Producer& operator=(const Producer&) = delete;
+  Producer& operator=(Producer&&) = delete;
+
+  ~Producer() noexcept {
     TP_THROW_ASSERT_IF(inTx());
   }
 
@@ -196,7 +202,10 @@ class Producer : public RingBufferWrapper {
     return size;
   }
 
- protected:
+ private:
+  RingBufferHeader& header_;
+  uint8_t* const data_;
+  unsigned tx_size_ = 0;
   bool inTx_{false};
 };
 

@@ -29,24 +29,29 @@ TEST(Segment, SameProducerConsumer_Scalar) {
   sched_setaffinity(0, sizeof(cpu_set_t), &cpuset);
 
   // This must stay alive for the file descriptor to remain open.
-  std::shared_ptr<Segment> producer_segment;
+  int fd = -1;
   {
     // Producer part.
-    std::shared_ptr<int> my_int_ptr;
-    std::tie(my_int_ptr, producer_segment) =
+    Segment segment;
+    int* my_int_ptr;
+    std::tie(segment, my_int_ptr) =
         Segment::create<int>(true, PageType::Default);
     int& my_int = *my_int_ptr;
     my_int = 1000;
+
+    // Duplicate the file descriptor so that the shared memory remains alive
+    // when the original fd is closed by the segment's destructor.
+    fd = ::dup(segment.getFd());
   }
 
   {
     // Consumer part.
     // Map file again (to a different address) and consume it.
-    std::shared_ptr<int> my_int_ptr;
-    std::shared_ptr<Segment> segment;
-    std::tie(my_int_ptr, segment) =
-        Segment::load<int>(producer_segment->getFd(), true, PageType::Default);
-    EXPECT_EQ(segment->getSize(), sizeof(int));
+    Segment segment;
+    int* my_int_ptr;
+    std::tie(segment, my_int_ptr) =
+        Segment::load<int>(fd, true, PageType::Default);
+    EXPECT_EQ(segment.getSize(), sizeof(int));
     EXPECT_EQ(*my_int_ptr, 1000);
   }
 };
@@ -78,17 +83,17 @@ TEST(SegmentManager, SingleProducer_SingleConsumer_Array) {
     {
       // use huge pages in creation and not in loading. This should only affects
       // TLB overhead.
-      std::shared_ptr<float> my_floats;
-      std::shared_ptr<Segment> segment;
-      std::tie(my_floats, segment) =
+      Segment segment;
+      float* my_floats;
+      std::tie(segment, my_floats) =
           Segment::create<float[]>(num_floats, true, PageType::HugeTLB_2MB);
 
       for (int i = 0; i < num_floats; ++i) {
-        my_floats.get()[i] = i;
+        my_floats[i] = i;
       }
 
       {
-        auto err = sendFdsToSocket(sock_fds[0], segment->getFd());
+        auto err = sendFdsToSocket(sock_fds[0], segment.getFd());
         if (err) {
           TP_THROW_ASSERT() << err.what();
         }
@@ -112,13 +117,13 @@ TEST(SegmentManager, SingleProducer_SingleConsumer_Array) {
       TP_THROW_ASSERT() << err.what();
     }
   }
-  std::shared_ptr<float> my_floats;
-  std::shared_ptr<Segment> segment;
-  std::tie(my_floats, segment) =
+  Segment segment;
+  float* my_floats;
+  std::tie(segment, my_floats) =
       Segment::load<float[]>(segment_fd, false, PageType::Default);
-  EXPECT_EQ(num_floats * sizeof(float), segment->getSize());
+  EXPECT_EQ(num_floats * sizeof(float), segment.getSize());
   for (int i = 0; i < num_floats; ++i) {
-    EXPECT_EQ(my_floats.get()[i], i);
+    EXPECT_EQ(my_floats[i], i);
   }
   {
     uint64_t c = 1;

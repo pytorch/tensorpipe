@@ -13,57 +13,55 @@ namespace util {
 namespace ringbuffer {
 namespace shm {
 
-std::tuple<int, int, std::shared_ptr<RingBuffer>> create(
+std::tuple<util::shm::Segment, util::shm::Segment, RingBuffer> create(
     size_t min_rb_byte_size,
-    optional<tensorpipe::util::shm::PageType> data_page_type,
+    optional<util::shm::PageType> data_page_type,
     bool perm_write) {
-  std::shared_ptr<RingBufferHeader> header;
-  std::shared_ptr<tensorpipe::util::shm::Segment> header_segment;
-  std::tie(header, header_segment) =
-      tensorpipe::util::shm::Segment::create<RingBufferHeader>(
-          perm_write,
-          tensorpipe::util::shm::PageType::Default,
-          min_rb_byte_size);
+  util::shm::Segment header_segment;
+  RingBufferHeader* header;
+  std::tie(header_segment, header) =
+      util::shm::Segment::create<RingBufferHeader>(
+          perm_write, util::shm::PageType::Default, min_rb_byte_size);
 
-  std::shared_ptr<uint8_t> data;
-  std::shared_ptr<tensorpipe::util::shm::Segment> data_segment;
-  std::tie(data, data_segment) =
-      tensorpipe::util::shm::Segment::create<uint8_t[]>(
-          header->kDataPoolByteSize, perm_write, data_page_type);
+  util::shm::Segment data_segment;
+  uint8_t* data;
+  std::tie(data_segment, data) = util::shm::Segment::create<uint8_t[]>(
+      header->kDataPoolByteSize, perm_write, data_page_type);
 
   // Note: cannot use implicit construction from initializer list on GCC 5.5:
   // "converting to XYZ from initializer list would use explicit constructor".
   return std::make_tuple(
-      header_segment->getFd(),
-      data_segment->getFd(),
-      std::make_shared<RingBuffer>(std::move(header), std::move(data)));
+      std::move(header_segment),
+      std::move(data_segment),
+      RingBuffer(header, data));
 }
 
-std::shared_ptr<RingBuffer> load(
+std::tuple<util::shm::Segment, util::shm::Segment, RingBuffer> load(
     int header_fd,
     int data_fd,
-    optional<tensorpipe::util::shm::PageType> data_page_type,
+    optional<util::shm::PageType> data_page_type,
     bool perm_write) {
-  std::shared_ptr<RingBufferHeader> header;
-  std::shared_ptr<tensorpipe::util::shm::Segment> header_segment;
-  std::tie(header, header_segment) =
-      tensorpipe::util::shm::Segment::load<RingBufferHeader>(
-          header_fd, perm_write, tensorpipe::util::shm::PageType::Default);
+  util::shm::Segment header_segment;
+  RingBufferHeader* header;
+  std::tie(header_segment, header) = util::shm::Segment::load<RingBufferHeader>(
+      header_fd, perm_write, util::shm::PageType::Default);
   constexpr auto kHeaderSize = sizeof(RingBufferHeader);
-  if (unlikely(kHeaderSize != header_segment->getSize())) {
+  if (unlikely(kHeaderSize != header_segment.getSize())) {
     TP_THROW_SYSTEM(EPERM) << "Header segment of unexpected size";
   }
 
-  std::shared_ptr<uint8_t> data;
-  std::shared_ptr<tensorpipe::util::shm::Segment> data_segment;
-  std::tie(data, data_segment) =
-      tensorpipe::util::shm::Segment::load<uint8_t[]>(
-          data_fd, perm_write, data_page_type);
-  if (unlikely(header->kDataPoolByteSize != data_segment->getSize())) {
+  util::shm::Segment data_segment;
+  uint8_t* data;
+  std::tie(data_segment, data) =
+      util::shm::Segment::load<uint8_t[]>(data_fd, perm_write, data_page_type);
+  if (unlikely(header->kDataPoolByteSize != data_segment.getSize())) {
     TP_THROW_SYSTEM(EPERM) << "Data segment of unexpected size";
   }
 
-  return std::make_shared<RingBuffer>(std::move(header), std::move(data));
+  return std::make_tuple(
+      std::move(header_segment),
+      std::move(data_segment),
+      RingBuffer(header, data));
 }
 
 } // namespace shm
