@@ -13,7 +13,6 @@
 #include <unordered_map>
 #include <unordered_set>
 
-#include <tensorpipe/channel/channel.h>
 #include <tensorpipe/channel/error.h>
 #include <tensorpipe/channel/helpers.h>
 #include <tensorpipe/channel/mpt/channel.h>

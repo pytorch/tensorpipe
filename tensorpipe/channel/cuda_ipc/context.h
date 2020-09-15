@@ -12,7 +12,7 @@
 #include <memory>
 #include <string>
 
-#include <tensorpipe/channel/context.h>
+#include <tensorpipe/channel/cuda_context.h>
 #include <tensorpipe/common/callback.h>
 #include <tensorpipe/common/error.h>
 

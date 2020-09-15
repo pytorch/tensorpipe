@@ -10,8 +10,9 @@
 
 #include <tensorpipe/config.h>
 
+#include <tensorpipe/common/cpu_buffer.h>
 #if TENSORPIPE_SUPPORTS_CUDA
-#include <cuda_runtime.h>
+#include <tensorpipe/common/cuda_buffer.h>
 #endif // TENSORPIPE_SUPPORTS_CUDA
 
 namespace tensorpipe {
@@ -22,19 +23,6 @@ enum class DeviceType {
   kCuda,
 #endif // TENSORPIPE_SUPPORTS_CUDA
 };
-
-struct CpuBuffer {
-  void* ptr{nullptr};
-  size_t length{0};
-};
-
-#if TENSORPIPE_SUPPORTS_CUDA
-struct CudaBuffer {
-  void* ptr{nullptr};
-  size_t length{0};
-  cudaStream_t stream{cudaStreamDefault};
-};
-#endif // TENSORPIPE_SUPPORTS_CUDA
 
 struct Buffer {
   /* implicit */ Buffer(CpuBuffer t) : type(DeviceType::kCpu), cpu(t) {}

@@ -15,8 +15,7 @@
 
 #include <gtest/gtest.h>
 
-#include <tensorpipe/channel/context.h>
-#include <tensorpipe/common/buffer.h>
+#include <tensorpipe/channel/cpu_context.h>
 #include <tensorpipe/test/peer_group.h>
 #include <tensorpipe/transport/uv/context.h>
 

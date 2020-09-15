@@ -6,8 +6,18 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <tensorpipe/channel/registry.h>
+#pragma once
 
-TP_DEFINE_SHARED_REGISTRY(
-    TensorpipeChannelRegistry,
-    tensorpipe::channel::CpuContext);
+#include <cstddef>
+
+#include <cuda_runtime.h>
+
+namespace tensorpipe {
+
+struct CudaBuffer {
+  void* ptr{nullptr};
+  size_t length{0};
+  cudaStream_t stream{cudaStreamDefault};
+};
+
+} // namespace tensorpipe
