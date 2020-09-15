@@ -145,7 +145,7 @@ bool ReadOperation::handleRead(util::ringbuffer::Consumer& inbox) {
       uint32_t length;
       {
         ssize_t ret;
-        ret = inbox.copyInTx(sizeof(length), &length);
+        ret = inbox.readInTx</*allowPartial=*/false>(&length, sizeof(length));
         if (ret == -ENODATA) {
           ret = inbox.cancelTx();
           TP_THROW_SYSTEM_IF(ret < 0, -ret);
@@ -167,8 +167,8 @@ bool ReadOperation::handleRead(util::ringbuffer::Consumer& inbox) {
 
     // If reading empty buffer, skip payload read.
     if (len_ > 0) {
-      const auto ret = inbox.copyAtMostInTx(
-          len_ - bytesRead_, reinterpret_cast<uint8_t*>(ptr_) + bytesRead_);
+      const auto ret = inbox.readInTx</*allowPartial=*/true>(
+          reinterpret_cast<uint8_t*>(ptr_) + bytesRead_, len_ - bytesRead_);
       if (ret == -ENODATA) {
         if (lengthRead) {
           const auto ret = inbox.commitTx();
@@ -621,7 +621,8 @@ void Connection::Impl::readFromLoop(
       [&object](util::ringbuffer::Consumer& inbox) -> ssize_t {
         uint32_t len;
         {
-          const auto ret = inbox.copyInTx(sizeof(len), &len);
+          const auto ret =
+              inbox.readInTx</*allowPartial=*/false>(&len, sizeof(len));
           if (ret == -ENODATA) {
             return -ENODATA;
           }
@@ -632,25 +633,16 @@ void Connection::Impl::readFromLoop(
           return -EPERM;
         }
 
-        const uint8_t* ptr1;
-        ssize_t len1;
-        const uint8_t* ptr2 = nullptr;
-        ssize_t len2 = 0;
-        std::tie(len1, ptr1) = inbox.readContiguousAtMostInTx(len);
-        if (unlikely(len1 < 0)) {
-          return len1;
-        }
-        if (unlikely(len1 < len)) {
-          std::tie(len2, ptr2) = inbox.readContiguousAtMostInTx(len - len1);
-          if (unlikely(len2 < 0)) {
-            return len2;
-          }
-          if (unlikely(len1 + len2 < len)) {
-            return -ENODATA;
-          }
+        ssize_t numBuffers;
+        std::array<util::ringbuffer::Consumer::Buffer, 2> buffers;
+        std::tie(numBuffers, buffers) =
+            inbox.accessContiguousInTx</*allowPartial=*/false>(len);
+        if (unlikely(numBuffers < 0)) {
+          return numBuffers;
         }
 
-        NopReader reader(ptr1, len1, ptr2, len2);
+        NopReader reader(
+            buffers[0].ptr, buffers[0].len, buffers[1].ptr, buffers[1].len);
         nop::Status<void> status = object.read(reader);
         if (status.error() == nop::ErrorStatus::ReadLimitReached) {
           return -ENODATA;
