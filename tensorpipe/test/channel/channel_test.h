@@ -78,12 +78,9 @@ class DataWrapper<tensorpipe::CudaBuffer> {
   }
 
   DataWrapper& operator=(DataWrapper&& other) {
-    cudaPtr_ = other.cudaPtr_;
-    length_ = other.length_;
-    stream_ = other.stream_;
-    other.cudaPtr_ = nullptr;
-    other.length_ = 0;
-    other.stream_ = cudaStreamDefault;
+    std::swap(cudaPtr_, other.cudaPtr_);
+    std::swap(length_, other.length_);
+    std::swap(stream_, other.stream_);
 
     return *this;
   }
