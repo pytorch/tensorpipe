@@ -10,7 +10,7 @@
 
 #include <memory>
 
-#include <tensorpipe/channel/channel.h>
+#include <tensorpipe/channel/cpu_context.h>
 #include <tensorpipe/channel/xth/context.h>
 
 namespace tensorpipe {

@@ -11,8 +11,7 @@
 #include <memory>
 
 #include <tensorpipe/channel/basic/context.h>
-#include <tensorpipe/channel/channel.h>
-#include <tensorpipe/common/buffer.h>
+#include <tensorpipe/channel/cpu_context.h>
 
 namespace tensorpipe {
 namespace channel {

@@ -8,9 +8,16 @@
 
 #pragma once
 
-#include <tensorpipe/channel/cpu_context.h>
-#include <tensorpipe/util/registry/registry.h>
+#include <cstddef>
 
-TP_DECLARE_SHARED_REGISTRY(
-    TensorpipeChannelRegistry,
-    tensorpipe::channel::CpuContext);
+#include <cuda_runtime.h>
+
+namespace tensorpipe {
+
+struct CudaBuffer {
+  void* ptr{nullptr};
+  size_t length{0};
+  cudaStream_t stream{cudaStreamDefault};
+};
+
+} // namespace tensorpipe

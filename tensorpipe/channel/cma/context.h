@@ -12,8 +12,7 @@
 #include <memory>
 #include <string>
 
-#include <tensorpipe/channel/context.h>
-#include <tensorpipe/common/buffer.h>
+#include <tensorpipe/channel/cpu_context.h>
 #include <tensorpipe/common/callback.h>
 #include <tensorpipe/common/error.h>
 

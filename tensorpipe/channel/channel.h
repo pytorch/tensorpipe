@@ -12,7 +12,6 @@
 #include <memory>
 #include <vector>
 
-#include <tensorpipe/common/buffer.h>
 #include <tensorpipe/common/optional.h>
 #include <tensorpipe/transport/connection.h>
 
@@ -82,12 +81,6 @@ class Channel {
 
   virtual ~Channel() = default;
 };
-
-using CpuChannel = Channel<CpuBuffer>;
-
-#if TENSORPIPE_SUPPORTS_CUDA
-using CudaChannel = Channel<CudaBuffer>;
-#endif // TENSORPIPE_SUPPORTS_CUDA
 
 } // namespace channel
 } // namespace tensorpipe
