@@ -61,20 +61,25 @@ class Segment {
   // Default base path for all segments created.
   static constexpr char kBasePath[] = "/dev/shm";
 
+  Segment() = default;
+
   Segment(const Segment&) = delete;
-  Segment(Segment&&) = delete;
+  Segment(Segment&&) noexcept;
+
+  Segment& operator=(const Segment& other) = delete;
+  Segment& operator=(Segment&& other) noexcept;
 
   Segment(size_t byte_size, bool perm_write, optional<PageType> page_type);
 
   Segment(int fd, bool perm_write, optional<PageType> page_type);
 
-  /// Create read and size shared memory to contain an object of class T.
+  /// Allocate shared memory to contain an object of type T and construct it.
   ///
-  /// The created object's shared_ptr will own the lifetime of the
-  /// Segment and will call Segment destructor.
-  /// Caller can use the shared_ptr to the underlying Segment.
+  /// The Segment object owns the memory and frees it when destructed.
+  /// The raw pointer to the object provides a view into the Segment but doesn't
+  /// own it and may thus become invalid if the Segment isn't kept alive.
   template <class T, class... Args>
-  static std::pair<std::shared_ptr<T>, std::shared_ptr<Segment>> create(
+  static std::pair<Segment, T*> create(
       bool perm_write,
       optional<PageType> page_type,
       Args&&... args) {
@@ -84,25 +89,24 @@ class Segment {
     static_assert(std::is_trivially_copyable<T>::value, "!");
 
     const auto byte_size = sizeof(T);
-    auto segment = std::make_shared<Segment>(byte_size, perm_write, page_type);
-    TP_DCHECK_EQ(segment->getSize(), byte_size);
+    Segment segment(byte_size, perm_write, page_type);
+    TP_DCHECK_EQ(segment.getSize(), byte_size);
 
     // Initialize in place. Forward T's constructor arguments.
-    T* ptr = new (segment->getPtr()) T(std::forward<Args>(args)...);
-    if (ptr != segment->getPtr()) {
+    T* ptr = new (segment.getPtr()) T(std::forward<Args>(args)...);
+    if (ptr != segment.getPtr()) {
       TP_THROW_SYSTEM(EPERM)
-          << "new's address cannot be different from segment->getPtr() "
+          << "new's address cannot be different from segment.getPtr() "
           << " address. Some aligment assumption was incorrect";
     }
 
-    return {std::shared_ptr<T>(segment, ptr), segment};
+    return {std::move(segment), ptr};
   }
 
   /// One-dimensional array version of create<T, ...Args>.
-  /// Caller can use the shared_ptr to the underlying Segment.
   // XXX: Fuse all versions of create.
   template <class T, typename TScalar = typename std::remove_extent<T>::type>
-  static std::pair<std::shared_ptr<TScalar>, std::shared_ptr<Segment>> create(
+  static std::pair<Segment, TScalar*> create(
       size_t num_elements,
       bool perm_write,
       optional<PageType> page_type) {
@@ -125,55 +129,48 @@ class Segment {
     static_assert(std::is_same<TScalar[], T>::value, "Type mismatch");
 
     size_t byte_size = sizeof(TScalar) * num_elements;
-    auto segment = std::make_shared<Segment>(byte_size, perm_write, page_type);
-    TP_DCHECK_EQ(segment->getSize(), byte_size);
+    Segment segment(byte_size, perm_write, page_type);
+    TP_DCHECK_EQ(segment.getSize(), byte_size);
 
     // Initialize in place.
-    TScalar* ptr = new (segment->getPtr()) TScalar[num_elements]();
-    if (ptr != segment->getPtr()) {
+    TScalar* ptr = new (segment.getPtr()) TScalar[num_elements]();
+    if (ptr != segment.getPtr()) {
       TP_THROW_SYSTEM(EPERM)
-          << "new's address cannot be different from segment->getPtr() "
+          << "new's address cannot be different from segment.getPtr() "
           << " address. Some aligment assumption was incorrect";
     }
 
-    return {std::shared_ptr<TScalar>(segment, ptr), segment};
+    return {std::move(segment), ptr};
   }
 
-  /// Load an already created shared memory Segment that holds an
-  /// object of type T, where T is an array type.
-  ///
-  /// Lifecycle of shared_ptr and Segment's reference_wrapper is
-  /// identical to create<>().
+  /// Load an existing shared memory region that already holds an object of type
+  /// T, where T is an array type.
   template <
       class T,
       typename TScalar = typename std::remove_extent<T>::type,
       std::enable_if_t<std::is_array<T>::value, int> = 0>
-  static std::pair<std::shared_ptr<TScalar>, std::shared_ptr<Segment>> load(
+  static std::pair<Segment, TScalar*> load(
       int fd,
       bool perm_write,
       optional<PageType> page_type) {
-    auto segment = std::make_shared<Segment>(fd, perm_write, page_type);
-    const size_t size = segment->getSize();
+    Segment segment(fd, perm_write, page_type);
     static_assert(
         std::rank<T>::value == 1,
         "Currently only rank one arrays are supported");
     static_assert(std::is_trivially_copyable<TScalar>::value, "!");
-    auto ptr = static_cast<TScalar*>(segment->getPtr());
-    return {std::shared_ptr<TScalar>(segment, ptr), segment};
+    auto ptr = static_cast<TScalar*>(segment.getPtr());
+    return {std::move(segment), ptr};
   }
 
-  /// Load an already created shared memory Segment that holds an
-  /// object of type T, where T is NOT an array type.
-  ///
-  /// Lifecycle of shared_ptr and Segment's reference_wrapper is
-  /// identical to create<>().
+  /// Load an existing shared memory region that already holds an object of type
+  /// T, where T is NOT an array type.
   template <class T, std::enable_if_t<!std::is_array<T>::value, int> = 0>
-  static std::pair<std::shared_ptr<T>, std::shared_ptr<Segment>> load(
+  static std::pair<Segment, T*> load(
       int fd,
       bool perm_write,
       optional<PageType> page_type) {
-    auto segment = std::make_shared<Segment>(fd, perm_write, page_type);
-    const size_t size = segment->getSize();
+    Segment segment(fd, perm_write, page_type);
+    const size_t size = segment.getSize();
     // XXX: Do some checking other than the size that we are loading
     // the right type.
     if (size != sizeof(T)) {
@@ -184,8 +181,8 @@ class Segment {
           << "consider linking segment after it has been fully initialized.";
     }
     static_assert(std::is_trivially_copyable<T>::value, "!");
-    auto ptr = static_cast<T*>(segment->getPtr());
-    return {std::shared_ptr<T>(segment, ptr), segment};
+    auto ptr = static_cast<T*>(segment.getPtr());
+    return {std::move(segment), ptr};
   }
 
   const int getFd() const {
@@ -212,16 +209,16 @@ class Segment {
 
  protected:
   // The page used to mmap the segment.
-  PageType page_type_;
+  PageType page_type_ = PageType::Default;
 
   // The file descriptor of the shared memory file.
   int fd_ = -1;
 
   // Byte size of shared memory segment.
-  size_t byte_size_;
+  size_t byte_size_ = 0;
 
   // Base pointer of mmmap'ed shared memory segment.
-  void* base_ptr_;
+  void* base_ptr_ = nullptr;
 
   void mmap(bool perm_write, optional<PageType> page_type);
 };

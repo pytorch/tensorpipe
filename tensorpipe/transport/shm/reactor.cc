@@ -43,14 +43,8 @@ void writeToken(util::ringbuffer::Producer& producer, Reactor::TToken token) {
 } // namespace
 
 Reactor::Reactor() {
-  int headerFd;
-  int dataFd;
-  std::shared_ptr<util::ringbuffer::RingBuffer> rb;
-  std::tie(headerFd, dataFd, rb) = util::ringbuffer::shm::create(kSize);
-  headerFd_ = Fd(headerFd);
-  dataFd_ = Fd(dataFd);
-  consumer_.emplace(rb);
-  producer_.emplace(rb);
+  std::tie(headerSegment_, dataSegment_, rb_) =
+      util::ringbuffer::shm::create(kSize);
   thread_ = std::thread(&Reactor::run, this);
 }
 
@@ -106,23 +100,19 @@ void Reactor::remove(TToken token) {
   functionCount_--;
 }
 
-void Reactor::trigger(TToken token) {
-  std::unique_lock<std::mutex> lock(mutex_);
-  writeToken(producer_.value(), token);
-}
-
 std::tuple<int, int> Reactor::fds() const {
-  return std::make_tuple(headerFd_.fd(), dataFd_.fd());
+  return std::make_tuple(headerSegment_.getFd(), dataSegment_.getFd());
 }
 
 void Reactor::run() {
   setThreadName("TP_SHM_reactor");
 
+  util::ringbuffer::Consumer reactorConsumer(rb_);
   // Stop when another thread has asked the reactor the close and when
   // all functions have been removed.
   while (!closed_ || functionCount_ > 0) {
     uint32_t token;
-    auto ret = consumer_->read(&token, sizeof(token));
+    auto ret = reactorConsumer.read(&token, sizeof(token));
     if (ret == -ENODATA) {
       if (deferredFunctionCount_ > 0) {
         decltype(deferredFunctionList_) fns;
@@ -179,15 +169,16 @@ void Reactor::run() {
   }
 }
 
-Reactor::Trigger::Trigger(Fd&& headerFd, Fd&& dataFd)
-    : producer_(util::ringbuffer::shm::load(
-          // The header and data segment objects take over ownership
-          // of file descriptors. Release them to avoid double close.
-          headerFd.release(),
-          dataFd.release())) {}
+Reactor::Trigger::Trigger(Fd&& headerFd, Fd&& dataFd) {
+  // The header and data segment objects take over ownership
+  // of file descriptors. Release them to avoid double close.
+  std::tie(headerSegment_, dataSegment_, rb_) =
+      util::ringbuffer::shm::load(headerFd.release(), dataFd.release());
+}
 
 void Reactor::Trigger::run(TToken token) {
-  writeToken(producer_, token);
+  util::ringbuffer::Producer producer(rb_);
+  writeToken(producer, token);
 }
 
 void Reactor::deferToLoop(TDeferredFunction fn) {

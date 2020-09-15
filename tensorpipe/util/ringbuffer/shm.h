@@ -18,7 +18,7 @@ namespace shm {
 
 /// Creates ringbuffer on shared memory.
 ///
-/// RingBuffer's data can have any <tensorpipe::util::shm::PageType>
+/// RingBuffer's data can have any <util::shm::PageType>
 /// (e.g. 4KB or a HugeTLB Page of 2MB or 1GB). If  <data_page_type> is not
 /// provided, then choose the largest page that would result in
 /// close to full occupancy.
@@ -29,15 +29,15 @@ namespace shm {
 /// <min_rb_byte_size> is the minimum size of the data section
 /// of a RingBuffer (or each CPU's RingBuffer).
 ///
-std::tuple<int, int, std::shared_ptr<RingBuffer>> create(
+std::tuple<util::shm::Segment, util::shm::Segment, RingBuffer> create(
     size_t min_rb_byte_size,
-    optional<tensorpipe::util::shm::PageType> data_page_type = nullopt,
+    optional<util::shm::PageType> data_page_type = nullopt,
     bool perm_write = true);
 
-std::shared_ptr<RingBuffer> load(
+std::tuple<util::shm::Segment, util::shm::Segment, RingBuffer> load(
     int header_fd,
     int data_fd,
-    optional<tensorpipe::util::shm::PageType> data_page_type = nullopt,
+    optional<util::shm::PageType> data_page_type = nullopt,
     bool perm_write = true);
 
 } // namespace shm

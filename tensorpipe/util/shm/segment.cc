@@ -82,6 +82,21 @@ update to obtain the latest correctness checks."
 // Mention static constexpr char to export the symbol.
 constexpr char Segment::kBasePath[];
 
+Segment::Segment(Segment&& other) noexcept {
+  std::swap(page_type_, other.page_type_);
+  std::swap(fd_, other.fd_);
+  std::swap(byte_size_, other.byte_size_);
+  std::swap(base_ptr_, other.base_ptr_);
+}
+
+Segment& Segment::operator=(Segment&& other) noexcept {
+  std::swap(page_type_, other.page_type_);
+  std::swap(fd_, other.fd_);
+  std::swap(byte_size_, other.byte_size_);
+  std::swap(base_ptr_, other.base_ptr_);
+  return *this;
+}
+
 Segment::Segment(
     size_t byte_size,
     bool perm_write,
@@ -118,17 +133,17 @@ void Segment::mmap(bool perm_write, optional<PageType> page_type) {
 }
 
 Segment::~Segment() {
-  int ret = munmap(base_ptr_, byte_size_);
-  if (ret == -1) {
-    TP_LOG_ERROR() << "Error while munmapping shared memory segment. Error: "
-                   << toErrorCode(errno).message();
+  if (base_ptr_ != nullptr) {
+    int ret = munmap(base_ptr_, byte_size_);
+    if (ret == -1) {
+      TP_LOG_ERROR() << "Error while munmapping shared memory segment. Error: "
+                     << toErrorCode(errno).message();
+    }
   }
-  if (0 > fd_) {
-    TP_LOG_ERROR() << "Attempt to destroy segment with negative file "
-                   << "descriptor";
-    return;
+  if (fd_ >= 0) {
+    int ret = ::close(fd_);
+    TP_THROW_SYSTEM_IF(ret != 0, errno);
   }
-  ::close(fd_);
 }
 
 } // namespace shm

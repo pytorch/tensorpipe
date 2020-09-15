@@ -19,15 +19,21 @@ namespace ringbuffer {
 ///
 /// Provides methods to read data from a ringbuffer.
 ///
-class Consumer : public RingBufferWrapper {
+class Consumer {
  public:
-  // Use base class constructor.
-  using RingBufferWrapper::RingBufferWrapper;
+  Consumer() = delete;
+
+  Consumer(RingBuffer& rb) : header_{rb.getHeader()}, data_{rb.getData()} {
+    TP_THROW_IF_NULLPTR(data_);
+  }
 
   Consumer(const Consumer&) = delete;
   Consumer(Consumer&&) = delete;
 
-  virtual ~Consumer() noexcept {
+  Consumer& operator=(const Consumer&) = delete;
+  Consumer& operator=(Consumer&&) = delete;
+
+  ~Consumer() noexcept {
     TP_THROW_ASSERT_IF(inTx());
   }
 
@@ -192,7 +198,10 @@ class Consumer : public RingBufferWrapper {
     return size;
   }
 
- protected:
+ private:
+  RingBufferHeader& header_;
+  const uint8_t* const data_;
+  unsigned tx_size_ = 0;
   bool inTx_{false};
 };
 

@@ -22,6 +22,7 @@
 #include <tensorpipe/transport/shm/fd.h>
 #include <tensorpipe/util/ringbuffer/consumer.h>
 #include <tensorpipe/util/ringbuffer/producer.h>
+#include <tensorpipe/util/shm/segment.h>
 
 namespace tensorpipe {
 namespace transport {
@@ -87,9 +88,6 @@ class Reactor final {
   // Removes function associated with token from reactor.
   void remove(TToken token);
 
-  // Trigger reactor with specified token.
-  void trigger(TToken token);
-
   // Returns the file descriptors for the underlying ring buffer.
   std::tuple<int, int> fds() const;
 
@@ -110,10 +108,9 @@ class Reactor final {
   ~Reactor();
 
  private:
-  Fd headerFd_;
-  Fd dataFd_;
-  optional<util::ringbuffer::Consumer> consumer_;
-  optional<util::ringbuffer::Producer> producer_;
+  util::shm::Segment headerSegment_;
+  util::shm::Segment dataSegment_;
+  util::ringbuffer::RingBuffer rb_;
 
   std::mutex mutex_;
   std::thread thread_;
@@ -162,7 +159,9 @@ class Reactor final {
     void run(TToken token);
 
    private:
-    util::ringbuffer::Producer producer_;
+    util::shm::Segment headerSegment_;
+    util::shm::Segment dataSegment_;
+    util::ringbuffer::RingBuffer rb_;
   };
 };
 
