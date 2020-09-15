@@ -10,35 +10,27 @@
 
 #include <sys/socket.h>
 
+#include <chrono>
 #include <cstring>
-#include <string>
+#include <memory>
 
+#include <tensorpipe/common/defs.h>
+#include <tensorpipe/common/error.h>
+#include <tensorpipe/common/error_macros.h>
+#include <tensorpipe/common/optional.h>
 #include <tensorpipe/common/socket.h>
+#include <tensorpipe/transport/error.h>
 
 namespace tensorpipe {
 namespace transport {
-namespace uv {
+namespace shm {
 
 class Sockaddr final : public tensorpipe::Sockaddr {
  public:
-  static Sockaddr createInetSockAddr(const std::string& name);
-
-  Sockaddr(const struct sockaddr* addr, socklen_t addrlen) {
-    TP_ARG_CHECK(addr != nullptr);
-    TP_ARG_CHECK_LE(addrlen, sizeof(addr_));
-    // Ensure the sockaddr_storage is zeroed, because we don't always
-    // write to all fields in the `sockaddr_[in|in6]` structures.
-    std::memset(&addr_, 0, sizeof(addr_));
-    std::memcpy(&addr_, addr, addrlen);
-    addrlen_ = addrlen;
-  }
+  static Sockaddr createAbstractUnixAddr(const std::string& name);
 
   inline const struct sockaddr* addr() const override {
     return reinterpret_cast<const struct sockaddr*>(&addr_);
-  }
-
-  inline struct sockaddr* addr() {
-    return reinterpret_cast<struct sockaddr*>(&addr_);
   }
 
   inline socklen_t addrlen() const override {
@@ -48,10 +40,12 @@ class Sockaddr final : public tensorpipe::Sockaddr {
   std::string str() const;
 
  private:
+  explicit Sockaddr(const struct sockaddr* addr, socklen_t addrlen);
+
   struct sockaddr_storage addr_;
   socklen_t addrlen_;
 };
 
-} // namespace uv
+} // namespace shm
 } // namespace transport
 } // namespace tensorpipe

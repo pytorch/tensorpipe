@@ -21,7 +21,7 @@
 #include <sys/epoll.h>
 
 #include <tensorpipe/common/callback.h>
-#include <tensorpipe/transport/shm/fd.h>
+#include <tensorpipe/common/fd.h>
 #include <tensorpipe/transport/shm/reactor.h>
 
 namespace tensorpipe {

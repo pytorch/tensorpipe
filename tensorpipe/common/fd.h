@@ -16,12 +16,10 @@
 #include <tensorpipe/common/error.h>
 
 namespace tensorpipe {
-namespace transport {
-namespace shm {
 
 class Fd {
  public:
-  /* implicit */ Fd() {}
+  Fd() = default;
 
   explicit Fd(int fd) : fd_(fd) {}
 
@@ -34,12 +32,12 @@ class Fd {
   Fd& operator=(const Fd&) = delete;
 
   // Custom move constructor.
-  Fd(Fd&& other) {
+  Fd(Fd&& other) noexcept {
     std::swap(fd_, other.fd_);
   }
 
   // Custom move assignment.
-  Fd& operator=(Fd&& other) {
+  Fd& operator=(Fd&& other) noexcept {
     std::swap(fd_, other.fd_);
     return *this;
   }
@@ -47,13 +45,6 @@ class Fd {
   // Return underlying file descriptor.
   inline int fd() const {
     return fd_;
-  }
-
-  // Release underlying file descriptor.
-  int release() {
-    auto fd = fd_;
-    fd_ = -1;
-    return fd;
   }
 
   // Proxy to read(2) with EINTR retry.
@@ -108,6 +99,4 @@ class Fd {
   int fd_{-1};
 };
 
-} // namespace shm
-} // namespace transport
 } // namespace tensorpipe

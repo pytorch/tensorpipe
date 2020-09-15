@@ -6,17 +6,15 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <tensorpipe/transport/shm/fd.h>
+#include <tensorpipe/common/fd.h>
 
 #include <unistd.h>
 
 #include <tensorpipe/common/defs.h>
+#include <tensorpipe/common/error.h>
 #include <tensorpipe/common/error_macros.h>
-#include <tensorpipe/transport/error.h>
 
 namespace tensorpipe {
-namespace transport {
-namespace shm {
 
 Fd::~Fd() {
   if (fd_ >= 0) {
@@ -73,6 +71,4 @@ Error Fd::writeFull(const void* buf, size_t count) {
   return Error::kSuccess;
 }
 
-} // namespace shm
-} // namespace transport
 } // namespace tensorpipe

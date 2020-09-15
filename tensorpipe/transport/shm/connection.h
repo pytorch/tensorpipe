@@ -15,12 +15,14 @@
 #include <tensorpipe/transport/shm/context.h>
 
 namespace tensorpipe {
+
+class Socket;
+
 namespace transport {
 namespace shm {
 
 class Listener;
 class Loop;
-class Socket;
 
 class Connection final : public transport::Connection {
   // Use the passkey idiom to allow make_shared to call what should be a private

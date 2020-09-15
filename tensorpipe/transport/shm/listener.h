@@ -14,12 +14,14 @@
 #include <tensorpipe/transport/shm/context.h>
 
 namespace tensorpipe {
+
+class Sockaddr;
+
 namespace transport {
 namespace shm {
 
 class Context;
 class Loop;
-class Sockaddr;
 
 class Listener final : public transport::Listener {
   // Use the passkey idiom to allow make_shared to call what should be a private

@@ -28,14 +28,14 @@ namespace shm {
 
 namespace {
 
-[[nodiscard]] int createShmFd() {
+Fd createShmFd() {
   int flags = O_TMPFILE | O_EXCL | O_RDWR | O_CLOEXEC;
   int fd = ::open(Segment::kBasePath, flags, 0);
   if (fd == -1) {
     TP_THROW_SYSTEM(errno) << "Failed to open shared memory file descriptor "
                            << "at " << Segment::kBasePath;
   }
-  return fd;
+  return Fd(fd);
 }
 
 // if <byte_size> == 0, map the whole file.
@@ -104,7 +104,7 @@ Segment::Segment(
     : fd_{createShmFd()}, byte_size_{byte_size}, base_ptr_{nullptr} {
   // grow size to contain byte_size bytes.
   off_t len = static_cast<off_t>(byte_size_);
-  int ret = ::fallocate(fd_, 0, 0, len);
+  int ret = ::fallocate(fd_.fd(), 0, 0, len);
   if (ret == -1) {
     TP_THROW_SYSTEM(errno) << "Error while allocating " << byte_size_
                            << " bytes in shared memory";
@@ -113,11 +113,11 @@ Segment::Segment(
   mmap(perm_write, page_type);
 }
 
-Segment::Segment(int fd, bool perm_write, optional<PageType> page_type)
-    : fd_{fd}, base_ptr_{nullptr} {
+Segment::Segment(Fd fd, bool perm_write, optional<PageType> page_type)
+    : fd_{std::move(fd)}, base_ptr_{nullptr} {
   // Load whole file. Use fstat to obtain size.
   struct stat sb;
-  int ret = ::fstat(fd_, &sb);
+  int ret = ::fstat(fd_.fd(), &sb);
   if (ret == -1) {
     TP_THROW_SYSTEM(errno) << "Error while fstat shared memory file.";
   }
@@ -129,7 +129,7 @@ Segment::Segment(int fd, bool perm_write, optional<PageType> page_type)
 void Segment::mmap(bool perm_write, optional<PageType> page_type) {
   // If page_type is not set, use the default.
   page_type_ = page_type.value_or(getDefaultPageType(this->byte_size_));
-  this->base_ptr_ = mmapShmFd(fd_, byte_size_, perm_write, page_type_);
+  this->base_ptr_ = mmapShmFd(fd_.fd(), byte_size_, perm_write, page_type_);
 }
 
 Segment::~Segment() {
@@ -139,10 +139,6 @@ Segment::~Segment() {
       TP_LOG_ERROR() << "Error while munmapping shared memory segment. Error: "
                      << toErrorCode(errno).message();
     }
-  }
-  if (fd_ >= 0) {
-    int ret = ::close(fd_);
-    TP_THROW_SYSTEM_IF(ret != 0, errno);
   }
 }
 

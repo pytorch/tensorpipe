@@ -11,11 +11,12 @@
 
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/queue.h>
+#include <tensorpipe/common/socket.h>
 #include <tensorpipe/transport/shm/reactor.h>
-#include <tensorpipe/transport/shm/socket.h>
 
 #include <gtest/gtest.h>
 
+using namespace tensorpipe;
 using namespace tensorpipe::transport::shm;
 
 namespace {

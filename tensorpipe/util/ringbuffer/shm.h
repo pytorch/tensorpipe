@@ -8,6 +8,7 @@
 
 #pragma once
 
+#include <tensorpipe/common/fd.h>
 #include <tensorpipe/util/ringbuffer/ringbuffer.h>
 #include <tensorpipe/util/shm/segment.h>
 
@@ -35,8 +36,8 @@ std::tuple<util::shm::Segment, util::shm::Segment, RingBuffer> create(
     bool perm_write = true);
 
 std::tuple<util::shm::Segment, util::shm::Segment, RingBuffer> load(
-    int header_fd,
-    int data_fd,
+    Fd header_fd,
+    Fd data_fd,
     optional<util::shm::PageType> data_page_type = nullopt,
     bool perm_write = true);
 
