@@ -11,7 +11,7 @@
 #include <deque>
 #include <list>
 
-#include <tensorpipe/channel/channel.h>
+#include <tensorpipe/channel/cpu_context.h>
 #include <tensorpipe/channel/mpt/context.h>
 
 namespace tensorpipe {

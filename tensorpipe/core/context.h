@@ -14,9 +14,9 @@
 #include <tuple>
 #include <vector>
 
-#include <tensorpipe/channel/context.h>
-#include <tensorpipe/common/buffer.h>
+#include <tensorpipe/channel/cpu_context.h>
 #include <tensorpipe/common/callback.h>
+#include <tensorpipe/core/buffer.h>
 #include <tensorpipe/transport/context.h>
 
 namespace tensorpipe {

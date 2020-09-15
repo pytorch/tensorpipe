@@ -8,9 +8,13 @@
 
 #pragma once
 
-#include <tensorpipe/channel/cpu_context.h>
-#include <tensorpipe/util/registry/registry.h>
+#include <cstddef>
 
-TP_DECLARE_SHARED_REGISTRY(
-    TensorpipeChannelRegistry,
-    tensorpipe::channel::CpuContext);
+namespace tensorpipe {
+
+struct CpuBuffer {
+  void* ptr{nullptr};
+  size_t length{0};
+};
+
+} // namespace tensorpipe
