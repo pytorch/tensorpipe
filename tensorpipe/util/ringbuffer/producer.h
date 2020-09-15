@@ -51,7 +51,7 @@ class Producer {
     if (unlikely(inTx())) {
       return -EBUSY;
     }
-    if (header_.in_write_tx.test_and_set(std::memory_order_acquire)) {
+    if (header_.beginWriteTransaction()) {
       return -EAGAIN;
     }
     inTx_ = true;
@@ -68,7 +68,7 @@ class Producer {
     // <in_write_tx> flags that we are in a transaction,
     // so enforce no stores pass it.
     inTx_ = false;
-    header_.in_write_tx.clear(std::memory_order_release);
+    header_.endWriteTransaction();
     return 0;
   }
 
@@ -80,7 +80,7 @@ class Producer {
     // <in_write_tx> flags that we are in a transaction,
     // so enforce no stores pass it.
     inTx_ = false;
-    header_.in_write_tx.clear(std::memory_order_release);
+    header_.endWriteTransaction();
     return 0;
   }
 

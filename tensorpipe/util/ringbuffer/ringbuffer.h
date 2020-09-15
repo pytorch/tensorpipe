@@ -74,48 +74,73 @@ class RingBufferHeader {
     TP_DCHECK_LE(kDataPoolByteSize, std::numeric_limits<int>::max())
         << "Logic piggy-backs read/write size on ints, to be safe forbid"
            " buffer to ever be larger than what an int can hold";
-    in_write_tx.clear();
-    in_read_tx.clear();
   }
 
-  // Get size that is only guaranteed to be correct when producers and consumers
-  // are synchronized.
-  size_t usedSizeWeak() const {
-    return atomicHead_ - atomicTail_;
+  // Being in a transaction (either a read or a write one) gives a user of the
+  // ringbuffer (either a consumer or a producer, respectively) the right to
+  // read the head and tail and to modify the one they are responsible for (the
+  // tail and the head, respectively). Accessing the head or tail outside of a
+  // transaction could lead to races. This also means we need memory barriers
+  // around a transaction, to make sure side-effects of other users are visible
+  // upon entering and our side effects become visible to others upon exiting.
+  // We also must prevent the compiler from reordering memory accesses. Failure
+  // to do so may result in our reads of head/tail to look like they occurred
+  // before we entered the transaction, and writes to them to look like they
+  // occurred after we exited it. In order to get the desired behavior, we use
+  // the acquire memory order when starting a transaction (which means no later
+  // memory access can be moved before it) and the release memory order when
+  // ending it (no earlier memory access can be moved after it).
+
+  [[nodiscard]] bool beginReadTransaction() {
+    return in_read_tx.test_and_set(std::memory_order_acquire);
   }
 
-  size_t freeSizeWeak() const {
-    return kDataPoolByteSize - usedSizeWeak();
+  [[nodiscard]] bool beginWriteTransaction() {
+    return in_write_tx.test_and_set(std::memory_order_acquire);
   }
+
+  void endReadTransaction() {
+    in_read_tx.clear(std::memory_order_release);
+  }
+
+  void endWriteTransaction() {
+    in_write_tx.clear(std::memory_order_release);
+  }
+
+  // Reading the head and tail is what gives a user of the ringbuffer (either a
+  // consumer or a producer) the right to access the buffer's contents: the
+  // producer can write on [head, tail) (modulo the size), the consumer can read
+  // from [tail, head). And, when the producer increases the head, or when the
+  // consumer increases the tail, they give users of the opposite type the right
+  // to access some of the memory that was previously under their control. Thus,
+  // just like we do for the transactions, we need memory barriers around reads
+  // and writes to the head and tail, with the same reasoning for memory orders.
 
   uint64_t readHead() const {
-    return atomicHead_;
+    return atomicHead_.load(std::memory_order_acquire);
   }
 
   uint64_t readTail() const {
-    return atomicTail_;
+    return atomicTail_.load(std::memory_order_acquire);
   }
 
   void incHead(uint64_t inc) {
-    atomicHead_ += inc;
+    atomicHead_.fetch_add(inc, std::memory_order_release);
   }
+
   void incTail(uint64_t inc) {
-    atomicTail_ += inc;
+    atomicTail_.fetch_add(inc, std::memory_order_release);
   }
-
-  void drop() {
-    atomicTail_.store(atomicHead_.load());
-  }
-
-  // acquired by producers.
-  std::atomic_flag in_write_tx;
-  // acquired by consumers.
-  std::atomic_flag in_read_tx;
 
  protected:
-  // Written by producer.
+  // Acquired by producers.
+  std::atomic_flag in_write_tx = ATOMIC_FLAG_INIT;
+  // Acquired by consumers.
+  std::atomic_flag in_read_tx = ATOMIC_FLAG_INIT;
+
+  // Written by producers.
   std::atomic<uint64_t> atomicHead_{0};
-  // Written by consumer.
+  // Written by consumers.
   std::atomic<uint64_t> atomicTail_{0};
 
   // http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2007/n2427.html#atomics.lockfree
