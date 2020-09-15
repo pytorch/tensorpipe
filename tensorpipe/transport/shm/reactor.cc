@@ -122,7 +122,7 @@ void Reactor::run() {
   // all functions have been removed.
   while (!closed_ || functionCount_ > 0) {
     uint32_t token;
-    auto ret = consumer_->copy(sizeof(token), &token);
+    auto ret = consumer_->read(&token, sizeof(token));
     if (ret == -ENODATA) {
       if (deferredFunctionCount_ > 0) {
         decltype(deferredFunctionList_) fns;

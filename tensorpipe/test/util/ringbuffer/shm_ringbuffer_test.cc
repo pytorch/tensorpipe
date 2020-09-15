@@ -55,7 +55,7 @@ TEST(ShmRingBuffer, SameProducerConsumer) {
     int i = 0;
     while (i < 2000) {
       int value;
-      ssize_t ret = cons.copy(sizeof(value), &value);
+      ssize_t ret = cons.read(&value, sizeof(value));
       EXPECT_EQ(ret, sizeof(value));
       EXPECT_EQ(value, i);
       ++i;
@@ -140,7 +140,7 @@ TEST(ShmRingBuffer, SingleProducer_SingleConsumer) {
   int i = 0;
   while (i < 2000) {
     int value;
-    ssize_t ret = cons.copy(sizeof(value), &value);
+    ssize_t ret = cons.read(&value, sizeof(value));
     if (ret == -ENODATA) {
       std::this_thread::yield();
       continue;
