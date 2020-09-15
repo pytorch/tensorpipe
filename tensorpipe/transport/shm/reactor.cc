@@ -132,6 +132,7 @@ void Reactor::run() {
       }
       continue;
     }
+    TP_THROW_SYSTEM_IF(ret < 0, -ret);
 
     TFunction fn;
 
