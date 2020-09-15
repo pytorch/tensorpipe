@@ -15,9 +15,9 @@ namespace util {
 namespace ringbuffer {
 
 ///
-/// Producer of data for RingBuffer.
+/// Producer of data for a RingBuffer.
 ///
-/// Provides method to write into ringbuffer.
+/// Provides methods to write data into a ringbuffer.
 ///
 class Producer : public RingBufferWrapper {
  public:
@@ -27,6 +27,10 @@ class Producer : public RingBufferWrapper {
   Producer(const Producer&) = delete;
   Producer(Producer&&) = delete;
 
+  virtual ~Producer() noexcept {
+    TP_THROW_ASSERT_IF(inTx());
+  }
+
   //
   // Transaction based API.
   //
@@ -34,18 +38,18 @@ class Producer : public RingBufferWrapper {
   // *InTx* operations that fail do not cancel transaction.
   //
   bool inTx() const noexcept {
-    return this->inTx_;
+    return inTx_;
   }
 
-  [[nodiscard]] ssize_t startTx() {
+  [[nodiscard]] ssize_t startTx() noexcept {
     if (unlikely(inTx())) {
       return -EBUSY;
     }
-    if (this->header_.in_write_tx.test_and_set(std::memory_order_acquire)) {
+    if (header_.in_write_tx.test_and_set(std::memory_order_acquire)) {
       return -EAGAIN;
     }
-    this->inTx_ = true;
-    TP_DCHECK_EQ(this->tx_size_, 0);
+    inTx_ = true;
+    TP_DCHECK_EQ(tx_size_, 0);
     return 0;
   }
 
@@ -53,12 +57,12 @@ class Producer : public RingBufferWrapper {
     if (unlikely(!inTx())) {
       return -EINVAL;
     }
-    this->header_.incHead(this->tx_size_);
-    this->tx_size_ = 0;
+    header_.incHead(tx_size_);
+    tx_size_ = 0;
     // <in_write_tx> flags that we are in a transaction,
     // so enforce no stores pass it.
-    this->inTx_ = false;
-    this->header_.in_write_tx.clear(std::memory_order_release);
+    inTx_ = false;
+    header_.in_write_tx.clear(std::memory_order_release);
     return 0;
   }
 
@@ -66,154 +70,134 @@ class Producer : public RingBufferWrapper {
     if (unlikely(!inTx())) {
       return -EINVAL;
     }
-    this->tx_size_ = 0;
+    tx_size_ = 0;
     // <in_write_tx> flags that we are in a transaction,
     // so enforce no stores pass it.
-    this->inTx_ = false;
-    this->header_.in_write_tx.clear(std::memory_order_release);
+    inTx_ = false;
+    header_.in_write_tx.clear(std::memory_order_release);
     return 0;
   }
 
-  // TODO: Pass size first.
-  [[nodiscard]] ssize_t write(const void* d, size_t size) noexcept {
-    {
-      auto ret = startTx();
-      if (0 > ret) {
-        return ret;
-      }
+  struct Buffer {
+    uint8_t* ptr{nullptr};
+    size_t len{0};
+  };
+
+  // The first item is negative in case of error, otherwise it contains how many
+  // elements of the array are valid (0, 1 or 2). The elements are ptr+len pairs
+  // of contiguous areas of the ringbuffer that, chained together, represent a
+  // slice of the requested size (or less if not enough data is available, and
+  // allowPartial is set to true).
+  template <bool allowPartial>
+  [[nodiscard]] std::pair<ssize_t, std::array<Buffer, 2>> accessContiguousInTx(
+      size_t size) noexcept {
+    std::array<Buffer, 2> result;
+
+    if (unlikely(!inTx())) {
+      return {-EINVAL, result};
     }
-    auto ret = this->writeInTx(size, static_cast<const uint8_t*>(d));
+
+    if (unlikely(size == 0)) {
+      return {0, result};
+    }
+
+    const uint64_t head = header_.readHead();
+    const uint64_t tail = header_.readTail();
+    TP_DCHECK_LE(head - tail, header_.kDataPoolByteSize);
+
+    const size_t avail = header_.kDataPoolByteSize - (head - tail) - tx_size_;
+    TP_DCHECK_GE(avail, 0);
+
+    if (!allowPartial && avail < size) {
+      return {-ENOSPC, result};
+    }
+
+    if (avail == 0) {
+      return {0, result};
+    }
+
+    size = std::min(size, avail);
+
+    const uint64_t start = (head + tx_size_) & header_.kDataModMask;
+    const uint64_t end = (start + size) & header_.kDataModMask;
+
+    tx_size_ += size;
+
+    // end == 0 is the same as end == bufferSize, in which case it doesn't wrap.
+    const bool wrap = (start >= end && end > 0);
+    if (likely(!wrap)) {
+      result[0] = {.ptr = data_ + start, .len = size};
+      return {1, result};
+    } else {
+      result[0] = {.ptr = data_ + start,
+                   .len = header_.kDataPoolByteSize - start};
+      result[1] = {.ptr = data_, .len = end};
+      return {2, result};
+    }
+  }
+
+  // Copy data from the provided buffer into the ringbuffer, up to the given
+  // size (only copy less data if allowPartial is set to true).
+  template <bool allowPartial>
+  [[nodiscard]] ssize_t writeInTx(
+      const void* buffer,
+      const size_t size) noexcept {
+    ssize_t numBuffers;
+    std::array<Buffer, 2> buffers;
+    std::tie(numBuffers, buffers) = accessContiguousInTx<allowPartial>(size);
+
+    if (unlikely(numBuffers < 0)) {
+      return numBuffers;
+    }
+
+    if (unlikely(numBuffers == 0)) {
+      // Nothing to do.
+      return 0;
+    } else if (likely(numBuffers == 1)) {
+      std::memcpy(buffers[0].ptr, buffer, buffers[0].len);
+      return buffers[0].len;
+    } else if (likely(numBuffers == 2)) {
+      std::memcpy(buffers[0].ptr, buffer, buffers[0].len);
+      std::memcpy(
+          buffers[1].ptr,
+          reinterpret_cast<const uint8_t*>(buffer) + buffers[0].len,
+          buffers[1].len);
+      return buffers[0].len + buffers[1].len;
+    } else {
+      TP_THROW_ASSERT() << "Bad number of buffers: " << numBuffers;
+      // Dummy return to make the compiler happy.
+      return -EINVAL;
+    }
+  }
+
+  //
+  // High-level atomic operations.
+  //
+
+  // Copy data from the provided buffer into the ringbuffer, exactly the given
+  // size. Take care of opening and closing the transaction.
+  [[nodiscard]] ssize_t write(const void* buffer, size_t size) noexcept {
+    auto ret = startTx();
+    if (0 > ret) {
+      return ret;
+    }
+
+    ret = writeInTx</*allowPartial=*/false>(buffer, size);
     if (0 > ret) {
       auto r = cancelTx();
       TP_DCHECK_EQ(r, 0);
       return ret;
     }
+    TP_DCHECK_EQ(ret, size);
+
     ret = commitTx();
     TP_DCHECK_EQ(ret, 0);
-    return static_cast<ssize_t>(size);
-  }
 
-  [[nodiscard]] ssize_t writeInTx(size_t size, const void* data) noexcept {
-    if (unlikely(!inTx())) {
-      return -EINVAL;
-    }
-    return this->copyToRingBuffer_(static_cast<const uint8_t*>(data), size);
-  }
-
-  [[nodiscard]] ssize_t writeAtMostInTx(
-      size_t size,
-      const void* data) noexcept {
-    if (unlikely(!inTx())) {
-      return -EINVAL;
-    }
-
-    const auto space = this->header_.freeSizeWeak() - this->tx_size_;
-    if (space == 0) {
-      return -ENOSPC;
-    }
-    return this->writeInTx(std::min(size, space), data);
-  }
-
-  template <class T>
-  [[nodiscard]] ssize_t writeInTx(const T& d) noexcept {
-    return writeInTx(sizeof(T), &d);
-  }
-
-  [[nodiscard]] std::pair<ssize_t, uint8_t*> reserveContiguousInTx(
-      const size_t size) {
-    if (unlikely(size == 0)) {
-      TP_LOG_WARNING() << "Reserve of size zero is not supported. "
-                       << "Is size set correctly?";
-      return {-EINVAL, nullptr};
-    }
-
-    if (unlikely(size > this->header_.kDataPoolByteSize)) {
-      TP_LOG_WARNING() << "Asked to reserve " << size << " bytes in a buffer"
-                       << " of size " << this->header_.kDataPoolByteSize;
-      return {-EINVAL, nullptr};
-    }
-
-    // Single writer, safe to read head.
-    uint64_t head = this->header_.readHead();
-    uint64_t tail = this->header_.readTail();
-
-    uint64_t used = head - tail;
-    if (unlikely(used > this->header_.kDataPoolByteSize)) {
-      TP_LOG_ERROR()
-          << "number of used bytes found to be larger than ring buffer size";
-      return {-EPERM, nullptr};
-    }
-
-    uint64_t space = this->header_.kDataPoolByteSize - used - this->tx_size_;
-    if (space < size) {
-      return {-ENOSPC, nullptr};
-    }
-
-    uint64_t start = (head + this->tx_size_) & this->header_.kDataModMask;
-    uint64_t end = (start + size) & this->header_.kDataModMask;
-
-    // Check if the chunk is contiguous.
-    if (unlikely(end < start)) {
-      end = this->header_.kDataPoolByteSize;
-    }
-
-    this->tx_size_ += end - start;
-
-    return {end - start, &this->data_[start]};
+    return size;
   }
 
  protected:
   bool inTx_{false};
-
-  // Return 0 if succeded, otherwise return negative error code.
-  // If successful, increases tx_size_ by size.
-  [[nodiscard]] ssize_t copyToRingBuffer_(
-      const uint8_t* d,
-      const size_t size) noexcept {
-    TP_THROW_IF_NULLPTR(d);
-
-    if (unlikely(size == 0)) {
-      return 0;
-    }
-
-    if (unlikely(size > this->header_.kDataPoolByteSize)) {
-      TP_LOG_WARNING() << "Asked to write " << size << " bytes in a buffer"
-                       << " of size " << this->header_.kDataPoolByteSize;
-      return -EINVAL;
-    }
-
-    // Single writer, safe to read head.
-    uint64_t head = this->header_.readHead();
-    uint64_t tail = this->header_.readTail();
-
-    uint64_t used = head - tail;
-    if (unlikely(used > this->header_.kDataPoolByteSize)) {
-      TP_LOG_ERROR()
-          << "number of used bytes found to be larger than ring buffer size";
-      return -EPERM;
-    }
-
-    // Check that there is enough space.
-    uint64_t space = this->header_.kDataPoolByteSize - used;
-    if (unlikely(this->tx_size_ + size > space)) {
-      return -ENOSPC;
-    }
-
-    uint64_t start = (head + this->tx_size_) & this->header_.kDataModMask;
-    uint64_t end = (start + size) & this->header_.kDataModMask;
-
-    if (likely(start < end)) {
-      // d's content won't wrap around end of buffer.
-      std::memcpy(&this->data_[start], d, size);
-    } else {
-      // d's content will wrap around end of buffer.
-      size_t size0 = this->header_.kDataPoolByteSize - start;
-      std::memcpy(&this->data_[start], d, size0);
-      std::memcpy(&this->data_[0], static_cast<const uint8_t*>(d) + size0, end);
-    }
-    this->tx_size_ += size;
-    return static_cast<ssize_t>(size);
-  }
 };
 
 } // namespace ringbuffer

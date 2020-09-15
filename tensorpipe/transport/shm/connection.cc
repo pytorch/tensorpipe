@@ -232,7 +232,8 @@ bool WriteOperation::handleWrite(util::ringbuffer::Producer& outbox) {
     }
   } else {
     if (mode_ == WRITE_LENGTH) {
-      ret = outbox.writeInTx<uint32_t>(len_);
+      uint32_t length = len_;
+      ret = outbox.writeInTx</*allowPartial=*/false>(&length, sizeof(length));
       if (ret > 0) {
         mode_ = WRITE_PAYLOAD;
       }
@@ -241,9 +242,9 @@ bool WriteOperation::handleWrite(util::ringbuffer::Producer& outbox) {
     // If writing empty buffer, skip payload write because ptr_
     // could be nullptr.
     if (mode_ == WRITE_PAYLOAD && len_ > 0) {
-      ret = outbox.writeAtMostInTx(
-          len_ - bytesWritten_,
-          static_cast<const uint8_t*>(ptr_) + bytesWritten_);
+      ret = outbox.writeInTx</*allowPartial=*/true>(
+          reinterpret_cast<const uint8_t*>(ptr_) + bytesWritten_,
+          len_ - bytesWritten_);
       if (ret > 0) {
         bytesWritten_ += ret;
       }
@@ -792,35 +793,27 @@ void Connection::Impl::writeFromLoop(
 
   writeOperations_.emplace_back(
       [&object](util::ringbuffer::Producer& outbox) -> ssize_t {
-        size_t len = object.getSize();
+        uint32_t len = object.getSize();
         if (len + sizeof(uint32_t) > kBufferSize) {
           return -EPERM;
         }
 
-        const auto ret = outbox.writeInTx<uint32_t>(len);
+        const auto ret =
+            outbox.writeInTx</*allowPartial=*/false>(&len, sizeof(len));
         if (ret < 0) {
           return ret;
         }
 
-        uint8_t* ptr1;
-        ssize_t len1;
-        uint8_t* ptr2 = nullptr;
-        ssize_t len2 = 0;
-        std::tie(len1, ptr1) = outbox.reserveContiguousInTx(len);
-        if (unlikely(len1 < 0)) {
-          return len1;
-        }
-        if (unlikely(len1 < len)) {
-          std::tie(len2, ptr2) = outbox.reserveContiguousInTx(len - len1);
-          if (unlikely(len2 < 0)) {
-            return len2;
-          }
-          if (unlikely(len1 + len2 < len)) {
-            return -ENODATA;
-          }
+        ssize_t numBuffers;
+        std::array<util::ringbuffer::Producer::Buffer, 2> buffers;
+        std::tie(numBuffers, buffers) =
+            outbox.accessContiguousInTx</*allowPartial=*/false>(len);
+        if (unlikely(numBuffers < 0)) {
+          return numBuffers;
         }
 
-        NopWriter writer(ptr1, len1, ptr2, len2);
+        NopWriter writer(
+            buffers[0].ptr, buffers[0].len, buffers[1].ptr, buffers[1].len);
         nop::Status<void> status = object.write(writer);
         if (status.error() == nop::ErrorStatus::WriteLimitReached) {
           return -ENOSPC;
