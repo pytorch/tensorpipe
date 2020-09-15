@@ -51,7 +51,7 @@ class Consumer {
     if (unlikely(inTx())) {
       return -EBUSY;
     }
-    if (header_.in_read_tx.test_and_set(std::memory_order_acquire)) {
+    if (header_.beginReadTransaction()) {
       return -EAGAIN;
     }
     inTx_ = true;
@@ -66,7 +66,7 @@ class Consumer {
     header_.incTail(tx_size_);
     tx_size_ = 0;
     inTx_ = false;
-    header_.in_read_tx.clear(std::memory_order_release);
+    header_.endReadTransaction();
     return 0;
   }
 
@@ -78,7 +78,7 @@ class Consumer {
     // <in_read_tx> flags that we are in a transaction,
     // so enforce no stores pass it.
     inTx_ = false;
-    header_.in_read_tx.clear(std::memory_order_release);
+    header_.endReadTransaction();
     return 0;
   }
 

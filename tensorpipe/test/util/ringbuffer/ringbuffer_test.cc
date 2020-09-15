@@ -41,6 +41,10 @@ class RingBufferStorage {
       std::make_unique<uint8_t[]>(header_.kDataPoolByteSize);
 };
 
+size_t usedSize(RingBuffer& rb) {
+  return rb.getHeader().readHead() - rb.getHeader().readTail();
+}
+
 TEST(RingBuffer, WriteCopy) {
   EXPECT_EQ(sizeof(TestData), 6);
 
@@ -54,7 +58,7 @@ TEST(RingBuffer, WriteCopy) {
   // Make a consumer.
   Consumer c{rb};
 
-  EXPECT_EQ(rb.getHeader().usedSizeWeak(), 0);
+  EXPECT_EQ(usedSize(rb), 0);
 
   TestData d0{.a = 0xBA98, .b = 0x7654, .c = 0xA312};
   TestData d1{.a = 0xA987, .b = 0x7777, .c = 0x2812};
@@ -64,13 +68,13 @@ TEST(RingBuffer, WriteCopy) {
     ssize_t ret = p.write(&d0, sizeof(d0));
     EXPECT_EQ(ret, sizeof(TestData));
   }
-  EXPECT_EQ(rb.getHeader().usedSizeWeak(), 6);
+  EXPECT_EQ(usedSize(rb), 6);
 
   {
     ssize_t ret = p.write(&d1, sizeof(d1));
     EXPECT_EQ(ret, sizeof(TestData));
   }
-  EXPECT_EQ(rb.getHeader().usedSizeWeak(), 12);
+  EXPECT_EQ(usedSize(rb), 12);
 
   {
     ssize_t ret = p.write(&d2, sizeof(d2));
@@ -92,7 +96,7 @@ TEST(RingBuffer, WriteCopy) {
     EXPECT_EQ(r, d1);
   }
   // It should be empty by now.
-  EXPECT_EQ(rb.getHeader().usedSizeWeak(), 0);
+  EXPECT_EQ(usedSize(rb), 0);
 
   {
     ssize_t ret = p.write(&d2, sizeof(d2));
@@ -104,7 +108,7 @@ TEST(RingBuffer, WriteCopy) {
     EXPECT_EQ(r, d2);
   }
   // It should be empty by now.
-  EXPECT_EQ(rb.getHeader().usedSizeWeak(), 0);
+  EXPECT_EQ(usedSize(rb), 0);
 }
 
 TEST(RingBuffer, ReadMultipleElems) {
@@ -118,7 +122,7 @@ TEST(RingBuffer, ReadMultipleElems) {
   // Make a consumer.
   Consumer c{rb};
 
-  EXPECT_EQ(rb.getHeader().usedSizeWeak(), 0);
+  EXPECT_EQ(usedSize(rb), 0);
 
   uint16_t n = 0xACAC; // fits 128 times
 
@@ -129,7 +133,7 @@ TEST(RingBuffer, ReadMultipleElems) {
     }
 
     // It must be full by now.
-    EXPECT_EQ(rb.getHeader().usedSizeWeak(), 256);
+    EXPECT_EQ(usedSize(rb), 256);
 
     ssize_t ret = p.write(&n, sizeof(n));
     EXPECT_EQ(ret, -ENOSPC);
@@ -199,7 +203,7 @@ TEST(RingBuffer, CopyWrapping) {
   // Make a consumer.
   Consumer c{rb};
 
-  EXPECT_EQ(rb.getHeader().usedSizeWeak(), 0);
+  EXPECT_EQ(usedSize(rb), 0);
 
   uint8_t ch = 0xA7;
   uint64_t n = 0xFFFFFFFFFFFFFFFF;
@@ -207,12 +211,12 @@ TEST(RingBuffer, CopyWrapping) {
   // Put one byte.
   EXPECT_EQ(rb.getHeader().readHead(), 0);
   EXPECT_EQ(rb.getHeader().readTail(), 0);
-  EXPECT_EQ(rb.getHeader().usedSizeWeak(), 0);
+  EXPECT_EQ(usedSize(rb), 0);
   ssize_t ret = p.write(&ch, sizeof(ch));
   EXPECT_EQ(ret, sizeof(ch));
   EXPECT_EQ(rb.getHeader().readHead(), 1);
   EXPECT_EQ(rb.getHeader().readTail(), 0);
-  EXPECT_EQ(rb.getHeader().usedSizeWeak(), 1);
+  EXPECT_EQ(usedSize(rb), 1);
 
   // Next 8 bytes won't fit.
   ret = p.write(&n, sizeof(n));
@@ -254,7 +258,7 @@ TEST(RingBuffer, ReadTxWrappingOneCons) {
   // Make a consumer.
   Consumer c1{rb};
 
-  EXPECT_EQ(rb.getHeader().usedSizeWeak(), 0);
+  EXPECT_EQ(usedSize(rb), 0);
 
   uint8_t ch = 0xA7;
   uint64_t n = 0xFFFFFFFFFFFFFFFF;
@@ -263,12 +267,12 @@ TEST(RingBuffer, ReadTxWrappingOneCons) {
   {
     EXPECT_EQ(rb.getHeader().readHead(), 0);
     EXPECT_EQ(rb.getHeader().readTail(), 0);
-    EXPECT_EQ(rb.getHeader().usedSizeWeak(), 0);
+    EXPECT_EQ(usedSize(rb), 0);
     ssize_t ret = p.write(&ch, sizeof(ch));
     EXPECT_EQ(ret, sizeof(ch));
     EXPECT_EQ(rb.getHeader().readHead(), 1);
     EXPECT_EQ(rb.getHeader().readTail(), 0);
-    EXPECT_EQ(rb.getHeader().usedSizeWeak(), 1);
+    EXPECT_EQ(usedSize(rb), 1);
   }
 
   // Next 8 bytes won't fit.
@@ -401,7 +405,7 @@ TEST(RingBuffer, ReadTxWrapping) {
   Consumer c1{rb};
   Consumer c2{rb};
 
-  EXPECT_EQ(rb.getHeader().usedSizeWeak(), 0);
+  EXPECT_EQ(usedSize(rb), 0);
 
   uint8_t ch = 0xA7;
   uint64_t n = 0x3333333333333333;
@@ -410,12 +414,12 @@ TEST(RingBuffer, ReadTxWrapping) {
   {
     EXPECT_EQ(rb.getHeader().readHead(), 0);
     EXPECT_EQ(rb.getHeader().readTail(), 0);
-    EXPECT_EQ(rb.getHeader().usedSizeWeak(), 0);
+    EXPECT_EQ(usedSize(rb), 0);
     ssize_t ret = p.write(&ch, sizeof(ch));
     EXPECT_EQ(ret, sizeof(ch));
     EXPECT_EQ(rb.getHeader().readHead(), 1);
     EXPECT_EQ(rb.getHeader().readTail(), 0);
-    EXPECT_EQ(rb.getHeader().usedSizeWeak(), 1);
+    EXPECT_EQ(usedSize(rb), 1);
   }
 
   // Next 8 bytes won't fit.
@@ -556,7 +560,7 @@ TEST(RingBuffer, accessContiguousInTx) {
   // Make a consumer.
   Consumer c{rb};
 
-  EXPECT_EQ(rb.getHeader().usedSizeWeak(), 0);
+  EXPECT_EQ(usedSize(rb), 0);
 
   // Use different values for the three writing passes to tell them apart.
   uint16_t value1 = 0xACAC; // fits 128 times
@@ -570,7 +574,7 @@ TEST(RingBuffer, accessContiguousInTx) {
     }
 
     // It must be full by now.
-    EXPECT_EQ(rb.getHeader().usedSizeWeak(), 256);
+    EXPECT_EQ(usedSize(rb), 256);
 
     uint8_t b = 0xEE;
     ssize_t ret = p.write(&b, sizeof(b));
@@ -592,7 +596,7 @@ TEST(RingBuffer, accessContiguousInTx) {
     }
     ret = c.commitTx();
     EXPECT_EQ(ret, 0);
-    EXPECT_EQ(rb.getHeader().usedSizeWeak(), 128);
+    EXPECT_EQ(usedSize(rb), 128);
   }
 
   {
@@ -602,7 +606,7 @@ TEST(RingBuffer, accessContiguousInTx) {
     }
 
     // It must be full again by now.
-    EXPECT_EQ(rb.getHeader().usedSizeWeak(), 256);
+    EXPECT_EQ(usedSize(rb), 256);
   }
 
   {
@@ -624,7 +628,7 @@ TEST(RingBuffer, accessContiguousInTx) {
     }
     ret = c.commitTx();
     EXPECT_EQ(ret, 0);
-    EXPECT_EQ(rb.getHeader().usedSizeWeak(), 0);
+    EXPECT_EQ(usedSize(rb), 0);
   }
 
   {
@@ -638,7 +642,7 @@ TEST(RingBuffer, accessContiguousInTx) {
     }
 
     // It must be full again by now.
-    EXPECT_EQ(rb.getHeader().usedSizeWeak(), 256);
+    EXPECT_EQ(usedSize(rb), 256);
   }
 
   {
@@ -656,7 +660,7 @@ TEST(RingBuffer, accessContiguousInTx) {
     }
     ret = c.commitTx();
     EXPECT_EQ(ret, 0);
-    EXPECT_EQ(rb.getHeader().usedSizeWeak(), 128);
+    EXPECT_EQ(usedSize(rb), 128);
   }
 
   {
@@ -666,7 +670,7 @@ TEST(RingBuffer, accessContiguousInTx) {
     }
 
     // It must be full again by now.
-    EXPECT_EQ(rb.getHeader().usedSizeWeak(), 256);
+    EXPECT_EQ(usedSize(rb), 256);
   }
 
   {
@@ -684,7 +688,7 @@ TEST(RingBuffer, accessContiguousInTx) {
     }
     ret = c.commitTx();
     EXPECT_EQ(ret, 0);
-    EXPECT_EQ(rb.getHeader().usedSizeWeak(), 0);
+    EXPECT_EQ(usedSize(rb), 0);
   }
 
   {
@@ -698,6 +702,6 @@ TEST(RingBuffer, accessContiguousInTx) {
     EXPECT_EQ(ret, 0);
     ret = c.commitTx();
     EXPECT_EQ(ret, 0);
-    EXPECT_EQ(rb.getHeader().usedSizeWeak(), 0);
+    EXPECT_EQ(usedSize(rb), 0);
   }
 }
