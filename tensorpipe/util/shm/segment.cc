@@ -38,8 +38,11 @@ Fd createShmFd() {
   return Fd(fd);
 }
 
-// if <byte_size> == 0, map the whole file.
-void* mmapShmFd(int fd, size_t byte_size, bool perm_write, PageType page_type) {
+MmappedPtr mmapShmFd(
+    int fd,
+    size_t byte_size,
+    bool perm_write,
+    PageType page_type) {
 #ifdef MAP_SHARED_VALIDATE
   int flags = MAP_SHARED | MAP_SHARED_VALIDATE;
 #else
@@ -69,12 +72,7 @@ update to obtain the latest correctness checks."
       break;
   }
 
-  void* shm = ::mmap(nullptr, byte_size, prot, flags, fd, 0);
-  if (shm == MAP_FAILED) {
-    TP_THROW_SYSTEM(errno) << "Failed to mmap memory of size: " << byte_size;
-  }
-
-  return shm;
+  return MmappedPtr(byte_size, prot, flags, fd);
 }
 
 } // namespace
@@ -82,26 +80,11 @@ update to obtain the latest correctness checks."
 // Mention static constexpr char to export the symbol.
 constexpr char Segment::kBasePath[];
 
-Segment::Segment(Segment&& other) noexcept {
-  std::swap(page_type_, other.page_type_);
-  std::swap(fd_, other.fd_);
-  std::swap(byte_size_, other.byte_size_);
-  std::swap(base_ptr_, other.base_ptr_);
-}
-
-Segment& Segment::operator=(Segment&& other) noexcept {
-  std::swap(page_type_, other.page_type_);
-  std::swap(fd_, other.fd_);
-  std::swap(byte_size_, other.byte_size_);
-  std::swap(base_ptr_, other.base_ptr_);
-  return *this;
-}
-
 Segment::Segment(
     size_t byte_size,
     bool perm_write,
     optional<PageType> page_type)
-    : fd_{createShmFd()}, byte_size_{byte_size}, base_ptr_{nullptr} {
+    : fd_{createShmFd()}, byte_size_{byte_size} {
   // grow size to contain byte_size bytes.
   off_t len = static_cast<off_t>(byte_size_);
   int ret = ::fallocate(fd_.fd(), 0, 0, len);
@@ -114,7 +97,7 @@ Segment::Segment(
 }
 
 Segment::Segment(Fd fd, bool perm_write, optional<PageType> page_type)
-    : fd_{std::move(fd)}, base_ptr_{nullptr} {
+    : fd_{std::move(fd)} {
   // Load whole file. Use fstat to obtain size.
   struct stat sb;
   int ret = ::fstat(fd_.fd(), &sb);
@@ -130,16 +113,6 @@ void Segment::mmap(bool perm_write, optional<PageType> page_type) {
   // If page_type is not set, use the default.
   page_type_ = page_type.value_or(getDefaultPageType(this->byte_size_));
   this->base_ptr_ = mmapShmFd(fd_.fd(), byte_size_, perm_write, page_type_);
-}
-
-Segment::~Segment() {
-  if (base_ptr_ != nullptr) {
-    int ret = munmap(base_ptr_, byte_size_);
-    if (ret == -1) {
-      TP_LOG_ERROR() << "Error while munmapping shared memory segment. Error: "
-                     << toErrorCode(errno).message();
-    }
-  }
 }
 
 } // namespace shm

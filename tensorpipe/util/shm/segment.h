@@ -15,6 +15,7 @@
 
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/fd.h>
+#include <tensorpipe/common/memory.h>
 #include <tensorpipe/common/optional.h>
 
 //
@@ -63,12 +64,6 @@ class Segment {
   static constexpr char kBasePath[] = "/dev/shm";
 
   Segment() = default;
-
-  Segment(const Segment&) = delete;
-  Segment(Segment&&) noexcept;
-
-  Segment& operator=(const Segment& other) = delete;
-  Segment& operator=(Segment&& other) noexcept;
 
   Segment(size_t byte_size, bool perm_write, optional<PageType> page_type);
 
@@ -191,11 +186,11 @@ class Segment {
   }
 
   void* getPtr() {
-    return base_ptr_;
+    return base_ptr_.ptr();
   }
 
   const void* getPtr() const {
-    return base_ptr_;
+    return base_ptr_.ptr();
   }
 
   size_t getSize() const {
@@ -205,8 +200,6 @@ class Segment {
   PageType getPageType() const {
     return page_type_;
   }
-
-  ~Segment();
 
  protected:
   // The page used to mmap the segment.
@@ -219,7 +212,7 @@ class Segment {
   size_t byte_size_ = 0;
 
   // Base pointer of mmmap'ed shared memory segment.
-  void* base_ptr_ = nullptr;
+  MmappedPtr base_ptr_;
 
   void mmap(bool perm_write, optional<PageType> page_type);
 };
