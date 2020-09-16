@@ -35,6 +35,10 @@ class MmappedPtr {
     return ptr_.get();
   }
 
+  size_t getLength() const {
+    return ptr_.get_deleter().length;
+  }
+
   void reset() {
     ptr_.reset();
   }

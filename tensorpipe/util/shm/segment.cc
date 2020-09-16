@@ -28,21 +28,43 @@ namespace shm {
 
 namespace {
 
+// Default base path for all segments created.
+constexpr const char* kBasePath = "/dev/shm";
+
 Fd createShmFd() {
   int flags = O_TMPFILE | O_EXCL | O_RDWR | O_CLOEXEC;
-  int fd = ::open(Segment::kBasePath, flags, 0);
-  if (fd == -1) {
-    TP_THROW_SYSTEM(errno) << "Failed to open shared memory file descriptor "
-                           << "at " << Segment::kBasePath;
-  }
+  int fd = ::open(kBasePath, flags, 0);
+  TP_THROW_SYSTEM_IF(fd == -1, errno)
+      << "Failed to open shared memory file descriptor at " << kBasePath;
   return Fd(fd);
+}
+
+/// Choose a reasonable page size for a given size.
+/// This very opinionated choice of "reasonable" aims to
+/// keep wasted memory low.
+// XXX: Lots of memory could be wasted if size is slightly larger than
+// page size, handle that case.
+constexpr PageType getDefaultPageType(uint64_t size) {
+  constexpr uint64_t MB = 1024ull * 1024ull;
+  constexpr uint64_t GB = 1024ull * MB;
+
+  if (size >= (15ul * GB) / 16ul) {
+    // At least 15/16 of a 1GB page (at most 64 MB wasted).
+    return PageType::HugeTLB_1GB;
+  } else if (size >= ((2ul * MB) * 3ul) / 4ul) {
+    // At least 3/4 of a 2MB page (at most 512 KB wasteds)
+    return PageType::HugeTLB_2MB;
+  } else {
+    // No Huge TLB page, use Default (4KB for x86).
+    return PageType::Default;
+  }
 }
 
 MmappedPtr mmapShmFd(
     int fd,
     size_t byte_size,
     bool perm_write,
-    PageType page_type) {
+    optional<PageType> page_type) {
 #ifdef MAP_SHARED_VALIDATE
   int flags = MAP_SHARED | MAP_SHARED_VALIDATE;
 #else
@@ -61,58 +83,50 @@ update to obtain the latest correctness checks."
     prot |= PROT_WRITE;
   }
 
-  switch (page_type) {
-    case PageType::Default:
-      break;
-    case PageType::HugeTLB_2MB:
-      prot |= MAP_HUGETLB | MAP_HUGE_2MB;
-      break;
-    case PageType::HugeTLB_1GB:
-      prot |= MAP_HUGETLB | MAP_HUGE_1GB;
-      break;
-  }
+  // FIXME mmap seems to fail with EINVAL if it cannot use hugepages when asked
+  // to do so. We could try with hugepages and, if it fails, try again without.
+  // But this adds complexity and I first want to know how much performance we
+  // gain through hugepages but so far I haven't been able to get them to work.
+  // switch (page_type.value_or(getDefaultPageType(byte_size))) {
+  //   case PageType::Default:
+  //     break;
+  //   case PageType::HugeTLB_2MB:
+  //     flags |= MAP_HUGETLB | MAP_HUGE_2MB;
+  //     break;
+  //   case PageType::HugeTLB_1GB:
+  //     flags |= MAP_HUGETLB | MAP_HUGE_1GB;
+  //     break;
+  // }
 
   return MmappedPtr(byte_size, prot, flags, fd);
 }
 
 } // namespace
 
-// Mention static constexpr char to export the symbol.
-constexpr char Segment::kBasePath[];
-
 Segment::Segment(
     size_t byte_size,
     bool perm_write,
     optional<PageType> page_type)
-    : fd_{createShmFd()}, byte_size_{byte_size} {
+    : fd_(createShmFd()) {
   // grow size to contain byte_size bytes.
-  off_t len = static_cast<off_t>(byte_size_);
+  off_t len = static_cast<off_t>(byte_size);
   int ret = ::fallocate(fd_.fd(), 0, 0, len);
-  if (ret == -1) {
-    TP_THROW_SYSTEM(errno) << "Error while allocating " << byte_size_
-                           << " bytes in shared memory";
-  }
+  TP_THROW_SYSTEM_IF(ret == -1, errno)
+      << "Error while allocating " << byte_size << " bytes in shared memory";
 
-  mmap(perm_write, page_type);
+  ptr_ = mmapShmFd(fd_.fd(), byte_size, perm_write, page_type);
 }
 
 Segment::Segment(Fd fd, bool perm_write, optional<PageType> page_type)
-    : fd_{std::move(fd)} {
+    : fd_(std::move(fd)) {
   // Load whole file. Use fstat to obtain size.
   struct stat sb;
   int ret = ::fstat(fd_.fd(), &sb);
-  if (ret == -1) {
-    TP_THROW_SYSTEM(errno) << "Error while fstat shared memory file.";
-  }
-  this->byte_size_ = static_cast<size_t>(sb.st_size);
+  TP_THROW_SYSTEM_IF(ret == -1, errno)
+      << "Error while fstat shared memory file";
+  size_t byte_size = static_cast<size_t>(sb.st_size);
 
-  mmap(perm_write, page_type);
-}
-
-void Segment::mmap(bool perm_write, optional<PageType> page_type) {
-  // If page_type is not set, use the default.
-  page_type_ = page_type.value_or(getDefaultPageType(this->byte_size_));
-  this->base_ptr_ = mmapShmFd(fd_.fd(), byte_size_, perm_write, page_type_);
+  ptr_ = mmapShmFd(fd_.fd(), byte_size, perm_write, page_type);
 }
 
 } // namespace shm
