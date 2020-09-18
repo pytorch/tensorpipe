@@ -44,7 +44,7 @@ class Context {
   //
   virtual std::shared_ptr<Channel> createChannel(
       std::shared_ptr<transport::Connection>,
-      Channel::Endpoint) = 0;
+      Endpoint) = 0;
 
   // Tell the context what its identifier is.
   //

@@ -55,7 +55,7 @@ struct ReadOperation {
   struct Tensor {
     ssize_t length{-1};
     std::string channelName;
-    channel::Channel::TDescriptor descriptor;
+    channel::TDescriptor descriptor;
   };
   std::vector<Tensor> tensors;
 
@@ -146,7 +146,7 @@ struct WriteOperation {
   // Tensor descriptors collected from the channels.
   struct Tensor {
     std::string channelName;
-    channel::Channel::TDescriptor descriptor;
+    channel::TDescriptor descriptor;
   };
   std::vector<Tensor> tensors;
 };
@@ -353,10 +353,7 @@ class Pipe::Impl : public std::enable_shared_from_this<Pipe::Impl> {
       std::string,
       std::shared_ptr<transport::Connection>);
   void onReadOfMessageDescriptor_(ReadOperation&, const Packet&);
-  void onDescriptorOfTensor_(
-      WriteOperation&,
-      int64_t,
-      channel::Channel::TDescriptor);
+  void onDescriptorOfTensor_(WriteOperation&, int64_t, channel::TDescriptor);
   void onReadOfPayload_(ReadOperation&);
   void onRecvOfTensor_(ReadOperation&);
   void onWriteOfPayload_(WriteOperation&);
@@ -1086,13 +1083,13 @@ void Pipe::Impl::sendTensorsOfMessage_(WriteOperation& op) {
       channel.send(
           tensor.data,
           tensor.length,
-          eagerCallbackWrapper_([&op, tensorIdx](
-                                    Impl& impl,
-                                    channel::Channel::TDescriptor descriptor) {
-            TP_VLOG(3) << "Pipe " << impl.id_ << " got tensor descriptor #"
-                       << op.sequenceNumber << "." << tensorIdx;
-            impl.onDescriptorOfTensor_(op, tensorIdx, std::move(descriptor));
-          }),
+          eagerCallbackWrapper_(
+              [&op, tensorIdx](Impl& impl, channel::TDescriptor descriptor) {
+                TP_VLOG(3) << "Pipe " << impl.id_ << " got tensor descriptor #"
+                           << op.sequenceNumber << "." << tensorIdx;
+                impl.onDescriptorOfTensor_(
+                    op, tensorIdx, std::move(descriptor));
+              }),
           eagerCallbackWrapper_([&op, tensorIdx](Impl& impl) {
             TP_VLOG(3) << "Pipe " << impl.id_ << " done sending tensor #"
                        << op.sequenceNumber << "." << tensorIdx;
@@ -1343,7 +1340,7 @@ void Pipe::Impl::onReadWhileClientWaitingForBrochureAnswer_(
         }));
 
     std::shared_ptr<channel::Channel> channel = channelContext->createChannel(
-        std::move(connection), channel::Channel::Endpoint::kConnect);
+        std::move(connection), channel::Endpoint::kConnect);
     channel->setId(id_ + ".ch_" + channelName);
     channels_.emplace(channelName, std::move(channel));
   }
@@ -1393,7 +1390,7 @@ void Pipe::Impl::onAcceptWhileServerWaitingForChannel_(
       context_->getChannel(channelName);
 
   std::shared_ptr<channel::Channel> channel = channelContext->createChannel(
-      std::move(receivedConnection), channel::Channel::Endpoint::kListen);
+      std::move(receivedConnection), channel::Endpoint::kListen);
   channel->setId(id_ + ".ch_" + channelName);
   channels_.emplace(channelName, std::move(channel));
 
@@ -1420,7 +1417,7 @@ void Pipe::Impl::onReadOfMessageDescriptor_(
 void Pipe::Impl::onDescriptorOfTensor_(
     WriteOperation& op,
     int64_t tensorIdx,
-    channel::Channel::TDescriptor descriptor) {
+    channel::TDescriptor descriptor) {
   TP_DCHECK(loop_.inLoop());
 
   TP_DCHECK_EQ(

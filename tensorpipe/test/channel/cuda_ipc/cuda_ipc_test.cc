@@ -102,7 +102,7 @@ TEST_P(CudaIpcChannelTest, ReceiverWaitsForStartEvent) {
       [&](std::shared_ptr<transport::Connection> conn) {
         std::shared_ptr<Context> ctx = GetParam()->makeContext("server");
         auto channel = std::static_pointer_cast<cuda_ipc::Channel>(
-            ctx->createChannel(std::move(conn), Channel::Endpoint::kListen));
+            ctx->createChannel(std::move(conn), Endpoint::kListen));
 
         TP_CUDA_CHECK(cudaSetDevice(0));
         cudaStream_t sendStream;
@@ -138,7 +138,7 @@ TEST_P(CudaIpcChannelTest, ReceiverWaitsForStartEvent) {
             sendStream);
 
         Error descriptorError;
-        Channel::TDescriptor descriptor;
+        TDescriptor descriptor;
         std::tie(descriptorError, descriptor) = descriptorFuture.get();
 
         EXPECT_FALSE(descriptorError) << descriptorError.what();
@@ -155,7 +155,7 @@ TEST_P(CudaIpcChannelTest, ReceiverWaitsForStartEvent) {
       [&](std::shared_ptr<transport::Connection> conn) {
         std::shared_ptr<Context> ctx = GetParam()->makeContext("client");
         auto channel = std::static_pointer_cast<cuda_ipc::Channel>(
-            ctx->createChannel(std::move(conn), Channel::Endpoint::kConnect));
+            ctx->createChannel(std::move(conn), Endpoint::kConnect));
 
         TP_CUDA_CHECK(cudaSetDevice(0));
         cudaStream_t recvStream;

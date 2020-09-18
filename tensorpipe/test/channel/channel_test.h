@@ -123,9 +123,8 @@ class ChannelTest : public ::testing::TestWithParam<ChannelTestHelper*> {
   }
 
   [[nodiscard]] std::pair<
-      std::future<std::tuple<
-          tensorpipe::Error,
-          tensorpipe::channel::Channel::TDescriptor>>,
+      std::future<
+          std::tuple<tensorpipe::Error, tensorpipe::channel::TDescriptor>>,
       std::future<tensorpipe::Error>>
   sendWithFuture(
       std::shared_ptr<tensorpipe::channel::Channel> channel,
@@ -155,7 +154,7 @@ class ChannelTest : public ::testing::TestWithParam<ChannelTestHelper*> {
 
   [[nodiscard]] std::future<tensorpipe::Error> recvWithFuture(
       std::shared_ptr<tensorpipe::channel::Channel> channel,
-      tensorpipe::channel::Channel::TDescriptor descriptor,
+      tensorpipe::channel::TDescriptor descriptor,
       void* ptr,
       size_t length) {
     auto promise = std::make_shared<std::promise<tensorpipe::Error>>();

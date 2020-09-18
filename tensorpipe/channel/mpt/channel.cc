@@ -33,7 +33,7 @@ struct SendOperation {
   const void* ptr;
   size_t length;
   int64_t numChunksBeingWritten{0};
-  Channel::TSendCallback callback;
+  TSendCallback callback;
 };
 
 // State capturing a single recv operation.
@@ -42,7 +42,7 @@ struct RecvOperation {
   void* ptr;
   size_t length;
   int64_t numChunksBeingRead{0};
-  Channel::TRecvCallback callback;
+  TRecvCallback callback;
 };
 
 } // namespace
