@@ -45,7 +45,7 @@ class MmappedPtr {
 
  private:
   struct Deleter {
-    size_t length = 0;
+    size_t length;
 
     void operator()(void* ptr) {
       int ret = ::munmap(ptr, length);
