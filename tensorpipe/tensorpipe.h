@@ -8,6 +8,8 @@
 
 #pragma once
 
+#include <tensorpipe/config.h>
+
 // High-level API
 
 #include <tensorpipe/core/context.h>
@@ -24,7 +26,6 @@
 #include <tensorpipe/transport/uv/context.h>
 #include <tensorpipe/transport/uv/error.h>
 
-#cmakedefine01 TENSORPIPE_HAS_SHM_TRANSPORT
 #if TENSORPIPE_HAS_SHM_TRANSPORT
 #include <tensorpipe/transport/shm/context.h>
 #endif // TENSORPIPE_HAS_SHM_TRANSPORT
@@ -38,12 +39,10 @@
 #include <tensorpipe/channel/mpt/context.h>
 #include <tensorpipe/channel/xth/context.h>
 
-#cmakedefine01 TENSORPIPE_HAS_CMA_CHANNEL
 #if TENSORPIPE_HAS_CMA_CHANNEL
 #include <tensorpipe/channel/cma/context.h>
 #endif // TENSORPIPE_HAS_CMA_CHANNEL
 
-#cmakedefine01 TENSORPIPE_HAS_CUDA_IPC_CHANNEL
 #if TENSORPIPE_HAS_CUDA_IPC_CHANNEL
 #include <tensorpipe/channel/cuda_ipc/context.h>
 #endif // TENSORPIPE_HAS_CUDA_IPC_CHANNEL
