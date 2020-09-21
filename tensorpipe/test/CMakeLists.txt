@@ -19,6 +19,7 @@ add_executable(tensorpipe_test
   channel/xth/xth_test.cc
   channel/mpt/mpt_test.cc
   channel/channel_test.cc
+  channel/channel_test_cpu.cc
   common/system_test.cc
   common/defs_test.cc
   )
@@ -42,16 +43,23 @@ if(TP_ENABLE_CMA)
     )
 endif()
 
-if(TP_ENABLE_CUDA_IPC)
+if(TP_USE_CUDA)
   find_package(CUDA REQUIRED)
   target_link_libraries(tensorpipe_test PRIVATE ${CUDA_LIBRARIES})
   target_include_directories(tensorpipe_test PRIVATE ${CUDA_INCLUDE_DIRS})
 
   target_sources(tensorpipe_test PRIVATE
+    channel/channel_test_cuda.cc
+    )
+
+  cuda_add_library(tensorpipe_cuda_kernel channel/kernel.cu)
+  target_link_libraries(tensorpipe_test PRIVATE tensorpipe_cuda_kernel)
+endif()
+
+if(TP_ENABLE_CUDA_IPC)
+  target_sources(tensorpipe_test PRIVATE
     channel/cuda_ipc/cuda_ipc_test.cc
     )
-  cuda_add_library(tensorpipe_cuda_ipc_kernel channel/cuda_ipc/kernel.cu)
-  target_link_libraries(tensorpipe_test PRIVATE tensorpipe_cuda_ipc_kernel)
 endif()
 
 

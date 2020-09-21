@@ -11,7 +11,7 @@
 
 namespace {
 
-class XthChannelTestHelper : public ChannelTestHelper {
+class XthChannelTestHelper : public ChannelTestHelper<tensorpipe::CpuBuffer> {
  public:
   std::shared_ptr<tensorpipe::channel::CpuContext> makeContext(
       std::string id) override {
@@ -25,4 +25,4 @@ XthChannelTestHelper helper;
 
 } // namespace
 
-INSTANTIATE_TEST_CASE_P(Xth, ChannelTest, ::testing::Values(&helper));
+INSTANTIATE_TEST_CASE_P(Xth, CpuChannelTestSuite, ::testing::Values(&helper));

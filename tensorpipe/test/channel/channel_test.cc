@@ -10,500 +10,366 @@
 
 #include <numeric>
 
-#include <tensorpipe/common/queue.h>
-
 using namespace tensorpipe;
 using namespace tensorpipe::channel;
 
-TEST_P(ChannelTest, DomainDescriptor) {
-  std::shared_ptr<CpuContext> context1 = GetParam()->makeContext("ctx1");
-  std::shared_ptr<CpuContext> context2 = GetParam()->makeContext("ctx2");
-  EXPECT_FALSE(context1->domainDescriptor().empty());
-  EXPECT_FALSE(context2->domainDescriptor().empty());
-  EXPECT_EQ(context1->domainDescriptor(), context2->domainDescriptor());
-}
-
-TEST_P(ChannelTest, ClientToServer) {
-  static constexpr int dataSize = 256;
-
-  testConnection(
-      [&](std::shared_ptr<transport::Connection> conn) {
-        std::shared_ptr<CpuContext> ctx = GetParam()->makeContext("server");
-        auto channel = ctx->createChannel(std::move(conn), Endpoint::kListen);
-
-        // Initialize with sequential values.
-        std::vector<uint8_t> data(dataSize);
-        std::iota(data.begin(), data.end(), 0);
-
-        // Perform send and wait for completion.
-        std::future<std::tuple<Error, TDescriptor>> descriptorFuture;
-        std::future<Error> sendFuture;
-        std::tie(descriptorFuture, sendFuture) =
-            sendWithFuture(channel, CpuBuffer{data.data(), data.size()});
-        Error descriptorError;
-        TDescriptor descriptor;
-        std::tie(descriptorError, descriptor) = descriptorFuture.get();
-        EXPECT_FALSE(descriptorError) << descriptorError.what();
-        peers_->send(PeerGroup::kClient, descriptor);
-        Error sendError = sendFuture.get();
-        EXPECT_FALSE(sendError) << sendError.what();
-
-        peers_->done(PeerGroup::kServer);
-        peers_->join(PeerGroup::kServer);
-
-        ctx->join();
-      },
-      [&](std::shared_ptr<transport::Connection> conn) {
-        std::shared_ptr<CpuContext> ctx = GetParam()->makeContext("client");
-        auto channel = ctx->createChannel(std::move(conn), Endpoint::kConnect);
-
-        std::vector<uint8_t> data(dataSize);
-
-        // Perform recv and wait for completion.
-        auto descriptor = peers_->recv(PeerGroup::kClient);
-        std::future<Error> recvFuture = recvWithFuture(
-            channel, descriptor, CpuBuffer{data.data(), data.size()});
-        Error recvError = recvFuture.get();
-        EXPECT_FALSE(recvError) << recvError.what();
-
-        // Validate contents of vector.
-        for (auto i = 0; i < data.size(); i++) {
-          EXPECT_EQ(data[i], i);
-        }
-
-        peers_->done(PeerGroup::kClient);
-        peers_->join(PeerGroup::kClient);
-
-        ctx->join();
-      });
+template <typename TBuffer>
+class DomainDescriptorTest : public ChannelTestCase<TBuffer> {
+ public:
+  void run(ChannelTestHelper<TBuffer>* helper) override {
+    std::shared_ptr<Context<TBuffer>> context1 = helper->makeContext("ctx1");
+    std::shared_ptr<Context<TBuffer>> context2 = helper->makeContext("ctx2");
+    EXPECT_FALSE(context1->domainDescriptor().empty());
+    EXPECT_FALSE(context2->domainDescriptor().empty());
+    EXPECT_EQ(context1->domainDescriptor(), context2->domainDescriptor());
+  }
 };
 
-TEST_P(ChannelTest, ServerToClient) {
+CHANNEL_TEST_GENERIC(DomainDescriptor);
+
+template <typename TBuffer>
+class ClientToServerTest : public ClientServerChannelTestCase<TBuffer> {
+ public:
   static constexpr int dataSize = 256;
 
-  testConnection(
-      [&](std::shared_ptr<transport::Connection> conn) {
-        std::shared_ptr<CpuContext> ctx = GetParam()->makeContext("server");
-        auto channel = ctx->createChannel(std::move(conn), Endpoint::kListen);
+  void server(std::shared_ptr<transport::Connection> conn) override {
+    std::shared_ptr<Context<TBuffer>> ctx =
+        this->helper_->makeContext("server");
+    auto channel = ctx->createChannel(std::move(conn), Endpoint::kListen);
 
-        std::vector<uint8_t> data(dataSize);
+    // Initialize with sequential values.
+    std::vector<uint8_t> data(dataSize);
+    std::iota(data.begin(), data.end(), 0);
+    DataWrapper<TBuffer> wrappedData(data);
 
-        // Perform recv and wait for completion.
-        auto descriptor = peers_->recv(PeerGroup::kServer);
-        std::future<Error> recvFuture = recvWithFuture(
-            channel, descriptor, CpuBuffer{data.data(), data.size()});
-        Error recvError = recvFuture.get();
-        EXPECT_FALSE(recvError) << recvError.what();
+    // Perform send and wait for completion.
+    std::future<std::tuple<Error, TDescriptor>> descriptorFuture;
+    std::future<Error> sendFuture;
+    std::tie(descriptorFuture, sendFuture) =
+        sendWithFuture(channel, wrappedData.buffer());
+    Error descriptorError;
+    TDescriptor descriptor;
+    std::tie(descriptorError, descriptor) = descriptorFuture.get();
+    EXPECT_FALSE(descriptorError) << descriptorError.what();
+    this->peers_->send(PeerGroup::kClient, descriptor);
+    Error sendError = sendFuture.get();
+    EXPECT_FALSE(sendError) << sendError.what();
 
-        // Validate contents of vector.
-        for (auto i = 0; i < data.size(); i++) {
-          EXPECT_EQ(data[i], i);
-        }
+    this->peers_->done(PeerGroup::kServer);
+    this->peers_->join(PeerGroup::kServer);
 
-        peers_->done(PeerGroup::kServer);
-        peers_->join(PeerGroup::kServer);
+    ctx->join();
+  }
 
-        ctx->join();
-      },
-      [&](std::shared_ptr<transport::Connection> conn) {
-        std::shared_ptr<CpuContext> ctx = GetParam()->makeContext("client");
-        auto channel = ctx->createChannel(std::move(conn), Endpoint::kConnect);
+  void client(std::shared_ptr<transport::Connection> conn) override {
+    std::shared_ptr<Context<TBuffer>> ctx =
+        this->helper_->makeContext("client");
+    auto channel = ctx->createChannel(std::move(conn), Endpoint::kConnect);
 
-        // Initialize with sequential values.
-        std::vector<uint8_t> data(dataSize);
-        std::iota(data.begin(), data.end(), 0);
+    DataWrapper<TBuffer> wrappedData(dataSize);
 
-        // Perform send and wait for completion.
-        std::future<std::tuple<Error, TDescriptor>> descriptorFuture;
-        std::future<Error> sendFuture;
-        std::tie(descriptorFuture, sendFuture) =
-            sendWithFuture(channel, CpuBuffer{data.data(), data.size()});
-        Error descriptorError;
-        TDescriptor descriptor;
-        std::tie(descriptorError, descriptor) = descriptorFuture.get();
-        EXPECT_FALSE(descriptorError) << descriptorError.what();
-        peers_->send(PeerGroup::kServer, descriptor);
-        Error sendError = sendFuture.get();
-        EXPECT_FALSE(sendError) << sendError.what();
+    // Perform recv and wait for completion.
+    auto descriptor = this->peers_->recv(PeerGroup::kClient);
+    std::future<Error> recvFuture =
+        recvWithFuture(channel, descriptor, wrappedData.buffer());
+    Error recvError = recvFuture.get();
+    EXPECT_FALSE(recvError) << recvError.what();
 
-        peers_->done(PeerGroup::kClient);
-        peers_->join(PeerGroup::kClient);
+    // Validate contents of vector.
+    auto unwrappedData = wrappedData.unwrap();
+    for (auto i = 0; i < dataSize; i++) {
+      EXPECT_EQ(unwrappedData[i], i);
+    }
 
-        ctx->join();
-      });
+    this->peers_->done(PeerGroup::kClient);
+    this->peers_->join(PeerGroup::kClient);
+
+    ctx->join();
+  }
 };
 
-TEST_P(ChannelTest, SendMultipleTensors) {
-  constexpr auto dataSize = 256 * 1024; // 256KB
-  constexpr int numTensors = 100;
+CHANNEL_TEST_GENERIC(ClientToServer);
 
-  testConnection(
-      [&](std::shared_ptr<transport::Connection> conn) {
-        std::shared_ptr<CpuContext> ctx = GetParam()->makeContext("server");
-        auto channel = ctx->createChannel(std::move(conn), Endpoint::kListen);
+template <typename TBuffer>
+class ServerToClientTest : public ClientServerChannelTestCase<TBuffer> {
+  static constexpr int dataSize = 256;
 
-        // Initialize with sequential values.
-        std::vector<uint8_t> data(dataSize);
-        std::iota(data.begin(), data.end(), 0);
+ public:
+  void server(std::shared_ptr<transport::Connection> conn) override {
+    std::shared_ptr<Context<TBuffer>> ctx =
+        this->helper_->makeContext("server");
+    auto channel = ctx->createChannel(std::move(conn), Endpoint::kListen);
 
-        // Error futures
-        std::vector<std::future<Error>> sendFutures;
+    DataWrapper<TBuffer> wrappedData(dataSize);
 
-        // Perform send and wait for completion.
-        for (int i = 0; i < numTensors; i++) {
-          std::future<std::tuple<Error, TDescriptor>> descriptorFuture;
-          std::future<Error> sendFuture;
-          std::tie(descriptorFuture, sendFuture) =
-              sendWithFuture(channel, CpuBuffer{data.data(), data.size()});
-          Error descriptorError;
-          TDescriptor descriptor;
-          std::tie(descriptorError, descriptor) = descriptorFuture.get();
-          EXPECT_FALSE(descriptorError) << descriptorError.what();
-          peers_->send(PeerGroup::kClient, descriptor);
-          sendFutures.push_back(std::move(sendFuture));
-        }
-        for (auto& sendFuture : sendFutures) {
-          Error sendError = sendFuture.get();
-          EXPECT_FALSE(sendError) << sendError.what();
-        }
+    // Perform recv and wait for completion.
+    auto descriptor = this->peers_->recv(PeerGroup::kServer);
+    std::future<Error> recvFuture =
+        recvWithFuture(channel, descriptor, wrappedData.buffer());
+    Error recvError = recvFuture.get();
+    EXPECT_FALSE(recvError) << recvError.what();
 
-        peers_->done(PeerGroup::kServer);
-        peers_->join(PeerGroup::kServer);
+    // Validate contents of vector.
+    auto unwrappedData = wrappedData.unwrap();
+    for (auto i = 0; i < dataSize; i++) {
+      EXPECT_EQ(unwrappedData[i], i);
+    }
 
-        ctx->join();
-      },
-      [&](std::shared_ptr<transport::Connection> conn) {
-        std::shared_ptr<CpuContext> ctx = GetParam()->makeContext("client");
-        auto channel = ctx->createChannel(std::move(conn), Endpoint::kConnect);
+    this->peers_->done(PeerGroup::kServer);
+    this->peers_->join(PeerGroup::kServer);
 
-        std::vector<std::vector<uint8_t>> dataVec(
-            numTensors, std::vector<uint8_t>(dataSize));
+    ctx->join();
+  }
 
-        // Error futures
-        std::vector<std::future<Error>> recvFutures;
+  void client(std::shared_ptr<transport::Connection> conn) override {
+    std::shared_ptr<Context<TBuffer>> ctx =
+        this->helper_->makeContext("client");
+    auto channel = ctx->createChannel(std::move(conn), Endpoint::kConnect);
 
-        // Perform recv and wait for completion.
-        for (int i = 0; i < numTensors; i++) {
-          auto descriptor = peers_->recv(PeerGroup::kClient);
-          std::future<Error> recvFuture = recvWithFuture(
-              channel, descriptor, CpuBuffer{dataVec[i].data(), dataSize});
-          recvFutures.push_back(std::move(recvFuture));
-        }
-        for (auto& recvFuture : recvFutures) {
-          Error recvError = recvFuture.get();
-          EXPECT_FALSE(recvError) << recvError.what();
-        }
+    // Initialize with sequential values.
+    std::vector<uint8_t> data(dataSize);
+    std::iota(data.begin(), data.end(), 0);
+    DataWrapper<TBuffer> wrappedData(data);
 
-        // Validate contents of vector.
-        for (auto& data : dataVec) {
-          for (int i = 0; i < data.size(); i++) {
-            EXPECT_EQ(data[i], i % 256);
-          }
-        }
+    // Perform send and wait for completion.
+    std::future<std::tuple<Error, TDescriptor>> descriptorFuture;
+    std::future<Error> sendFuture;
+    std::tie(descriptorFuture, sendFuture) =
+        sendWithFuture(channel, wrappedData.buffer());
+    Error descriptorError;
+    TDescriptor descriptor;
+    std::tie(descriptorError, descriptor) = descriptorFuture.get();
+    EXPECT_FALSE(descriptorError) << descriptorError.what();
+    this->peers_->send(PeerGroup::kServer, descriptor);
+    Error sendError = sendFuture.get();
+    EXPECT_FALSE(sendError) << sendError.what();
 
-        peers_->done(PeerGroup::kClient);
-        peers_->join(PeerGroup::kClient);
+    this->peers_->done(PeerGroup::kClient);
+    this->peers_->join(PeerGroup::kClient);
 
-        ctx->join();
-      });
-}
+    ctx->join();
+  }
+};
 
-TEST_P(ChannelTest, SendTensorsBothWays) {
-  constexpr auto dataSize = 256;
+CHANNEL_TEST_GENERIC(ServerToClient);
 
-  testConnection(
-      [&](std::shared_ptr<transport::Connection> conn) {
-        std::shared_ptr<CpuContext> ctx = GetParam()->makeContext("server");
-        auto channel = ctx->createChannel(std::move(conn), Endpoint::kListen);
+template <typename TBuffer>
+class SendMultipleTensorsTest : public ClientServerChannelTestCase<TBuffer> {
+  // TODO: Declaring this static constexpr causes a link error.
+  const int dataSize = 256 * 1024; // 256KB
+  static constexpr int numTensors = 100;
 
-        // Initialize sendBuffer with sequential values.
-        std::vector<uint8_t> sendData(dataSize);
-        std::iota(sendData.begin(), sendData.end(), 0);
+ public:
+  void server(std::shared_ptr<transport::Connection> conn) override {
+    std::shared_ptr<Context<TBuffer>> ctx =
+        this->helper_->makeContext("server");
+    auto channel = ctx->createChannel(std::move(conn), Endpoint::kListen);
 
-        // Recv buffer.
-        std::vector<uint8_t> recvData(dataSize);
+    // Initialize with sequential values.
+    std::vector<uint8_t> data(dataSize);
+    std::iota(data.begin(), data.end(), 0);
+    DataWrapper<TBuffer> wrappedData(data);
 
-        std::future<Error> sendFuture;
-        std::future<Error> recvFuture;
+    // Error futures
+    std::vector<std::future<Error>> sendFutures;
 
-        // Perform send.
-        {
-          std::future<std::tuple<Error, TDescriptor>> descriptorFuture;
-          std::tie(descriptorFuture, sendFuture) = sendWithFuture(
-              channel, CpuBuffer{sendData.data(), sendData.size()});
-          Error descriptorError;
-          TDescriptor descriptor;
-          std::tie(descriptorError, descriptor) = descriptorFuture.get();
-          EXPECT_FALSE(descriptorError) << descriptorError.what();
-          peers_->send(PeerGroup::kClient, descriptor);
-        }
+    // Perform send and wait for completion.
+    for (int i = 0; i < numTensors; i++) {
+      std::future<std::tuple<Error, TDescriptor>> descriptorFuture;
+      std::future<Error> sendFuture;
+      std::tie(descriptorFuture, sendFuture) =
+          sendWithFuture(channel, wrappedData.buffer());
+      Error descriptorError;
+      TDescriptor descriptor;
+      std::tie(descriptorError, descriptor) = descriptorFuture.get();
+      EXPECT_FALSE(descriptorError) << descriptorError.what();
+      this->peers_->send(PeerGroup::kClient, descriptor);
+      sendFutures.push_back(std::move(sendFuture));
+    }
+    for (auto& sendFuture : sendFutures) {
+      Error sendError = sendFuture.get();
+      EXPECT_FALSE(sendError) << sendError.what();
+    }
 
-        // Perform recv.
-        {
-          auto descriptor = peers_->recv(PeerGroup::kServer);
-          recvFuture = recvWithFuture(
-              channel, descriptor, CpuBuffer{recvData.data(), recvData.size()});
-        }
+    this->peers_->done(PeerGroup::kServer);
+    this->peers_->join(PeerGroup::kServer);
 
-        // Wait for completion of both.
-        Error sendError = sendFuture.get();
-        EXPECT_FALSE(sendError) << sendError.what();
-        Error recvError = recvFuture.get();
-        EXPECT_FALSE(recvError) << recvError.what();
+    ctx->join();
+  }
 
-        // Verify recvd buffers.
-        for (int i = 0; i < recvData.size(); i++) {
-          EXPECT_EQ(recvData[i], i % 256);
-        }
+  void client(std::shared_ptr<transport::Connection> conn) override {
+    std::shared_ptr<Context<TBuffer>> ctx =
+        this->helper_->makeContext("client");
+    auto channel = ctx->createChannel(std::move(conn), Endpoint::kConnect);
 
-        peers_->done(PeerGroup::kServer);
-        peers_->join(PeerGroup::kServer);
+    std::vector<DataWrapper<TBuffer>> wrappedDataVec;
+    for (int i = 0; i < numTensors; i++) {
+      wrappedDataVec.emplace_back(dataSize);
+    }
 
-        ctx->join();
-      },
-      [&](std::shared_ptr<transport::Connection> conn) {
-        std::shared_ptr<CpuContext> ctx = GetParam()->makeContext("client");
-        auto channel = ctx->createChannel(std::move(conn), Endpoint::kConnect);
+    // Error futures
+    std::vector<std::future<Error>> recvFutures;
 
-        // Initialize sendBuffer with sequential values.
-        std::vector<uint8_t> sendData(dataSize);
-        std::iota(sendData.begin(), sendData.end(), 0);
+    // Perform recv and wait for completion.
+    for (auto& wrappedData : wrappedDataVec) {
+      auto descriptor = this->peers_->recv(PeerGroup::kClient);
+      std::future<Error> recvFuture =
+          recvWithFuture(channel, descriptor, wrappedData.buffer());
+      recvFutures.push_back(std::move(recvFuture));
+    }
+    for (auto& recvFuture : recvFutures) {
+      Error recvError = recvFuture.get();
+      EXPECT_FALSE(recvError) << recvError.what();
+    }
 
-        // Recv buffer.
-        std::vector<uint8_t> recvData(dataSize);
+    // Validate contents of vector.
+    for (auto& wrappedData : wrappedDataVec) {
+      auto unwrappedData = wrappedData.unwrap();
+      for (int i = 0; i < dataSize; i++) {
+        EXPECT_EQ(unwrappedData[i], i % 256);
+      }
+    }
 
-        std::future<Error> sendFuture;
-        std::future<Error> recvFuture;
+    this->peers_->done(PeerGroup::kClient);
+    this->peers_->join(PeerGroup::kClient);
 
-        // Perform send.
-        {
-          std::future<std::tuple<Error, TDescriptor>> descriptorFuture;
-          std::tie(descriptorFuture, sendFuture) = sendWithFuture(
-              channel, CpuBuffer{sendData.data(), sendData.size()});
-          Error descriptorError;
-          TDescriptor descriptor;
-          std::tie(descriptorError, descriptor) = descriptorFuture.get();
-          EXPECT_FALSE(descriptorError) << descriptorError.what();
-          peers_->send(PeerGroup::kServer, descriptor);
-        }
+    ctx->join();
+  }
+};
 
-        // Perform recv.
-        {
-          auto descriptor = peers_->recv(PeerGroup::kClient);
-          recvFuture = recvWithFuture(
-              channel, descriptor, CpuBuffer{recvData.data(), recvData.size()});
-        }
+CHANNEL_TEST_GENERIC(SendMultipleTensors);
 
-        // Wait for completion of both.
-        Error sendError = sendFuture.get();
-        EXPECT_FALSE(sendError) << sendError.what();
-        Error recvError = recvFuture.get();
-        EXPECT_FALSE(recvError) << recvError.what();
+template <typename TBuffer>
+class SendTensorsBothWaysTest : public ClientServerChannelTestCase<TBuffer> {
+  static constexpr int dataSize = 256;
 
-        // Verify recvd buffers.
-        for (int i = 0; i < recvData.size(); i++) {
-          EXPECT_EQ(recvData[i], i % 256);
-        }
+  void server(std::shared_ptr<transport::Connection> conn) override {
+    std::shared_ptr<Context<TBuffer>> ctx =
+        this->helper_->makeContext("server");
+    auto channel = ctx->createChannel(std::move(conn), Endpoint::kListen);
 
-        peers_->done(PeerGroup::kClient);
-        peers_->join(PeerGroup::kClient);
+    // Initialize sendBuffer with sequential values.
+    std::vector<uint8_t> sendData(dataSize);
+    std::iota(sendData.begin(), sendData.end(), 0);
+    DataWrapper<TBuffer> wrappedSendData(sendData);
 
-        ctx->join();
-      });
-}
+    // Recv buffer.
+    DataWrapper<TBuffer> wrappedRecvData(dataSize);
 
-TEST_P(ChannelTest, NullPointer) {
-  // Call send and recv with a null pointer and a length of 0.
+    std::future<Error> sendFuture;
+    std::future<Error> recvFuture;
 
-  testConnection(
-      [&](std::shared_ptr<transport::Connection> conn) {
-        std::shared_ptr<CpuContext> ctx = GetParam()->makeContext("server");
-        auto channel = ctx->createChannel(std::move(conn), Endpoint::kListen);
+    // Perform send.
+    {
+      std::future<std::tuple<Error, TDescriptor>> descriptorFuture;
+      std::tie(descriptorFuture, sendFuture) =
+          sendWithFuture(channel, wrappedSendData.buffer());
+      Error descriptorError;
+      TDescriptor descriptor;
+      std::tie(descriptorError, descriptor) = descriptorFuture.get();
+      EXPECT_FALSE(descriptorError) << descriptorError.what();
+      this->peers_->send(PeerGroup::kClient, descriptor);
+    }
 
-        // Perform send and wait for completion.
-        std::future<std::tuple<Error, TDescriptor>> descriptorFuture;
-        std::future<Error> sendFuture;
-        std::tie(descriptorFuture, sendFuture) =
-            sendWithFuture(channel, CpuBuffer{nullptr, 0});
-        Error descriptorError;
-        TDescriptor descriptor;
-        std::tie(descriptorError, descriptor) = descriptorFuture.get();
-        EXPECT_FALSE(descriptorError) << descriptorError.what();
-        peers_->send(PeerGroup::kClient, descriptor);
-        Error sendError = sendFuture.get();
-        EXPECT_FALSE(sendError) << sendError.what();
+    // Perform recv.
+    {
+      auto descriptor = this->peers_->recv(PeerGroup::kServer);
+      recvFuture =
+          recvWithFuture(channel, descriptor, wrappedRecvData.buffer());
+    }
 
-        peers_->done(PeerGroup::kServer);
-        peers_->join(PeerGroup::kServer);
+    // Wait for completion of both.
+    Error sendError = sendFuture.get();
+    EXPECT_FALSE(sendError) << sendError.what();
+    Error recvError = recvFuture.get();
+    EXPECT_FALSE(recvError) << recvError.what();
 
-        ctx->join();
-      },
-      [&](std::shared_ptr<transport::Connection> conn) {
-        std::shared_ptr<CpuContext> ctx = GetParam()->makeContext("client");
-        auto channel = ctx->createChannel(std::move(conn), Endpoint::kConnect);
+    // Verify recvd buffers.
+    auto unwrappedData = wrappedRecvData.unwrap();
+    for (int i = 0; i < dataSize; i++) {
+      EXPECT_EQ(unwrappedData[i], i % 256);
+    }
 
-        // Perform recv and wait for completion.
-        auto descriptor = peers_->recv(PeerGroup::kClient);
-        std::future<Error> recvFuture =
-            recvWithFuture(channel, descriptor, CpuBuffer{nullptr, 0});
-        Error recvError = recvFuture.get();
-        EXPECT_FALSE(recvError) << recvError.what();
+    this->peers_->done(PeerGroup::kServer);
+    this->peers_->join(PeerGroup::kServer);
 
-        peers_->done(PeerGroup::kClient);
-        peers_->join(PeerGroup::kClient);
+    ctx->join();
+  }
 
-        ctx->join();
-      });
-}
+  void client(std::shared_ptr<transport::Connection> conn) override {
+    std::shared_ptr<Context<TBuffer>> ctx =
+        this->helper_->makeContext("client");
+    auto channel = ctx->createChannel(std::move(conn), Endpoint::kConnect);
 
-TEST_P(ChannelTest, EmptyTensor) {
-  // Call send and recv with a length of 0 but a non-null pointer.
+    // Initialize sendBuffer with sequential values.
+    std::vector<uint8_t> sendData(dataSize);
+    std::iota(sendData.begin(), sendData.end(), 0);
+    DataWrapper<TBuffer> wrappedSendData(sendData);
 
-  testConnection(
-      [&](std::shared_ptr<transport::Connection> conn) {
-        std::shared_ptr<CpuContext> ctx = GetParam()->makeContext("server");
-        auto channel = ctx->createChannel(std::move(conn), Endpoint::kListen);
+    // Recv buffer.
+    DataWrapper<TBuffer> wrappedRecvData(dataSize);
 
-        // Allocate a non-empty vector so that its .data() pointer is non-null.
-        std::vector<uint8_t> data(1);
+    std::future<Error> sendFuture;
+    std::future<Error> recvFuture;
 
-        // Perform send and wait for completion.
-        std::future<std::tuple<Error, TDescriptor>> descriptorFuture;
-        std::future<Error> sendFuture;
-        std::tie(descriptorFuture, sendFuture) =
-            sendWithFuture(channel, CpuBuffer{data.data(), 0});
-        Error descriptorError;
-        TDescriptor descriptor;
-        std::tie(descriptorError, descriptor) = descriptorFuture.get();
-        EXPECT_FALSE(descriptorError) << descriptorError.what();
-        peers_->send(PeerGroup::kClient, descriptor);
-        Error sendError = sendFuture.get();
-        EXPECT_FALSE(sendError) << sendError.what();
+    // Perform send.
+    {
+      std::future<std::tuple<Error, TDescriptor>> descriptorFuture;
+      std::tie(descriptorFuture, sendFuture) =
+          sendWithFuture(channel, wrappedSendData.buffer());
+      Error descriptorError;
+      TDescriptor descriptor;
+      std::tie(descriptorError, descriptor) = descriptorFuture.get();
+      EXPECT_FALSE(descriptorError) << descriptorError.what();
+      this->peers_->send(PeerGroup::kServer, descriptor);
+    }
 
-        peers_->done(PeerGroup::kServer);
-        peers_->join(PeerGroup::kServer);
+    // Perform recv.
+    {
+      auto descriptor = this->peers_->recv(PeerGroup::kClient);
+      recvFuture =
+          recvWithFuture(channel, descriptor, wrappedRecvData.buffer());
+    }
 
-        ctx->join();
-      },
-      [&](std::shared_ptr<transport::Connection> conn) {
-        std::shared_ptr<CpuContext> ctx = GetParam()->makeContext("client");
-        auto channel = ctx->createChannel(std::move(conn), Endpoint::kConnect);
+    // Wait for completion of both.
+    Error sendError = sendFuture.get();
+    EXPECT_FALSE(sendError) << sendError.what();
+    Error recvError = recvFuture.get();
+    EXPECT_FALSE(recvError) << recvError.what();
 
-        // Allocate a non-empty vector so that its .data() pointer is non-null.
-        std::vector<uint8_t> data(1);
+    // Verify recvd buffers.
+    auto unwrappedData = wrappedRecvData.unwrap();
+    for (int i = 0; i < dataSize; i++) {
+      EXPECT_EQ(unwrappedData[i], i % 256);
+    }
 
-        // Perform recv and wait for completion.
-        auto descriptor = peers_->recv(PeerGroup::kClient);
-        std::future<Error> recvFuture =
-            recvWithFuture(channel, descriptor, CpuBuffer{data.data(), 0});
-        Error recvError = recvFuture.get();
-        EXPECT_FALSE(recvError) << recvError.what();
+    this->peers_->done(PeerGroup::kClient);
+    this->peers_->join(PeerGroup::kClient);
 
-        peers_->done(PeerGroup::kClient);
-        peers_->join(PeerGroup::kClient);
+    ctx->join();
+  }
+};
 
-        ctx->join();
-      });
-}
+CHANNEL_TEST_GENERIC(SendTensorsBothWays);
 
-TEST_P(ChannelTest, contextIsNotJoined) {
+template <typename TBuffer>
+class ContextIsNotJoinedTest : public ClientServerChannelTestCase<TBuffer> {
   const std::string kReady = "ready";
 
-  testConnection(
-      [&](std::shared_ptr<transport::Connection> conn) {
-        std::shared_ptr<CpuContext> context = GetParam()->makeContext("server");
-        peers_->send(PeerGroup::kClient, kReady);
-        context->createChannel(std::move(conn), Endpoint::kListen);
-      },
-      [&](std::shared_ptr<transport::Connection> conn) {
-        std::shared_ptr<CpuContext> context = GetParam()->makeContext("client");
-        EXPECT_EQ(kReady, peers_->recv(PeerGroup::kClient));
-        context->createChannel(std::move(conn), Endpoint::kConnect);
-      });
-}
+ public:
+  void server(std::shared_ptr<transport::Connection> conn) override {
+    std::shared_ptr<Context<TBuffer>> context =
+        this->helper_->makeContext("server");
+    this->peers_->send(PeerGroup::kClient, kReady);
+    context->createChannel(std::move(conn), Endpoint::kListen);
+  }
 
-TEST_P(ChannelTest, CallbacksAreDeferred) {
-  // This test wants to make sure that the "heavy lifting" of copying data isn't
-  // performed inline inside the recv method as that would make the user-facing
-  // read method of the pipe blocking.
-  // However, since we can't really check that behavior, we'll check a highly
-  // correlated one: that the recv callback isn't called inline from within the
-  // recv method. We do so by having that behavior cause a deadlock.
-  constexpr auto dataSize = 256;
+  void client(std::shared_ptr<transport::Connection> conn) override {
+    std::shared_ptr<Context<TBuffer>> context =
+        this->helper_->makeContext("client");
+    EXPECT_EQ(kReady, this->peers_->recv(PeerGroup::kClient));
+    context->createChannel(std::move(conn), Endpoint::kConnect);
+  }
+};
 
-  testConnection(
-      [&](std::shared_ptr<transport::Connection> conn) {
-        std::shared_ptr<CpuContext> ctx = GetParam()->makeContext("server");
-        auto channel = ctx->createChannel(std::move(conn), Endpoint::kListen);
-
-        // Initialize with sequential values.
-        std::vector<uint8_t> data(dataSize);
-        std::iota(data.begin(), data.end(), 0);
-        auto buffer = helper_->makeBuffer(data.size());
-        buffer->wrap(data.data());
-
-        // Perform send and wait for completion.
-        std::promise<std::tuple<Error, TDescriptor>> descriptorPromise;
-        std::promise<Error> sendPromise;
-        std::mutex mutex;
-        std::unique_lock<std::mutex> callerLock(mutex);
-        channel->send(
-            CpuBuffer{data.data(), data.size()},
-            [&descriptorPromise](const Error& error, TDescriptor descriptor) {
-              descriptorPromise.set_value(
-                  std::make_tuple(error, std::move(descriptor)));
-            },
-            [&sendPromise, &mutex](const Error& error) {
-              std::unique_lock<std::mutex> calleeLock(mutex);
-              sendPromise.set_value(error);
-            });
-        callerLock.unlock();
-        Error descriptorError;
-        TDescriptor descriptor;
-        std::tie(descriptorError, descriptor) =
-            descriptorPromise.get_future().get();
-        EXPECT_FALSE(descriptorError) << descriptorError.what();
-        peers_->send(PeerGroup::kClient, descriptor);
-        Error sendError = sendPromise.get_future().get();
-        EXPECT_FALSE(sendError) << sendError.what();
-
-        peers_->done(PeerGroup::kServer);
-        peers_->join(PeerGroup::kServer);
-
-        ctx->join();
-      },
-      [&](std::shared_ptr<transport::Connection> conn) {
-        std::shared_ptr<CpuContext> ctx = GetParam()->makeContext("client");
-        auto channel = ctx->createChannel(std::move(conn), Endpoint::kConnect);
-
-        // Initialize with zeroes.
-        std::vector<uint8_t> data(dataSize);
-        std::fill(data.begin(), data.end(), 0);
-
-        // Perform recv and wait for completion.
-        std::promise<Error> recvPromise;
-        std::mutex mutex;
-        std::unique_lock<std::mutex> callerLock(mutex);
-        auto descriptor = peers_->recv(PeerGroup::kClient);
-        channel->recv(
-            descriptor,
-            CpuBuffer{data.data(), data.size()},
-            [&recvPromise, &mutex](const Error& error) {
-              std::unique_lock<std::mutex> calleeLock(mutex);
-              recvPromise.set_value(error);
-            });
-        callerLock.unlock();
-        Error recvError = recvPromise.get_future().get();
-        EXPECT_FALSE(recvError) << recvError.what();
-
-        // Validate contents of vector.
-        for (auto i = 0; i < data.size(); i++) {
-          EXPECT_EQ(data[i], i);
-        }
-
-        peers_->done(PeerGroup::kClient);
-        peers_->join(PeerGroup::kClient);
-
-        ctx->join();
-      });
-}
+CHANNEL_TEST_GENERIC(ContextIsNotJoined);
