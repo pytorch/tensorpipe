@@ -16,6 +16,10 @@
 
 #include <tensorpipe/common/defs.h>
 
+#ifndef SOCK_NONBLOCK
+#define SOCK_NONBLOCK 0
+#endif // SOCK_NONBLOCK
+
 namespace tensorpipe {
 
 std::tuple<Error, std::shared_ptr<Socket>> Socket::createForFamily(
@@ -26,7 +30,16 @@ std::tuple<Error, std::shared_ptr<Socket>> Socket::createForFamily(
         TP_CREATE_ERROR(SystemError, "socket", errno),
         std::shared_ptr<Socket>());
   }
-  return std::make_tuple(Error::kSuccess, std::make_shared<Socket>(rv));
+  auto sock = std::make_shared<Socket>(rv);
+#ifndef SOCK_NONBLOCK
+  // The SOCK_NONBLOCK option of socket() is Linux-only. On OSX, we need to
+  // manually set the socket to non-blocking after its creation.
+  auto err = sock->block(false);
+  if (err) {
+    return std::make_tuple(err, sock);
+  }
+#endif // SOCK_NONBLOCK
+  return std::make_tuple(Error::kSuccess, sock);
 }
 
 Error Socket::block(bool on) {

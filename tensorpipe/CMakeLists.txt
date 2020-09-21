@@ -11,6 +11,8 @@ add_library(tensorpipe
   channel/registry.cc
   common/address.cc
   common/error.cc
+  common/fd.cc
+  common/socket.cc
   common/system.cc
   core/context.cc
   core/error.cc
@@ -95,8 +97,6 @@ target_link_libraries(tensorpipe PRIVATE uv::uv)
 
 if(TP_ENABLE_SHM)
   target_sources(tensorpipe PRIVATE
-    common/fd.cc
-    common/socket.cc
     transport/shm/context.cc
     transport/shm/connection.cc
     transport/shm/listener.cc
