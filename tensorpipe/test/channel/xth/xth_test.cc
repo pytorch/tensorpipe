@@ -17,7 +17,7 @@ class XthChannelTestHelper : public ChannelTestHelper {
     return "xth";
   }
 
-  std::shared_ptr<tensorpipe::channel::Context> makeContext(
+  std::shared_ptr<tensorpipe::channel::CpuContext> makeContext(
       std::string id) override {
     auto context = std::make_shared<tensorpipe::channel::xth::Context>();
     context->setId(std::move(id));

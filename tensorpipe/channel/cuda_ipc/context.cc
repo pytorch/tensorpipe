@@ -41,12 +41,6 @@ std::string generateDomainDescriptor() {
   return oss.str();
 }
 
-std::shared_ptr<Context> makeCudaIpcChannel() {
-  return std::make_shared<Context>();
-}
-
-TP_REGISTER_CREATOR(TensorpipeChannelRegistry, cuda_ipc, makeCudaIpcChannel);
-
 } // namespace
 
 class Context::Impl : public Context::PrivateIface,
@@ -56,7 +50,7 @@ class Context::Impl : public Context::PrivateIface,
 
   const std::string& domainDescriptor() const;
 
-  std::shared_ptr<channel::Channel> createChannel(
+  std::shared_ptr<channel::CudaChannel> createChannel(
       std::shared_ptr<transport::Connection>,
       Endpoint);
 
@@ -137,13 +131,13 @@ const std::string& Context::Impl::domainDescriptor() const {
   return domainDescriptor_;
 }
 
-std::shared_ptr<channel::Channel> Context::createChannel(
+std::shared_ptr<channel::CudaChannel> Context::createChannel(
     std::shared_ptr<transport::Connection> connection,
     Endpoint endpoint) {
   return impl_->createChannel(std::move(connection), endpoint);
 }
 
-std::shared_ptr<channel::Channel> Context::Impl::createChannel(
+std::shared_ptr<channel::CudaChannel> Context::Impl::createChannel(
     std::shared_ptr<transport::Connection> connection,
     Endpoint /* unused */) {
   TP_THROW_ASSERT_IF(joined_);

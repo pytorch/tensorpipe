@@ -25,6 +25,7 @@ namespace channel {
 // context. All registered instances are assumed to be eligible
 // channels for all pairs.
 //
+template <typename TBuffer>
 class Context {
  public:
   // Return string to describe the domain for this channel.
@@ -42,7 +43,7 @@ class Context {
   // initialized yet, take care to queue these operations to execute
   // as soon as initialization has completed.
   //
-  virtual std::shared_ptr<Channel> createChannel(
+  virtual std::shared_ptr<Channel<TBuffer>> createChannel(
       std::shared_ptr<transport::Connection>,
       Endpoint) = 0;
 

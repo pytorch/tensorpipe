@@ -85,11 +85,13 @@ void parseDescriptorOfMessage(ReadOperation& op, const Packet& nopPacketIn) {
   }
   for (const auto& nopTensorDescriptor :
        nopMessageDescriptor.tensorDescriptors) {
-    Message::Tensor tensor;
+    Message::Tensor tensor{
+        CpuBuffer{nullptr,
+                  static_cast<size_t>(nopTensorDescriptor.sizeInBytes)},
+        nopTensorDescriptor.metadata};
+
     ReadOperation::Tensor tensorBeingAllocated;
-    tensor.length = nopTensorDescriptor.sizeInBytes;
-    tensorBeingAllocated.length = tensor.length;
-    tensor.metadata = nopTensorDescriptor.metadata;
+    tensorBeingAllocated.length = tensor.buffer.cpu.length;
     tensorBeingAllocated.channelName = nopTensorDescriptor.channelName;
     // FIXME If the nop object wasn't const we could move the string out...
     tensorBeingAllocated.descriptor = nopTensorDescriptor.channelDescriptor;
@@ -98,8 +100,8 @@ void parseDescriptorOfMessage(ReadOperation& op, const Packet& nopPacketIn) {
   }
 }
 
-// Raise an error if the number or sizes of the payloads and the tensors in the
-// message do not match the ones that are expected by the ReadOperation.
+// Raise an error if the number or sizes of the payloads and the tensors in
+// the message do not match the ones that are expected by the ReadOperation.
 void checkAllocationCompatibility(
     const ReadOperation& op,
     const Message& message) {
@@ -118,7 +120,7 @@ void checkAllocationCompatibility(
     const Message::Tensor& tensor = message.tensors[tensorIdx];
     const ReadOperation::Tensor& tensorBeingAllocated = op.tensors[tensorIdx];
     TP_DCHECK_GE(tensorBeingAllocated.length, 0);
-    TP_THROW_ASSERT_IF(tensor.length != tensorBeingAllocated.length);
+    TP_THROW_ASSERT_IF(tensor.buffer.cpu.length != tensorBeingAllocated.length);
   }
 }
 
@@ -181,8 +183,8 @@ std::shared_ptr<NopHolder<Packet>> makeDescriptorForMessage(
     nopMessageDescriptor.tensorDescriptors.emplace_back();
     MessageDescriptor::TensorDescriptor& nopTensorDescriptor =
         nopMessageDescriptor.tensorDescriptors.back();
-    nopTensorDescriptor.deviceType = DeviceType::DEVICE_TYPE_CPU;
-    nopTensorDescriptor.sizeInBytes = tensor.length;
+    nopTensorDescriptor.deviceType = DeviceType::kCpu;
+    nopTensorDescriptor.sizeInBytes = tensor.buffer.cpu.length;
     nopTensorDescriptor.metadata = tensor.metadata;
     nopTensorDescriptor.channelName = otherTensor.channelName;
     // FIXME In principle we could move here.
@@ -260,7 +262,8 @@ class Pipe::Impl : public std::enable_shared_from_this<Pipe::Impl> {
 
   std::string transport_;
   std::shared_ptr<transport::Connection> connection_;
-  std::unordered_map<std::string, std::shared_ptr<channel::Channel>> channels_;
+  std::unordered_map<std::string, std::shared_ptr<channel::CpuChannel>>
+      channels_;
 
   // The server will set this up when it tell the client to switch to a
   // different connection or to open some channels.
@@ -476,7 +479,7 @@ void Pipe::Impl::initFromLoop_() {
     }
     for (const auto& channelContextIter : context_->getOrderedChannels()) {
       const std::string& channelName = std::get<0>(channelContextIter.second);
-      const channel::Context& channelContext =
+      const channel::CpuContext& channelContext =
           *(std::get<1>(channelContextIter.second));
       ChannelAdvertisement& nopChannelAdvertisement =
           nopBrochure.channelAdvertisement[channelName];
@@ -669,14 +672,14 @@ void Pipe::Impl::readPayloadsAndReceiveTensorsOfMessage(ReadOperation& op) {
        tensorIdx++) {
     Message::Tensor& tensor = op.message.tensors[tensorIdx];
     ReadOperation::Tensor& tensorBeingAllocated = op.tensors[tensorIdx];
-    std::shared_ptr<channel::Channel> channel =
+    std::shared_ptr<channel::CpuChannel> channel =
         channels_.at(tensorBeingAllocated.channelName);
     TP_VLOG(3) << "Pipe " << id_ << " is receiving tensor #"
                << op.sequenceNumber << "." << tensorIdx;
+
     channel->recv(
         std::move(tensorBeingAllocated.descriptor),
-        tensor.data,
-        tensor.length,
+        tensor.buffer.cpu,
         eagerCallbackWrapper_([&op, tensorIdx](Impl& impl) {
           TP_VLOG(3) << "Pipe " << impl.id_ << " done receiving tensor #"
                      << op.sequenceNumber << "." << tensorIdx;
@@ -1076,13 +1079,13 @@ void Pipe::Impl::sendTensorsOfMessage_(WriteOperation& op) {
       if (channelIter == channels_.cend()) {
         continue;
       }
-      channel::Channel& channel = *(channelIter->second);
+      channel::CpuChannel& channel = *(channelIter->second);
 
       TP_VLOG(3) << "Pipe " << id_ << " is sending tensor #"
                  << op.sequenceNumber << "." << tensorIdx;
+
       channel.send(
-          tensor.data,
-          tensor.length,
+          tensor.buffer.cpu,
           eagerCallbackWrapper_(
               [&op, tensorIdx](Impl& impl, channel::TDescriptor descriptor) {
                 TP_VLOG(3) << "Pipe " << impl.id_ << " got tensor descriptor #"
@@ -1220,7 +1223,7 @@ void Pipe::Impl::onReadWhileServerWaitingForBrochure_(
 
   for (const auto& channelContextIter : context_->getOrderedChannels()) {
     const std::string& channelName = std::get<0>(channelContextIter.second);
-    const channel::Context& channelContext =
+    const channel::CpuContext& channelContext =
         *(std::get<1>(channelContextIter.second));
 
     const auto nopChannelAdvertisementIter =
@@ -1315,7 +1318,7 @@ void Pipe::Impl::onReadWhileClientWaitingForBrochureAnswer_(
     const ChannelSelection& nopChannelSelection =
         nopChannelSelectionIter.second;
 
-    std::shared_ptr<channel::Context> channelContext =
+    std::shared_ptr<channel::CpuContext> channelContext =
         context_->getChannel(channelName);
 
     TP_VLOG(3) << "Pipe " << id_ << " is opening connection (for channel "
@@ -1339,8 +1342,9 @@ void Pipe::Impl::onReadWhileClientWaitingForBrochureAnswer_(
                      << " done writing nop object (requested connection)";
         }));
 
-    std::shared_ptr<channel::Channel> channel = channelContext->createChannel(
-        std::move(connection), channel::Endpoint::kConnect);
+    std::shared_ptr<channel::CpuChannel> channel =
+        channelContext->createChannel(
+            std::move(connection), channel::Endpoint::kConnect);
     channel->setId(id_ + ".ch_" + channelName);
     channels_.emplace(channelName, std::move(channel));
   }
@@ -1386,10 +1390,10 @@ void Pipe::Impl::onAcceptWhileServerWaitingForChannel_(
   auto channelIter = channels_.find(channelName);
   TP_DCHECK(channelIter == channels_.end());
 
-  std::shared_ptr<channel::Context> channelContext =
+  std::shared_ptr<channel::CpuContext> channelContext =
       context_->getChannel(channelName);
 
-  std::shared_ptr<channel::Channel> channel = channelContext->createChannel(
+  std::shared_ptr<channel::CpuChannel> channel = channelContext->createChannel(
       std::move(receivedConnection), channel::Endpoint::kListen);
   channel->setId(id_ + ".ch_" + channelName);
   channels_.emplace(channelName, std::move(channel));

@@ -33,16 +33,11 @@ class Channel::Impl : public std::enable_shared_from_this<Channel::Impl> {
   void init();
 
   void send(
-      const void* ptr,
-      size_t length,
+      CpuBuffer buffer,
       TDescriptorCallback descriptorCallback,
       TSendCallback callback);
 
-  void recv(
-      TDescriptor descriptor,
-      void* ptr,
-      size_t length,
-      TRecvCallback callback);
+  void recv(TDescriptor descriptor, CpuBuffer buffer, TRecvCallback callback);
 
   // Tell the channel what its identifier is.
   void setId(std::string id);
@@ -53,16 +48,14 @@ class Channel::Impl : public std::enable_shared_from_this<Channel::Impl> {
   OnDemandLoop loop_;
 
   void sendFromLoop_(
-      const void* ptr,
-      size_t length,
+      CpuBuffer buffer,
       TDescriptorCallback descriptorCallback,
       TSendCallback callback);
 
   // Receive memory region from peer.
   void recvFromLoop_(
       TDescriptor descriptor,
-      void* ptr,
-      size_t length,
+      CpuBuffer buffer,
       TRecvCallback callback);
 
   void setIdFromLoop_(std::string id);
@@ -126,32 +119,27 @@ Channel::Impl::Impl(
       id_(std::move(id)) {}
 
 void Channel::send(
-    const void* ptr,
-    size_t length,
+    CpuBuffer buffer,
     TDescriptorCallback descriptorCallback,
     TSendCallback callback) {
-  impl_->send(ptr, length, std::move(descriptorCallback), std::move(callback));
+  impl_->send(buffer, std::move(descriptorCallback), std::move(callback));
 }
 
 void Channel::Impl::send(
-    const void* ptr,
-    size_t length,
+    CpuBuffer buffer,
     TDescriptorCallback descriptorCallback,
     TSendCallback callback) {
   loop_.deferToLoop([this,
-                     ptr,
-                     length,
+                     buffer,
                      descriptorCallback{std::move(descriptorCallback)},
                      callback{std::move(callback)}]() mutable {
-    sendFromLoop_(
-        ptr, length, std::move(descriptorCallback), std::move(callback));
+    sendFromLoop_(buffer, std::move(descriptorCallback), std::move(callback));
   });
 }
 
 // Send memory region to peer.
 void Channel::Impl::sendFromLoop_(
-    const void* ptr,
-    size_t length,
+    CpuBuffer buffer,
     TDescriptorCallback descriptorCallback,
     TSendCallback callback) {
   TP_DCHECK(loop_.inLoop());
@@ -191,8 +179,8 @@ void Channel::Impl::sendFromLoop_(
   TP_VLOG(6) << "Channel " << id_ << " is writing payload (#" << sequenceNumber
              << ")";
   connection_->write(
-      ptr,
-      length,
+      buffer.ptr,
+      buffer.length,
       eagerCallbackWrapper_(
           [sequenceNumber, callback{std::move(callback)}](Impl& impl) {
             TP_VLOG(6) << "Channel " << impl.id_ << " done writing payload (#"
@@ -206,30 +194,26 @@ void Channel::Impl::sendFromLoop_(
 // Receive memory region from peer.
 void Channel::recv(
     TDescriptor descriptor,
-    void* ptr,
-    size_t length,
+    CpuBuffer buffer,
     TRecvCallback callback) {
-  impl_->recv(std::move(descriptor), ptr, length, std::move(callback));
+  impl_->recv(std::move(descriptor), buffer, std::move(callback));
 }
 
 void Channel::Impl::recv(
     TDescriptor descriptor,
-    void* ptr,
-    size_t length,
+    CpuBuffer buffer,
     TRecvCallback callback) {
   loop_.deferToLoop([this,
                      descriptor{std::move(descriptor)},
-                     ptr,
-                     length,
+                     buffer,
                      callback{std::move(callback)}]() mutable {
-    recvFromLoop_(std::move(descriptor), ptr, length, std::move(callback));
+    recvFromLoop_(std::move(descriptor), buffer, std::move(callback));
   });
 }
 
 void Channel::Impl::recvFromLoop_(
     TDescriptor descriptor,
-    void* ptr,
-    size_t length,
+    CpuBuffer buffer,
     TRecvCallback callback) {
   TP_DCHECK(loop_.inLoop());
 
@@ -257,8 +241,8 @@ void Channel::Impl::recvFromLoop_(
   TP_VLOG(6) << "Channel " << id_ << " is reading payload (#" << sequenceNumber
              << ")";
   connection_->read(
-      ptr,
-      length,
+      buffer.ptr,
+      buffer.length,
       eagerCallbackWrapper_(
           [sequenceNumber, callback{std::move(callback)}](
               Impl& impl, const void* /* unused */, size_t /* unused */) {

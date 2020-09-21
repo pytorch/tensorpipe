@@ -12,6 +12,7 @@
 
 // High-level API
 
+#include <tensorpipe/core/buffer.h>
 #include <tensorpipe/core/context.h>
 #include <tensorpipe/core/error.h>
 #include <tensorpipe/core/listener.h>
@@ -32,7 +33,11 @@
 
 // Channels
 
-#include <tensorpipe/channel/context.h>
+#include <tensorpipe/channel/cpu_context.h>
+#if TENSORPIPE_SUPPORTS_CUDA
+#include <tensorpipe/channel/cuda_context.h>
+#endif // TENSORPIPE_SUPPORTS_CUDA
+
 #include <tensorpipe/channel/error.h>
 
 #include <tensorpipe/channel/basic/context.h>
