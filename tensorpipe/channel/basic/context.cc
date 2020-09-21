@@ -41,7 +41,7 @@ class Context::Impl : public Context::PrivateIface,
 
   const std::string& domainDescriptor() const;
 
-  std::shared_ptr<channel::Channel> createChannel(
+  std::shared_ptr<channel::CpuChannel> createChannel(
       std::shared_ptr<transport::Connection>,
       Endpoint);
 
@@ -88,13 +88,13 @@ const std::string& Context::Impl::domainDescriptor() const {
   return domainDescriptor_;
 }
 
-std::shared_ptr<channel::Channel> Context::createChannel(
+std::shared_ptr<channel::CpuChannel> Context::createChannel(
     std::shared_ptr<transport::Connection> connection,
     Endpoint endpoint) {
   return impl_->createChannel(std::move(connection), endpoint);
 }
 
-std::shared_ptr<channel::Channel> Context::Impl::createChannel(
+std::shared_ptr<channel::CpuChannel> Context::Impl::createChannel(
     std::shared_ptr<transport::Connection> connection,
     Endpoint /* unused */) {
   std::string channelId = id_ + ".c" + std::to_string(channelCounter_++);
