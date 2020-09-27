@@ -96,4 +96,28 @@ TEST(Sockaddr, Inet6) {
     ASSERT_EQ(port(sa), 0);
     ASSERT_EQ(sa.str(), "[::1]:0");
   }
+
+// Interface name conventions change based on platform. The tests use "lo" for
+// the loopback interface, which is Linux-specific. OSX uses lo0, Windows uses
+// integers.
+#ifdef __linux__
+  {
+    auto sa = uv::Sockaddr::createInetSockAddr("::1%lo");
+    ASSERT_EQ(family(sa), AF_INET6);
+    ASSERT_EQ(port(sa), 0);
+    ASSERT_EQ(sa.str(), "[::1%lo]:0");
+  }
+
+  {
+    sockaddr_in6 sa;
+    std::memset(&sa, 0, sizeof(sa));
+    sa.sin6_family = AF_INET6;
+    sa.sin6_port = ntohs(42);
+    sa.sin6_flowinfo = 0;
+    sa.sin6_addr.s6_addr[15] = 1;
+    sa.sin6_scope_id = 1;
+    uv::Sockaddr tpSa(reinterpret_cast<sockaddr*>(&sa), sizeof(sa));
+    ASSERT_EQ(tpSa.str(), "[::1%lo]:42");
+  }
+#endif
 }

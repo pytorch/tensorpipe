@@ -20,8 +20,9 @@ UVTransportTestHelper helper;
 
 using namespace tensorpipe;
 
-// Disabled because on CircleCI the macOS machines cannot resolve their hostname
-TEST_P(UVTransportContextTest, DISABLED_LookupHostnameAddress) {
+// Linux-only because OSX machines on CircleCI cannot resolve their hostname
+#ifdef __linux__
+TEST_P(UVTransportContextTest, LookupHostnameAddress) {
   auto context = std::dynamic_pointer_cast<transport::uv::Context>(
       GetParam()->getContext());
   ASSERT_TRUE(context);
@@ -32,9 +33,11 @@ TEST_P(UVTransportContextTest, DISABLED_LookupHostnameAddress) {
   EXPECT_FALSE(error) << error.what();
   EXPECT_NE(addr, "");
 }
+#endif
 
-// Disabled because "lo" isn't a universal convention for the loopback interface
-TEST_P(UVTransportContextTest, DISABLED_LookupInterfaceAddress) {
+// Linux-only because OSX uses "lo0" for the loopback interface
+#ifdef __linux__
+TEST_P(UVTransportContextTest, LookupInterfaceAddress) {
   auto context = std::dynamic_pointer_cast<transport::uv::Context>(
       GetParam()->getContext());
   ASSERT_TRUE(context);
@@ -45,5 +48,6 @@ TEST_P(UVTransportContextTest, DISABLED_LookupInterfaceAddress) {
   EXPECT_FALSE(error) << error.what();
   EXPECT_NE(addr, "");
 }
+#endif
 
 INSTANTIATE_TEST_CASE_P(Uv, UVTransportContextTest, ::testing::Values(&helper));

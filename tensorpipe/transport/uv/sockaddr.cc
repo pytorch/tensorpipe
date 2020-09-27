@@ -68,11 +68,8 @@ Sockaddr Sockaddr::createInetSockAddr(const std::string& str) {
   // Try to convert an IPv4 address.
   {
     struct sockaddr_in addr;
-    std::memset(&addr, 0, sizeof(addr));
-    auto rv = uv_inet_pton(AF_INET, addrStr.c_str(), &addr.sin_addr);
+    auto rv = uv_ip4_addr(addrStr.c_str(), port, &addr);
     if (rv == 0) {
-      addr.sin_family = AF_INET;
-      addr.sin_port = ntohs(port);
       return Sockaddr(reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr));
     }
   }
@@ -80,11 +77,8 @@ Sockaddr Sockaddr::createInetSockAddr(const std::string& str) {
   // Try to convert an IPv6 address.
   {
     struct sockaddr_in6 addr;
-    std::memset(&addr, 0, sizeof(addr));
-    auto rv = uv_inet_pton(AF_INET6, addrStr.c_str(), &addr.sin6_addr);
+    auto rv = uv_ip6_addr(addrStr.c_str(), port, &addr);
     if (rv == 0) {
-      addr.sin6_family = AF_INET6;
-      addr.sin6_port = ntohs(port);
       return Sockaddr(reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr));
     }
   }
@@ -103,15 +97,23 @@ std::string Sockaddr::str() const {
   if (addr_.ss_family == AF_INET) {
     std::array<char, 64> buf;
     auto in = reinterpret_cast<const struct sockaddr_in*>(&addr_);
-    auto rv = uv_inet_ntop(AF_INET, &in->sin_addr, buf.data(), buf.size());
+    auto rv = uv_ip4_name(in, buf.data(), buf.size());
     TP_THROW_UV_IF(rv < 0, rv);
     oss << buf.data() << ":" << htons(in->sin_port);
   } else if (addr_.ss_family == AF_INET6) {
     std::array<char, 64> buf;
     auto in6 = reinterpret_cast<const struct sockaddr_in6*>(&addr_);
-    auto rv = uv_inet_ntop(AF_INET6, &in6->sin6_addr, buf.data(), buf.size());
+    auto rv = uv_ip6_name(in6, buf.data(), buf.size());
     TP_THROW_UV_IF(rv < 0, rv);
-    oss << "[" << buf.data() << "]:" << htons(in6->sin6_port);
+    oss << "[" << buf.data();
+    if (in6->sin6_scope_id > 0) {
+      std::array<char, UV_IF_NAMESIZE> scopeBuf;
+      size_t size = sizeof(scopeBuf);
+      rv = uv_if_indextoiid(in6->sin6_scope_id, scopeBuf.data(), &size);
+      TP_THROW_UV_IF(rv < 0, rv);
+      oss << "%" << scopeBuf.data();
+    }
+    oss << "]:" << htons(in6->sin6_port);
   } else {
     TP_THROW_EINVAL() << "invalid address family: " << addr_.ss_family;
   }
