@@ -75,6 +75,14 @@ TEST(Sockaddr, Inet6BadPort) {
       uv::Sockaddr::createInetSockAddr("]::1["), std::invalid_argument);
 }
 
+// Interface name conventions change based on platform. Linux uses "lo", OSX
+// uses lo0, Windows uses integers.
+#ifdef __linux__
+#define LOOPBACK_INTERFACE "lo"
+#elif __APPLE__
+#define LOOPBACK_INTERFACE "lo0"
+#endif
+
 TEST(Sockaddr, Inet6) {
   {
     auto sa = uv::Sockaddr::createInetSockAddr("[::1]:5");
@@ -96,4 +104,26 @@ TEST(Sockaddr, Inet6) {
     ASSERT_EQ(port(sa), 0);
     ASSERT_EQ(sa.str(), "[::1]:0");
   }
+
+#ifdef LOOPBACK_INTERFACE
+  {
+    auto sa = uv::Sockaddr::createInetSockAddr("::1%" LOOPBACK_INTERFACE);
+    ASSERT_EQ(family(sa), AF_INET6);
+    ASSERT_EQ(port(sa), 0);
+    ASSERT_EQ(sa.str(), "[::1%" LOOPBACK_INTERFACE "]:0");
+  }
+
+  {
+    sockaddr_in6 sa;
+    std::memset(&sa, 0, sizeof(sa));
+    sa.sin6_family = AF_INET6;
+    sa.sin6_port = ntohs(42);
+    sa.sin6_flowinfo = 0;
+    sa.sin6_addr.s6_addr[15] = 1;
+    // Implicitly assuming that the loopback interface is the first one.
+    sa.sin6_scope_id = 1;
+    uv::Sockaddr tpSa(reinterpret_cast<sockaddr*>(&sa), sizeof(sa));
+    ASSERT_EQ(tpSa.str(), "[::1%" LOOPBACK_INTERFACE "]:42");
+  }
+#endif
 }
