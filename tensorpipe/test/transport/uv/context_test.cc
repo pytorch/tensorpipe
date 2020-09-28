@@ -35,8 +35,15 @@ TEST_P(UVTransportContextTest, LookupHostnameAddress) {
 }
 #endif
 
-// Linux-only because OSX uses "lo0" for the loopback interface
+// Interface name conventions change based on platform. Linux uses "lo", OSX
+// uses lo0, Windows uses integers.
 #ifdef __linux__
+#define LOOPBACK_INTERFACE "lo"
+#elif __APPLE__
+#define LOOPBACK_INTERFACE "lo0"
+#endif
+
+#ifdef LOOPBACK_INTERFACE
 TEST_P(UVTransportContextTest, LookupInterfaceAddress) {
   auto context = std::dynamic_pointer_cast<transport::uv::Context>(
       GetParam()->getContext());
@@ -44,7 +51,7 @@ TEST_P(UVTransportContextTest, LookupInterfaceAddress) {
 
   Error error;
   std::string addr;
-  std::tie(error, addr) = context->lookupAddrForIface("lo");
+  std::tie(error, addr) = context->lookupAddrForIface(LOOPBACK_INTERFACE);
   EXPECT_FALSE(error) << error.what();
   EXPECT_NE(addr, "");
 }
