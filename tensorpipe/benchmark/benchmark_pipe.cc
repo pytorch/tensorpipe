@@ -102,8 +102,10 @@ static void serverPongPingNonBlock(
         TP_DCHECK_EQ(
             message.tensors[tensorIdx].metadata,
             data.expectedTensorMetadata[tensorIdx]);
-        TP_DCHECK_EQ(message.tensors[tensorIdx].length, data.tensorSize);
-        message.tensors[tensorIdx].data = data.temporaryTensor[tensorIdx].get();
+        TP_DCHECK_EQ(
+            message.tensors[tensorIdx].buffer.cpu.length, data.tensorSize);
+        message.tensors[tensorIdx].buffer.cpu.ptr =
+            data.temporaryTensor[tensorIdx].get();
       }
     } else {
       TP_DCHECK_EQ(message.tensors.size(), 0);
@@ -133,12 +135,14 @@ static void serverPongPingNonBlock(
             TP_DCHECK_EQ(message.tensors.size(), data.numTensors);
             for (size_t tensorIdx = 0; tensorIdx < data.numTensors;
                  tensorIdx++) {
-              TP_DCHECK_EQ(message.tensors[tensorIdx].length, data.tensorSize);
+              TP_DCHECK_EQ(
+                  message.tensors[tensorIdx].buffer.cpu.length,
+                  data.tensorSize);
               TP_DCHECK_EQ(
                   memcmp(
-                      message.tensors[tensorIdx].data,
+                      message.tensors[tensorIdx].buffer.cpu.ptr,
                       data.expectedTensor[tensorIdx].get(),
-                      message.tensors[tensorIdx].length),
+                      message.tensors[tensorIdx].buffer.cpu.length),
                   0);
             }
           } else {
@@ -238,8 +242,8 @@ static void clientPingPongNonBlock(
   if (data.tensorSize > 0) {
     for (size_t tensorIdx = 0; tensorIdx < data.numTensors; tensorIdx++) {
       Message::Tensor tensor;
-      tensor.data = data.expectedTensor[tensorIdx].get();
-      tensor.length = data.tensorSize;
+      tensor.buffer =
+          CpuBuffer{data.expectedTensor[tensorIdx].get(), data.tensorSize};
       message.tensors.push_back(std::move(tensor));
     }
   } else {
@@ -278,8 +282,9 @@ static void clientPingPongNonBlock(
                       message.tensors[tensorIdx].metadata,
                       data.expectedTensorMetadata[tensorIdx]);
                   TP_DCHECK_EQ(
-                      message.tensors[tensorIdx].length, data.tensorSize);
-                  message.tensors[tensorIdx].data =
+                      message.tensors[tensorIdx].buffer.cpu.length,
+                      data.tensorSize);
+                  message.tensors[tensorIdx].buffer.cpu.ptr =
                       data.temporaryTensor[tensorIdx].get();
                 }
               } else {
@@ -311,9 +316,9 @@ static void clientPingPongNonBlock(
                            tensorIdx++) {
                         TP_DCHECK_EQ(
                             memcmp(
-                                message.tensors[tensorIdx].data,
+                                message.tensors[tensorIdx].buffer.cpu.ptr,
                                 data.expectedTensor[tensorIdx].get(),
-                                message.tensors[tensorIdx].length),
+                                message.tensors[tensorIdx].buffer.cpu.length),
                             0);
                       }
                     } else {
