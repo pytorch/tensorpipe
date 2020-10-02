@@ -62,6 +62,15 @@ Error Socket::block(bool on) {
   return Error::kSuccess;
 }
 
+Error Socket::reuseAddr(bool on) {
+  int onInt = on ? 1 : 0;
+  auto rv = setsockopt(fd_, SOL_SOCKET, SO_REUSEADDR, &onInt, sizeof(onInt));
+  if (rv == -1) {
+    return TP_CREATE_ERROR(SystemError, "setsockopt", errno);
+  }
+  return Error::kSuccess;
+}
+
 Error Socket::bind(const Sockaddr& addr) {
   auto rv = ::bind(fd_, addr.addr(), addr.addrlen());
   if (rv == -1) {

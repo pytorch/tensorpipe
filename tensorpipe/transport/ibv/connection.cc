@@ -35,6 +35,18 @@ namespace {
 
 constexpr auto kBufferSize = 2 * 1024 * 1024;
 
+// When the connection gets closed, to avoid leaks, it needs to "reclaim" all
+// the work requests that it had posted, by waiting for their completion. They
+// may however complete with error, which makes it harder to identify and
+// distinguish them from failing incoming requests because, in principle, we
+// cannot access the opcode field of a failed work completion. Therefore, we
+// assign a special ID to those types of requests, to match them later on.
+constexpr uint64_t kWriteRequestId = 1;
+constexpr uint64_t kAckRequestId = 2;
+
+// The data that each queue pair endpoint needs to send to the other endpoint in
+// order to set up the queue pair itself. This data is trafserred over a TCP
+// connection.
 struct Exchange {
   IbvSetupInformation setupInfo;
   uint64_t memoryRegionPtr;
@@ -354,7 +366,7 @@ class Connection::Impl : public std::enable_shared_from_this<Connection::Impl>,
   void onRemoteConsumedData(uint32_t length) override;
   void onWriteCompleted() override;
   void onAckCompleted() override;
-  void onError(enum ibv_wc_status) override;
+  void onError(enum ibv_wc_status status, uint64_t wr_id) override;
 
  private:
   // Initialize member fields that need `shared_from_this`.
@@ -544,6 +556,11 @@ void Connection::Impl::initFromLoop() {
   if (socket_ == nullptr) {
     std::tie(error, socket_) =
         Socket::createForFamily(sockaddr_->addr()->sa_family);
+    if (error) {
+      setError_(std::move(error));
+      return;
+    }
+    error = socket_->reuseAddr(true);
     if (error) {
       setError_(std::move(error));
       return;
@@ -971,9 +988,13 @@ void Connection::Impl::processReadOperationsFromLoop() {
     if (len > 0) {
       struct ibv_send_wr wr;
       std::memset(&wr, 0, sizeof(wr));
+      wr.wr_id = kAckRequestId;
       wr.opcode = IBV_WR_SEND_WITH_IMM;
       wr.imm_data = len;
 
+      TP_VLOG(9) << "Connection " << id_
+                 << " is posting a send request (acknowledging " << wr.imm_data
+                 << " bytes) on QP " << qp_->qp_num;
       context_->getReactor().postAck(qp_, wr);
       numAcksInFlight_++;
     }
@@ -1025,6 +1046,7 @@ void Connection::Impl::processWriteOperationsFromLoop() {
 
         struct ibv_send_wr wr;
         std::memset(&wr, 0, sizeof(wr));
+        wr.wr_id = kWriteRequestId;
         wr.sg_list = &list;
         wr.num_sge = 1;
         wr.opcode = IBV_WR_RDMA_WRITE_WITH_IMM;
@@ -1032,6 +1054,9 @@ void Connection::Impl::processWriteOperationsFromLoop() {
         wr.wr.rdma.remote_addr = peerInboxPtr_ + peerInboxOffset;
         wr.wr.rdma.rkey = peerInboxKey_;
 
+        TP_VLOG(9) << "Connection " << id_
+                   << " is posting a RDMA write request (transmitting "
+                   << wr.imm_data << " bytes) on QP " << qp_->qp_num;
         context_->getReactor().postWrite(qp_, wr);
         numWritesInFlight_++;
       }
@@ -1050,7 +1075,7 @@ void Connection::Impl::processWriteOperationsFromLoop() {
 void Connection::Impl::onRemoteProducedData(uint32_t length) {
   TP_DCHECK(context_->inLoopThread());
   TP_VLOG(9) << "Connection " << id_ << " was signalled that " << length
-             << " bytes were written to its inbox";
+             << " bytes were written to its inbox on QP " << qp_->qp_num;
   // We could start a transaction and use the proper methods for this, but as
   // this method is the only producer for the inbox ringbuffer we can cut it
   // short and directly increase the head.
@@ -1061,7 +1086,7 @@ void Connection::Impl::onRemoteProducedData(uint32_t length) {
 void Connection::Impl::onRemoteConsumedData(uint32_t length) {
   TP_DCHECK(context_->inLoopThread());
   TP_VLOG(9) << "Connection " << id_ << " was signalled that " << length
-             << " bytes were read from its outbox";
+             << " bytes were read from its outbox on QP " << qp_->qp_num;
   // We could start a transaction and use the proper methods for this, but as
   // this method is the only consumer for the outbox ringbuffer we can cut it
   // short and directly increase the tail.
@@ -1071,19 +1096,28 @@ void Connection::Impl::onRemoteConsumedData(uint32_t length) {
 
 void Connection::Impl::onWriteCompleted() {
   TP_DCHECK(context_->inLoopThread());
+  TP_VLOG(9) << "Connection " << id_
+             << " done posting a RDMA write request on QP " << qp_->qp_num;
   numWritesInFlight_--;
   tryCleanup_();
 }
 
 void Connection::Impl::onAckCompleted() {
   TP_DCHECK(context_->inLoopThread());
+  TP_VLOG(9) << "Connection " << id_ << " done posting a send request on QP "
+             << qp_->qp_num;
   numAcksInFlight_--;
   tryCleanup_();
 }
 
-void Connection::Impl::onError(enum ibv_wc_status status) {
+void Connection::Impl::onError(enum ibv_wc_status status, uint64_t wr_id) {
   TP_DCHECK(context_->inLoopThread());
   setError_(TP_CREATE_ERROR(IbvError, status));
+  if (wr_id == kWriteRequestId) {
+    onWriteCompleted();
+  } else if (wr_id == kAckRequestId) {
+    onAckCompleted();
+  }
 }
 
 void Connection::Impl::setError_(Error error) {
@@ -1134,9 +1168,17 @@ void Connection::Impl::tryCleanup_() {
   // However the RDMA writes and the sends may be queued up inside the reactor
   // and thus may not have even been scheduled yet, so we explicitly wait for
   // them to complete.
-  if (error_ && numWritesInFlight_ == 0 && numAcksInFlight_ == 0) {
-    TP_VLOG(8) << "Connection " << id_ << " is ready to clean up";
-    context_->deferToLoop([impl{shared_from_this()}]() { impl->cleanup_(); });
+  if (error_) {
+    if (numWritesInFlight_ == 0 && numAcksInFlight_ == 0) {
+      TP_VLOG(8) << "Connection " << id_ << " is ready to clean up";
+      context_->deferToLoop([impl{shared_from_this()}]() { impl->cleanup_(); });
+    } else {
+      TP_VLOG(9) << "Connection " << id_
+                 << " cannot proceed to cleanup because it has "
+                 << numWritesInFlight_ << " pending RDMA write requests and "
+                 << numAcksInFlight_ << " pending send requests on QP "
+                 << qp_->qp_num;
+    }
   }
 }
 

@@ -54,6 +54,10 @@ void Reactor::postRecvRequestsOnSRQ_(int num) {
   }
 }
 
+void Reactor::setId(std::string id) {
+  id_ = std::move(id);
+}
+
 void Reactor::close() {
   if (!closed_.exchange(true)) {
     // No need to wake up the reactor, since it is busy-waiting.
@@ -108,22 +112,30 @@ void Reactor::run() {
     for (int wcIdx = 0; wcIdx < rv; wcIdx++) {
       struct ibv_wc& wc = wcs[wcIdx];
 
+      TP_VLOG(9) << "Transport context " << id_
+                 << " got work completion for request " << wc.wr_id
+                 << " for QP " << wc.qp_num << " with status "
+                 << ibv_wc_status_str(wc.status) << " and opcode "
+                 << opcodeToStr(wc.opcode) << " (byte length: " << wc.byte_len
+                 << ", immediate data: " << wc.imm_data << ")";
+
       auto iter = queuePairEventHandler_.find(wc.qp_num);
       TP_THROW_ASSERT_IF(iter == queuePairEventHandler_.end())
           << "Got work completion for unknown queue pair " << wc.qp_num;
 
       if (wc.status != IBV_WC_SUCCESS) {
-        iter->second->onError(wc.status);
+        iter->second->onError(wc.status, wc.wr_id);
         continue;
       }
 
-      TP_THROW_ASSERT_IF(!(wc.wc_flags & IBV_WC_WITH_IMM));
       switch (wc.opcode) {
         case IBV_WC_RECV_RDMA_WITH_IMM:
+          TP_THROW_ASSERT_IF(!(wc.wc_flags & IBV_WC_WITH_IMM));
           iter->second->onRemoteProducedData(wc.imm_data);
           numRecvs++;
           break;
         case IBV_WC_RECV:
+          TP_THROW_ASSERT_IF(!(wc.wc_flags & IBV_WC_WITH_IMM));
           iter->second->onRemoteConsumedData(wc.imm_data);
           numRecvs++;
           break;
@@ -207,10 +219,14 @@ void Reactor::deferToLoop(TDeferredFunction fn) {
 void Reactor::postWrite(IbvQueuePair& qp, struct ibv_send_wr& wr) {
   if (numAvailableWrites_ > 0) {
     struct ibv_send_wr* badWr = nullptr;
+    TP_VLOG(9) << "Transport context " << id_ << " posting RDMA write for QP "
+               << qp->qp_num;
     TP_CHECK_IBV_INT(ibv_post_send(qp.ptr(), &wr, &badWr));
     TP_THROW_ASSERT_IF(badWr != nullptr);
     numAvailableWrites_--;
   } else {
+    TP_VLOG(9) << "Transport context " << id_
+               << " queueing up RDMA write for QP " << qp->qp_num;
     pendingQpWrites_.emplace_back(qp, wr);
   }
 }
@@ -218,10 +234,14 @@ void Reactor::postWrite(IbvQueuePair& qp, struct ibv_send_wr& wr) {
 void Reactor::postAck(IbvQueuePair& qp, struct ibv_send_wr& wr) {
   if (numAvailableAcks_ > 0) {
     struct ibv_send_wr* badWr = nullptr;
+    TP_VLOG(9) << "Transport context " << id_ << " posting send for QP "
+               << qp->qp_num;
     TP_CHECK_IBV_INT(ibv_post_send(qp.ptr(), &wr, &badWr));
     TP_THROW_ASSERT_IF(badWr != nullptr);
     numAvailableAcks_--;
   } else {
+    TP_VLOG(9) << "Transport context " << id_ << " queueing send for QP "
+               << qp->qp_num;
     pendingQpAcks_.emplace_back(qp, wr);
   }
 }

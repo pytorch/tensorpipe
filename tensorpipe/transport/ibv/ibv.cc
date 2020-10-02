@@ -15,6 +15,27 @@ namespace tensorpipe {
 namespace transport {
 namespace ibv {
 
+std::string opcodeToStr(enum ibv_wc_opcode opcode) {
+  switch (opcode) {
+    case IBV_WC_SEND:
+      return "IBV_WC_SEND";
+    case IBV_WC_RDMA_WRITE:
+      return "IBV_WC_RDMA_WRITE";
+    case IBV_WC_RDMA_READ:
+      return "IBV_WC_RDMA_READ";
+    case IBV_WC_COMP_SWAP:
+      return "IBV_WC_COMP_SWAP";
+    case IBV_WC_FETCH_ADD:
+      return "IBV_WC_FETCH_ADD";
+    case IBV_WC_BIND_MW:
+      return "IBV_WC_BIND_MW";
+    case IBV_WC_RECV:
+      return "IBV_WC_RECV";
+    case IBV_WC_RECV_RDMA_WITH_IMM:
+      return "IBV_WC_RECV_RDMA_WITH_IMM";
+  }
+}
+
 struct IbvAddress makeIbvAddress(
     IbvContext& context,
     uint8_t portNum,

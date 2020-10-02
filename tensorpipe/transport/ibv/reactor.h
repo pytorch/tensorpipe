@@ -39,7 +39,7 @@ class IbvEventHandler {
 
   virtual void onAckCompleted() = 0;
 
-  virtual void onError(enum ibv_wc_status status) = 0;
+  virtual void onError(enum ibv_wc_status status, uint64_t wr_id) = 0;
 
   virtual ~IbvEventHandler() = default;
 };
@@ -132,6 +132,8 @@ class Reactor final {
     return onDemandLoop_.inLoop();
   }
 
+  void setId(std::string id);
+
   void close();
 
   void join();
@@ -156,6 +158,11 @@ class Reactor final {
   std::mutex deferredFunctionMutex_;
   std::list<TDeferredFunction> deferredFunctionList_;
   std::atomic<int64_t> deferredFunctionCount_{0};
+
+  // An identifier for the context, composed of the identifier for the context,
+  // combined with the transport's name. It will only be used for logging and
+  // debugging purposes.
+  std::string id_{"N/A"};
 
   // Whether the thread is still taking care of running the deferred functions
   //

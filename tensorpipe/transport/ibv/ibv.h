@@ -33,6 +33,10 @@ namespace ibv {
 
 #define TP_CHECK_IBV_VOID(op) op;
 
+// Logging helpers
+
+std::string opcodeToStr(enum ibv_wc_opcode opcode);
+
 // RAII wrappers
 
 class IbvDeviceList {

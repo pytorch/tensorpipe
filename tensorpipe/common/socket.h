@@ -195,6 +195,9 @@ class Socket final : public Fd {
   // Configure if the socket is blocking or not.
   [[nodiscard]] Error block(bool on);
 
+  // Set (or unset) the SO_REUSEADDR option on the socket.
+  [[nodiscard]] Error reuseAddr(bool on);
+
   // Bind socket to address.
   [[nodiscard]] Error bind(const Sockaddr& addr);
 

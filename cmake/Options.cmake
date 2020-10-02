@@ -21,7 +21,13 @@ find_package(ibverbs QUIET)
 option(TP_USE_CUDA "Enable support for CUDA tensors" OFF)
 
 # Transports
-option(TP_ENABLE_IBV "Enable InfiniBand transport" ${LINUX AND IBVERBS_FOUND})
+if (${LINUX} AND ${IBVERBS_FOUND})
+  set(TP_ENABLE_IBV_DEFAULT ON)
+else()
+  set(TP_ENABLE_IBV_DEFAULT OFF)
+endif()
+option(TP_ENABLE_IBV "Enable InfiniBand transport" ${TP_ENABLE_IBV_DEFAULT})
+unset(TP_ENABLE_IBV_DEFAULT)
 option(TP_ENABLE_SHM "Enable shm transport" ${LINUX})
 
 # Channels

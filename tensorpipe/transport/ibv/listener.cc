@@ -119,6 +119,11 @@ void Listener::Impl::initFromLoop() {
     setError_(std::move(error));
     return;
   }
+  error = socket_->reuseAddr(true);
+  if (error) {
+    setError_(std::move(error));
+    return;
+  }
   error = socket_->bind(sockaddr_);
   if (error) {
     setError_(std::move(error));
