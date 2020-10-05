@@ -23,6 +23,17 @@ class Context {
 
   virtual std::shared_ptr<Listener> listen(address_t addr) = 0;
 
+  // Return whether the context is able to operate correctly.
+  //
+  // Some transport types may be unable to perform as intended under
+  // some circumstances (e.g., specialized hardware unavailable, lack
+  // of permissions). They can report it through this method in order
+  // for the core context to avoid registering them in the first place.
+  //
+  virtual bool isViable() const {
+    return true;
+  }
+
   // Return string to describe the domain for this context.
   //
   // Two processes with a context of the same type whose domain

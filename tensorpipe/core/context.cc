@@ -143,6 +143,11 @@ void Context::Impl::registerTransport(
   TP_THROW_ASSERT_IF(
       transportsByPriority_.find(-priority) != transportsByPriority_.end())
       << "transport with priority " << priority << " already registered";
+  if (!context->isViable()) {
+    TP_VLOG(1) << "Context " << id_ << " is not registering transport "
+               << transport << " because it is not viable";
+    return;
+  }
   TP_VLOG(1) << "Context " << id_ << " is registering transport " << transport;
   context->setId(id_ + ".tr_" + transport);
   transports_.emplace(transport, context);
@@ -168,6 +173,11 @@ void Context::Impl::registerChannel(
   TP_THROW_ASSERT_IF(
       channelsByPriority_.find(-priority) != channelsByPriority_.end())
       << "channel with priority " << priority << " already registered";
+  if (!context->isViable()) {
+    TP_VLOG(1) << "Context " << id_ << " is not registering channel " << channel
+               << " because it is not viable";
+    return;
+  }
   TP_VLOG(1) << "Context " << id_ << " is registering channel " << channel;
   context->setId(id_ + ".ch_" + channel);
   channels_.emplace(channel, context);
