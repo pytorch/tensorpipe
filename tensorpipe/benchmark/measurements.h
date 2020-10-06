@@ -41,7 +41,7 @@ class Measurements {
   }
 
   nanoseconds sum() const {
-    nanoseconds sum;
+    nanoseconds sum{0};
     for (const auto& sample : samples_) {
       sum += sample;
     }
