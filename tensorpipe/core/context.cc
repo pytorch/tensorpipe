@@ -119,14 +119,11 @@ class Context::Impl : public Context::PrivateIface,
   template <typename TBuffer>
   using TContextMap = std::
       unordered_map<std::string, std::shared_ptr<channel::Context<TBuffer>>>;
-  TP_BUFFER_FIELD_AND_ACCESSOR(TContextMap<CpuBuffer>, TContextMap<CudaBuffer>)
-  channels_;
+  TP_DEVICE_FIELD(TContextMap<CpuBuffer>, TContextMap<CudaBuffer>) channels_;
 
   TOrderedTransports transportsByPriority_;
 
-  TP_BUFFER_FIELD_AND_ACCESSOR(
-      TOrderedChannels<CpuBuffer>,
-      TOrderedChannels<CudaBuffer>)
+  TP_DEVICE_FIELD(TOrderedChannels<CpuBuffer>, TOrderedChannels<CudaBuffer>)
   channelsByPriority_;
 
   ClosingEmitter closingEmitter_;

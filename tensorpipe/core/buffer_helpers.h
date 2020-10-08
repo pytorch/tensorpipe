@@ -11,30 +11,24 @@
 #include <tensorpipe/config.h>
 #include <tensorpipe/core/buffer.h>
 
-#define TP_BUFFER_CPU_FIELD_AND_ACCESSOR(type) \
-  type cpu;                                    \
-  template <>                                  \
-  constexpr auto& get<CpuBuffer>() {           \
-    return cpu;                                \
-  }
-
 #if TENSORPIPE_SUPPORTS_CUDA
-#define TP_BUFFER_CUDA_FIELD_AND_ACCESSOR(type) \
-  type cuda;                                    \
-  template <>                                   \
-  constexpr auto& get<CudaBuffer>() {           \
-    return cuda;                                \
-  }
+#define TP_IF_CUDA(x) x
 #else
-#define TP_BUFFER_CUDA_FIELD_AND_ACCESSOR(type)
-#endif
+#define TP_IF_CUDA(x)
+#endif // TENSORPIPE_SUPPORTS_CUDA
 
-#define TP_BUFFER_FIELD_AND_ACCESSOR(cpu_type, cuda_type) \
-  struct {                                                \
-    template <typename TBuffer>                           \
-    constexpr auto& get();                                \
-    TP_BUFFER_CPU_FIELD_AND_ACCESSOR(cpu_type);           \
-    TP_BUFFER_CUDA_FIELD_AND_ACCESSOR(cuda_type);         \
+#define TP_DEVICE_FIELD(cpu_type, cuda_type)                               \
+  struct {                                                                 \
+    template <typename TBuffer>                                            \
+    constexpr auto& get() {                                                \
+      if (std::is_same<TBuffer, CpuBuffer>::value) {                       \
+        return cpu;                                                        \
+      }                                                                    \
+      TP_IF_CUDA(                                                          \
+          if (std::is_same<TBuffer, CudaBuffer>::value) { return cuda; }); \
+    }                                                                      \
+    cpu_type cpu;                                                          \
+    TP_IF_CUDA(cuda_type cuda);                                            \
   }
 
 namespace tensorpipe {

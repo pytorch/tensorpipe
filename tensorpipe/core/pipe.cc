@@ -400,15 +400,14 @@ class Pipe::Impl : public std::enable_shared_from_this<Pipe::Impl> {
   template <typename TBuffer>
   using TChannelMap = std::
       unordered_map<std::string, std::shared_ptr<channel::Channel<TBuffer>>>;
-  TP_BUFFER_FIELD_AND_ACCESSOR(TChannelMap<CpuBuffer>, TChannelMap<CudaBuffer>)
-  channels_;
+  TP_DEVICE_FIELD(TChannelMap<CpuBuffer>, TChannelMap<CudaBuffer>) channels_;
 
   // The server will set this up when it tell the client to switch to a
   // different connection or to open some channels.
   optional<uint64_t> registrationId_;
 
   using TChannelRegistrationMap = std::unordered_map<std::string, uint64_t>;
-  TP_BUFFER_FIELD_AND_ACCESSOR(TChannelRegistrationMap, TChannelRegistrationMap)
+  TP_DEVICE_FIELD(TChannelRegistrationMap, TChannelRegistrationMap)
   channelRegistrationIds_;
 
   ClosingReceiver closingReceiver_;
