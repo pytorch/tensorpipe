@@ -650,7 +650,7 @@ void Pipe::Impl::initFromLoop_() {
     }
     forEachDeviceType([&](auto buffer) {
       for (const auto& channelContextIter :
-           getOrderedChannels_<decltype(buffer)>()) {
+           this->getOrderedChannels_<decltype(buffer)>()) {
         const std::string& channelName = std::get<0>(channelContextIter.second);
         const channel::Context<decltype(buffer)>& channelContext =
             *(std::get<1>(channelContextIter.second));
@@ -1257,7 +1257,7 @@ void Pipe::Impl::sendTensorsOfMessage_(WriteOperation& op) {
     const auto& tensor = op.message.tensors[tensorIdx];
 
     auto t = switchOnDeviceType(tensor.buffer.type, [&](auto buffer) {
-      auto& orderedChannels = getOrderedChannels_<decltype(buffer)>();
+      auto& orderedChannels = this->getOrderedChannels_<decltype(buffer)>();
       auto& availableChannels = channels_.get<decltype(buffer)>();
       for (const auto& channelContextIter : orderedChannels) {
         const std::string& channelName = std::get<0>(channelContextIter.second);
@@ -1412,7 +1412,7 @@ void Pipe::Impl::onReadWhileServerWaitingForBrochure_(
 
   forEachDeviceType([&](auto buffer) {
     for (const auto& channelContextIter :
-         getOrderedChannels_<decltype(buffer)>()) {
+         this->getOrderedChannels_<decltype(buffer)>()) {
       const std::string& channelName = std::get<0>(channelContextIter.second);
       const channel::Context<decltype(buffer)>& channelContext =
           *(std::get<1>(channelContextIter.second));
@@ -1530,7 +1530,7 @@ void Pipe::Impl::onReadWhileClientWaitingForBrochureAnswer_(
           nopChannelSelectionIter.second;
 
       std::shared_ptr<channel::Context<decltype(buffer)>> channelContext =
-          getChannelContext_<decltype(buffer)>(channelName);
+          this->getChannelContext_<decltype(buffer)>(channelName);
 
       TP_VLOG(3) << "Pipe " << id_ << " is opening connection (for channel "
                  << channelName << ")";
