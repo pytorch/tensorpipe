@@ -182,4 +182,17 @@ struct IbvSetupInformation makeIbvSetupInformation(
     IbvAddress& addr,
     IbvQueuePair& qp);
 
+void transitionIbvQueuePairToInit(IbvQueuePair& qp, IbvAddress& selfAddr);
+
+void transitionIbvQueuePairToReadyToReceive(
+    IbvQueuePair& qp,
+    IbvAddress& selfAddr,
+    IbvSetupInformation& destinationInfo);
+
+void transitionIbvQueuePairToReadyToSend(
+    IbvQueuePair& qp,
+    IbvSetupInformation& selfInfo);
+
+void transitionIbvQueuePairToError(IbvQueuePair& qp);
+
 } // namespace tensorpipe
