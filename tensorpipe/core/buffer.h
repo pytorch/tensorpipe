@@ -50,7 +50,7 @@ struct Buffer {
 
 #endif // TENSORPIPE_SUPPORTS_CUDA
 
-  DeviceType type{DeviceType::kCpu};
+  DeviceType type;
   union {
     CpuBuffer cpu;
 #if TENSORPIPE_SUPPORTS_CUDA

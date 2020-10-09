@@ -14,14 +14,10 @@
 #include <tuple>
 #include <vector>
 
+#include <tensorpipe/channel/cpu_context.h>
 #include <tensorpipe/common/callback.h>
 #include <tensorpipe/core/buffer.h>
 #include <tensorpipe/transport/context.h>
-
-#include <tensorpipe/channel/cpu_context.h>
-#if TENSORPIPE_SUPPORTS_CUDA
-#include <tensorpipe/channel/cuda_context.h>
-#endif // TENSORPIPE_SUPPORTS_CUDA
 
 namespace tensorpipe {
 
@@ -68,13 +64,6 @@ class Context final {
       std::string,
       std::shared_ptr<channel::CpuContext>);
 
-#if TENSORPIPE_SUPPORTS_CUDA
-  void registerChannel(
-      int64_t,
-      std::string,
-      std::shared_ptr<channel::CudaContext>);
-#endif // TENSORPIPE_SUPPORTS_CUDA
-
   std::shared_ptr<Listener> listen(const std::vector<std::string>&);
 
   std::shared_ptr<Pipe> connect(
@@ -99,13 +88,8 @@ class Context final {
     virtual std::shared_ptr<transport::Context> getTransport(
         const std::string&) = 0;
 
-    virtual std::shared_ptr<channel::CpuContext> getCpuChannel(
+    virtual std::shared_ptr<channel::CpuContext> getChannel(
         const std::string&) = 0;
-
-#if TENSORPIPE_SUPPORTS_CUDA
-    virtual std::shared_ptr<channel::CudaContext> getCudaChannel(
-        const std::string&) = 0;
-#endif // TENSORPIPE_SUPPORTS_CUDA
 
     using TOrderedTransports = std::map<
         int64_t,
@@ -113,16 +97,11 @@ class Context final {
 
     virtual const TOrderedTransports& getOrderedTransports() = 0;
 
-    template <typename TBuffer>
     using TOrderedChannels = std::map<
         int64_t,
-        std::tuple<std::string, std::shared_ptr<channel::Context<TBuffer>>>>;
+        std::tuple<std::string, std::shared_ptr<channel::CpuContext>>>;
 
-    virtual const TOrderedChannels<CpuBuffer>& getOrderedCpuChannels() = 0;
-
-#if TENSORPIPE_SUPPORTS_CUDA
-    virtual const TOrderedChannels<CudaBuffer>& getOrderedCudaChannels() = 0;
-#endif // TENSORPIPE_SUPPORTS_CUDA
+    virtual const TOrderedChannels& getOrderedChannels() = 0;
 
     // Return the name given to the context's constructor. It will be retrieved
     // by the pipes and listener in order to attach it to logged messages.
