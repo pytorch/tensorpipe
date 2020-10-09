@@ -11,12 +11,12 @@
 #include <deque>
 
 #include <tensorpipe/common/defs.h>
-#include <tensorpipe/transport/shm/loop.h>
+#include <tensorpipe/transport/ibv/loop.h>
 
 #include <gtest/gtest.h>
 
 using namespace tensorpipe;
-using namespace tensorpipe::transport::shm;
+using namespace tensorpipe::transport::ibv;
 
 namespace {
 
@@ -146,7 +146,7 @@ std::shared_ptr<FunctionEventHandler> createMonitor(
 
 } // namespace
 
-TEST(ShmLoop, RegisterUnregister) {
+TEST(IbvLoop, RegisterUnregister) {
   Reactor reactor;
   Loop loop{reactor};
   auto handler = std::make_shared<Handler>();
@@ -174,7 +174,7 @@ TEST(ShmLoop, RegisterUnregister) {
   loop.join();
 }
 
-TEST(ShmLoop, Monitor) {
+TEST(IbvLoop, Monitor) {
   Reactor reactor;
   Loop loop{reactor};
   auto efd = Fd(eventfd(0, EFD_NONBLOCK));
@@ -249,7 +249,7 @@ TEST(ShmLoop, Monitor) {
   loop.join();
 }
 
-TEST(ShmLoop, Defer) {
+TEST(IbvLoop, Defer) {
   Reactor reactor;
   auto promise = std::make_shared<std::promise<void>>();
   auto future = promise->get_future();

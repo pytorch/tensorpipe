@@ -50,7 +50,7 @@ void run(std::function<void(int)> fn1, std::function<void(int)> fn2) {
 
 } // namespace
 
-TEST(Reactor, Basic) {
+TEST(ShmReactor, Basic) {
   run(
       [](int fd) {
         tensorpipe::Queue<int> queue;
@@ -95,7 +95,7 @@ TEST(Reactor, Basic) {
       });
 }
 
-TEST(Reactor, TokenReuse) {
+TEST(ShmReactor, TokenReuse) {
   tensorpipe::Queue<int> queue(3);
   auto reactor = std::make_shared<Reactor>();
   auto t1 = reactor->add([&] { queue.push(1); });
