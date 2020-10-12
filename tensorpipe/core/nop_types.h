@@ -43,8 +43,14 @@ struct ChannelAdvertisement {
 struct Brochure {
   std::unordered_map<std::string, TransportAdvertisement>
       transportAdvertisement;
-  std::unordered_map<std::string, ChannelAdvertisement> channelAdvertisement;
-  NOP_STRUCTURE(Brochure, transportAdvertisement, channelAdvertisement);
+  std::unordered_map<std::string, ChannelAdvertisement> cpuChannelAdvertisement;
+  std::unordered_map<std::string, ChannelAdvertisement>
+      cudaChannelAdvertisement;
+  NOP_STRUCTURE(
+      Brochure,
+      transportAdvertisement,
+      cpuChannelAdvertisement,
+      cudaChannelAdvertisement);
 };
 
 struct ChannelSelection {
@@ -56,13 +62,15 @@ struct BrochureAnswer {
   std::string transport;
   std::string address;
   uint64_t registrationId;
-  std::unordered_map<std::string, ChannelSelection> channelSelection;
+  std::unordered_map<std::string, ChannelSelection> cpuChannelSelection;
+  std::unordered_map<std::string, ChannelSelection> cudaChannelSelection;
   NOP_STRUCTURE(
       BrochureAnswer,
       transport,
       address,
       registrationId,
-      channelSelection);
+      cpuChannelSelection,
+      cudaChannelSelection);
 };
 
 struct MessageDescriptor {
