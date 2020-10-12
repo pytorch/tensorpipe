@@ -18,6 +18,7 @@
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/error_macros.h>
 #include <tensorpipe/common/optional.h>
+#include <tensorpipe/core/buffer_helpers.h>
 #include <tensorpipe/core/error.h>
 #include <tensorpipe/core/listener.h>
 #include <tensorpipe/core/nop_types.h>
@@ -53,6 +54,7 @@ struct ReadOperation {
   };
   std::vector<Payload> payloads;
   struct Tensor {
+    DeviceType type;
     ssize_t length{-1};
     std::string channelName;
     channel::TDescriptor descriptor;
@@ -83,20 +85,37 @@ void parseDescriptorOfMessage(ReadOperation& op, const Packet& nopPacketIn) {
     message.payloads.push_back(std::move(payload));
     op.payloads.push_back(std::move(payloadBeingAllocated));
   }
+
   for (const auto& nopTensorDescriptor :
        nopMessageDescriptor.tensorDescriptors) {
-    Message::Tensor tensor{
-        CpuBuffer{nullptr,
-                  static_cast<size_t>(nopTensorDescriptor.sizeInBytes)},
-        nopTensorDescriptor.metadata};
-
     ReadOperation::Tensor tensorBeingAllocated;
-    tensorBeingAllocated.length = tensor.buffer.cpu.length;
+    tensorBeingAllocated.length = nopTensorDescriptor.sizeInBytes;
     tensorBeingAllocated.channelName = nopTensorDescriptor.channelName;
     // FIXME If the nop object wasn't const we could move the string out...
     tensorBeingAllocated.descriptor = nopTensorDescriptor.channelDescriptor;
-    message.tensors.push_back(std::move(tensor));
+
+    message.tensors.emplace_back();
+    Message::Tensor& tensor = message.tensors.back();
     op.tensors.push_back(std::move(tensorBeingAllocated));
+    tensor.metadata = nopTensorDescriptor.metadata;
+    switch (nopTensorDescriptor.deviceType) {
+      case DeviceType::kCpu: {
+        CpuBuffer buffer;
+        buffer.length = static_cast<size_t>(tensorBeingAllocated.length);
+        tensor.buffer = buffer;
+        break;
+      }
+#if TENSORPIPE_SUPPORTS_CUDA
+      case DeviceType::kCuda: {
+        CudaBuffer buffer;
+        buffer.length = static_cast<size_t>(tensorBeingAllocated.length);
+        tensor.buffer = buffer;
+        break;
+      }
+#endif // TENSORPIPE_SUPPORTS_CUDA
+      default:
+        TP_THROW_ASSERT() << "Unexpected device type.";
+    };
   }
 }
 
@@ -120,7 +139,20 @@ void checkAllocationCompatibility(
     const Message::Tensor& tensor = message.tensors[tensorIdx];
     const ReadOperation::Tensor& tensorBeingAllocated = op.tensors[tensorIdx];
     TP_DCHECK_GE(tensorBeingAllocated.length, 0);
-    TP_THROW_ASSERT_IF(tensor.buffer.cpu.length != tensorBeingAllocated.length);
+    switch (tensor.buffer.type) {
+      case DeviceType::kCpu:
+        TP_THROW_ASSERT_IF(
+            tensor.buffer.cpu.length != tensorBeingAllocated.length);
+        break;
+#if TENSORPIPE_SUPPORTS_CUDA
+      case DeviceType::kCuda:
+        TP_THROW_ASSERT_IF(
+            tensor.buffer.cuda.length != tensorBeingAllocated.length);
+        break;
+#endif // TENSORPIPE_SUPPORTS_CUDA
+      default:
+        TP_THROW_ASSERT() << "Unexpected device type.";
+    }
   }
 }
 
@@ -147,6 +179,7 @@ struct WriteOperation {
 
   // Tensor descriptors collected from the channels.
   struct Tensor {
+    DeviceType type;
     std::string channelName;
     channel::TDescriptor descriptor;
   };
@@ -183,16 +216,117 @@ std::shared_ptr<NopHolder<Packet>> makeDescriptorForMessage(
     nopMessageDescriptor.tensorDescriptors.emplace_back();
     MessageDescriptor::TensorDescriptor& nopTensorDescriptor =
         nopMessageDescriptor.tensorDescriptors.back();
-    nopTensorDescriptor.deviceType = DeviceType::kCpu;
-    nopTensorDescriptor.sizeInBytes = tensor.buffer.cpu.length;
     nopTensorDescriptor.metadata = tensor.metadata;
     nopTensorDescriptor.channelName = otherTensor.channelName;
     // FIXME In principle we could move here.
     nopTensorDescriptor.channelDescriptor = otherTensor.descriptor;
+
+    nopTensorDescriptor.deviceType = tensor.buffer.type;
+    switch (tensor.buffer.type) {
+      case DeviceType::kCpu:
+        nopTensorDescriptor.sizeInBytes = tensor.buffer.cpu.length;
+        break;
+#if TENSORPIPE_SUPPORTS_CUDA
+      case DeviceType::kCuda:
+        nopTensorDescriptor.sizeInBytes = tensor.buffer.cuda.length;
+        break;
+#endif // TENSORPIPE_SUPPORTS_CUDA
+      default:
+        TP_THROW_ASSERT() << "Unknown device type.";
+    };
   }
 
   return nopHolderOut;
 }
+
+template <typename TBuffer>
+std::unordered_map<std::string, ChannelAdvertisement>& getChannelAdvertisement(
+    Brochure& nopBrochure);
+
+template <>
+std::unordered_map<std::string, ChannelAdvertisement>& getChannelAdvertisement<
+    CpuBuffer>(Brochure& nopBrochure) {
+  return nopBrochure.cpuChannelAdvertisement;
+}
+
+#if TENSORPIPE_SUPPORTS_CUDA
+template <>
+std::unordered_map<std::string, ChannelAdvertisement>& getChannelAdvertisement<
+    CudaBuffer>(Brochure& nopBrochure) {
+  return nopBrochure.cudaChannelAdvertisement;
+}
+#endif // TENSORPIPE_SUPPORTS_CUDA
+
+template <typename TBuffer>
+const std::unordered_map<std::string, ChannelAdvertisement>&
+getChannelAdvertisement(const Brochure& nopBrochure);
+
+template <>
+const std::unordered_map<std::string, ChannelAdvertisement>&
+getChannelAdvertisement<CpuBuffer>(const Brochure& nopBrochure) {
+  return nopBrochure.cpuChannelAdvertisement;
+}
+
+#if TENSORPIPE_SUPPORTS_CUDA
+template <>
+const std::unordered_map<std::string, ChannelAdvertisement>&
+getChannelAdvertisement<CudaBuffer>(const Brochure& nopBrochure) {
+  return nopBrochure.cudaChannelAdvertisement;
+}
+#endif // TENSORPIPE_SUPPORTS_CUDA
+
+template <typename TBuffer>
+std::unordered_map<std::string, ChannelSelection>& getChannelSelection(
+    BrochureAnswer& nopBrochureAnswer);
+
+template <>
+std::unordered_map<std::string, ChannelSelection>& getChannelSelection<
+    CpuBuffer>(BrochureAnswer& nopBrochureAnswer) {
+  return nopBrochureAnswer.cpuChannelSelection;
+}
+
+#if TENSORPIPE_SUPPORTS_CUDA
+template <>
+std::unordered_map<std::string, ChannelSelection>& getChannelSelection<
+    CudaBuffer>(BrochureAnswer& nopBrochureAnswer) {
+  return nopBrochureAnswer.cudaChannelSelection;
+}
+#endif // TENSORPIPE_SUPPORTS_CUDA
+
+template <typename TBuffer>
+const std::unordered_map<std::string, ChannelSelection>& getChannelSelection(
+    const BrochureAnswer& nopBrochureAnswer);
+
+template <>
+const std::unordered_map<std::string, ChannelSelection>& getChannelSelection<
+    CpuBuffer>(const BrochureAnswer& nopBrochureAnswer) {
+  return nopBrochureAnswer.cpuChannelSelection;
+}
+
+#if TENSORPIPE_SUPPORTS_CUDA
+template <>
+const std::unordered_map<std::string, ChannelSelection>& getChannelSelection<
+    CudaBuffer>(const BrochureAnswer& nopBrochureAnswer) {
+  return nopBrochureAnswer.cudaChannelSelection;
+}
+#endif // TENSORPIPE_SUPPORTS_CUDA
+
+template <typename TBuffer>
+TBuffer unwrap(Buffer);
+
+template <>
+CpuBuffer unwrap(Buffer b) {
+  TP_DCHECK(DeviceType::kCpu == b.type);
+  return b.cpu;
+}
+
+#if TENSORPIPE_SUPPORTS_CUDA
+template <>
+CudaBuffer unwrap(Buffer b) {
+  TP_DCHECK(DeviceType::kCuda == b.type);
+  return b.cuda;
+}
+#endif // TENSORPIPE_SUPPORTS_CUDA
 
 } // namespace
 
@@ -262,13 +396,19 @@ class Pipe::Impl : public std::enable_shared_from_this<Pipe::Impl> {
 
   std::string transport_;
   std::shared_ptr<transport::Connection> connection_;
-  std::unordered_map<std::string, std::shared_ptr<channel::CpuChannel>>
-      channels_;
+
+  template <typename TBuffer>
+  using TChannelMap = std::
+      unordered_map<std::string, std::shared_ptr<channel::Channel<TBuffer>>>;
+  TP_DEVICE_FIELD(TChannelMap<CpuBuffer>, TChannelMap<CudaBuffer>) channels_;
 
   // The server will set this up when it tell the client to switch to a
   // different connection or to open some channels.
   optional<uint64_t> registrationId_;
-  std::unordered_map<std::string, uint64_t> channelRegistrationIds_;
+
+  using TChannelRegistrationMap = std::unordered_map<std::string, uint64_t>;
+  TP_DEVICE_FIELD(TChannelRegistrationMap, TChannelRegistrationMap)
+  channelRegistrationIds_;
 
   ClosingReceiver closingReceiver_;
 
@@ -351,6 +491,7 @@ class Pipe::Impl : public std::enable_shared_from_this<Pipe::Impl> {
   void onAcceptWhileServerWaitingForConnection_(
       std::string,
       std::shared_ptr<transport::Connection>);
+  template <typename TBuffer>
   void onAcceptWhileServerWaitingForChannel_(
       std::string,
       std::string,
@@ -364,6 +505,18 @@ class Pipe::Impl : public std::enable_shared_from_this<Pipe::Impl> {
 
   ReadOperation* findReadOperation(int64_t sequenceNumber);
   WriteOperation* findWriteOperation(int64_t sequenceNumber);
+
+  template <typename TBuffer>
+  const std::map<
+      int64_t,
+      std::tuple<std::string, std::shared_ptr<channel::Context<TBuffer>>>>&
+  getOrderedChannels_();
+
+  template <typename TBuffer>
+  std::shared_ptr<channel::Context<TBuffer>> getChannelContext_(
+      const std::string& channelName);
+
+  bool pendingRegistrations_();
 
   template <typename T>
   friend class LazyCallbackWrapper;
@@ -441,6 +594,24 @@ Pipe::Impl::Impl(
   connection_->setId(id_ + ".tr_" + transport_);
 }
 
+template <>
+const std::map<
+    int64_t,
+    std::tuple<std::string, std::shared_ptr<channel::Context<CpuBuffer>>>>&
+Pipe::Impl::getOrderedChannels_() {
+  return context_->getOrderedCpuChannels();
+}
+
+#if TENSORPIPE_SUPPORTS_CUDA
+template <>
+const std::map<
+    int64_t,
+    std::tuple<std::string, std::shared_ptr<channel::Context<CudaBuffer>>>>&
+Pipe::Impl::getOrderedChannels_() {
+  return context_->getOrderedCudaChannels();
+}
+#endif // TENSORPIPE_SUPPORTS_CUDA
+
 void Pipe::Impl::init() {
   loop_.deferToLoop([this]() { initFromLoop_(); });
 }
@@ -477,15 +648,20 @@ void Pipe::Impl::initFromLoop_() {
       nopTransportAdvertisement.domainDescriptor =
           transportContext.domainDescriptor();
     }
-    for (const auto& channelContextIter : context_->getOrderedChannels()) {
-      const std::string& channelName = std::get<0>(channelContextIter.second);
-      const channel::CpuContext& channelContext =
-          *(std::get<1>(channelContextIter.second));
-      ChannelAdvertisement& nopChannelAdvertisement =
-          nopBrochure.channelAdvertisement[channelName];
-      nopChannelAdvertisement.domainDescriptor =
-          channelContext.domainDescriptor();
-    }
+    forEachDeviceType([&](auto buffer) {
+      for (const auto& channelContextIter :
+           this->getOrderedChannels_<decltype(buffer)>()) {
+        const std::string& channelName = std::get<0>(channelContextIter.second);
+        const channel::Context<decltype(buffer)>& channelContext =
+            *(std::get<1>(channelContextIter.second));
+        auto& nopChannelAdvertisementMap =
+            getChannelAdvertisement<decltype(buffer)>(nopBrochure);
+        ChannelAdvertisement& nopChannelAdvertisement =
+            nopChannelAdvertisementMap[channelName];
+        nopChannelAdvertisement.domainDescriptor =
+            channelContext.domainDescriptor();
+      }
+    });
     TP_VLOG(3) << "Pipe " << id_ << " is writing nop object (brochure)";
     connection_->write(
         *nopHolderOut2, lazyCallbackWrapper_([nopHolderOut2](Impl& impl) {
@@ -671,21 +847,25 @@ void Pipe::Impl::readPayloadsAndReceiveTensorsOfMessage(ReadOperation& op) {
   for (size_t tensorIdx = 0; tensorIdx < op.message.tensors.size();
        tensorIdx++) {
     Message::Tensor& tensor = op.message.tensors[tensorIdx];
-    ReadOperation::Tensor& tensorBeingAllocated = op.tensors[tensorIdx];
-    std::shared_ptr<channel::CpuChannel> channel =
-        channels_.at(tensorBeingAllocated.channelName);
-    TP_VLOG(3) << "Pipe " << id_ << " is receiving tensor #"
-               << op.sequenceNumber << "." << tensorIdx;
-
-    channel->recv(
-        std::move(tensorBeingAllocated.descriptor),
-        tensor.buffer.cpu,
-        eagerCallbackWrapper_([&op, tensorIdx](Impl& impl) {
-          TP_VLOG(3) << "Pipe " << impl.id_ << " done receiving tensor #"
+    switchOnDeviceType(
+        op.message.tensors[tensorIdx].buffer.type, [&](auto buffer) {
+          ReadOperation::Tensor& tensorBeingAllocated = op.tensors[tensorIdx];
+          std::shared_ptr<channel::Channel<decltype(buffer)>> channel =
+              channels_.get<decltype(buffer)>().at(
+                  tensorBeingAllocated.channelName);
+          TP_VLOG(3) << "Pipe " << id_ << " is receiving tensor #"
                      << op.sequenceNumber << "." << tensorIdx;
-          impl.onRecvOfTensor_(op);
-        }));
-    ++op.numTensorsBeingReceived;
+
+          channel->recv(
+              std::move(tensorBeingAllocated.descriptor),
+              unwrap<decltype(buffer)>(tensor.buffer),
+              eagerCallbackWrapper_([&op, tensorIdx](Impl& impl) {
+                TP_VLOG(3) << "Pipe " << impl.id_ << " done receiving tensor #"
+                           << op.sequenceNumber << "." << tensorIdx;
+                impl.onRecvOfTensor_(op);
+              }));
+          ++op.numTensorsBeingReceived;
+        });
   }
 }
 
@@ -801,18 +981,22 @@ void Pipe::Impl::handleError_() {
   TP_VLOG(2) << "Pipe " << id_ << " is handling error " << error_.what();
 
   connection_->close();
-  for (auto& channelIter : channels_) {
-    channelIter.second->close();
-  }
+  forEachDeviceType([&](auto buffer) {
+    for (auto& channelIter : channels_.get<decltype(buffer)>()) {
+      channelIter.second->close();
+    }
+  });
 
   if (registrationId_.has_value()) {
     listener_->unregisterConnectionRequest(registrationId_.value());
     registrationId_.reset();
   }
-  for (const auto& iter : channelRegistrationIds_) {
-    listener_->unregisterConnectionRequest(iter.second);
-  }
-  channelRegistrationIds_.clear();
+  forEachDeviceType([&](auto buffer) {
+    for (const auto& iter : channelRegistrationIds_.get<decltype(buffer)>()) {
+      listener_->unregisterConnectionRequest(iter.second);
+    }
+    channelRegistrationIds_.get<decltype(buffer)>().clear();
+  });
 
   if (!readOperations_.empty()) {
     advanceReadOperation_(readOperations_.front());
@@ -1071,41 +1255,46 @@ void Pipe::Impl::sendTensorsOfMessage_(WriteOperation& op) {
 
   for (int tensorIdx = 0; tensorIdx < op.message.tensors.size(); ++tensorIdx) {
     const auto& tensor = op.message.tensors[tensorIdx];
-    bool foundAChannel = false;
-    for (const auto& channelContextIter : context_->getOrderedChannels()) {
-      const std::string& channelName = std::get<0>(channelContextIter.second);
 
-      auto channelIter = channels_.find(channelName);
-      if (channelIter == channels_.cend()) {
-        continue;
+    auto t = switchOnDeviceType(tensor.buffer.type, [&](auto buffer) {
+      auto& orderedChannels = this->getOrderedChannels_<decltype(buffer)>();
+      auto& availableChannels = channels_.get<decltype(buffer)>();
+      for (const auto& channelContextIter : orderedChannels) {
+        const std::string& channelName = std::get<0>(channelContextIter.second);
+        auto channelIter = availableChannels.find(channelName);
+        if (channelIter == availableChannels.cend()) {
+          continue;
+        }
+        auto& channel = *(channelIter->second);
+
+        TP_VLOG(3) << "Pipe " << id_ << " is sending tensor #"
+                   << op.sequenceNumber << "." << tensorIdx;
+
+        channel.send(
+            unwrap<decltype(buffer)>(tensor.buffer),
+            eagerCallbackWrapper_(
+                [&op, tensorIdx](Impl& impl, channel::TDescriptor descriptor) {
+                  TP_VLOG(3)
+                      << "Pipe " << impl.id_ << " got tensor descriptor #"
+                      << op.sequenceNumber << "." << tensorIdx;
+                  impl.onDescriptorOfTensor_(
+                      op, tensorIdx, std::move(descriptor));
+                }),
+            eagerCallbackWrapper_([&op, tensorIdx](Impl& impl) {
+              TP_VLOG(3) << "Pipe " << impl.id_ << " done sending tensor #"
+                         << op.sequenceNumber << "." << tensorIdx;
+              impl.onSendOfTensor_(op);
+            }));
+        return WriteOperation::Tensor{tensor.buffer.type, channelName};
       }
-      channel::CpuChannel& channel = *(channelIter->second);
 
-      TP_VLOG(3) << "Pipe " << id_ << " is sending tensor #"
-                 << op.sequenceNumber << "." << tensorIdx;
+      TP_THROW_ASSERT() << "Could not find channel.";
+      return WriteOperation::Tensor{};
+    });
+    op.tensors.push_back(t);
 
-      channel.send(
-          tensor.buffer.cpu,
-          eagerCallbackWrapper_(
-              [&op, tensorIdx](Impl& impl, channel::TDescriptor descriptor) {
-                TP_VLOG(3) << "Pipe " << impl.id_ << " got tensor descriptor #"
-                           << op.sequenceNumber << "." << tensorIdx;
-                impl.onDescriptorOfTensor_(
-                    op, tensorIdx, std::move(descriptor));
-              }),
-          eagerCallbackWrapper_([&op, tensorIdx](Impl& impl) {
-            TP_VLOG(3) << "Pipe " << impl.id_ << " done sending tensor #"
-                       << op.sequenceNumber << "." << tensorIdx;
-            impl.onSendOfTensor_(op);
-          }));
-      op.tensors.push_back(WriteOperation::Tensor{channelName});
-      ++op.numTensorDescriptorsBeingCollected;
-      ++op.numTensorsBeingSent;
-
-      foundAChannel = true;
-      break;
-    }
-    TP_THROW_ASSERT_IF(!foundAChannel);
+    ++op.numTensorDescriptorsBeingCollected;
+    ++op.numTensorsBeingSent;
   }
 }
 
@@ -1221,44 +1410,51 @@ void Pipe::Impl::onReadWhileServerWaitingForBrochure_(
   }
   TP_THROW_ASSERT_IF(!foundATransport);
 
-  for (const auto& channelContextIter : context_->getOrderedChannels()) {
-    const std::string& channelName = std::get<0>(channelContextIter.second);
-    const channel::CpuContext& channelContext =
-        *(std::get<1>(channelContextIter.second));
+  forEachDeviceType([&](auto buffer) {
+    for (const auto& channelContextIter :
+         this->getOrderedChannels_<decltype(buffer)>()) {
+      const std::string& channelName = std::get<0>(channelContextIter.second);
+      const channel::Context<decltype(buffer)>& channelContext =
+          *(std::get<1>(channelContextIter.second));
 
-    const auto nopChannelAdvertisementIter =
-        nopBrochure.channelAdvertisement.find(channelName);
-    if (nopChannelAdvertisementIter ==
-        nopBrochure.channelAdvertisement.cend()) {
-      continue;
-    }
-    const ChannelAdvertisement& nopChannelAdvertisement =
-        nopChannelAdvertisementIter->second;
-    const std::string& domainDescriptor =
-        nopChannelAdvertisement.domainDescriptor;
-    if (domainDescriptor != channelContext.domainDescriptor()) {
-      continue;
-    }
+      const auto& nopChannelAdvertisementMap =
+          getChannelAdvertisement<decltype(buffer)>(nopBrochure);
+      const auto nopChannelAdvertisementIter =
+          nopChannelAdvertisementMap.find(channelName);
+      if (nopChannelAdvertisementIter == nopChannelAdvertisementMap.cend()) {
+        continue;
+      }
+      const ChannelAdvertisement& nopChannelAdvertisement =
+          nopChannelAdvertisementIter->second;
+      const std::string& domainDescriptor =
+          nopChannelAdvertisement.domainDescriptor;
+      if (domainDescriptor != channelContext.domainDescriptor()) {
+        continue;
+      }
 
-    TP_VLOG(3) << "Pipe " << id_ << " is requesting connection (for channel "
-               << channelName << ")";
-    uint64_t token = listener_->registerConnectionRequest(lazyCallbackWrapper_(
-        [channelName](
-            Impl& impl,
-            std::string transport,
-            std::shared_ptr<transport::Connection> connection) {
-          TP_VLOG(3) << "Pipe " << impl.id_
-                     << " done requesting connection (for channel "
-                     << channelName << ")";
-          impl.onAcceptWhileServerWaitingForChannel_(
-              channelName, std::move(transport), std::move(connection));
-        }));
-    channelRegistrationIds_[channelName] = token;
-    needToWaitForConnections = true;
-    ChannelSelection& nopChannelSelection =
-        nopBrochureAnswer.channelSelection[channelName];
-    nopChannelSelection.registrationId = token;
-  }
+      TP_VLOG(3) << "Pipe " << id_ << " is requesting connection (for channel "
+                 << channelName << ")";
+      uint64_t token =
+          listener_->registerConnectionRequest(lazyCallbackWrapper_(
+              [channelName](
+                  Impl& impl,
+                  std::string transport,
+                  std::shared_ptr<transport::Connection> connection) {
+                TP_VLOG(3) << "Pipe " << impl.id_
+                           << " done requesting connection (for channel "
+                           << channelName << ")";
+                impl.onAcceptWhileServerWaitingForChannel_<decltype(buffer)>(
+                    channelName, std::move(transport), std::move(connection));
+              }));
+      channelRegistrationIds_.get<decltype(buffer)>()[channelName] = token;
+      needToWaitForConnections = true;
+      auto& nopChannelSelectionMap =
+          getChannelSelection<decltype(buffer)>(nopBrochureAnswer);
+      ChannelSelection& nopChannelSelection =
+          nopChannelSelectionMap[channelName];
+      nopChannelSelection.registrationId = token;
+    }
+  });
 
   TP_VLOG(3) << "Pipe " << id_ << " is writing nop object (brochure answer)";
   connection_->write(
@@ -1275,6 +1471,20 @@ void Pipe::Impl::onReadWhileServerWaitingForBrochure_(
     state_ = SERVER_WAITING_FOR_CONNECTIONS;
   }
 }
+
+template <>
+std::shared_ptr<channel::Context<CpuBuffer>> Pipe::Impl::getChannelContext_(
+    const std::string& channelName) {
+  return context_->getCpuChannel(channelName);
+}
+
+#if TENSORPIPE_SUPPORTS_CUDA
+template <>
+std::shared_ptr<channel::Context<CudaBuffer>> Pipe::Impl::getChannelContext_(
+    const std::string& channelName) {
+  return context_->getCudaChannel(channelName);
+}
+#endif // TENSORPIPE_SUPPORTS_CUDA
 
 void Pipe::Impl::onReadWhileClientWaitingForBrochureAnswer_(
     const Packet& nopPacketIn) {
@@ -1312,42 +1522,45 @@ void Pipe::Impl::onReadWhileClientWaitingForBrochureAnswer_(
     connection_ = std::move(connection);
   }
 
-  for (const auto& nopChannelSelectionIter :
-       nopBrochureAnswer.channelSelection) {
-    const std::string& channelName = nopChannelSelectionIter.first;
-    const ChannelSelection& nopChannelSelection =
-        nopChannelSelectionIter.second;
+  forEachDeviceType([&](auto buffer) {
+    for (const auto& nopChannelSelectionIter :
+         getChannelSelection<decltype(buffer)>(nopBrochureAnswer)) {
+      const std::string& channelName = nopChannelSelectionIter.first;
+      const ChannelSelection& nopChannelSelection =
+          nopChannelSelectionIter.second;
 
-    std::shared_ptr<channel::CpuContext> channelContext =
-        context_->getChannel(channelName);
+      std::shared_ptr<channel::Context<decltype(buffer)>> channelContext =
+          this->getChannelContext_<decltype(buffer)>(channelName);
 
-    TP_VLOG(3) << "Pipe " << id_ << " is opening connection (for channel "
-               << channelName << ")";
-    std::shared_ptr<transport::Connection> connection =
-        transportContext->connect(address);
-    connection->setId(id_ + ".ch_" + channelName);
+      TP_VLOG(3) << "Pipe " << id_ << " is opening connection (for channel "
+                 << channelName << ")";
+      std::shared_ptr<transport::Connection> connection =
+          transportContext->connect(address);
+      connection->setId(id_ + ".ch_" + channelName);
 
-    auto nopHolderOut = std::make_shared<NopHolder<Packet>>();
-    Packet& nopPacketOut = nopHolderOut->getObject();
-    nopPacketOut.Become(nopPacketOut.index_of<RequestedConnection>());
-    RequestedConnection& nopRequestedConnection =
-        *nopPacketOut.get<RequestedConnection>();
-    uint64_t token = nopChannelSelection.registrationId;
-    nopRequestedConnection.registrationId = token;
-    TP_VLOG(3) << "Pipe " << id_
-               << " is writing nop object (requested connection)";
-    connection->write(
-        *nopHolderOut, lazyCallbackWrapper_([nopHolderOut](Impl& impl) {
-          TP_VLOG(3) << "Pipe " << impl.id_
-                     << " done writing nop object (requested connection)";
-        }));
+      auto nopHolderOut = std::make_shared<NopHolder<Packet>>();
+      Packet& nopPacketOut = nopHolderOut->getObject();
+      nopPacketOut.Become(nopPacketOut.index_of<RequestedConnection>());
+      RequestedConnection& nopRequestedConnection =
+          *nopPacketOut.get<RequestedConnection>();
+      uint64_t token = nopChannelSelection.registrationId;
+      nopRequestedConnection.registrationId = token;
+      TP_VLOG(3) << "Pipe " << id_
+                 << " is writing nop object (requested connection)";
+      connection->write(
+          *nopHolderOut, lazyCallbackWrapper_([nopHolderOut](Impl& impl) {
+            TP_VLOG(3) << "Pipe " << impl.id_
+                       << " done writing nop object (requested connection)";
+          }));
 
-    std::shared_ptr<channel::CpuChannel> channel =
-        channelContext->createChannel(
-            std::move(connection), channel::Endpoint::kConnect);
-    channel->setId(id_ + ".ch_" + channelName);
-    channels_.emplace(channelName, std::move(channel));
-  }
+      std::shared_ptr<channel::Channel<decltype(buffer)>> channel =
+          channelContext->createChannel(
+              std::move(connection), channel::Endpoint::kConnect);
+      channel->setId(id_ + ".ch_" + channelName);
+      channels_.get<decltype(buffer)>().emplace(
+          channelName, std::move(channel));
+    }
+  });
 
   state_ = ESTABLISHED;
   startReadingUponEstablishingPipe_();
@@ -1367,38 +1580,41 @@ void Pipe::Impl::onAcceptWhileServerWaitingForConnection_(
   connection_.reset();
   connection_ = std::move(receivedConnection);
 
-  if (!registrationId_.has_value() && channelRegistrationIds_.empty()) {
+  if (!pendingRegistrations_()) {
     state_ = ESTABLISHED;
     startReadingUponEstablishingPipe_();
     startWritingUponEstablishingPipe_();
   }
 }
 
+template <typename TBuffer>
 void Pipe::Impl::onAcceptWhileServerWaitingForChannel_(
     std::string channelName,
     std::string receivedTransport,
     std::shared_ptr<transport::Connection> receivedConnection) {
   TP_DCHECK(loop_.inLoop());
   TP_DCHECK_EQ(state_, SERVER_WAITING_FOR_CONNECTIONS);
-  auto channelRegistrationIdIter = channelRegistrationIds_.find(channelName);
-  TP_DCHECK(channelRegistrationIdIter != channelRegistrationIds_.end());
+  auto& channelRegistrationIds = channelRegistrationIds_.get<TBuffer>();
+  auto channelRegistrationIdIter = channelRegistrationIds.find(channelName);
+  TP_DCHECK(channelRegistrationIdIter != channelRegistrationIds.end());
   listener_->unregisterConnectionRequest(channelRegistrationIdIter->second);
-  channelRegistrationIds_.erase(channelRegistrationIdIter);
+  channelRegistrationIds.erase(channelRegistrationIdIter);
   receivedConnection->setId(id_ + ".ch_" + channelName);
 
   TP_DCHECK_EQ(transport_, receivedTransport);
-  auto channelIter = channels_.find(channelName);
-  TP_DCHECK(channelIter == channels_.end());
+  auto& channels = channels_.get<TBuffer>();
+  TP_DCHECK(channels.find(channelName) == channels.end());
 
-  std::shared_ptr<channel::CpuContext> channelContext =
-      context_->getChannel(channelName);
+  std::shared_ptr<channel::Context<TBuffer>> channelContext =
+      getChannelContext_<TBuffer>(channelName);
 
-  std::shared_ptr<channel::CpuChannel> channel = channelContext->createChannel(
-      std::move(receivedConnection), channel::Endpoint::kListen);
+  std::shared_ptr<channel::Channel<TBuffer>> channel =
+      channelContext->createChannel(
+          std::move(receivedConnection), channel::Endpoint::kListen);
   channel->setId(id_ + ".ch_" + channelName);
-  channels_.emplace(channelName, std::move(channel));
+  channels.emplace(channelName, std::move(channel));
 
-  if (!registrationId_.has_value() && channelRegistrationIds_.empty()) {
+  if (!pendingRegistrations_()) {
     state_ = ESTABLISHED;
     startReadingUponEstablishingPipe_();
     startWritingUponEstablishingPipe_();
@@ -1495,6 +1711,21 @@ WriteOperation* Pipe::Impl::findWriteOperation(int64_t sequenceNumber) {
   WriteOperation& op = writeOperations_[offset];
   TP_DCHECK_EQ(op.sequenceNumber, sequenceNumber);
   return &op;
+}
+
+bool Pipe::Impl::pendingRegistrations_() {
+  if (registrationId_.has_value()) {
+    return true;
+  }
+
+  bool ret = false;
+  forEachDeviceType([&](auto buffer) {
+    if (!channelRegistrationIds_.get<decltype(buffer)>().empty()) {
+      ret = true;
+    }
+  });
+
+  return ret;
 }
 
 } // namespace tensorpipe

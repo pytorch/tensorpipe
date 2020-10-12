@@ -19,6 +19,7 @@
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/optional.h>
 #include <tensorpipe/common/queue.h>
+#include <tensorpipe/core/buffer_helpers.h>
 #include <tensorpipe/core/listener.h>
 #include <tensorpipe/core/pipe.h>
 #include <tensorpipe/transport/connection.h>
@@ -51,10 +52,11 @@ class Context::Impl : public Context::PrivateIface,
       std::string,
       std::shared_ptr<transport::Context>);
 
+  template <typename TBuffer>
   void registerChannel(
       int64_t,
       std::string,
-      std::shared_ptr<channel::CpuContext>);
+      std::shared_ptr<channel::Context<TBuffer>>);
 
   std::shared_ptr<Listener> listen(const std::vector<std::string>&);
 
@@ -63,7 +65,12 @@ class Context::Impl : public Context::PrivateIface,
   ClosingEmitter& getClosingEmitter() override;
 
   std::shared_ptr<transport::Context> getTransport(const std::string&) override;
-  std::shared_ptr<channel::CpuContext> getChannel(const std::string&) override;
+  std::shared_ptr<channel::CpuContext> getCpuChannel(
+      const std::string&) override;
+#if TENSORPIPE_SUPPORTS_CUDA
+  std::shared_ptr<channel::CudaContext> getCudaChannel(
+      const std::string&) override;
+#endif // TENSORPIPE_SUPPORTS_CUDA
 
   using PrivateIface::TOrderedTransports;
 
@@ -71,7 +78,10 @@ class Context::Impl : public Context::PrivateIface,
 
   using PrivateIface::TOrderedChannels;
 
-  const TOrderedChannels& getOrderedChannels() override;
+  const TOrderedChannels<CpuBuffer>& getOrderedCpuChannels() override;
+#if TENSORPIPE_SUPPORTS_CUDA
+  const TOrderedChannels<CudaBuffer>& getOrderedCudaChannels() override;
+#endif // TENSORPIPE_SUPPORTS_CUDA
 
   const std::string& getName() override;
 
@@ -105,13 +115,21 @@ class Context::Impl : public Context::PrivateIface,
 
   std::unordered_map<std::string, std::shared_ptr<transport::Context>>
       transports_;
-  std::unordered_map<std::string, std::shared_ptr<channel::CpuContext>>
-      channels_;
+
+  template <typename TBuffer>
+  using TContextMap = std::
+      unordered_map<std::string, std::shared_ptr<channel::Context<TBuffer>>>;
+  TP_DEVICE_FIELD(TContextMap<CpuBuffer>, TContextMap<CudaBuffer>) channels_;
 
   TOrderedTransports transportsByPriority_;
-  TOrderedChannels channelsByPriority_;
+
+  TP_DEVICE_FIELD(TOrderedChannels<CpuBuffer>, TOrderedChannels<CudaBuffer>)
+  channelsByPriority_;
 
   ClosingEmitter closingEmitter_;
+
+  template <typename TBuffer>
+  std::shared_ptr<channel::Context<TBuffer>> getChannel_(const std::string&);
 };
 
 Context::Context(ContextOptions opts)
@@ -156,22 +174,18 @@ void Context::Impl::registerTransport(
   transportsByPriority_.emplace(-priority, std::make_tuple(transport, context));
 }
 
-void Context::registerChannel(
-    int64_t priority,
-    std::string channel,
-    std::shared_ptr<channel::CpuContext> context) {
-  impl_->registerChannel(priority, std::move(channel), std::move(context));
-}
-
+template <typename TBuffer>
 void Context::Impl::registerChannel(
     int64_t priority,
     std::string channel,
-    std::shared_ptr<channel::CpuContext> context) {
+    std::shared_ptr<channel::Context<TBuffer>> context) {
+  auto& channels = channels_.get<TBuffer>();
+  auto& channelsByPriority = channelsByPriority_.get<TBuffer>();
   TP_THROW_ASSERT_IF(channel.empty());
-  TP_THROW_ASSERT_IF(channels_.find(channel) != channels_.end())
+  TP_THROW_ASSERT_IF(channels.find(channel) != channels.end())
       << "channel " << channel << " already registered";
   TP_THROW_ASSERT_IF(
-      channelsByPriority_.find(-priority) != channelsByPriority_.end())
+      channelsByPriority.find(-priority) != channelsByPriority.end())
       << "channel with priority " << priority << " already registered";
   if (!context->isViable()) {
     TP_VLOG(1) << "Context " << id_ << " is not registering channel " << channel
@@ -180,11 +194,27 @@ void Context::Impl::registerChannel(
   }
   TP_VLOG(1) << "Context " << id_ << " is registering channel " << channel;
   context->setId(id_ + ".ch_" + channel);
-  channels_.emplace(channel, context);
+  channels.emplace(channel, context);
   // Reverse the priority, as the pipe will pick the *first* available channel
   // it can find in the ordered map, so higher priorities should come first.
-  channelsByPriority_.emplace(-priority, std::make_tuple(channel, context));
+  channelsByPriority.emplace(-priority, std::make_tuple(channel, context));
 }
+
+void Context::registerChannel(
+    int64_t priority,
+    std::string channel,
+    std::shared_ptr<channel::CpuContext> context) {
+  impl_->registerChannel(priority, std::move(channel), std::move(context));
+}
+
+#if TENSORPIPE_SUPPORTS_CUDA
+void Context::registerChannel(
+    int64_t priority,
+    std::string channel,
+    std::shared_ptr<channel::CudaContext> context) {
+  impl_->registerChannel(priority, std::move(channel), std::move(context));
+}
+#endif // TENSORPIPE_SUPPORTS_CUDA
 
 std::shared_ptr<Listener> Context::listen(
     const std::vector<std::string>& urls) {
@@ -241,22 +271,44 @@ std::shared_ptr<transport::Context> Context::Impl::getTransport(
   return iter->second;
 }
 
-std::shared_ptr<channel::CpuContext> Context::Impl::getChannel(
+template <typename TBuffer>
+std::shared_ptr<channel::Context<TBuffer>> Context::Impl::getChannel_(
     const std::string& channel) {
-  auto iter = channels_.find(channel);
-  if (iter == channels_.end()) {
+  auto& channels = channels_.get<TBuffer>();
+  auto iter = channels.find(channel);
+  if (iter == channels.end()) {
     TP_THROW_EINVAL() << "unsupported channel " << channel;
   }
   return iter->second;
 }
 
+std::shared_ptr<channel::CpuContext> Context::Impl::getCpuChannel(
+    const std::string& channel) {
+  return getChannel_<CpuBuffer>(channel);
+}
+
+#if TENSORPIPE_SUPPORTS_CUDA
+std::shared_ptr<channel::CudaContext> Context::Impl::getCudaChannel(
+    const std::string& channel) {
+  return getChannel_<CudaBuffer>(channel);
+}
+#endif // TENSORPIPE_SUPPORTS_CUDA
+
 const Context::Impl::TOrderedTransports& Context::Impl::getOrderedTransports() {
   return transportsByPriority_;
 }
 
-const Context::Impl::TOrderedChannels& Context::Impl::getOrderedChannels() {
-  return channelsByPriority_;
+const Context::Impl::TOrderedChannels<CpuBuffer>& Context::Impl::
+    getOrderedCpuChannels() {
+  return channelsByPriority_.get<CpuBuffer>();
 }
+
+#if TENSORPIPE_SUPPORTS_CUDA
+const Context::Impl::TOrderedChannels<CudaBuffer>& Context::Impl::
+    getOrderedCudaChannels() {
+  return channelsByPriority_.get<CudaBuffer>();
+}
+#endif // TENSORPIPE_SUPPORTS_CUDA
 
 const std::string& Context::Impl::getName() {
   return name_;
@@ -275,9 +327,11 @@ void Context::Impl::close() {
     for (auto& iter : transports_) {
       iter.second->close();
     }
-    for (auto& iter : channels_) {
-      iter.second->close();
-    }
+    forEachDeviceType([&](auto buffer) {
+      for (auto& iter : channels_.get<decltype(buffer)>()) {
+        iter.second->close();
+      }
+    });
 
     TP_VLOG(1) << "Context " << id_ << " done closing";
   }
@@ -296,9 +350,11 @@ void Context::Impl::join() {
     for (auto& iter : transports_) {
       iter.second->join();
     }
-    for (auto& iter : channels_) {
-      iter.second->join();
-    }
+    forEachDeviceType([&](auto buffer) {
+      for (auto& iter : channels_.get<decltype(buffer)>()) {
+        iter.second->join();
+      }
+    });
 
     TP_VLOG(1) << "Context " << id_ << " done joining";
   }
