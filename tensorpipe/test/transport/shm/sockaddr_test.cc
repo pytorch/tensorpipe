@@ -12,7 +12,7 @@
 
 using namespace tensorpipe::transport;
 
-TEST(Sockaddr, FromToString) {
+TEST(ShmSockaddr, FromToString) {
   auto addr = shm::Sockaddr::createAbstractUnixAddr("foo");
   ASSERT_EQ(addr.str(), std::string("foo"));
 }

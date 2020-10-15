@@ -16,7 +16,7 @@ namespace test {
 namespace transport {
 namespace uv {
 
-TEST(Loop, Defer) {
+TEST(UvLoop, Defer) {
   Loop loop;
 
   {
