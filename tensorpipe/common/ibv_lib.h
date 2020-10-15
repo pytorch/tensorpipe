@@ -43,14 +43,6 @@ namespace tensorpipe {
   _(query_port, int, (struct ibv_context*, uint8_t, struct ibv_port_attr*))   \
   _(reg_mr, struct ibv_mr*, (struct ibv_pd*, void*, size_t, int))             \
   _(wc_status_str, const char*, (enum ibv_wc_status))
-// These functions (which, it would seem, are the ones that are used in the
-// critical control path, and which thus must have the lowest latency and avoid
-// any syscall/kernel overhead) are not exposed as symbols of libibverbs.so:
-// they are defined inline in the header and, in fact, they access a function
-// pointer stored on the ibv_context and execute it.
-//  _(poll_cq)
-//  _(post_send)
-//  _(post_srq_recv)
 
 // Wrapper for libibverbs.
 
@@ -100,6 +92,30 @@ class IbvLib {
   }
   TP_FORALL_IBV_SYMBOLS(TP_FORWARD_CALL)
 #undef TP_FORWARD_CALL
+
+  // These functions (which, it would seem, are the ones that are used in the
+  // critical control path, and which thus must have the lowest latency and
+  // avoid any syscall/kernel overhead) are not exposed as symbols of
+  // libibverbs.so: they are defined inline in the header and, in fact, they
+  // access a function pointer stored on the ibv_context and execute it.
+
+  int poll_cq(struct ibv_cq* cq, int num_entries, struct ibv_wc* wc) {
+    return cq->context->ops.poll_cq(cq, num_entries, wc);
+  }
+
+  int post_send(
+      struct ibv_qp* qp,
+      struct ibv_send_wr* wr,
+      struct ibv_send_wr** bad_wr) {
+    return qp->context->ops.post_send(qp, wr, bad_wr);
+  }
+
+  int post_srq_recv(
+      struct ibv_srq* srq,
+      struct ibv_recv_wr* recv_wr,
+      struct ibv_recv_wr** bad_recv_wr) {
+    return srq->context->ops.post_srq_recv(srq, recv_wr, bad_recv_wr);
+  }
 };
 
 #undef TP_FORALL_IBV_SYMBOLS

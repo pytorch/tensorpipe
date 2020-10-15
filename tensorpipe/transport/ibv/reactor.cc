@@ -64,7 +64,7 @@ void Reactor::postRecvRequestsOnSRQ_(int num) {
     for (int i = 0; i < std::min(num, kNumPolledWorkCompletions) - 1; i++) {
       wrs[i].next = &wrs[i + 1];
     }
-    int rv = ibv_post_srq_recv(srq_.get(), wrs.data(), &badRecvWr);
+    int rv = getIbvLib().post_srq_recv(srq_.get(), wrs.data(), &badRecvWr);
     TP_THROW_SYSTEM_IF(rv != 0, errno);
     TP_THROW_ASSERT_IF(badRecvWr != nullptr);
     num -= std::min(num, kNumPolledWorkCompletions);
@@ -100,7 +100,7 @@ void Reactor::run() {
   // all functions have been removed.
   while (!closed_ || queuePairEventHandler_.size() > 0) {
     std::array<struct ibv_wc, kNumPolledWorkCompletions> wcs;
-    auto rv = ibv_poll_cq(cq_.get(), wcs.size(), wcs.data());
+    auto rv = getIbvLib().poll_cq(cq_.get(), wcs.size(), wcs.data());
 
     if (rv == 0) {
       if (deferredFunctionCount_ > 0) {
@@ -239,7 +239,7 @@ void Reactor::postWrite(IbvQueuePair& qp, struct ibv_send_wr& wr) {
     struct ibv_send_wr* badWr = nullptr;
     TP_VLOG(9) << "Transport context " << id_ << " posting RDMA write for QP "
                << qp->qp_num;
-    TP_CHECK_IBV_INT(ibv_post_send(qp.get(), &wr, &badWr));
+    TP_CHECK_IBV_INT(getIbvLib().post_send(qp.get(), &wr, &badWr));
     TP_THROW_ASSERT_IF(badWr != nullptr);
     numAvailableWrites_--;
   } else {
@@ -254,7 +254,7 @@ void Reactor::postAck(IbvQueuePair& qp, struct ibv_send_wr& wr) {
     struct ibv_send_wr* badWr = nullptr;
     TP_VLOG(9) << "Transport context " << id_ << " posting send for QP "
                << qp->qp_num;
-    TP_CHECK_IBV_INT(ibv_post_send(qp.get(), &wr, &badWr));
+    TP_CHECK_IBV_INT(getIbvLib().post_send(qp.get(), &wr, &badWr));
     TP_THROW_ASSERT_IF(badWr != nullptr);
     numAvailableAcks_--;
   } else {
