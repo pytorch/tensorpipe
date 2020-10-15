@@ -110,6 +110,23 @@ else()
   set(TENSORPIPE_HAS_SHM_TRANSPORT 0)
 endif()
 
+### ibv
+
+if(TP_ENABLE_IBV)
+  target_sources(tensorpipe PRIVATE
+    common/ibv.cc
+    transport/ibv/connection.cc
+    transport/ibv/context.cc
+    transport/ibv/error.cc
+    transport/ibv/listener.cc
+    transport/ibv/loop.cc
+    transport/ibv/reactor.cc
+    transport/ibv/sockaddr.cc)
+  find_package(ibverbs REQUIRED)
+  include_directories(SYSTEM ${IBVERBS_INCLUDE_DIRS})
+  target_link_libraries(tensorpipe PRIVATE ${IBVERBS_LIBRARIES})
+  set(TENSORPIPE_HAS_IBV_TRANSPORT 1)
+endif()
 
 if(APPLE)
   find_library(CF CoreFoundation)

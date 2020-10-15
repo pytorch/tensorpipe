@@ -31,6 +31,11 @@
 #include <tensorpipe/transport/shm/context.h>
 #endif // TENSORPIPE_HAS_SHM_TRANSPORT
 
+#if TENSORPIPE_HAS_IBV_TRANSPORT
+#include <tensorpipe/transport/ibv/context.h>
+#include <tensorpipe/transport/ibv/error.h>
+#endif // TENSORPIPE_HAS_IBV_TRANSPORT
+
 // Channels
 
 #include <tensorpipe/channel/cpu_context.h>
