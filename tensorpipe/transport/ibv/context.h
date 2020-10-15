@@ -32,6 +32,10 @@ class Context : public transport::Context {
 
   const std::string& domainDescriptor() const override;
 
+  std::tuple<Error, address_t> lookupAddrForIface(std::string iface);
+
+  std::tuple<Error, address_t> lookupAddrForHostname();
+
   void setId(std::string id) override;
 
   void close() override;
