@@ -52,6 +52,8 @@ class Context::Impl : public Context::PrivateIface,
  public:
   Impl();
 
+  bool isViable() const;
+
   const std::string& domainDescriptor() const;
 
   std::shared_ptr<transport::Connection> connect(address_t addr);
@@ -170,6 +172,14 @@ std::shared_ptr<transport::Listener> Context::Impl::listen(std::string addr) {
       std::static_pointer_cast<PrivateIface>(shared_from_this()),
       std::move(addr),
       std::move(listenerId));
+}
+
+bool Context::isViable() const {
+  return impl_->isViable();
+}
+
+bool Context::Impl::isViable() const {
+  return reactor_.isViable();
 }
 
 const std::string& Context::domainDescriptor() const {

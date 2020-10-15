@@ -17,7 +17,9 @@ namespace ibv {
 
 Reactor::Reactor() {
   IbvDeviceList deviceList;
-  TP_THROW_ASSERT_IF(deviceList.size() == 0);
+  if (deviceList.size() == 0) {
+    return;
+  }
   ctx_ = createIbvContext(deviceList[0]);
   pd_ = createIbvProtectionDomain(ctx_);
   cq_ = createIbvCompletionQueue(
@@ -37,6 +39,10 @@ Reactor::Reactor() {
   postRecvRequestsOnSRQ_(kNumPendingRecvReqs);
 
   thread_ = std::thread(&Reactor::run, this);
+}
+
+bool Reactor::isViable() const {
+  return const_cast<IbvContext&>(ctx_).get() != nullptr;
 }
 
 void Reactor::postRecvRequestsOnSRQ_(int num) {
