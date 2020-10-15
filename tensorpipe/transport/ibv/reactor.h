@@ -94,6 +94,10 @@ class Reactor final {
     }
   }
 
+  IbvLib& getIbvLib() {
+    return ibvLib_;
+  }
+
   IbvContext& getIbvContext() {
     return ctx_;
   }
@@ -144,6 +148,8 @@ class Reactor final {
 
  private:
   // InfiniBand stuff
+  bool foundIbvLib_{false};
+  IbvLib ibvLib_;
   IbvContext ctx_;
   IbvProtectionDomain pd_;
   IbvCompletionQueue cq_;

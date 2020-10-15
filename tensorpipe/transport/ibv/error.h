@@ -17,11 +17,13 @@ namespace ibv {
 
 class IbvError final : public BaseError {
  public:
-  explicit IbvError(enum ibv_wc_status status) : status_(status) {}
+  explicit IbvError(IbvLib& ibvLib, enum ibv_wc_status status)
+      : ibvLib_(ibvLib), status_(status) {}
 
   std::string what() const override;
 
  private:
+  IbvLib& ibvLib_;
   enum ibv_wc_status status_;
 };
 

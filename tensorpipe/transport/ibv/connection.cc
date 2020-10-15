@@ -600,6 +600,7 @@ void Connection::Impl::initFromLoop() {
       kBufferSize, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1);
   inboxRb_ = util::ringbuffer::RingBuffer(&inboxHeader_, inboxBuf_.ptr());
   inboxMr_ = createIbvMemoryRegion(
+      context_->getReactor().getIbvLib(),
       context_->getReactor().getIbvPd(),
       inboxBuf_.ptr(),
       kBufferSize,
@@ -610,7 +611,11 @@ void Connection::Impl::initFromLoop() {
       kBufferSize, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1);
   outboxRb_ = util::ringbuffer::RingBuffer(&outboxHeader_, outboxBuf_.ptr());
   outboxMr_ = createIbvMemoryRegion(
-      context_->getReactor().getIbvPd(), outboxBuf_.ptr(), kBufferSize, 0);
+      context_->getReactor().getIbvLib(),
+      context_->getReactor().getIbvPd(),
+      outboxBuf_.ptr(),
+      kBufferSize,
+      0);
 
   // Create and init queue pair.
   {
@@ -623,9 +628,15 @@ void Connection::Impl::initFromLoop() {
     initAttr.cap.max_send_sge = 1;
     initAttr.srq = context_->getReactor().getIbvSrq().get();
     initAttr.sq_sig_all = 1;
-    qp_ = createIbvQueuePair(context_->getReactor().getIbvPd(), initAttr);
+    qp_ = createIbvQueuePair(
+        context_->getReactor().getIbvLib(),
+        context_->getReactor().getIbvPd(),
+        initAttr);
   }
-  transitionIbvQueuePairToInit(qp_, context_->getReactor().getIbvAddress());
+  transitionIbvQueuePairToInit(
+      context_->getReactor().getIbvLib(),
+      qp_,
+      context_->getReactor().getIbvAddress());
 
   // Register methods to be called when our peer writes to our inbox and reads
   // from our outbox.
@@ -942,8 +953,12 @@ void Connection::Impl::handleEventInFromLoop() {
     }
 
     transitionIbvQueuePairToReadyToReceive(
-        qp_, context_->getReactor().getIbvAddress(), ex.setupInfo);
-    transitionIbvQueuePairToReadyToSend(qp_, ibvSelfInfo_);
+        context_->getReactor().getIbvLib(),
+        qp_,
+        context_->getReactor().getIbvAddress(),
+        ex.setupInfo);
+    transitionIbvQueuePairToReadyToSend(
+        context_->getReactor().getIbvLib(), qp_, ibvSelfInfo_);
 
     peerInboxKey_ = ex.memoryRegionKey;
     peerInboxPtr_ = ex.memoryRegionPtr;
@@ -1145,7 +1160,8 @@ void Connection::Impl::onAckCompleted() {
 
 void Connection::Impl::onError(enum ibv_wc_status status, uint64_t wr_id) {
   TP_DCHECK(context_->inLoopThread());
-  setError_(TP_CREATE_ERROR(IbvError, status));
+  setError_(
+      TP_CREATE_ERROR(IbvError, context_->getReactor().getIbvLib(), status));
   if (wr_id == kWriteRequestId) {
     onWriteCompleted();
   } else if (wr_id == kAckRequestId) {
@@ -1177,7 +1193,7 @@ void Connection::Impl::handleError() {
   }
   writeOperations_.clear();
 
-  transitionIbvQueuePairToError(qp_);
+  transitionIbvQueuePairToError(context_->getReactor().getIbvLib(), qp_);
 
   tryCleanup_();
 

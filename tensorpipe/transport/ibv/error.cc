@@ -21,7 +21,7 @@ namespace transport {
 namespace ibv {
 
 std::string IbvError::what() const {
-  return ibv_wc_status_str(status_);
+  return ibvLib_.wc_status_str(status_);
 }
 
 std::string GetaddrinfoError::what() const {
