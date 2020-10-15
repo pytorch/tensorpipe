@@ -15,19 +15,12 @@ include(CMakeDependentOption)
 # Try to auto-detect the presence of some libraries in order to enable/disable
 # the transports/channels that make use of them.
 # TODO Add CUDA to this list, in order to fix the TODO below
-find_package(ibverbs QUIET)
 
 # TODO: Default to ON if CUDA available.
 option(TP_USE_CUDA "Enable support for CUDA tensors" OFF)
 
 # Transports
-if (${LINUX} AND ${IBVERBS_FOUND})
-  set(TP_ENABLE_IBV_DEFAULT ON)
-else()
-  set(TP_ENABLE_IBV_DEFAULT OFF)
-endif()
-option(TP_ENABLE_IBV "Enable InfiniBand transport" ${TP_ENABLE_IBV_DEFAULT})
-unset(TP_ENABLE_IBV_DEFAULT)
+option(TP_ENABLE_IBV "Enable InfiniBand transport" ${LINUX})
 option(TP_ENABLE_SHM "Enable shm transport" ${LINUX})
 
 # Channels

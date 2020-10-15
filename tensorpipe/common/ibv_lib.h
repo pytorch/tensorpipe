@@ -10,8 +10,6 @@
 
 #include <memory>
 
-#include <infiniband/verbs.h>
-
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/dl.h>
 

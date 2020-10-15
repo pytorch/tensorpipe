@@ -89,7 +89,7 @@ jobs:
           name: Install apt packages
           command: |
             sudo apt-get update
-            sudo apt-get install -y git-core build-essential cmake libibverbs1 libibverbs-dev rdma-core linux-modules-extra-$(uname -r) << parameters.apt_get >>
+            sudo apt-get install -y git-core build-essential cmake libibverbs1 rdma-core linux-modules-extra-$(uname -r) << parameters.apt_get >>
       - run:
           name: Initialize submodules
           command: |
