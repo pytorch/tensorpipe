@@ -124,7 +124,8 @@ if(TP_ENABLE_IBV)
     transport/ibv/sockaddr.cc)
   find_package(ibverbs REQUIRED)
   include_directories(SYSTEM ${IBVERBS_INCLUDE_DIRS})
-  target_link_libraries(tensorpipe PRIVATE ${IBVERBS_LIBRARIES})
+  # Do NOT link to libibverbs because we will dlopen it at runtime.
+  # target_link_libraries(tensorpipe PRIVATE ${IBVERBS_LIBRARIES})
   set(TENSORPIPE_HAS_IBV_TRANSPORT 1)
 endif()
 
