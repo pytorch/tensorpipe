@@ -37,6 +37,16 @@ if(TP_ENABLE_SHM)
     )
 endif()
 
+if(TP_ENABLE_IBV)
+  target_sources(tensorpipe_test PRIVATE
+    transport/ibv/connection_test.cc
+    transport/ibv/ibv_test.cc
+    transport/ibv/loop_test.cc
+    transport/ibv/sockaddr_test.cc
+    util/ringbuffer/ringbuffer_test.cc
+    )
+endif()
+
 if(TP_ENABLE_CMA)
   target_sources(tensorpipe_test PRIVATE
     channel/cma/cma_test.cc
