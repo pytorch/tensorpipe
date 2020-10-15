@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <tensorpipe/transport/uv/sockaddr.h>
+#include <tensorpipe/transport/ibv/sockaddr.h>
 
 #include <netinet/in.h>
 
@@ -16,12 +16,12 @@ using namespace tensorpipe::transport;
 
 namespace {
 
-int family(const uv::Sockaddr& addr) {
+int family(const ibv::Sockaddr& addr) {
   auto sockaddr = addr.addr();
   return sockaddr->sa_family;
 }
 
-int port(const uv::Sockaddr& addr) {
+int port(const ibv::Sockaddr& addr) {
   auto sockaddr = addr.addr();
   if (sockaddr->sa_family == AF_INET) {
     auto in = reinterpret_cast<const struct sockaddr_in*>(sockaddr);
@@ -36,43 +36,44 @@ int port(const uv::Sockaddr& addr) {
 
 } // namespace
 
-TEST(UvSockaddr, InetBadPort) {
+TEST(IbvSockaddr, InetBadPort) {
   ASSERT_THROW(
-      uv::Sockaddr::createInetSockAddr("1.2.3.4:-1"), std::invalid_argument);
+      ibv::Sockaddr::createInetSockAddr("1.2.3.4:-1"), std::invalid_argument);
   ASSERT_THROW(
-      uv::Sockaddr::createInetSockAddr("1.2.3.4:65536"), std::invalid_argument);
+      ibv::Sockaddr::createInetSockAddr("1.2.3.4:65536"),
+      std::invalid_argument);
 }
 
-TEST(UvSockaddr, Inet) {
+TEST(IbvSockaddr, Inet) {
   {
-    auto sa = uv::Sockaddr::createInetSockAddr("1.2.3.4:5");
+    auto sa = ibv::Sockaddr::createInetSockAddr("1.2.3.4:5");
     ASSERT_EQ(family(sa), AF_INET);
     ASSERT_EQ(port(sa), ntohs(5));
     ASSERT_EQ(sa.str(), "1.2.3.4:5");
   }
 
   {
-    auto sa = uv::Sockaddr::createInetSockAddr("1.2.3.4:0");
+    auto sa = ibv::Sockaddr::createInetSockAddr("1.2.3.4:0");
     ASSERT_EQ(family(sa), AF_INET);
     ASSERT_EQ(port(sa), 0);
     ASSERT_EQ(sa.str(), "1.2.3.4:0");
   }
 
   {
-    auto sa = uv::Sockaddr::createInetSockAddr("1.2.3.4");
+    auto sa = ibv::Sockaddr::createInetSockAddr("1.2.3.4");
     ASSERT_EQ(family(sa), AF_INET);
     ASSERT_EQ(port(sa), 0);
     ASSERT_EQ(sa.str(), "1.2.3.4:0");
   }
 }
 
-TEST(UvSockaddr, Inet6BadPort) {
+TEST(IbvSockaddr, Inet6BadPort) {
   ASSERT_THROW(
-      uv::Sockaddr::createInetSockAddr("[::1]:-1"), std::invalid_argument);
+      ibv::Sockaddr::createInetSockAddr("[::1]:-1"), std::invalid_argument);
   ASSERT_THROW(
-      uv::Sockaddr::createInetSockAddr("[::1]:65536"), std::invalid_argument);
+      ibv::Sockaddr::createInetSockAddr("[::1]:65536"), std::invalid_argument);
   ASSERT_THROW(
-      uv::Sockaddr::createInetSockAddr("]::1["), std::invalid_argument);
+      ibv::Sockaddr::createInetSockAddr("]::1["), std::invalid_argument);
 }
 
 // Interface name conventions change based on platform. Linux uses "lo", OSX
@@ -83,23 +84,23 @@ TEST(UvSockaddr, Inet6BadPort) {
 #define LOOPBACK_INTERFACE "lo0"
 #endif
 
-TEST(UvSockaddr, Inet6) {
+TEST(IbvSockaddr, Inet6) {
   {
-    auto sa = uv::Sockaddr::createInetSockAddr("[::1]:5");
+    auto sa = ibv::Sockaddr::createInetSockAddr("[::1]:5");
     ASSERT_EQ(family(sa), AF_INET6);
     ASSERT_EQ(port(sa), ntohs(5));
     ASSERT_EQ(sa.str(), "[::1]:5");
   }
 
   {
-    auto sa = uv::Sockaddr::createInetSockAddr("[::1]:0");
+    auto sa = ibv::Sockaddr::createInetSockAddr("[::1]:0");
     ASSERT_EQ(family(sa), AF_INET6);
     ASSERT_EQ(port(sa), 0);
     ASSERT_EQ(sa.str(), "[::1]:0");
   }
 
   {
-    auto sa = uv::Sockaddr::createInetSockAddr("::1");
+    auto sa = ibv::Sockaddr::createInetSockAddr("::1");
     ASSERT_EQ(family(sa), AF_INET6);
     ASSERT_EQ(port(sa), 0);
     ASSERT_EQ(sa.str(), "[::1]:0");
@@ -107,7 +108,7 @@ TEST(UvSockaddr, Inet6) {
 
 #ifdef LOOPBACK_INTERFACE
   {
-    auto sa = uv::Sockaddr::createInetSockAddr("::1%" LOOPBACK_INTERFACE);
+    auto sa = ibv::Sockaddr::createInetSockAddr("::1%" LOOPBACK_INTERFACE);
     ASSERT_EQ(family(sa), AF_INET6);
     ASSERT_EQ(port(sa), 0);
     ASSERT_EQ(sa.str(), "[::1%" LOOPBACK_INTERFACE "]:0");
@@ -122,7 +123,7 @@ TEST(UvSockaddr, Inet6) {
     sa.sin6_addr.s6_addr[15] = 1;
     // Implicitly assuming that the loopback interface is the first one.
     sa.sin6_scope_id = 1;
-    uv::Sockaddr tpSa(reinterpret_cast<sockaddr*>(&sa), sizeof(sa));
+    ibv::Sockaddr tpSa(reinterpret_cast<sockaddr*>(&sa), sizeof(sa));
     ASSERT_EQ(tpSa.str(), "[::1%" LOOPBACK_INTERFACE "]:42");
   }
 #endif
