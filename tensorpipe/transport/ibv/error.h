@@ -25,6 +25,23 @@ class IbvError final : public BaseError {
   enum ibv_wc_status status_;
 };
 
+class GetaddrinfoError final : public BaseError {
+ public:
+  GetaddrinfoError(int error) : error_(error) {}
+
+  std::string what() const override;
+
+ private:
+  int error_;
+};
+
+class NoAddrFoundError final : public BaseError {
+ public:
+  NoAddrFoundError() {}
+
+  std::string what() const override;
+};
+
 } // namespace ibv
 } // namespace transport
 } // namespace tensorpipe
