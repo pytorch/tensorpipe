@@ -61,6 +61,72 @@ jobs:
           command: |
             cd build
             make install
+  bare_metal:
+    parameters:
+      image:
+        type: string
+        default: ""
+      apt_get:
+        type: string
+        default: ""
+      c_compiler:
+        type: string
+        default: ""
+      cxx_compiler:
+        type: string
+        default: ""
+      cmake_args:
+        type: string
+        default: ""
+      nproc:
+        type: integer
+        default: 20
+    machine:
+      image: << parameters.image >>
+    steps:
+      - checkout
+      - run:
+          name: Install apt packages
+          command: |
+            sudo apt-get update
+            sudo apt-get install -y git-core build-essential cmake libibverbs1 libibverbs-dev rdma-core linux-modules-extra-$(uname -r) << parameters.apt_get >>
+      - run:
+          name: Initialize submodules
+          command: |
+            git submodule init
+            git submodule update
+      - run:
+          name: Build
+          command: |
+            mkdir build
+            cd build
+            cmake ../ \
+              -DCMAKE_C_FLAGS="-Werror -Wno-deprecated-declarations" \
+              -DCMAKE_CXX_FLAGS="-Werror -Wno-deprecated-declarations" \
+              -DCMAKE_C_COMPILER=<< parameters.c_compiler >> \
+              -DCMAKE_CXX_COMPILER=<< parameters.cxx_compiler >> \
+              -DTP_ENABLE_CMA=OFF \
+              -DTP_ENABLE_CUDA_IPC=OFF \
+              -DTP_ENABLE_IBV=ON \
+              -DTP_BUILD_TESTING=ON \
+              << parameters.cmake_args >>
+            make -j<<parameters.nproc>>
+      - run:
+          name: Configure Soft-RoCE (RXE) InfiniBand interface
+          command: |
+            # Find the name of the first non-loopback IP interface
+            INTERFACE_NAME=$(ip link | grep '^2: ' | sed -re 's/2: ([a-z0-9]+): .*/\1/')
+            sudo rdma link add rxe0 type rxe netdev $INTERFACE_NAME
+      - run:
+          name: Test
+          command: |
+            cd build
+            ./tensorpipe/test/tensorpipe_test
+      - run:
+          name: Install
+          command: |
+            cd build
+            sudo make install
   build_osx:
     macos:
       xcode: 11.3.1
@@ -186,6 +252,12 @@ workflows:
           c_compiler: gcc-7
           cxx_compiler: g++-7
           cmake_args: -DSANITIZE=thread
+      - bare_metal:
+          name: bare-metal
+          image: ubuntu-2004:202008-01
+          apt_get: "gcc-7 g++-7"
+          c_compiler: gcc-7
+          cxx_compiler: g++-7
       - build_osx:
           name: OSX
       - python:
