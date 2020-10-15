@@ -154,4 +154,32 @@ inline IbvQueuePair createIbvQueuePair(
   return IbvQueuePair(TP_CHECK_IBV_PTR(ibv_create_qp(pd.get(), &initAttr)));
 }
 
+// Helpers
+
+struct IbvAddress {
+  uint8_t portNum;
+  uint8_t globalIdentifierIndex;
+  // The already-resolved LID of the above device+port pair.
+  uint32_t localIdentifier;
+  // The already-resolved GID of the above device+port+index combination.
+  union ibv_gid globalIdentifier;
+  enum ibv_mtu maximumTransmissionUnit;
+};
+
+struct IbvSetupInformation {
+  uint32_t localIdentifier;
+  union ibv_gid globalIdentifier;
+  uint32_t queuePairNumber;
+  enum ibv_mtu maximumTransmissionUnit;
+};
+
+struct IbvAddress makeIbvAddress(
+    IbvContext& context,
+    uint8_t portNum,
+    uint8_t globalIdentifierIndex);
+
+struct IbvSetupInformation makeIbvSetupInformation(
+    IbvAddress& addr,
+    IbvQueuePair& qp);
+
 } // namespace tensorpipe
