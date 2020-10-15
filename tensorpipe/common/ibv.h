@@ -36,7 +36,7 @@ namespace tensorpipe {
 
 // Logging helpers
 
-std::string ibvWorkCompletionOpcodeToStr(enum ibv_wc_opcode opcode);
+std::string ibvWorkCompletionOpcodeToStr(IbvLib::wc_opcode opcode);
 
 // RAII wrappers
 
@@ -53,7 +53,7 @@ class IbvDeviceList {
     return size_;
   }
 
-  struct ibv_device& operator[](int i) {
+  IbvLib::device& operator[](int i) {
     return *deviceList_.get()[i];
   }
 
@@ -63,35 +63,35 @@ class IbvDeviceList {
 
  private:
   struct Deleter {
-    void operator()(struct ibv_device** ptr) {
+    void operator()(IbvLib::device** ptr) {
       TP_CHECK_IBV_VOID(ibvLib->free_device_list(ptr));
     }
 
     IbvLib* ibvLib;
   };
 
-  std::unique_ptr<struct ibv_device*, Deleter> deviceList_;
+  std::unique_ptr<IbvLib::device*, Deleter> deviceList_;
   int size_;
 };
 
 struct IbvContextDeleter {
-  void operator()(struct ibv_context* ptr) {
+  void operator()(IbvLib::context* ptr) {
     TP_CHECK_IBV_INT(ibvLib->close_device(ptr));
   }
 
   IbvLib* ibvLib;
 };
 
-using IbvContext = std::unique_ptr<struct ibv_context, IbvContextDeleter>;
+using IbvContext = std::unique_ptr<IbvLib::context, IbvContextDeleter>;
 
-inline IbvContext createIbvContext(IbvLib& ibvLib, struct ibv_device& device) {
+inline IbvContext createIbvContext(IbvLib& ibvLib, IbvLib::device& device) {
   return IbvContext(
       TP_CHECK_IBV_PTR(ibvLib.open_device(&device)),
       IbvContextDeleter{&ibvLib});
 }
 
 struct IbvProtectionDomainDeleter {
-  void operator()(struct ibv_pd* ptr) {
+  void operator()(IbvLib::pd* ptr) {
     TP_CHECK_IBV_INT(ibvLib->dealloc_pd(ptr));
   }
 
@@ -99,7 +99,7 @@ struct IbvProtectionDomainDeleter {
 };
 
 using IbvProtectionDomain =
-    std::unique_ptr<struct ibv_pd, IbvProtectionDomainDeleter>;
+    std::unique_ptr<IbvLib::pd, IbvProtectionDomainDeleter>;
 
 inline IbvProtectionDomain createIbvProtectionDomain(
     IbvLib& ibvLib,
@@ -110,7 +110,7 @@ inline IbvProtectionDomain createIbvProtectionDomain(
 }
 
 struct IbvCompletionQueueDeleter {
-  void operator()(struct ibv_cq* ptr) {
+  void operator()(IbvLib::cq* ptr) {
     TP_CHECK_IBV_INT(ibvLib->destroy_cq(ptr));
   }
 
@@ -118,14 +118,14 @@ struct IbvCompletionQueueDeleter {
 };
 
 using IbvCompletionQueue =
-    std::unique_ptr<struct ibv_cq, IbvCompletionQueueDeleter>;
+    std::unique_ptr<IbvLib::cq, IbvCompletionQueueDeleter>;
 
 inline IbvCompletionQueue createIbvCompletionQueue(
     IbvLib& ibvLib,
     IbvContext& context,
     int cqe,
     void* cq_context,
-    struct ibv_comp_channel* channel,
+    IbvLib::comp_channel* channel,
     int comp_vector) {
   return IbvCompletionQueue(
       TP_CHECK_IBV_PTR(ibvLib.create_cq(
@@ -134,7 +134,7 @@ inline IbvCompletionQueue createIbvCompletionQueue(
 }
 
 struct IbvSharedReceiveQueueDeleter {
-  void operator()(struct ibv_srq* ptr) {
+  void operator()(IbvLib::srq* ptr) {
     TP_CHECK_IBV_INT(ibvLib->destroy_srq(ptr));
   }
 
@@ -142,26 +142,26 @@ struct IbvSharedReceiveQueueDeleter {
 };
 
 using IbvSharedReceiveQueue =
-    std::unique_ptr<struct ibv_srq, IbvSharedReceiveQueueDeleter>;
+    std::unique_ptr<IbvLib::srq, IbvSharedReceiveQueueDeleter>;
 
 inline IbvSharedReceiveQueue createIbvSharedReceiveQueue(
     IbvLib& ibvLib,
     IbvProtectionDomain& pd,
-    struct ibv_srq_init_attr& initAttr) {
+    IbvLib::srq_init_attr& initAttr) {
   return IbvSharedReceiveQueue(
       TP_CHECK_IBV_PTR(ibvLib.create_srq(pd.get(), &initAttr)),
       IbvSharedReceiveQueueDeleter{&ibvLib});
 }
 
 struct IbvMemoryRegionDeleter {
-  void operator()(struct ibv_mr* ptr) {
+  void operator()(IbvLib::mr* ptr) {
     TP_CHECK_IBV_INT(ibvLib->dereg_mr(ptr));
   }
 
   IbvLib* ibvLib;
 };
 
-using IbvMemoryRegion = std::unique_ptr<struct ibv_mr, IbvMemoryRegionDeleter>;
+using IbvMemoryRegion = std::unique_ptr<IbvLib::mr, IbvMemoryRegionDeleter>;
 
 inline IbvMemoryRegion createIbvMemoryRegion(
     IbvLib& ibvLib,
@@ -175,19 +175,19 @@ inline IbvMemoryRegion createIbvMemoryRegion(
 }
 
 struct IbvQueuePairDeleter {
-  void operator()(struct ibv_qp* ptr) {
+  void operator()(IbvLib::qp* ptr) {
     TP_CHECK_IBV_INT(ibvLib->destroy_qp(ptr));
   }
 
   IbvLib* ibvLib;
 };
 
-using IbvQueuePair = std::unique_ptr<struct ibv_qp, IbvQueuePairDeleter>;
+using IbvQueuePair = std::unique_ptr<IbvLib::qp, IbvQueuePairDeleter>;
 
 inline IbvQueuePair createIbvQueuePair(
     IbvLib& ibvLib,
     IbvProtectionDomain& pd,
-    struct ibv_qp_init_attr& initAttr) {
+    IbvLib::qp_init_attr& initAttr) {
   return IbvQueuePair(
       TP_CHECK_IBV_PTR(ibvLib.create_qp(pd.get(), &initAttr)),
       IbvQueuePairDeleter{&ibvLib});
@@ -201,15 +201,15 @@ struct IbvAddress {
   // The already-resolved LID of the above device+port pair.
   uint32_t localIdentifier;
   // The already-resolved GID of the above device+port+index combination.
-  union ibv_gid globalIdentifier;
-  enum ibv_mtu maximumTransmissionUnit;
+  IbvLib::gid globalIdentifier;
+  IbvLib::mtu maximumTransmissionUnit;
 };
 
 struct IbvSetupInformation {
   uint32_t localIdentifier;
-  union ibv_gid globalIdentifier;
+  IbvLib::gid globalIdentifier;
   uint32_t queuePairNumber;
-  enum ibv_mtu maximumTransmissionUnit;
+  IbvLib::mtu maximumTransmissionUnit;
 };
 
 struct IbvAddress makeIbvAddress(

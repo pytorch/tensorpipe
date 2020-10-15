@@ -17,14 +17,14 @@ namespace ibv {
 
 class IbvError final : public BaseError {
  public:
-  explicit IbvError(IbvLib& ibvLib, enum ibv_wc_status status)
+  explicit IbvError(IbvLib& ibvLib, IbvLib::wc_status status)
       : ibvLib_(ibvLib), status_(status) {}
 
   std::string what() const override;
 
  private:
   IbvLib& ibvLib_;
-  enum ibv_wc_status status_;
+  IbvLib::wc_status status_;
 };
 
 class GetaddrinfoError final : public BaseError {

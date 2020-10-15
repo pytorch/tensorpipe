@@ -40,7 +40,7 @@ Reactor::Reactor() {
       /*channel=*/nullptr,
       /*comp_vector=*/0);
 
-  struct ibv_srq_init_attr srqInitAttr;
+  IbvLib::srq_init_attr srqInitAttr;
   std::memset(&srqInitAttr, 0, sizeof(srqInitAttr));
   srqInitAttr.attr.max_wr = kNumPendingRecvReqs;
   srq_ = createIbvSharedReceiveQueue(getIbvLib(), pd_, srqInitAttr);
@@ -58,8 +58,8 @@ bool Reactor::isViable() const {
 
 void Reactor::postRecvRequestsOnSRQ_(int num) {
   while (num > 0) {
-    struct ibv_recv_wr* badRecvWr = nullptr;
-    std::array<struct ibv_recv_wr, kNumPolledWorkCompletions> wrs;
+    IbvLib::recv_wr* badRecvWr = nullptr;
+    std::array<IbvLib::recv_wr, kNumPolledWorkCompletions> wrs;
     std::memset(wrs.data(), 0, sizeof(wrs));
     for (int i = 0; i < std::min(num, kNumPolledWorkCompletions) - 1; i++) {
       wrs[i].next = &wrs[i + 1];
@@ -99,7 +99,7 @@ void Reactor::run() {
   // Stop when another thread has asked the reactor the close and when
   // all functions have been removed.
   while (!closed_ || queuePairEventHandler_.size() > 0) {
-    std::array<struct ibv_wc, kNumPolledWorkCompletions> wcs;
+    std::array<IbvLib::wc, kNumPolledWorkCompletions> wcs;
     auto rv = getIbvLib().poll_cq(cq_.get(), wcs.size(), wcs.data());
 
     if (rv == 0) {
@@ -127,7 +127,7 @@ void Reactor::run() {
     int numWrites = 0;
     int numAcks = 0;
     for (int wcIdx = 0; wcIdx < rv; wcIdx++) {
-      struct ibv_wc& wc = wcs[wcIdx];
+      IbvLib::wc& wc = wcs[wcIdx];
 
       TP_VLOG(9) << "Transport context " << id_
                  << " got work completion for request " << wc.wr_id
@@ -141,27 +141,27 @@ void Reactor::run() {
       TP_THROW_ASSERT_IF(iter == queuePairEventHandler_.end())
           << "Got work completion for unknown queue pair " << wc.qp_num;
 
-      if (wc.status != IBV_WC_SUCCESS) {
+      if (wc.status != IbvLib::WC_SUCCESS) {
         iter->second->onError(wc.status, wc.wr_id);
         continue;
       }
 
       switch (wc.opcode) {
-        case IBV_WC_RECV_RDMA_WITH_IMM:
-          TP_THROW_ASSERT_IF(!(wc.wc_flags & IBV_WC_WITH_IMM));
+        case IbvLib::WC_RECV_RDMA_WITH_IMM:
+          TP_THROW_ASSERT_IF(!(wc.wc_flags & IbvLib::WC_WITH_IMM));
           iter->second->onRemoteProducedData(wc.imm_data);
           numRecvs++;
           break;
-        case IBV_WC_RECV:
-          TP_THROW_ASSERT_IF(!(wc.wc_flags & IBV_WC_WITH_IMM));
+        case IbvLib::WC_RECV:
+          TP_THROW_ASSERT_IF(!(wc.wc_flags & IbvLib::WC_WITH_IMM));
           iter->second->onRemoteConsumedData(wc.imm_data);
           numRecvs++;
           break;
-        case IBV_WC_RDMA_WRITE:
+        case IbvLib::WC_RDMA_WRITE:
           iter->second->onWriteCompleted();
           numWrites++;
           break;
-        case IBV_WC_SEND:
+        case IbvLib::WC_SEND:
           iter->second->onAckCompleted();
           numAcks++;
           break;
@@ -234,9 +234,9 @@ void Reactor::deferToLoop(TDeferredFunction fn) {
   onDemandLoop_.deferToLoop(std::move(fn));
 }
 
-void Reactor::postWrite(IbvQueuePair& qp, struct ibv_send_wr& wr) {
+void Reactor::postWrite(IbvQueuePair& qp, IbvLib::send_wr& wr) {
   if (numAvailableWrites_ > 0) {
-    struct ibv_send_wr* badWr = nullptr;
+    IbvLib::send_wr* badWr = nullptr;
     TP_VLOG(9) << "Transport context " << id_ << " posting RDMA write for QP "
                << qp->qp_num;
     TP_CHECK_IBV_INT(getIbvLib().post_send(qp.get(), &wr, &badWr));
@@ -249,9 +249,9 @@ void Reactor::postWrite(IbvQueuePair& qp, struct ibv_send_wr& wr) {
   }
 }
 
-void Reactor::postAck(IbvQueuePair& qp, struct ibv_send_wr& wr) {
+void Reactor::postAck(IbvQueuePair& qp, IbvLib::send_wr& wr) {
   if (numAvailableAcks_ > 0) {
-    struct ibv_send_wr* badWr = nullptr;
+    IbvLib::send_wr* badWr = nullptr;
     TP_VLOG(9) << "Transport context " << id_ << " posting send for QP "
                << qp->qp_num;
     TP_CHECK_IBV_INT(getIbvLib().post_send(qp.get(), &wr, &badWr));

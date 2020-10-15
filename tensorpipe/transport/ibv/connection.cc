@@ -366,7 +366,7 @@ class Connection::Impl : public std::enable_shared_from_this<Connection::Impl>,
   void onRemoteConsumedData(uint32_t length) override;
   void onWriteCompleted() override;
   void onAckCompleted() override;
-  void onError(enum ibv_wc_status status, uint64_t wr_id) override;
+  void onError(IbvLib::wc_status status, uint64_t wr_id) override;
 
  private:
   // Initialize member fields that need `shared_from_this`.
@@ -604,7 +604,7 @@ void Connection::Impl::initFromLoop() {
       context_->getReactor().getIbvPd(),
       inboxBuf_.ptr(),
       kBufferSize,
-      IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE);
+      IbvLib::ACCESS_LOCAL_WRITE | IbvLib::ACCESS_REMOTE_WRITE);
 
   // Create ringbuffer for outbox.
   outboxBuf_ = MmappedPtr(
@@ -619,9 +619,9 @@ void Connection::Impl::initFromLoop() {
 
   // Create and init queue pair.
   {
-    struct ibv_qp_init_attr initAttr;
+    IbvLib::qp_init_attr initAttr;
     std::memset(&initAttr, 0, sizeof(initAttr));
-    initAttr.qp_type = IBV_QPT_RC;
+    initAttr.qp_type = IbvLib::QPT_RC;
     initAttr.send_cq = context_->getReactor().getIbvCq().get();
     initAttr.recv_cq = context_->getReactor().getIbvCq().get();
     initAttr.cap.max_send_wr = kNumPendingWriteReqs;
@@ -1025,10 +1025,10 @@ void Connection::Impl::processReadOperationsFromLoop() {
     ReadOperation& readOperation = readOperations_.front();
     ssize_t len = readOperation.handleRead(inboxConsumer);
     if (len > 0) {
-      struct ibv_send_wr wr;
+      IbvLib::send_wr wr;
       std::memset(&wr, 0, sizeof(wr));
       wr.wr_id = kAckRequestId;
-      wr.opcode = IBV_WR_SEND_WITH_IMM;
+      wr.opcode = IbvLib::WR_SEND_WITH_IMM;
       wr.imm_data = len;
 
       TP_VLOG(9) << "Connection " << id_
@@ -1081,7 +1081,7 @@ void Connection::Impl::processWriteOperationsFromLoop() {
       TP_THROW_SYSTEM_IF(numBuffers < 0, -numBuffers);
 
       for (int bufferIdx = 0; bufferIdx < numBuffers; bufferIdx++) {
-        struct ibv_sge list;
+        IbvLib::sge list;
         list.addr = reinterpret_cast<uint64_t>(buffers[bufferIdx].ptr);
         list.length = buffers[bufferIdx].len;
         list.lkey = outboxMr_->lkey;
@@ -1089,12 +1089,12 @@ void Connection::Impl::processWriteOperationsFromLoop() {
         uint64_t peerInboxOffset = peerInboxHead_ & (kBufferSize - 1);
         peerInboxHead_ += buffers[bufferIdx].len;
 
-        struct ibv_send_wr wr;
+        IbvLib::send_wr wr;
         std::memset(&wr, 0, sizeof(wr));
         wr.wr_id = kWriteRequestId;
         wr.sg_list = &list;
         wr.num_sge = 1;
-        wr.opcode = IBV_WR_RDMA_WRITE_WITH_IMM;
+        wr.opcode = IbvLib::WR_RDMA_WRITE_WITH_IMM;
         wr.imm_data = buffers[bufferIdx].len;
         wr.wr.rdma.remote_addr = peerInboxPtr_ + peerInboxOffset;
         wr.wr.rdma.rkey = peerInboxKey_;
@@ -1158,7 +1158,7 @@ void Connection::Impl::onAckCompleted() {
   tryCleanup_();
 }
 
-void Connection::Impl::onError(enum ibv_wc_status status, uint64_t wr_id) {
+void Connection::Impl::onError(IbvLib::wc_status status, uint64_t wr_id) {
   TP_DCHECK(context_->inLoopThread());
   setError_(
       TP_CREATE_ERROR(IbvError, context_->getReactor().getIbvLib(), status));
