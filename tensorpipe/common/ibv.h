@@ -33,6 +33,10 @@ namespace tensorpipe {
 
 #define TP_CHECK_IBV_VOID(op) op;
 
+// Logging helpers
+
+std::string ibvWorkCompletionOpcodeToStr(enum ibv_wc_opcode opcode);
+
 // RAII wrappers
 
 class IbvDeviceList {
