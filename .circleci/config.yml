@@ -47,6 +47,7 @@ jobs:
               -DCMAKE_CXX_COMPILER=<< parameters.cxx_compiler >> \
               -DTP_ENABLE_CMA=OFF \
               -DTP_ENABLE_CUDA_IPC=OFF \
+              -DTP_ENABLE_IBV=OFF \
               -DTP_BUILD_TESTING=ON \
               << parameters.cmake_args >>
             make -j<<parameters.nproc>>
@@ -121,7 +122,7 @@ jobs:
           command: |
             python3 -m venv venv
             source venv/bin/activate
-            TP_ENABLE_CMA=OFF TP_ENABLE_CUDA_IPC=OFF python3 setup.py install
+            TP_ENABLE_CMA=OFF TP_ENABLE_CUDA_IPC=OFF TP_ENABLE_IBV=OFF python3 setup.py install
       - run:
           name: Test
           command: |
