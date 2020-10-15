@@ -132,6 +132,8 @@ class Reactor final {
     return onDemandLoop_.inLoop();
   }
 
+  bool isViable() const;
+
   void setId(std::string id);
 
   void close();
