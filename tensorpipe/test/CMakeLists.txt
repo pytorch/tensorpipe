@@ -69,6 +69,10 @@ if(TP_USE_CUDA)
     channel/cuda_basic/cuda_basic_test.cc
     )
 
+  target_sources(tensorpipe_test PRIVATE
+    channel/cuda_xth/cuda_xth_test.cc
+    )
+
   if(TP_ENABLE_CUDA_IPC)
     target_sources(tensorpipe_test PRIVATE
       channel/cuda_ipc/cuda_ipc_test.cc

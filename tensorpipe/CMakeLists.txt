@@ -74,6 +74,12 @@ if(TP_USE_CUDA)
     channel/cuda_basic/channel.cc
     channel/cuda_basic/context.cc)
 
+  ### cuda_xth
+
+  target_sources(tensorpipe PRIVATE
+    channel/cuda_xth/channel.cc
+    channel/cuda_xth/context.cc)
+
   ### cuda_ipc
 
   if(TP_ENABLE_CUDA_IPC)
