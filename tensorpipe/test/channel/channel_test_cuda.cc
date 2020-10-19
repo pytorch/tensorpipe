@@ -108,7 +108,7 @@ class ReceiverWaitsForStartEventTest
         cudaSuccess, cudaMemcpy(data.data(), ptr, kSize, cudaMemcpyDefault));
     // Validate contents of vector.
     for (auto i = 0; i < kSize; i++) {
-      EXPECT_EQ(data[i], 0x42);
+      ASSERT_EQ(data[i], 0x42);
     }
     EXPECT_EQ(cudaSuccess, cudaFree(ptr));
 

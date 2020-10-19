@@ -78,7 +78,7 @@ class ClientToServerTest : public ClientServerChannelTestCase<TBuffer> {
     // Validate contents of vector.
     auto unwrappedData = wrappedData.unwrap();
     for (auto i = 0; i < dataSize; i++) {
-      EXPECT_EQ(unwrappedData[i], i);
+      ASSERT_EQ(unwrappedData[i], i);
     }
 
     this->peers_->done(PeerGroup::kClient);
@@ -112,7 +112,7 @@ class ServerToClientTest : public ClientServerChannelTestCase<TBuffer> {
     // Validate contents of vector.
     auto unwrappedData = wrappedData.unwrap();
     for (auto i = 0; i < dataSize; i++) {
-      EXPECT_EQ(unwrappedData[i], i);
+      ASSERT_EQ(unwrappedData[i], i);
     }
 
     this->peers_->done(PeerGroup::kServer);
@@ -226,7 +226,7 @@ class SendMultipleTensorsTest : public ClientServerChannelTestCase<TBuffer> {
     for (auto& wrappedData : wrappedDataVec) {
       auto unwrappedData = wrappedData.unwrap();
       for (int i = 0; i < dataSize; i++) {
-        EXPECT_EQ(unwrappedData[i], i % 256);
+        ASSERT_EQ(unwrappedData[i], i % 256);
       }
     }
 
@@ -287,7 +287,7 @@ class SendTensorsBothWaysTest : public ClientServerChannelTestCase<TBuffer> {
     // Verify recvd buffers.
     auto unwrappedData = wrappedRecvData.unwrap();
     for (int i = 0; i < dataSize; i++) {
-      EXPECT_EQ(unwrappedData[i], i % 256);
+      ASSERT_EQ(unwrappedData[i], i % 256);
     }
 
     this->peers_->done(PeerGroup::kServer);
@@ -340,7 +340,7 @@ class SendTensorsBothWaysTest : public ClientServerChannelTestCase<TBuffer> {
     // Verify recvd buffers.
     auto unwrappedData = wrappedRecvData.unwrap();
     for (int i = 0; i < dataSize; i++) {
-      EXPECT_EQ(unwrappedData[i], i % 256);
+      ASSERT_EQ(unwrappedData[i], i % 256);
     }
 
     this->peers_->done(PeerGroup::kClient);

@@ -68,6 +68,12 @@ if(TP_USE_CUDA)
   target_include_directories(tensorpipe PUBLIC ${CUDA_INCLUDE_DIRS})
   set(TENSORPIPE_SUPPORTS_CUDA 1)
 
+  ### cuda_basic
+
+  target_sources(tensorpipe PRIVATE
+    channel/cuda_basic/channel.cc
+    channel/cuda_basic/context.cc)
+
   ### cuda_ipc
 
   if(TP_ENABLE_CUDA_IPC)
