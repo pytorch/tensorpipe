@@ -17,6 +17,7 @@
 
 #include <tensorpipe/channel/cpu_context.h>
 #include <tensorpipe/common/cpu_buffer.h>
+#include <tensorpipe/config.h>
 #include <tensorpipe/test/peer_group.h>
 #include <tensorpipe/transport/uv/context.h>
 
@@ -35,8 +36,8 @@ class DataWrapper<tensorpipe::CpuBuffer> {
   explicit DataWrapper(std::vector<uint8_t> v) : vector_(v) {}
 
   tensorpipe::CpuBuffer buffer() const {
-    return tensorpipe::CpuBuffer{const_cast<uint8_t*>(vector_.data()),
-                                 vector_.size()};
+    return tensorpipe::CpuBuffer{
+        const_cast<uint8_t*>(vector_.data()), vector_.size()};
   }
 
   const std::vector<uint8_t>& unwrap() {
