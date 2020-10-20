@@ -8,7 +8,6 @@
 
 #pragma once
 
-#include <tensorpipe/common/ibv.h>
 #include <tensorpipe/transport/error.h>
 
 namespace tensorpipe {
@@ -17,12 +16,12 @@ namespace ibv {
 
 class IbvError final : public BaseError {
  public:
-  explicit IbvError(enum ibv_wc_status status) : status_(status) {}
+  explicit IbvError(std::string error) : error_(error) {}
 
   std::string what() const override;
 
  private:
-  enum ibv_wc_status status_;
+  std::string error_;
 };
 
 class GetaddrinfoError final : public BaseError {

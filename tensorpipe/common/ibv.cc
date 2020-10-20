@@ -37,6 +37,7 @@ std::string ibvWorkCompletionOpcodeToStr(enum ibv_wc_opcode opcode) {
 }
 
 struct IbvAddress makeIbvAddress(
+    IbvLib& ibvLib,
     IbvContext& context,
     uint8_t portNum,
     uint8_t globalIdentifierIndex) {
@@ -48,11 +49,11 @@ struct IbvAddress makeIbvAddress(
 
   struct ibv_port_attr portAttr;
   std::memset(&portAttr, 0, sizeof(portAttr));
-  TP_CHECK_IBV_INT(ibv_query_port(context.get(), portNum, &portAttr));
+  TP_CHECK_IBV_INT(ibvLib.query_port(context.get(), portNum, &portAttr));
   addr.localIdentifier = portAttr.lid;
   addr.maximumTransmissionUnit = portAttr.active_mtu;
 
-  TP_CHECK_IBV_INT(ibv_query_gid(
+  TP_CHECK_IBV_INT(ibvLib.query_gid(
       context.get(), portNum, globalIdentifierIndex, &addr.globalIdentifier));
 
   return addr;
@@ -72,7 +73,10 @@ struct IbvSetupInformation makeIbvSetupInformation(
   return info;
 }
 
-void transitionIbvQueuePairToInit(IbvQueuePair& qp, IbvAddress& selfAddr) {
+void transitionIbvQueuePairToInit(
+    IbvLib& ibvLib,
+    IbvQueuePair& qp,
+    IbvAddress& selfAddr) {
   struct ibv_qp_attr attr;
   std::memset(&attr, 0, sizeof(attr));
   int attrMask = 0;
@@ -92,10 +96,11 @@ void transitionIbvQueuePairToInit(IbvQueuePair& qp, IbvAddress& selfAddr) {
   attrMask |= IBV_QP_ACCESS_FLAGS;
   attr.qp_access_flags = IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE;
 
-  TP_CHECK_IBV_INT(ibv_modify_qp(qp.get(), &attr, attrMask));
+  TP_CHECK_IBV_INT(ibvLib.modify_qp(qp.get(), &attr, attrMask));
 }
 
 void transitionIbvQueuePairToReadyToReceive(
+    IbvLib& ibvLib,
     IbvQueuePair& qp,
     IbvAddress& selfAddr,
     IbvSetupInformation& destinationInfo) {
@@ -138,10 +143,11 @@ void transitionIbvQueuePairToReadyToReceive(
   attrMask |= IBV_QP_MIN_RNR_TIMER;
   attr.min_rnr_timer = 20; // 10.24 milliseconds
 
-  TP_CHECK_IBV_INT(ibv_modify_qp(qp.get(), &attr, attrMask));
+  TP_CHECK_IBV_INT(ibvLib.modify_qp(qp.get(), &attr, attrMask));
 }
 
 void transitionIbvQueuePairToReadyToSend(
+    IbvLib& ibvLib,
     IbvQueuePair& qp,
     IbvSetupInformation& selfInfo) {
   struct ibv_qp_attr attr;
@@ -168,10 +174,10 @@ void transitionIbvQueuePairToReadyToSend(
   attrMask |= IBV_QP_MAX_QP_RD_ATOMIC;
   attr.max_rd_atomic = 1;
 
-  TP_CHECK_IBV_INT(ibv_modify_qp(qp.get(), &attr, attrMask));
+  TP_CHECK_IBV_INT(ibvLib.modify_qp(qp.get(), &attr, attrMask));
 }
 
-void transitionIbvQueuePairToError(IbvQueuePair& qp) {
+void transitionIbvQueuePairToError(IbvLib& ibvLib, IbvQueuePair& qp) {
   struct ibv_qp_attr attr;
   std::memset(&attr, 0, sizeof(attr));
   int attrMask = 0;
@@ -179,7 +185,7 @@ void transitionIbvQueuePairToError(IbvQueuePair& qp) {
   attrMask |= IBV_QP_STATE;
   attr.qp_state = IBV_QPS_ERR;
 
-  TP_CHECK_IBV_INT(ibv_modify_qp(qp.get(), &attr, attrMask));
+  TP_CHECK_IBV_INT(ibvLib.modify_qp(qp.get(), &attr, attrMask));
 }
 
 } // namespace tensorpipe

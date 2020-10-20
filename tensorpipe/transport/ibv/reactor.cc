@@ -16,13 +16,24 @@ namespace transport {
 namespace ibv {
 
 Reactor::Reactor() {
-  IbvDeviceList deviceList;
+  Error error;
+  std::tie(error, ibvLib_) = IbvLib::create();
+  // FIXME Instead of throwing away the error and setting a bool, we should have
+  // a way to set the reactor in an error state, and use that for viability.
+  if (error) {
+    TP_VLOG(9) << "Transport context " << id_
+               << " couldn't open libibverbs: " << error.what();
+    return;
+  }
+  foundIbvLib_ = true;
+  IbvDeviceList deviceList(getIbvLib());
   if (deviceList.size() == 0) {
     return;
   }
-  ctx_ = createIbvContext(deviceList[0]);
-  pd_ = createIbvProtectionDomain(ctx_);
+  ctx_ = createIbvContext(getIbvLib(), deviceList[0]);
+  pd_ = createIbvProtectionDomain(getIbvLib(), ctx_);
   cq_ = createIbvCompletionQueue(
+      getIbvLib(),
       ctx_,
       kCompletionQueueSize,
       /*cq_context=*/nullptr,
@@ -32,9 +43,9 @@ Reactor::Reactor() {
   struct ibv_srq_init_attr srqInitAttr;
   std::memset(&srqInitAttr, 0, sizeof(srqInitAttr));
   srqInitAttr.attr.max_wr = kNumPendingRecvReqs;
-  srq_ = createIbvSharedReceiveQueue(pd_, srqInitAttr);
+  srq_ = createIbvSharedReceiveQueue(getIbvLib(), pd_, srqInitAttr);
 
-  addr_ = makeIbvAddress(ctx_, kPortNum, kGlobalIdentifierIndex);
+  addr_ = makeIbvAddress(getIbvLib(), ctx_, kPortNum, kGlobalIdentifierIndex);
 
   postRecvRequestsOnSRQ_(kNumPendingRecvReqs);
 
@@ -42,7 +53,7 @@ Reactor::Reactor() {
 }
 
 bool Reactor::isViable() const {
-  return const_cast<IbvContext&>(ctx_).get() != nullptr;
+  return foundIbvLib_ && const_cast<IbvContext&>(ctx_).get() != nullptr;
 }
 
 void Reactor::postRecvRequestsOnSRQ_(int num) {
@@ -121,7 +132,7 @@ void Reactor::run() {
       TP_VLOG(9) << "Transport context " << id_
                  << " got work completion for request " << wc.wr_id
                  << " for QP " << wc.qp_num << " with status "
-                 << ibv_wc_status_str(wc.status) << " and opcode "
+                 << getIbvLib().wc_status_str(wc.status) << " and opcode "
                  << ibvWorkCompletionOpcodeToStr(wc.opcode)
                  << " (byte length: " << wc.byte_len
                  << ", immediate data: " << wc.imm_data << ")";
