@@ -11,10 +11,6 @@
 namespace tensorpipe {
 namespace transport {
 
-std::string EOFError::what() const {
-  return "eof";
-}
-
 std::string ListenerClosedError::what() const {
   return "listener closed";
 }
