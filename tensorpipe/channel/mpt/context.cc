@@ -16,6 +16,7 @@
 #include <tensorpipe/channel/error.h>
 #include <tensorpipe/channel/helpers.h>
 #include <tensorpipe/channel/mpt/channel.h>
+#include <tensorpipe/channel/mpt/context_impl.h>
 #include <tensorpipe/channel/mpt/nop_types.h>
 #include <tensorpipe/channel/registry.h>
 #include <tensorpipe/common/callback.h>

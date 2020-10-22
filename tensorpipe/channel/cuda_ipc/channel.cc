@@ -20,6 +20,7 @@
 #include <nop/structure.h>
 #include <nop/types/variant.h>
 
+#include <tensorpipe/channel/cuda_ipc/context_impl.h>
 #include <tensorpipe/channel/error.h>
 #include <tensorpipe/channel/helpers.h>
 #include <tensorpipe/common/callback.h>

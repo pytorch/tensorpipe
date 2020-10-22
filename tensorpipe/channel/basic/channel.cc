@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <list>
 
+#include <tensorpipe/channel/basic/context_impl.h>
 #include <tensorpipe/channel/error.h>
 #include <tensorpipe/channel/helpers.h>
 #include <tensorpipe/common/callback.h>

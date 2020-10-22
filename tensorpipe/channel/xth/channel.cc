@@ -13,6 +13,7 @@
 
 #include <tensorpipe/channel/error.h>
 #include <tensorpipe/channel/helpers.h>
+#include <tensorpipe/channel/xth/context_impl.h>
 #include <tensorpipe/common/callback.h>
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/error.h>
