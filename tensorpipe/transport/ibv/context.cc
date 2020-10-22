@@ -121,13 +121,13 @@ class Context::Impl : public Context::PrivateIface,
 
   const std::string& domainDescriptor() const;
 
-  std::shared_ptr<transport::Connection> connect(address_t addr);
+  std::shared_ptr<transport::Connection> connect(std::string addr);
 
-  std::shared_ptr<transport::Listener> listen(address_t addr);
+  std::shared_ptr<transport::Listener> listen(std::string addr);
 
-  std::tuple<Error, address_t> lookupAddrForIface(std::string iface);
+  std::tuple<Error, std::string> lookupAddrForIface(std::string iface);
 
-  std::tuple<Error, address_t> lookupAddrForHostname();
+  std::tuple<Error, std::string> lookupAddrForHostname();
 
   void setId(std::string id);
 
@@ -259,11 +259,11 @@ const std::string& Context::Impl::domainDescriptor() const {
   return domainDescriptor_;
 }
 
-std::tuple<Error, address_t> Context::lookupAddrForIface(std::string iface) {
+std::tuple<Error, std::string> Context::lookupAddrForIface(std::string iface) {
   return impl_->lookupAddrForIface(std::move(iface));
 }
 
-std::tuple<Error, address_t> Context::Impl::lookupAddrForIface(
+std::tuple<Error, std::string> Context::Impl::lookupAddrForIface(
     std::string iface) {
   Error error;
   InterfaceAddresses addresses;
@@ -296,11 +296,11 @@ std::tuple<Error, address_t> Context::Impl::lookupAddrForIface(
   return {TP_CREATE_ERROR(NoAddrFoundError), std::string()};
 }
 
-std::tuple<Error, address_t> Context::lookupAddrForHostname() {
+std::tuple<Error, std::string> Context::lookupAddrForHostname() {
   return impl_->lookupAddrForHostname();
 }
 
-std::tuple<Error, address_t> Context::Impl::lookupAddrForHostname() {
+std::tuple<Error, std::string> Context::Impl::lookupAddrForHostname() {
   Error error;
   std::string hostname;
   std::tie(error, hostname) = getHostname();

@@ -32,7 +32,7 @@ class Listener::Impl : public std::enable_shared_from_this<Listener::Impl>,
   // Create a listener that listens on the specified address.
   Impl(
       std::shared_ptr<Context::PrivateIface> context,
-      address_t addr,
+      std::string addr,
       std::string id);
 
   // Initialize member fields that need `shared_from_this`.
@@ -100,7 +100,7 @@ class Listener::Impl : public std::enable_shared_from_this<Listener::Impl>,
 
 Listener::Impl::Impl(
     std::shared_ptr<Context::PrivateIface> context,
-    address_t addr,
+    std::string addr,
     std::string id)
     : context_(std::move(context)),
       sockaddr_(Sockaddr::createInetSockAddr(addr)),
@@ -145,7 +145,7 @@ void Listener::Impl::initFromLoop() {
 Listener::Listener(
     ConstructorToken /* unused */,
     std::shared_ptr<Context::PrivateIface> context,
-    address_t addr,
+    std::string addr,
     std::string id)
     : impl_(std::make_shared<Impl>(
           std::move(context),
@@ -246,7 +246,7 @@ void Listener::Impl::acceptFromLoop(accept_callback_fn fn) {
   }
 }
 
-address_t Listener::addr() const {
+std::string Listener::addr() const {
   return impl_->addr();
 }
 
@@ -256,7 +256,7 @@ std::string Listener::Impl::addr() const {
   return addr;
 }
 
-address_t Listener::Impl::addrFromLoop() const {
+std::string Listener::Impl::addrFromLoop() const {
   TP_DCHECK(context_->inLoopThread());
   struct sockaddr_storage ss;
   struct sockaddr* addr = reinterpret_cast<struct sockaddr*>(&ss);

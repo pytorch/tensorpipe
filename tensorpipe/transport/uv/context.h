@@ -25,15 +25,15 @@ class Context : public transport::Context {
  public:
   Context();
 
-  std::shared_ptr<transport::Connection> connect(address_t addr) override;
+  std::shared_ptr<transport::Connection> connect(std::string addr) override;
 
-  std::shared_ptr<transport::Listener> listen(address_t addr) override;
+  std::shared_ptr<transport::Listener> listen(std::string addr) override;
 
   const std::string& domainDescriptor() const override;
 
-  std::tuple<Error, address_t> lookupAddrForIface(std::string iface);
+  std::tuple<Error, std::string> lookupAddrForIface(std::string iface);
 
-  std::tuple<Error, address_t> lookupAddrForHostname();
+  std::tuple<Error, std::string> lookupAddrForHostname();
 
   void setId(std::string id) override;
 

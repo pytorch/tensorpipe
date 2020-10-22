@@ -50,9 +50,9 @@ class Context::Impl : public Context::PrivateIface,
 
   const std::string& domainDescriptor() const;
 
-  std::shared_ptr<transport::Connection> connect(address_t addr);
+  std::shared_ptr<transport::Connection> connect(std::string addr);
 
-  std::shared_ptr<transport::Listener> listen(address_t addr);
+  std::shared_ptr<transport::Listener> listen(std::string addr);
 
   void setId(std::string id);
 

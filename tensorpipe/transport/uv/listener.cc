@@ -24,7 +24,7 @@ namespace uv {
 class Listener::Impl : public std::enable_shared_from_this<Listener::Impl> {
  public:
   // Create a listener that listens on the specified address.
-  Impl(std::shared_ptr<Context::PrivateIface>, address_t, std::string);
+  Impl(std::shared_ptr<Context::PrivateIface>, std::string, std::string);
 
   // Initialize member fields that need `shared_from_this`.
   void init();
@@ -109,7 +109,7 @@ class Listener::Impl : public std::enable_shared_from_this<Listener::Impl> {
 
 Listener::Impl::Impl(
     std::shared_ptr<Context::PrivateIface> context,
-    address_t addr,
+    std::string addr,
     std::string id)
     : context_(std::move(context)),
       handle_(context_->createHandle()),
@@ -239,7 +239,7 @@ void Listener::Impl::handleError_() {
 Listener::Listener(
     ConstructorToken /* unused */,
     std::shared_ptr<Context::PrivateIface> context,
-    address_t addr,
+    std::string addr,
     std::string id)
     : impl_(std::make_shared<Impl>(
           std::move(context),
@@ -263,11 +263,11 @@ void Listener::Impl::accept(accept_callback_fn fn) {
       });
 }
 
-address_t Listener::addr() const {
+std::string Listener::addr() const {
   return impl_->addr();
 }
 
-address_t Listener::Impl::addr() const {
+std::string Listener::Impl::addr() const {
   std::string addr;
   context_->runInLoop([this, &addr]() { addr = addrFromLoop(); });
   return addr;

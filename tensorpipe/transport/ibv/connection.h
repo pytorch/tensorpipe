@@ -11,7 +11,6 @@
 #include <memory>
 
 #include <tensorpipe/transport/connection.h>
-#include <tensorpipe/transport/defs.h>
 #include <tensorpipe/transport/ibv/context.h>
 
 namespace tensorpipe {
@@ -41,7 +40,7 @@ class Connection final : public transport::Connection {
   Connection(
       ConstructorToken,
       std::shared_ptr<Context::PrivateIface> context,
-      address_t addr,
+      std::string addr,
       std::string id);
 
   // Queue a read operation.

@@ -78,7 +78,7 @@ class Listener::Impl : public Listener::PrivateIface,
 
   std::unordered_map<std::string, std::shared_ptr<transport::Listener>>
       listeners_;
-  std::map<std::string, transport::address_t> addresses_;
+  std::map<std::string, std::string> addresses_;
 
   // A sequence number for the calls to accept.
   uint64_t nextPipeBeingAccepted_{0};
