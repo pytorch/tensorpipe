@@ -9,7 +9,6 @@
 #include <tensorpipe/transport/shm/context.h>
 
 #include <tensorpipe/common/system.h>
-#include <tensorpipe/transport/registry.h>
 #include <tensorpipe/transport/shm/connection.h>
 #include <tensorpipe/transport/shm/context_impl.h>
 #include <tensorpipe/transport/shm/listener.h>
@@ -18,16 +17,6 @@
 namespace tensorpipe {
 namespace transport {
 namespace shm {
-
-namespace {
-
-std::shared_ptr<Context> makeShmContext() {
-  return std::make_shared<Context>();
-}
-
-TP_REGISTER_CREATOR(TensorpipeTransportRegistry, shm, makeShmContext);
-
-} // namespace
 
 namespace {
 

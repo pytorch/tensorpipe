@@ -20,7 +20,6 @@
 #include <tensorpipe/channel/cuda_ipc/context_impl.h>
 #include <tensorpipe/channel/error.h>
 #include <tensorpipe/channel/helpers.h>
-#include <tensorpipe/channel/registry.h>
 #include <tensorpipe/common/callback.h>
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/error_macros.h>

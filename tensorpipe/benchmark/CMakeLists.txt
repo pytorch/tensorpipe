@@ -6,8 +6,8 @@
 
 # TODO: Make those separate CMake projects.
 
-add_executable(benchmark_transport benchmark_transport.cc options.cc)
-target_link_libraries(benchmark_transport PRIVATE -Wl,--whole-archive tensorpipe -Wl,--no-whole-archive)
+add_executable(benchmark_transport benchmark_transport.cc options.cc transport_registry.cc)
+target_link_libraries(benchmark_transport PRIVATE tensorpipe)
 
-add_executable(benchmark_pipe benchmark_pipe.cc options.cc)
-target_link_libraries(benchmark_pipe PRIVATE -Wl,--whole-archive tensorpipe -Wl,--no-whole-archive)
+add_executable(benchmark_pipe benchmark_pipe.cc options.cc transport_registry.cc channel_registry.cc)
+target_link_libraries(benchmark_pipe PRIVATE tensorpipe)

@@ -9,7 +9,6 @@
 #include <tensorpipe/transport/uv/context.h>
 
 #include <tensorpipe/common/error_macros.h>
-#include <tensorpipe/transport/registry.h>
 #include <tensorpipe/transport/uv/connection.h>
 #include <tensorpipe/transport/uv/context_impl.h>
 #include <tensorpipe/transport/uv/error.h>
@@ -23,12 +22,6 @@ namespace transport {
 namespace uv {
 
 namespace {
-
-std::shared_ptr<Context> makeUvContext() {
-  return std::make_shared<Context>();
-}
-
-TP_REGISTER_CREATOR(TensorpipeTransportRegistry, uv, makeUvContext);
 
 // Prepend descriptor with transport name so it's easy to
 // disambiguate descriptors when debugging.

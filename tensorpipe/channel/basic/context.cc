@@ -15,7 +15,6 @@
 #include <tensorpipe/channel/basic/context_impl.h>
 #include <tensorpipe/channel/error.h>
 #include <tensorpipe/channel/helpers.h>
-#include <tensorpipe/channel/registry.h>
 #include <tensorpipe/common/callback.h>
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/error.h>
@@ -24,16 +23,6 @@
 namespace tensorpipe {
 namespace channel {
 namespace basic {
-
-namespace {
-
-std::shared_ptr<Context> makeBasicChannel() {
-  return std::make_shared<Context>();
-}
-
-TP_REGISTER_CREATOR(TensorpipeChannelRegistry, basic, makeBasicChannel);
-
-} // namespace
 
 class Context::Impl : public Context::PrivateIface,
                       public std::enable_shared_from_this<Context::Impl> {

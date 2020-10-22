@@ -27,21 +27,10 @@
 #include <tensorpipe/transport/ibv/listener.h>
 #include <tensorpipe/transport/ibv/loop.h>
 #include <tensorpipe/transport/ibv/sockaddr.h>
-#include <tensorpipe/transport/registry.h>
 
 namespace tensorpipe {
 namespace transport {
 namespace ibv {
-
-namespace {
-
-std::shared_ptr<Context> makeIbvContext() {
-  return std::make_shared<Context>();
-}
-
-TP_REGISTER_CREATOR(TensorpipeTransportRegistry, ibv, makeIbvContext);
-
-} // namespace
 
 namespace {
 
