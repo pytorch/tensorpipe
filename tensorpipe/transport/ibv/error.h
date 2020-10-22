@@ -8,6 +8,8 @@
 
 #pragma once
 
+#include <string>
+
 #include <tensorpipe/transport/error.h>
 
 namespace tensorpipe {

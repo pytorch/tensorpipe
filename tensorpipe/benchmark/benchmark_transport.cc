@@ -14,6 +14,8 @@
 #include <tensorpipe/benchmark/options.h>
 #include <tensorpipe/benchmark/transport_registry.h>
 #include <tensorpipe/common/defs.h>
+#include <tensorpipe/transport/connection.h>
+#include <tensorpipe/transport/listener.h>
 
 using namespace tensorpipe;
 using namespace tensorpipe::benchmark;

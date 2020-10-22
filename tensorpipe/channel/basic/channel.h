@@ -9,8 +9,10 @@
 #pragma once
 
 #include <memory>
+#include <string>
 
 #include <tensorpipe/channel/basic/context.h>
+#include <tensorpipe/channel/channel.h>
 #include <tensorpipe/channel/cpu_context.h>
 
 namespace tensorpipe {

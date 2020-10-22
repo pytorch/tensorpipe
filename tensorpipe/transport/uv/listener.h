@@ -9,6 +9,7 @@
 #pragma once
 
 #include <memory>
+#include <string>
 
 #include <tensorpipe/transport/listener.h>
 #include <tensorpipe/transport/uv/context.h>

@@ -8,6 +8,9 @@
 
 #pragma once
 
+#include <functional>
+#include <memory>
+
 #include <tensorpipe/common/callback.h>
 #include <tensorpipe/transport/ibv/context.h>
 

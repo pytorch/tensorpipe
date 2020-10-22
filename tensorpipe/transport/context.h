@@ -9,12 +9,13 @@
 #pragma once
 
 #include <memory>
-
-#include <tensorpipe/transport/connection.h>
-#include <tensorpipe/transport/listener.h>
+#include <string>
 
 namespace tensorpipe {
 namespace transport {
+
+class Connection;
+class Listener;
 
 class Context {
  public:

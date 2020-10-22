@@ -30,6 +30,7 @@
 #include <tensorpipe/common/optional.h>
 #include <tensorpipe/common/queue.h>
 #include <tensorpipe/common/system.h>
+#include <tensorpipe/transport/connection.h>
 
 #define TP_CUDA_CHECK(a)                                                      \
   TP_THROW_ASSERT_IF(cudaSuccess != (a))                                      \

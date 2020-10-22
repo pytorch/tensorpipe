@@ -13,6 +13,7 @@
 #include <mutex>
 #include <unordered_map>
 
+#include <tensorpipe/channel/channel.h>
 #include <tensorpipe/common/address.h>
 #include <tensorpipe/common/callback.h>
 #include <tensorpipe/common/defs.h>
@@ -24,6 +25,7 @@
 #include <tensorpipe/core/listener.h>
 #include <tensorpipe/core/listener_impl.h>
 #include <tensorpipe/core/nop_types.h>
+#include <tensorpipe/transport/connection.h>
 
 namespace tensorpipe {
 

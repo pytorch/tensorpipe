@@ -8,6 +8,11 @@
 
 #pragma once
 
+#include <memory>
+#include <string>
+#include <tuple>
+
+#include <tensorpipe/common/error.h>
 #include <tensorpipe/transport/context.h>
 
 namespace tensorpipe {

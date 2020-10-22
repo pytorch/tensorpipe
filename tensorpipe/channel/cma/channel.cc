@@ -30,6 +30,7 @@
 #include <tensorpipe/common/optional.h>
 #include <tensorpipe/common/queue.h>
 #include <tensorpipe/common/system.h>
+#include <tensorpipe/transport/connection.h>
 
 namespace tensorpipe {
 namespace channel {
