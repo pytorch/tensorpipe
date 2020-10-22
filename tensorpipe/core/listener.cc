@@ -16,7 +16,9 @@
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/error_macros.h>
 #include <tensorpipe/common/optional.h>
+#include <tensorpipe/core/context_impl.h>
 #include <tensorpipe/core/error.h>
+#include <tensorpipe/core/listener_impl.h>
 #include <tensorpipe/core/nop_types.h>
 #include <tensorpipe/core/pipe.h>
 #include <tensorpipe/transport/connection.h>
