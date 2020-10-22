@@ -10,8 +10,8 @@
 
 #include <memory>
 #include <string>
+#include <tuple>
 
-#include <tensorpipe/common/callback.h>
 #include <tensorpipe/transport/context.h>
 
 namespace tensorpipe {
@@ -20,7 +20,6 @@ namespace uv {
 
 class Connection;
 class Listener;
-class TCPHandle;
 
 class Context : public transport::Context {
  public:
@@ -45,20 +44,7 @@ class Context : public transport::Context {
   ~Context() override;
 
  private:
-  class PrivateIface {
-   public:
-    virtual ClosingEmitter& getClosingEmitter() = 0;
-
-    virtual bool inLoopThread() = 0;
-
-    virtual void deferToLoop(std::function<void()> fn) = 0;
-
-    virtual void runInLoop(std::function<void()> fn) = 0;
-
-    virtual std::shared_ptr<TCPHandle> createHandle() = 0;
-
-    virtual ~PrivateIface() = default;
-  };
+  class PrivateIface;
 
   class Impl;
 

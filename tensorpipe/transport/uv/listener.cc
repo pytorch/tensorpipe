@@ -11,6 +11,7 @@
 #include <tensorpipe/common/callback.h>
 #include <tensorpipe/common/error_macros.h>
 #include <tensorpipe/transport/uv/connection.h>
+#include <tensorpipe/transport/uv/context_impl.h>
 #include <tensorpipe/transport/uv/error.h>
 #include <tensorpipe/transport/uv/loop.h>
 #include <tensorpipe/transport/uv/sockaddr.h>

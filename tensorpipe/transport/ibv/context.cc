@@ -22,6 +22,7 @@
 #include <tensorpipe/common/socket.h>
 #include <tensorpipe/common/system.h>
 #include <tensorpipe/transport/ibv/connection.h>
+#include <tensorpipe/transport/ibv/context_impl.h>
 #include <tensorpipe/transport/ibv/error.h>
 #include <tensorpipe/transport/ibv/listener.h>
 #include <tensorpipe/transport/ibv/loop.h>

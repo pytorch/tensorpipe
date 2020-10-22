@@ -18,6 +18,7 @@
 #include <tensorpipe/common/optional.h>
 #include <tensorpipe/transport/error.h>
 #include <tensorpipe/transport/shm/connection.h>
+#include <tensorpipe/transport/shm/context_impl.h>
 #include <tensorpipe/transport/shm/loop.h>
 #include <tensorpipe/transport/shm/sockaddr.h>
 

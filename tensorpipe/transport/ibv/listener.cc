@@ -18,6 +18,7 @@
 #include <tensorpipe/common/optional.h>
 #include <tensorpipe/transport/error.h>
 #include <tensorpipe/transport/ibv/connection.h>
+#include <tensorpipe/transport/ibv/context_impl.h>
 #include <tensorpipe/transport/ibv/loop.h>
 #include <tensorpipe/transport/ibv/sockaddr.h>
 

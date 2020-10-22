@@ -20,6 +20,7 @@
 #include <tensorpipe/common/memory.h>
 #include <tensorpipe/common/socket.h>
 #include <tensorpipe/transport/error.h>
+#include <tensorpipe/transport/ibv/context_impl.h>
 #include <tensorpipe/transport/ibv/error.h>
 #include <tensorpipe/transport/ibv/loop.h>
 #include <tensorpipe/transport/ibv/reactor.h>
