@@ -8,7 +8,11 @@
 
 #pragma once
 
-#include <tensorpipe/common/callback.h>
+#include <memory>
+#include <string>
+#include <tuple>
+
+#include <tensorpipe/common/error.h>
 #include <tensorpipe/transport/context.h>
 
 namespace tensorpipe {
@@ -16,9 +20,7 @@ namespace transport {
 namespace ibv {
 
 class Connection;
-class EventHandler;
 class Listener;
-class Reactor;
 
 class Context : public transport::Context {
  public:
@@ -32,9 +34,9 @@ class Context : public transport::Context {
 
   const std::string& domainDescriptor() const override;
 
-  std::tuple<Error, address_t> lookupAddrForIface(std::string iface);
+  std::tuple<Error, std::string> lookupAddrForIface(std::string iface);
 
-  std::tuple<Error, address_t> lookupAddrForHostname();
+  std::tuple<Error, std::string> lookupAddrForHostname();
 
   void setId(std::string id) override;
 
@@ -45,27 +47,7 @@ class Context : public transport::Context {
   ~Context() override;
 
  private:
-  class PrivateIface {
-   public:
-    virtual ClosingEmitter& getClosingEmitter() = 0;
-
-    virtual bool inLoopThread() = 0;
-
-    virtual void deferToLoop(std::function<void()> fn) = 0;
-
-    virtual void runInLoop(std::function<void()> fn) = 0;
-
-    virtual void registerDescriptor(
-        int fd,
-        int events,
-        std::shared_ptr<EventHandler> h) = 0;
-
-    virtual void unregisterDescriptor(int fd) = 0;
-
-    virtual Reactor& getReactor() = 0;
-
-    virtual ~PrivateIface() = default;
-  };
+  class PrivateIface;
 
   class Impl;
 

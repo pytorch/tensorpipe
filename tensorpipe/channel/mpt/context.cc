@@ -16,11 +16,12 @@
 #include <tensorpipe/channel/error.h>
 #include <tensorpipe/channel/helpers.h>
 #include <tensorpipe/channel/mpt/channel.h>
+#include <tensorpipe/channel/mpt/context_impl.h>
 #include <tensorpipe/channel/mpt/nop_types.h>
-#include <tensorpipe/channel/registry.h>
 #include <tensorpipe/common/callback.h>
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/error_macros.h>
+#include <tensorpipe/transport/connection.h>
 #include <tensorpipe/transport/context.h>
 #include <tensorpipe/transport/error.h>
 #include <tensorpipe/transport/listener.h>
@@ -28,16 +29,6 @@
 namespace tensorpipe {
 namespace channel {
 namespace mpt {
-
-namespace {
-
-std::shared_ptr<Context> makeMptChannel() {
-  throw std::runtime_error("mtp channel requires arguments");
-}
-
-TP_REGISTER_CREATOR(TensorpipeChannelRegistry, mpt, makeMptChannel);
-
-} // namespace
 
 class Context::Impl : public Context::PrivateIface,
                       public std::enable_shared_from_this<Context::Impl> {

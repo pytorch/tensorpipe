@@ -13,7 +13,6 @@
 #include <vector>
 
 #include <tensorpipe/channel/cpu_context.h>
-#include <tensorpipe/common/callback.h>
 #include <tensorpipe/transport/context.h>
 
 namespace tensorpipe {
@@ -41,27 +40,7 @@ class Context : public channel::CpuContext {
   ~Context() override;
 
  private:
-  class PrivateIface {
-   public:
-    virtual ClosingEmitter& getClosingEmitter() = 0;
-
-    using connection_request_callback_fn = std::function<
-        void(const Error&, std::shared_ptr<transport::Connection>)>;
-
-    virtual const std::vector<std::string>& addresses() const = 0;
-
-    virtual uint64_t registerConnectionRequest(
-        uint64_t laneIdx,
-        connection_request_callback_fn) = 0;
-
-    virtual void unregisterConnectionRequest(uint64_t) = 0;
-
-    virtual std::shared_ptr<transport::Connection> connect(
-        uint64_t laneIdx,
-        std::string address) = 0;
-
-    virtual ~PrivateIface() = default;
-  };
+  class PrivateIface;
 
   class Impl;
 

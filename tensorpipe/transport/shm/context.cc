@@ -9,24 +9,14 @@
 #include <tensorpipe/transport/shm/context.h>
 
 #include <tensorpipe/common/system.h>
-#include <tensorpipe/transport/registry.h>
 #include <tensorpipe/transport/shm/connection.h>
+#include <tensorpipe/transport/shm/context_impl.h>
 #include <tensorpipe/transport/shm/listener.h>
 #include <tensorpipe/transport/shm/loop.h>
 
 namespace tensorpipe {
 namespace transport {
 namespace shm {
-
-namespace {
-
-std::shared_ptr<Context> makeShmContext() {
-  return std::make_shared<Context>();
-}
-
-TP_REGISTER_CREATOR(TensorpipeTransportRegistry, shm, makeShmContext);
-
-} // namespace
 
 namespace {
 
@@ -49,9 +39,9 @@ class Context::Impl : public Context::PrivateIface,
 
   const std::string& domainDescriptor() const;
 
-  std::shared_ptr<transport::Connection> connect(address_t addr);
+  std::shared_ptr<transport::Connection> connect(std::string addr);
 
-  std::shared_ptr<transport::Listener> listen(address_t addr);
+  std::shared_ptr<transport::Listener> listen(std::string addr);
 
   void setId(std::string id);
 

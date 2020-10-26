@@ -10,14 +10,13 @@
 
 #include <functional>
 #include <memory>
+#include <string>
 
 #include <tensorpipe/common/error.h>
-#include <tensorpipe/transport/defs.h>
+#include <tensorpipe/transport/context.h>
 
 namespace tensorpipe {
 namespace transport {
-
-class Connection;
 
 class Listener {
  public:
@@ -30,7 +29,7 @@ class Listener {
   // This may be required if the listening address is not known up
   // front, or dynamically populated by the operating system (e.g. by
   // letting the operating system pick a TCP port to listen on).
-  virtual address_t addr() const = 0;
+  virtual std::string addr() const = 0;
 
   // Tell the listener what its identifier is.
   //

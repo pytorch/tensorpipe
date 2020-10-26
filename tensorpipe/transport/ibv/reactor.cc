@@ -16,25 +16,36 @@ namespace transport {
 namespace ibv {
 
 Reactor::Reactor() {
-  IbvDeviceList deviceList;
+  Error error;
+  std::tie(error, ibvLib_) = IbvLib::create();
+  // FIXME Instead of throwing away the error and setting a bool, we should have
+  // a way to set the reactor in an error state, and use that for viability.
+  if (error) {
+    TP_VLOG(9) << "Transport context " << id_
+               << " couldn't open libibverbs: " << error.what();
+    return;
+  }
+  foundIbvLib_ = true;
+  IbvDeviceList deviceList(getIbvLib());
   if (deviceList.size() == 0) {
     return;
   }
-  ctx_ = createIbvContext(deviceList[0]);
-  pd_ = createIbvProtectionDomain(ctx_);
+  ctx_ = createIbvContext(getIbvLib(), deviceList[0]);
+  pd_ = createIbvProtectionDomain(getIbvLib(), ctx_);
   cq_ = createIbvCompletionQueue(
+      getIbvLib(),
       ctx_,
       kCompletionQueueSize,
       /*cq_context=*/nullptr,
       /*channel=*/nullptr,
       /*comp_vector=*/0);
 
-  struct ibv_srq_init_attr srqInitAttr;
+  IbvLib::srq_init_attr srqInitAttr;
   std::memset(&srqInitAttr, 0, sizeof(srqInitAttr));
   srqInitAttr.attr.max_wr = kNumPendingRecvReqs;
-  srq_ = createIbvSharedReceiveQueue(pd_, srqInitAttr);
+  srq_ = createIbvSharedReceiveQueue(getIbvLib(), pd_, srqInitAttr);
 
-  addr_ = makeIbvAddress(ctx_, kPortNum, kGlobalIdentifierIndex);
+  addr_ = makeIbvAddress(getIbvLib(), ctx_, kPortNum, kGlobalIdentifierIndex);
 
   postRecvRequestsOnSRQ_(kNumPendingRecvReqs);
 
@@ -42,18 +53,18 @@ Reactor::Reactor() {
 }
 
 bool Reactor::isViable() const {
-  return const_cast<IbvContext&>(ctx_).get() != nullptr;
+  return foundIbvLib_ && const_cast<IbvContext&>(ctx_).get() != nullptr;
 }
 
 void Reactor::postRecvRequestsOnSRQ_(int num) {
   while (num > 0) {
-    struct ibv_recv_wr* badRecvWr = nullptr;
-    std::array<struct ibv_recv_wr, kNumPolledWorkCompletions> wrs;
+    IbvLib::recv_wr* badRecvWr = nullptr;
+    std::array<IbvLib::recv_wr, kNumPolledWorkCompletions> wrs;
     std::memset(wrs.data(), 0, sizeof(wrs));
     for (int i = 0; i < std::min(num, kNumPolledWorkCompletions) - 1; i++) {
       wrs[i].next = &wrs[i + 1];
     }
-    int rv = ibv_post_srq_recv(srq_.get(), wrs.data(), &badRecvWr);
+    int rv = getIbvLib().post_srq_recv(srq_.get(), wrs.data(), &badRecvWr);
     TP_THROW_SYSTEM_IF(rv != 0, errno);
     TP_THROW_ASSERT_IF(badRecvWr != nullptr);
     num -= std::min(num, kNumPolledWorkCompletions);
@@ -88,8 +99,8 @@ void Reactor::run() {
   // Stop when another thread has asked the reactor the close and when
   // all functions have been removed.
   while (!closed_ || queuePairEventHandler_.size() > 0) {
-    std::array<struct ibv_wc, kNumPolledWorkCompletions> wcs;
-    auto rv = ibv_poll_cq(cq_.get(), wcs.size(), wcs.data());
+    std::array<IbvLib::wc, kNumPolledWorkCompletions> wcs;
+    auto rv = getIbvLib().poll_cq(cq_.get(), wcs.size(), wcs.data());
 
     if (rv == 0) {
       if (deferredFunctionCount_ > 0) {
@@ -116,12 +127,12 @@ void Reactor::run() {
     int numWrites = 0;
     int numAcks = 0;
     for (int wcIdx = 0; wcIdx < rv; wcIdx++) {
-      struct ibv_wc& wc = wcs[wcIdx];
+      IbvLib::wc& wc = wcs[wcIdx];
 
       TP_VLOG(9) << "Transport context " << id_
                  << " got work completion for request " << wc.wr_id
                  << " for QP " << wc.qp_num << " with status "
-                 << ibv_wc_status_str(wc.status) << " and opcode "
+                 << getIbvLib().wc_status_str(wc.status) << " and opcode "
                  << ibvWorkCompletionOpcodeToStr(wc.opcode)
                  << " (byte length: " << wc.byte_len
                  << ", immediate data: " << wc.imm_data << ")";
@@ -130,27 +141,27 @@ void Reactor::run() {
       TP_THROW_ASSERT_IF(iter == queuePairEventHandler_.end())
           << "Got work completion for unknown queue pair " << wc.qp_num;
 
-      if (wc.status != IBV_WC_SUCCESS) {
+      if (wc.status != IbvLib::WC_SUCCESS) {
         iter->second->onError(wc.status, wc.wr_id);
         continue;
       }
 
       switch (wc.opcode) {
-        case IBV_WC_RECV_RDMA_WITH_IMM:
-          TP_THROW_ASSERT_IF(!(wc.wc_flags & IBV_WC_WITH_IMM));
+        case IbvLib::WC_RECV_RDMA_WITH_IMM:
+          TP_THROW_ASSERT_IF(!(wc.wc_flags & IbvLib::WC_WITH_IMM));
           iter->second->onRemoteProducedData(wc.imm_data);
           numRecvs++;
           break;
-        case IBV_WC_RECV:
-          TP_THROW_ASSERT_IF(!(wc.wc_flags & IBV_WC_WITH_IMM));
+        case IbvLib::WC_RECV:
+          TP_THROW_ASSERT_IF(!(wc.wc_flags & IbvLib::WC_WITH_IMM));
           iter->second->onRemoteConsumedData(wc.imm_data);
           numRecvs++;
           break;
-        case IBV_WC_RDMA_WRITE:
+        case IbvLib::WC_RDMA_WRITE:
           iter->second->onWriteCompleted();
           numWrites++;
           break;
-        case IBV_WC_SEND:
+        case IbvLib::WC_SEND:
           iter->second->onAckCompleted();
           numAcks++;
           break;
@@ -223,12 +234,12 @@ void Reactor::deferToLoop(TDeferredFunction fn) {
   onDemandLoop_.deferToLoop(std::move(fn));
 }
 
-void Reactor::postWrite(IbvQueuePair& qp, struct ibv_send_wr& wr) {
+void Reactor::postWrite(IbvQueuePair& qp, IbvLib::send_wr& wr) {
   if (numAvailableWrites_ > 0) {
-    struct ibv_send_wr* badWr = nullptr;
+    IbvLib::send_wr* badWr = nullptr;
     TP_VLOG(9) << "Transport context " << id_ << " posting RDMA write for QP "
                << qp->qp_num;
-    TP_CHECK_IBV_INT(ibv_post_send(qp.get(), &wr, &badWr));
+    TP_CHECK_IBV_INT(getIbvLib().post_send(qp.get(), &wr, &badWr));
     TP_THROW_ASSERT_IF(badWr != nullptr);
     numAvailableWrites_--;
   } else {
@@ -238,12 +249,12 @@ void Reactor::postWrite(IbvQueuePair& qp, struct ibv_send_wr& wr) {
   }
 }
 
-void Reactor::postAck(IbvQueuePair& qp, struct ibv_send_wr& wr) {
+void Reactor::postAck(IbvQueuePair& qp, IbvLib::send_wr& wr) {
   if (numAvailableAcks_ > 0) {
-    struct ibv_send_wr* badWr = nullptr;
+    IbvLib::send_wr* badWr = nullptr;
     TP_VLOG(9) << "Transport context " << id_ << " posting send for QP "
                << qp->qp_num;
-    TP_CHECK_IBV_INT(ibv_post_send(qp.get(), &wr, &badWr));
+    TP_CHECK_IBV_INT(getIbvLib().post_send(qp.get(), &wr, &badWr));
     TP_THROW_ASSERT_IF(badWr != nullptr);
     numAvailableAcks_--;
   } else {

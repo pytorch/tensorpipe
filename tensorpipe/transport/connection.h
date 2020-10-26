@@ -9,9 +9,11 @@
 #pragma once
 
 #include <functional>
+#include <string>
 
 #include <tensorpipe/common/error.h>
 #include <tensorpipe/common/nop.h>
+#include <tensorpipe/transport/context.h>
 
 namespace tensorpipe {
 namespace transport {
