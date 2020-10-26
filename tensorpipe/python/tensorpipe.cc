@@ -15,6 +15,7 @@
 #include <pybind11/stl.h>
 
 #include <tensorpipe/common/defs.h>
+#include <tensorpipe/common/optional.h>
 #include <tensorpipe/tensorpipe.h>
 
 namespace py = pybind11;

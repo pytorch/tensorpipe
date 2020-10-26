@@ -16,7 +16,7 @@
 #include <tensorpipe/core/context.h>
 #include <tensorpipe/core/listener.h>
 #include <tensorpipe/core/message.h>
-#include <tensorpipe/transport/connection.h>
+#include <tensorpipe/transport/context.h>
 
 namespace tensorpipe {
 

@@ -8,9 +8,10 @@
 
 #pragma once
 
-#include <deque>
-#include <list>
+#include <memory>
+#include <string>
 
+#include <tensorpipe/channel/channel.h>
 #include <tensorpipe/channel/cpu_context.h>
 #include <tensorpipe/channel/mpt/context.h>
 

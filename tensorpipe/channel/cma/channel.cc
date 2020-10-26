@@ -20,6 +20,7 @@
 #include <nop/serializer.h>
 #include <nop/structure.h>
 
+#include <tensorpipe/channel/cma/context_impl.h>
 #include <tensorpipe/channel/error.h>
 #include <tensorpipe/channel/helpers.h>
 #include <tensorpipe/common/callback.h>
@@ -29,6 +30,7 @@
 #include <tensorpipe/common/optional.h>
 #include <tensorpipe/common/queue.h>
 #include <tensorpipe/common/system.h>
+#include <tensorpipe/transport/connection.h>
 
 namespace tensorpipe {
 namespace channel {

@@ -8,13 +8,10 @@
 
 #pragma once
 
-#include <functional>
 #include <memory>
 #include <string>
 
 #include <tensorpipe/channel/cuda_context.h>
-#include <tensorpipe/common/callback.h>
-#include <tensorpipe/common/error.h>
 
 namespace tensorpipe {
 namespace channel {
@@ -39,12 +36,7 @@ class Context : public channel::CudaContext {
   ~Context() override;
 
  private:
-  class PrivateIface {
-   public:
-    virtual ClosingEmitter& getClosingEmitter() = 0;
-
-    virtual ~PrivateIface() = default;
-  };
+  class PrivateIface;
 
   class Impl;
 

@@ -12,13 +12,18 @@
 #include <memory>
 #include <string>
 #include <thread>
+#include <tuple>
+#include <utility>
+#include <vector>
 
 #include <gtest/gtest.h>
 
-#include <tensorpipe/channel/cpu_context.h>
+#include <tensorpipe/channel/channel.h>
+#include <tensorpipe/channel/context.h>
 #include <tensorpipe/common/cpu_buffer.h>
 #include <tensorpipe/config.h>
 #include <tensorpipe/test/peer_group.h>
+#include <tensorpipe/transport/listener.h>
 #include <tensorpipe/transport/uv/context.h>
 
 #if TENSORPIPE_SUPPORTS_CUDA

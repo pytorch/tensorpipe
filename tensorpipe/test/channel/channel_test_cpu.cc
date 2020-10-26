@@ -6,6 +6,9 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <numeric>
+
+#include <tensorpipe/channel/cpu_context.h>
 #include <tensorpipe/test/channel/channel_test.h>
 
 using namespace tensorpipe;

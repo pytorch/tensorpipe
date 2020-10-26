@@ -8,16 +8,18 @@
 
 #pragma once
 
-#include <future>
 #include <memory>
-#include <vector>
+#include <string>
 
-#include <tensorpipe/channel/channel.h>
-#include <tensorpipe/common/optional.h>
-#include <tensorpipe/transport/connection.h>
+#include <tensorpipe/transport/context.h>
 
 namespace tensorpipe {
 namespace channel {
+
+enum class Endpoint : bool { kConnect, kListen };
+
+template <typename TBuffer>
+class Channel;
 
 // Abstract base class for channel context classes.
 //

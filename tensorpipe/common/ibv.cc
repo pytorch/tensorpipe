@@ -13,23 +13,23 @@
 
 namespace tensorpipe {
 
-std::string ibvWorkCompletionOpcodeToStr(enum ibv_wc_opcode opcode) {
+std::string ibvWorkCompletionOpcodeToStr(IbvLib::wc_opcode opcode) {
   switch (opcode) {
-    case IBV_WC_SEND:
+    case IbvLib::WC_SEND:
       return "SEND";
-    case IBV_WC_RDMA_WRITE:
+    case IbvLib::WC_RDMA_WRITE:
       return "RDMA_WRITE";
-    case IBV_WC_RDMA_READ:
+    case IbvLib::WC_RDMA_READ:
       return "RDMA_READ";
-    case IBV_WC_COMP_SWAP:
+    case IbvLib::WC_COMP_SWAP:
       return "COMP_SWAP";
-    case IBV_WC_FETCH_ADD:
+    case IbvLib::WC_FETCH_ADD:
       return "FETCH_ADD";
-    case IBV_WC_BIND_MW:
+    case IbvLib::WC_BIND_MW:
       return "BIND_MW";
-    case IBV_WC_RECV:
+    case IbvLib::WC_RECV:
       return "RECV";
-    case IBV_WC_RECV_RDMA_WITH_IMM:
+    case IbvLib::WC_RECV_RDMA_WITH_IMM:
       return "RECV_RDMA_WITH_IMM";
     default:
       return "UNKNOWN (" + std::to_string(opcode) + ")";
@@ -37,6 +37,7 @@ std::string ibvWorkCompletionOpcodeToStr(enum ibv_wc_opcode opcode) {
 }
 
 struct IbvAddress makeIbvAddress(
+    IbvLib& ibvLib,
     IbvContext& context,
     uint8_t portNum,
     uint8_t globalIdentifierIndex) {
@@ -46,13 +47,13 @@ struct IbvAddress makeIbvAddress(
   addr.portNum = portNum;
   addr.globalIdentifierIndex = globalIdentifierIndex;
 
-  struct ibv_port_attr portAttr;
+  IbvLib::port_attr portAttr;
   std::memset(&portAttr, 0, sizeof(portAttr));
-  TP_CHECK_IBV_INT(ibv_query_port(context.get(), portNum, &portAttr));
+  TP_CHECK_IBV_INT(ibvLib.query_port(context.get(), portNum, &portAttr));
   addr.localIdentifier = portAttr.lid;
   addr.maximumTransmissionUnit = portAttr.active_mtu;
 
-  TP_CHECK_IBV_INT(ibv_query_gid(
+  TP_CHECK_IBV_INT(ibvLib.query_gid(
       context.get(), portNum, globalIdentifierIndex, &addr.globalIdentifier));
 
   return addr;
@@ -72,42 +73,47 @@ struct IbvSetupInformation makeIbvSetupInformation(
   return info;
 }
 
-void transitionIbvQueuePairToInit(IbvQueuePair& qp, IbvAddress& selfAddr) {
-  struct ibv_qp_attr attr;
+void transitionIbvQueuePairToInit(
+    IbvLib& ibvLib,
+    IbvQueuePair& qp,
+    IbvAddress& selfAddr) {
+  IbvLib::qp_attr attr;
   std::memset(&attr, 0, sizeof(attr));
   int attrMask = 0;
 
-  attrMask |= IBV_QP_STATE;
-  attr.qp_state = IBV_QPS_INIT;
+  attrMask |= IbvLib::QP_STATE;
+  attr.qp_state = IbvLib::QPS_INIT;
 
   // Hardcode the use of the first entry of the partition key table, as it will
   // always be valid.
   // FIXME: Make this configurable similarly to the port number.
-  attrMask |= IBV_QP_PKEY_INDEX;
+  attrMask |= IbvLib::QP_PKEY_INDEX;
   attr.pkey_index = 0;
 
-  attrMask |= IBV_QP_PORT;
+  attrMask |= IbvLib::QP_PORT;
   attr.port_num = selfAddr.portNum;
 
-  attrMask |= IBV_QP_ACCESS_FLAGS;
-  attr.qp_access_flags = IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE;
+  attrMask |= IbvLib::QP_ACCESS_FLAGS;
+  attr.qp_access_flags =
+      IbvLib::ACCESS_LOCAL_WRITE | IbvLib::ACCESS_REMOTE_WRITE;
 
-  TP_CHECK_IBV_INT(ibv_modify_qp(qp.get(), &attr, attrMask));
+  TP_CHECK_IBV_INT(ibvLib.modify_qp(qp.get(), &attr, attrMask));
 }
 
 void transitionIbvQueuePairToReadyToReceive(
+    IbvLib& ibvLib,
     IbvQueuePair& qp,
     IbvAddress& selfAddr,
     IbvSetupInformation& destinationInfo) {
-  struct ibv_qp_attr attr;
+  IbvLib::qp_attr attr;
   std::memset(&attr, 0, sizeof(attr));
   int attrMask = 0;
 
-  attrMask |= IBV_QP_STATE;
-  attr.qp_state = IBV_QPS_RTR;
+  attrMask |= IbvLib::QP_STATE;
+  attr.qp_state = IbvLib::QPS_RTR;
 
   // Global routing is only set up as far as needed to support RoCE.
-  attrMask |= IBV_QP_AV;
+  attrMask |= IbvLib::QP_AV;
   if (destinationInfo.localIdentifier != 0) {
     attr.ah_attr.is_global = 0;
     attr.ah_attr.dlid = destinationInfo.localIdentifier;
@@ -119,67 +125,68 @@ void transitionIbvQueuePairToReadyToReceive(
   }
   attr.ah_attr.port_num = selfAddr.portNum;
 
-  attrMask |= IBV_QP_PATH_MTU;
+  attrMask |= IbvLib::QP_PATH_MTU;
   attr.path_mtu = std::min(
       selfAddr.maximumTransmissionUnit,
       destinationInfo.maximumTransmissionUnit);
 
-  attrMask |= IBV_QP_DEST_QPN;
+  attrMask |= IbvLib::QP_DEST_QPN;
   attr.dest_qp_num = destinationInfo.queuePairNumber;
 
   // The packet sequence numbers of the local send and of the remote receive
   // queues (and vice versa) only need to match. Thus we set them all to zero.
-  attrMask |= IBV_QP_RQ_PSN;
+  attrMask |= IbvLib::QP_RQ_PSN;
   attr.rq_psn = 0;
 
-  attrMask |= IBV_QP_MAX_DEST_RD_ATOMIC;
+  attrMask |= IbvLib::QP_MAX_DEST_RD_ATOMIC;
   attr.max_dest_rd_atomic = 1;
 
-  attrMask |= IBV_QP_MIN_RNR_TIMER;
+  attrMask |= IbvLib::QP_MIN_RNR_TIMER;
   attr.min_rnr_timer = 20; // 10.24 milliseconds
 
-  TP_CHECK_IBV_INT(ibv_modify_qp(qp.get(), &attr, attrMask));
+  TP_CHECK_IBV_INT(ibvLib.modify_qp(qp.get(), &attr, attrMask));
 }
 
 void transitionIbvQueuePairToReadyToSend(
+    IbvLib& ibvLib,
     IbvQueuePair& qp,
     IbvSetupInformation& selfInfo) {
-  struct ibv_qp_attr attr;
+  IbvLib::qp_attr attr;
   std::memset(&attr, 0, sizeof(attr));
   int attrMask = 0;
 
-  attrMask |= IBV_QP_STATE;
-  attr.qp_state = IBV_QPS_RTS;
+  attrMask |= IbvLib::QP_STATE;
+  attr.qp_state = IbvLib::QPS_RTS;
 
   // The packet sequence numbers of the local send and of the remote receive
   // queues (and vice versa) only need to match. Thus we set them all to zero.
-  attrMask |= IBV_QP_SQ_PSN;
+  attrMask |= IbvLib::QP_SQ_PSN;
   attr.sq_psn = 0;
 
-  attrMask |= IBV_QP_TIMEOUT;
+  attrMask |= IbvLib::QP_TIMEOUT;
   attr.timeout = 14; // 67.1 milliseconds
 
-  attrMask |= IBV_QP_RETRY_CNT;
+  attrMask |= IbvLib::QP_RETRY_CNT;
   attr.retry_cnt = 7;
 
-  attrMask |= IBV_QP_RNR_RETRY;
+  attrMask |= IbvLib::QP_RNR_RETRY;
   attr.rnr_retry = 7; // infinite
 
-  attrMask |= IBV_QP_MAX_QP_RD_ATOMIC;
+  attrMask |= IbvLib::QP_MAX_QP_RD_ATOMIC;
   attr.max_rd_atomic = 1;
 
-  TP_CHECK_IBV_INT(ibv_modify_qp(qp.get(), &attr, attrMask));
+  TP_CHECK_IBV_INT(ibvLib.modify_qp(qp.get(), &attr, attrMask));
 }
 
-void transitionIbvQueuePairToError(IbvQueuePair& qp) {
-  struct ibv_qp_attr attr;
+void transitionIbvQueuePairToError(IbvLib& ibvLib, IbvQueuePair& qp) {
+  IbvLib::qp_attr attr;
   std::memset(&attr, 0, sizeof(attr));
   int attrMask = 0;
 
-  attrMask |= IBV_QP_STATE;
-  attr.qp_state = IBV_QPS_ERR;
+  attrMask |= IbvLib::QP_STATE;
+  attr.qp_state = IbvLib::QPS_ERR;
 
-  TP_CHECK_IBV_INT(ibv_modify_qp(qp.get(), &attr, attrMask));
+  TP_CHECK_IBV_INT(ibvLib.modify_qp(qp.get(), &attr, attrMask));
 }
 
 } // namespace tensorpipe

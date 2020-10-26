@@ -20,6 +20,7 @@
 #include <nop/structure.h>
 #include <nop/types/variant.h>
 
+#include <tensorpipe/channel/cuda_ipc/context_impl.h>
 #include <tensorpipe/channel/error.h>
 #include <tensorpipe/channel/helpers.h>
 #include <tensorpipe/common/callback.h>
@@ -29,6 +30,7 @@
 #include <tensorpipe/common/optional.h>
 #include <tensorpipe/common/queue.h>
 #include <tensorpipe/common/system.h>
+#include <tensorpipe/transport/connection.h>
 
 #define TP_CUDA_CHECK(a)                                                      \
   TP_THROW_ASSERT_IF(cudaSuccess != (a))                                      \
