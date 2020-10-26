@@ -8,7 +8,6 @@
 
 #pragma once
 
-#include <tensorpipe/channel/channel.h>
 #include <tensorpipe/channel/context.h>
 #include <tensorpipe/common/cpu_buffer.h>
 

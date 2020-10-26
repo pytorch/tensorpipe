@@ -8,7 +8,6 @@ add_library(tensorpipe
   ${TP_STATIC_OR_SHARED}
   channel/error.cc
   channel/helpers.cc
-  channel/registry.cc
   common/address.cc
   common/error.cc
   common/fd.cc
@@ -19,8 +18,7 @@ add_library(tensorpipe
   core/listener.cc
   core/pipe.cc
   transport/connection.cc
-  transport/error.cc
-  transport/registry.cc)
+  transport/error.cc)
 
 # Support `#include <tensorpipe/foo.h>`.
 target_include_directories(tensorpipe PUBLIC $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}>)
@@ -128,9 +126,6 @@ if(TP_ENABLE_IBV)
     transport/ibv/loop.cc
     transport/ibv/reactor.cc
     transport/ibv/sockaddr.cc)
-  find_package(ibverbs REQUIRED)
-  include_directories(SYSTEM ${IBVERBS_INCLUDE_DIRS})
-  target_link_libraries(tensorpipe PRIVATE ${IBVERBS_LIBRARIES})
   set(TENSORPIPE_HAS_IBV_TRANSPORT 1)
 endif()
 

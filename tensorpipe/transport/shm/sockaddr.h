@@ -10,9 +10,8 @@
 
 #include <sys/socket.h>
 
-#include <chrono>
 #include <cstring>
-#include <memory>
+#include <string>
 
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/error.h>

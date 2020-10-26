@@ -84,22 +84,7 @@ class Listener final {
   ~Listener();
 
  private:
-  class PrivateIface {
-   public:
-    using connection_request_callback_fn = std::function<void(
-        const Error&,
-        std::string,
-        std::shared_ptr<transport::Connection>)>;
-
-    virtual uint64_t registerConnectionRequest(
-        connection_request_callback_fn) = 0;
-
-    virtual void unregisterConnectionRequest(uint64_t) = 0;
-
-    virtual const std::map<std::string, std::string>& addresses() const = 0;
-
-    virtual ~PrivateIface() = default;
-  };
+  class PrivateIface;
 
   class Impl;
 

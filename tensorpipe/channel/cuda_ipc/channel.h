@@ -9,9 +9,11 @@
 #pragma once
 
 #include <memory>
+#include <string>
 
 #include <cuda_runtime.h>
 
+#include <tensorpipe/channel/channel.h>
 #include <tensorpipe/channel/cuda_context.h>
 #include <tensorpipe/channel/cuda_ipc/context.h>
 

@@ -42,4 +42,8 @@ std::string ShortWriteError::what() const {
   return ss.str();
 }
 
+std::string EOFError::what() const {
+  return "eof";
+}
+
 } // namespace tensorpipe

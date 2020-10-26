@@ -15,8 +15,8 @@
 
 #include <tensorpipe/channel/error.h>
 #include <tensorpipe/channel/helpers.h>
-#include <tensorpipe/channel/registry.h>
 #include <tensorpipe/channel/xth/channel.h>
+#include <tensorpipe/channel/xth/context_impl.h>
 #include <tensorpipe/common/callback.h>
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/error_macros.h>
@@ -42,12 +42,6 @@ std::string generateDomainDescriptor() {
 
   return oss.str();
 }
-
-std::shared_ptr<Context> makeXthChannel() {
-  return std::make_shared<Context>();
-}
-
-TP_REGISTER_CREATOR(TensorpipeChannelRegistry, xth, makeXthChannel);
 
 } // namespace
 
