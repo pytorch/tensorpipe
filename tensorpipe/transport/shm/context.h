@@ -8,7 +8,9 @@
 
 #pragma once
 
-#include <tensorpipe/common/callback.h>
+#include <memory>
+#include <string>
+
 #include <tensorpipe/transport/context.h>
 
 namespace tensorpipe {
@@ -16,7 +18,6 @@ namespace transport {
 namespace shm {
 
 class Connection;
-class EventHandler;
 class Listener;
 
 class Context : public transport::Context {
@@ -38,34 +39,7 @@ class Context : public transport::Context {
   ~Context() override;
 
  private:
-  class PrivateIface {
-   public:
-    virtual ClosingEmitter& getClosingEmitter() = 0;
-
-    virtual bool inLoopThread() = 0;
-
-    virtual void deferToLoop(std::function<void()> fn) = 0;
-
-    virtual void runInLoop(std::function<void()> fn) = 0;
-
-    virtual void registerDescriptor(
-        int fd,
-        int events,
-        std::shared_ptr<EventHandler> h) = 0;
-
-    virtual void unregisterDescriptor(int fd) = 0;
-
-    using TToken = uint32_t;
-    using TFunction = std::function<void()>;
-
-    virtual TToken addReaction(TFunction fn) = 0;
-
-    virtual void removeReaction(TToken token) = 0;
-
-    virtual std::tuple<int, int> reactorFds() = 0;
-
-    virtual ~PrivateIface() = default;
-  };
+  class PrivateIface;
 
   class Impl;
 

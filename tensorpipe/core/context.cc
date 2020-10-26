@@ -20,6 +20,7 @@
 #include <tensorpipe/common/optional.h>
 #include <tensorpipe/common/queue.h>
 #include <tensorpipe/core/buffer_helpers.h>
+#include <tensorpipe/core/context_impl.h>
 #include <tensorpipe/core/listener.h>
 #include <tensorpipe/core/pipe.h>
 #include <tensorpipe/transport/connection.h>

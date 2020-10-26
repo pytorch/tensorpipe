@@ -12,8 +12,10 @@
 
 #include <tensorpipe/benchmark/measurements.h>
 #include <tensorpipe/benchmark/options.h>
+#include <tensorpipe/benchmark/transport_registry.h>
 #include <tensorpipe/common/defs.h>
-#include <tensorpipe/transport/registry.h>
+#include <tensorpipe/transport/connection.h>
+#include <tensorpipe/transport/listener.h>
 
 using namespace tensorpipe;
 using namespace tensorpipe::benchmark;
@@ -98,12 +100,12 @@ static void runServer(const Options& options) {
   Measurements measurements;
   measurements.reserve(options.numRoundTrips);
 
-  std::shared_ptr<Context> context;
+  std::shared_ptr<transport::Context> context;
   context = TensorpipeTransportRegistry().create(options.transport);
   validateTransportContext(context);
 
   std::promise<std::shared_ptr<Connection>> connProm;
-  std::shared_ptr<Listener> listener = context->listen(addr);
+  std::shared_ptr<transport::Listener> listener = context->listen(addr);
   listener->accept([&](const Error& error, std::shared_ptr<Connection> conn) {
     TP_THROW_ASSERT_IF(error) << error.what();
     connProm.set_value(std::move(conn));
@@ -161,7 +163,7 @@ static void runClient(const Options& options) {
   Measurements measurements;
   measurements.reserve(options.numRoundTrips);
 
-  std::shared_ptr<Context> context;
+  std::shared_ptr<transport::Context> context;
   context = TensorpipeTransportRegistry().create(options.transport);
   validateTransportContext(context);
   std::shared_ptr<Connection> conn = context->connect(addr);

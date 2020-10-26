@@ -16,7 +16,9 @@
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/error_macros.h>
 #include <tensorpipe/common/optional.h>
+#include <tensorpipe/core/context_impl.h>
 #include <tensorpipe/core/error.h>
+#include <tensorpipe/core/listener_impl.h>
 #include <tensorpipe/core/nop_types.h>
 #include <tensorpipe/core/pipe.h>
 #include <tensorpipe/transport/connection.h>
@@ -76,7 +78,7 @@ class Listener::Impl : public Listener::PrivateIface,
 
   std::unordered_map<std::string, std::shared_ptr<transport::Listener>>
       listeners_;
-  std::map<std::string, transport::address_t> addresses_;
+  std::map<std::string, std::string> addresses_;
 
   // A sequence number for the calls to accept.
   uint64_t nextPipeBeingAccepted_{0};

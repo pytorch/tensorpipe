@@ -9,19 +9,19 @@
 #pragma once
 
 #include <memory>
-
-#include <tensorpipe/transport/connection.h>
-#include <tensorpipe/transport/defs.h>
-#include <tensorpipe/transport/listener.h>
+#include <string>
 
 namespace tensorpipe {
 namespace transport {
 
+class Connection;
+class Listener;
+
 class Context {
  public:
-  virtual std::shared_ptr<Connection> connect(address_t addr) = 0;
+  virtual std::shared_ptr<Connection> connect(std::string addr) = 0;
 
-  virtual std::shared_ptr<Listener> listen(address_t addr) = 0;
+  virtual std::shared_ptr<Listener> listen(std::string addr) = 0;
 
   // Return whether the context is able to operate correctly.
   //

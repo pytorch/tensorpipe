@@ -10,14 +10,14 @@
 
 #include <future>
 
+#include <tensorpipe/benchmark/channel_registry.h>
 #include <tensorpipe/benchmark/measurements.h>
 #include <tensorpipe/benchmark/options.h>
-#include <tensorpipe/channel/registry.h>
+#include <tensorpipe/benchmark/transport_registry.h>
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/core/context.h>
 #include <tensorpipe/core/listener.h>
 #include <tensorpipe/core/pipe.h>
-#include <tensorpipe/transport/registry.h>
 
 using namespace tensorpipe;
 using namespace tensorpipe::benchmark;

@@ -10,6 +10,7 @@
 
 #include <memory>
 
+#include <tensorpipe/channel/channel.h>
 #include <tensorpipe/channel/cuda_context.h>
 #include <tensorpipe/channel/cuda_xth/context.h>
 

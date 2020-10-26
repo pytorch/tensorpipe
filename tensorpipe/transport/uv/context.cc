@@ -9,8 +9,8 @@
 #include <tensorpipe/transport/uv/context.h>
 
 #include <tensorpipe/common/error_macros.h>
-#include <tensorpipe/transport/registry.h>
 #include <tensorpipe/transport/uv/connection.h>
+#include <tensorpipe/transport/uv/context_impl.h>
 #include <tensorpipe/transport/uv/error.h>
 #include <tensorpipe/transport/uv/listener.h>
 #include <tensorpipe/transport/uv/loop.h>
@@ -22,12 +22,6 @@ namespace transport {
 namespace uv {
 
 namespace {
-
-std::shared_ptr<Context> makeUvContext() {
-  return std::make_shared<Context>();
-}
-
-TP_REGISTER_CREATOR(TensorpipeTransportRegistry, uv, makeUvContext);
 
 // Prepend descriptor with transport name so it's easy to
 // disambiguate descriptors when debugging.
@@ -46,13 +40,13 @@ class Context::Impl : public Context::PrivateIface,
 
   const std::string& domainDescriptor() const;
 
-  std::shared_ptr<transport::Connection> connect(address_t addr);
+  std::shared_ptr<transport::Connection> connect(std::string addr);
 
-  std::shared_ptr<transport::Listener> listen(address_t addr);
+  std::shared_ptr<transport::Listener> listen(std::string addr);
 
-  std::tuple<Error, address_t> lookupAddrForIface(std::string iface);
+  std::tuple<Error, std::string> lookupAddrForIface(std::string iface);
 
-  std::tuple<Error, address_t> lookupAddrForHostname();
+  std::tuple<Error, std::string> lookupAddrForHostname();
 
   void setId(std::string id);
 
@@ -91,7 +85,7 @@ class Context::Impl : public Context::PrivateIface,
   std::atomic<uint64_t> listenerCounter_{0};
   std::atomic<uint64_t> connectionCounter_{0};
 
-  std::tuple<Error, address_t> lookupAddrForHostnameFromLoop_();
+  std::tuple<Error, std::string> lookupAddrForHostnameFromLoop_();
 };
 
 Context::Context() : impl_(std::make_shared<Impl>()) {}
@@ -133,11 +127,12 @@ Context::~Context() {
   join();
 }
 
-std::shared_ptr<transport::Connection> Context::connect(address_t addr) {
+std::shared_ptr<transport::Connection> Context::connect(std::string addr) {
   return impl_->connect(std::move(addr));
 }
 
-std::shared_ptr<transport::Connection> Context::Impl::connect(address_t addr) {
+std::shared_ptr<transport::Connection> Context::Impl::connect(
+    std::string addr) {
   std::string connectionId = id_ + ".c" + std::to_string(connectionCounter_++);
   TP_VLOG(7) << "Transport context " << id_ << " is opening connection "
              << connectionId << " to address " << addr;
@@ -148,11 +143,11 @@ std::shared_ptr<transport::Connection> Context::Impl::connect(address_t addr) {
       std::move(connectionId));
 }
 
-std::shared_ptr<transport::Listener> Context::listen(address_t addr) {
+std::shared_ptr<transport::Listener> Context::listen(std::string addr) {
   return impl_->listen(std::move(addr));
 }
 
-std::shared_ptr<transport::Listener> Context::Impl::listen(address_t addr) {
+std::shared_ptr<transport::Listener> Context::Impl::listen(std::string addr) {
   std::string listenerId = id_ + ".l" + std::to_string(listenerCounter_++);
   TP_VLOG(7) << "Transport context " << id_ << " is opening listener "
              << listenerId << " on address " << addr;
@@ -171,11 +166,11 @@ const std::string& Context::Impl::domainDescriptor() const {
   return domainDescriptor_;
 }
 
-std::tuple<Error, address_t> Context::lookupAddrForIface(std::string iface) {
+std::tuple<Error, std::string> Context::lookupAddrForIface(std::string iface) {
   return impl_->lookupAddrForIface(std::move(iface));
 }
 
-std::tuple<Error, address_t> Context::Impl::lookupAddrForIface(
+std::tuple<Error, std::string> Context::Impl::lookupAddrForIface(
     std::string iface) {
   int rv;
   InterfaceAddresses addresses;
@@ -209,11 +204,11 @@ std::tuple<Error, address_t> Context::Impl::lookupAddrForIface(
   return std::make_tuple(TP_CREATE_ERROR(NoAddrFoundError), std::string());
 }
 
-std::tuple<Error, address_t> Context::lookupAddrForHostname() {
+std::tuple<Error, std::string> Context::lookupAddrForHostname() {
   return impl_->lookupAddrForHostname();
 }
 
-std::tuple<Error, address_t> Context::Impl::lookupAddrForHostname() {
+std::tuple<Error, std::string> Context::Impl::lookupAddrForHostname() {
   Error error;
   std::string addr;
   runInLoop([this, &error, &addr]() {
@@ -222,7 +217,7 @@ std::tuple<Error, address_t> Context::Impl::lookupAddrForHostname() {
   return std::make_tuple(std::move(error), std::move(addr));
 }
 
-std::tuple<Error, address_t> Context::Impl::lookupAddrForHostnameFromLoop_() {
+std::tuple<Error, std::string> Context::Impl::lookupAddrForHostnameFromLoop_() {
   int rv;
   std::string hostname;
   std::tie(rv, hostname) = getHostname();

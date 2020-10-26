@@ -24,7 +24,7 @@ class CudaXthChannelTestHelper
   }
 
   std::shared_ptr<PeerGroup> makePeerGroup() override {
-    return std::make_shared<ThreadPeerGroup>();
+    return std::make_shared<ForkedThreadPeerGroup>();
   }
 };
 

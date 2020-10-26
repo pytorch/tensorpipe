@@ -14,14 +14,11 @@
 #include <tensorpipe/channel/error.h>
 #include <tensorpipe/channel/helpers.h>
 #include <tensorpipe/common/callback.h>
+#include <tensorpipe/common/cuda.h>
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/error.h>
 #include <tensorpipe/common/error_macros.h>
-
-#define TP_CUDA_CHECK(a)                                                      \
-  TP_THROW_ASSERT_IF(cudaSuccess != (a))                                      \
-      << __TP_EXPAND_OPD(a) << " " << cudaGetErrorName(cudaPeekAtLastError()) \
-      << " (" << cudaGetErrorString(cudaPeekAtLastError()) << ")"
+#include <tensorpipe/transport/connection.h>
 
 namespace tensorpipe {
 namespace channel {

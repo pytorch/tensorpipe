@@ -14,9 +14,11 @@
 #include <tensorpipe/channel/error.h>
 #include <tensorpipe/channel/helpers.h>
 #include <tensorpipe/common/callback.h>
+#include <tensorpipe/common/cuda.h>
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/error.h>
 #include <tensorpipe/common/error_macros.h>
+#include <tensorpipe/transport/connection.h>
 
 namespace tensorpipe {
 namespace channel {
@@ -24,9 +26,39 @@ namespace cuda_xth {
 
 namespace {
 
+class SendOperation {
+ public:
+  uint64_t sequenceNumber;
+
+  SendOperation(uint64_t sequenceNumber, CudaBuffer buffer)
+      : sequenceNumber(sequenceNumber),
+        buffer_(buffer),
+        startEv_(cudaDeviceForPointer(buffer.ptr)) {
+    startEv_.record(buffer_.stream);
+  }
+
+  void process(CudaBuffer dstBuffer) {
+    startEv_.wait(dstBuffer.stream);
+
+    TP_CUDA_CHECK(cudaMemcpyAsync(
+        dstBuffer.ptr,
+        buffer_.ptr,
+        dstBuffer.length,
+        cudaMemcpyDeviceToDevice));
+
+    CudaEvent stopEv(cudaDeviceForPointer(dstBuffer.ptr));
+    stopEv.record(dstBuffer.stream);
+    stopEv.wait(buffer_.stream);
+  }
+
+ private:
+  const CudaBuffer buffer_;
+  CudaEvent startEv_;
+};
+
 struct Descriptor {
-  uint64_t ptr;
-  NOP_STRUCTURE(Descriptor, ptr);
+  uintptr_t opPtr;
+  NOP_STRUCTURE(Descriptor, opPtr);
 };
 
 } // namespace
@@ -193,23 +225,24 @@ void Channel::Impl::sendFromLoop_(
     return;
   }
 
+  auto op = std::make_shared<SendOperation>(sequenceNumber, buffer);
+  NopHolder<Descriptor> nopHolder;
+  Descriptor& nopDescriptor = nopHolder.getObject();
+  nopDescriptor.opPtr = reinterpret_cast<uintptr_t>(op.get());
+
   TP_VLOG(6) << "Channel " << id_ << " is reading notification (#"
              << sequenceNumber << ")";
   connection_->read(
       nullptr,
       0,
       eagerCallbackWrapper_(
-          [sequenceNumber, callback{std::move(callback)}](
+          [sequenceNumber, op{std::move(op)}, callback{std::move(callback)}](
               Impl& impl, const void* /* unused */, size_t /* unused */) {
             TP_VLOG(6) << "Channel " << impl.id_
                        << " done reading notification (#" << sequenceNumber
                        << ")";
             callback(impl.error_);
           }));
-
-  NopHolder<Descriptor> nopHolder;
-  Descriptor& nopDescriptor = nopHolder.getObject();
-  nopDescriptor.ptr = reinterpret_cast<std::uintptr_t>(buffer.ptr);
 
   descriptorCallback(Error::kSuccess, saveDescriptor(nopHolder));
 }
@@ -261,30 +294,24 @@ void Channel::Impl::recvFromLoop_(
   NopHolder<Descriptor> nopHolder;
   loadDescriptor(nopHolder, descriptor);
   Descriptor& nopDescriptor = nopHolder.getObject();
-  void* remotePtr = reinterpret_cast<void*>(nopDescriptor.ptr);
+  SendOperation* op = reinterpret_cast<SendOperation*>(nopDescriptor.opPtr);
+
   TP_VLOG(6) << "Channel " << id_ << " is copying payload (#" << sequenceNumber
              << ")";
-  context_->requestCopy(
-      remotePtr,
-      buffer.ptr,
-      buffer.length,
-      buffer.stream,
-      eagerCallbackWrapper_([sequenceNumber,
-                             callback{std::move(callback)}](Impl& impl) {
-        TP_VLOG(6) << "Channel " << impl.id_ << " done copying payload (#"
-                   << sequenceNumber << ")";
-        // Let peer know we've completed the copy.
-        TP_VLOG(6) << "Channel " << impl.id_ << " is writing notification (#"
-                   << sequenceNumber << ")";
-        impl.connection_->write(
-            nullptr, 0, impl.lazyCallbackWrapper_([sequenceNumber](Impl& impl) {
-              TP_VLOG(6) << "Channel " << impl.id_
-                         << " done writing notification (#" << sequenceNumber
-                         << ")";
-            }));
+  op->process(buffer);
+  TP_VLOG(6) << "Channel " << id_ << " done copying payload (#"
+             << sequenceNumber << ")";
 
-        callback(impl.error_);
+  // Let peer know we've completed the copy.
+  TP_VLOG(6) << "Channel " << id_ << " is writing notification (#"
+             << sequenceNumber << ")";
+  connection_->write(
+      nullptr, 0, lazyCallbackWrapper_([sequenceNumber](Impl& impl) {
+        TP_VLOG(6) << "Channel " << impl.id_ << " done writing notification (#"
+                   << sequenceNumber << ")";
       }));
+
+  callback(error_);
 }
 
 void Channel::setId(std::string id) {

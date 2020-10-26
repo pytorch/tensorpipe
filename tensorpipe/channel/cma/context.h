@@ -8,13 +8,10 @@
 
 #pragma once
 
-#include <functional>
 #include <memory>
 #include <string>
 
 #include <tensorpipe/channel/cpu_context.h>
-#include <tensorpipe/common/callback.h>
-#include <tensorpipe/common/error.h>
 
 namespace tensorpipe {
 namespace channel {
@@ -39,21 +36,7 @@ class Context : public channel::CpuContext {
   ~Context() override;
 
  private:
-  class PrivateIface {
-   public:
-    virtual ClosingEmitter& getClosingEmitter() = 0;
-
-    using copy_request_callback_fn = std::function<void(const Error&)>;
-
-    virtual void requestCopy(
-        pid_t remotePid,
-        void* remotePtr,
-        void* localPtr,
-        size_t length,
-        copy_request_callback_fn fn) = 0;
-
-    virtual ~PrivateIface() = default;
-  };
+  class PrivateIface;
 
   class Impl;
 

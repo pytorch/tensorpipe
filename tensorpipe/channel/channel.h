@@ -8,12 +8,11 @@
 
 #pragma once
 
-#include <future>
-#include <memory>
-#include <vector>
+#include <functional>
+#include <string>
 
-#include <tensorpipe/common/optional.h>
-#include <tensorpipe/transport/connection.h>
+#include <tensorpipe/channel/context.h>
+#include <tensorpipe/common/error.h>
 
 // Channels are an out of band mechanism to transfer data between
 // processes. Examples include a direct address space to address space
@@ -44,8 +43,6 @@
 //
 namespace tensorpipe {
 namespace channel {
-
-enum class Endpoint : bool { kConnect, kListen };
 
 using TDescriptor = std::string;
 using TDescriptorCallback = std::function<void(const Error&, TDescriptor)>;

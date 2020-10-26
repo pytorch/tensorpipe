@@ -10,8 +10,9 @@
 
 #include <memory>
 #include <string>
+#include <tuple>
 
-#include <tensorpipe/common/callback.h>
+#include <tensorpipe/common/error.h>
 #include <tensorpipe/transport/context.h>
 
 namespace tensorpipe {
@@ -20,21 +21,20 @@ namespace uv {
 
 class Connection;
 class Listener;
-class TCPHandle;
 
 class Context : public transport::Context {
  public:
   Context();
 
-  std::shared_ptr<transport::Connection> connect(address_t addr) override;
+  std::shared_ptr<transport::Connection> connect(std::string addr) override;
 
-  std::shared_ptr<transport::Listener> listen(address_t addr) override;
+  std::shared_ptr<transport::Listener> listen(std::string addr) override;
 
   const std::string& domainDescriptor() const override;
 
-  std::tuple<Error, address_t> lookupAddrForIface(std::string iface);
+  std::tuple<Error, std::string> lookupAddrForIface(std::string iface);
 
-  std::tuple<Error, address_t> lookupAddrForHostname();
+  std::tuple<Error, std::string> lookupAddrForHostname();
 
   void setId(std::string id) override;
 
@@ -45,20 +45,7 @@ class Context : public transport::Context {
   ~Context() override;
 
  private:
-  class PrivateIface {
-   public:
-    virtual ClosingEmitter& getClosingEmitter() = 0;
-
-    virtual bool inLoopThread() = 0;
-
-    virtual void deferToLoop(std::function<void()> fn) = 0;
-
-    virtual void runInLoop(std::function<void()> fn) = 0;
-
-    virtual std::shared_ptr<TCPHandle> createHandle() = 0;
-
-    virtual ~PrivateIface() = default;
-  };
+  class PrivateIface;
 
   class Impl;
 

@@ -39,7 +39,7 @@ class IbvEventHandler {
 
   virtual void onAckCompleted() = 0;
 
-  virtual void onError(enum ibv_wc_status status, uint64_t wr_id) = 0;
+  virtual void onError(IbvLib::wc_status status, uint64_t wr_id) = 0;
 
   virtual ~IbvEventHandler() = default;
 };
@@ -94,6 +94,10 @@ class Reactor final {
     }
   }
 
+  IbvLib& getIbvLib() {
+    return ibvLib_;
+  }
+
   IbvContext& getIbvContext() {
     return ctx_;
   }
@@ -118,9 +122,9 @@ class Reactor final {
 
   void unregisterQp(uint32_t qpn);
 
-  void postWrite(IbvQueuePair& qp, struct ibv_send_wr& wr);
+  void postWrite(IbvQueuePair& qp, IbvLib::send_wr& wr);
 
-  void postAck(IbvQueuePair& qp, struct ibv_send_wr& wr);
+  void postAck(IbvQueuePair& qp, IbvLib::send_wr& wr);
 
   inline bool inReactorThread() {
     {
@@ -144,6 +148,8 @@ class Reactor final {
 
  private:
   // InfiniBand stuff
+  bool foundIbvLib_{false};
+  IbvLib ibvLib_;
   IbvContext ctx_;
   IbvProtectionDomain pd_;
   IbvCompletionQueue cq_;
@@ -189,8 +195,8 @@ class Reactor final {
 
   uint32_t numAvailableWrites_{kNumPendingWriteReqs};
   uint32_t numAvailableAcks_{kNumPendingAckReqs};
-  std::deque<std::tuple<IbvQueuePair&, struct ibv_send_wr>> pendingQpWrites_;
-  std::deque<std::tuple<IbvQueuePair&, struct ibv_send_wr>> pendingQpAcks_;
+  std::deque<std::tuple<IbvQueuePair&, IbvLib::send_wr>> pendingQpWrites_;
+  std::deque<std::tuple<IbvQueuePair&, IbvLib::send_wr>> pendingQpAcks_;
 };
 
 } // namespace ibv

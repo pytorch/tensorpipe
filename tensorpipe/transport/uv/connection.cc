@@ -15,6 +15,7 @@
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/error_macros.h>
 #include <tensorpipe/common/optional.h>
+#include <tensorpipe/transport/uv/context_impl.h>
 #include <tensorpipe/transport/uv/error.h>
 #include <tensorpipe/transport/uv/loop.h>
 #include <tensorpipe/transport/uv/sockaddr.h>
@@ -200,7 +201,7 @@ class Connection::Impl : public std::enable_shared_from_this<Connection::Impl> {
       std::string);
 
   // Create a connection that connects to the specified address.
-  Impl(std::shared_ptr<Context::PrivateIface>, address_t, std::string);
+  Impl(std::shared_ptr<Context::PrivateIface>, std::string, std::string);
 
   // Initialize member fields that need `shared_from_this`.
   void init();
@@ -290,7 +291,7 @@ Connection::Impl::Impl(
 
 Connection::Impl::Impl(
     std::shared_ptr<Context::PrivateIface> context,
-    address_t addr,
+    std::string addr,
     std::string id)
     : context_(std::move(context)),
       handle_(context_->createHandle()),
@@ -547,7 +548,7 @@ Connection::Connection(
 Connection::Connection(
     ConstructorToken /* unused */,
     std::shared_ptr<Context::PrivateIface> context,
-    address_t addr,
+    std::string addr,
     std::string id)
     : impl_(std::make_shared<Impl>(
           std::move(context),
