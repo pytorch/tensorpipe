@@ -632,7 +632,7 @@ class IbvLib {
     std::tie(error, dlhandle) =
         createDynamicLibraryHandle("libibverbs.so.1", RTLD_LOCAL | RTLD_LAZY);
     if (error) {
-      return {error, IbvLib()};
+      return std::make_tuple(std::move(error), IbvLib());
     }
     IbvLib lib(std::move(dlhandle));
 #define TP_LOAD_SYMBOL(function_name, return_type, args_types)               \
@@ -640,7 +640,7 @@ class IbvLib {
     void* ptr;                                                               \
     std::tie(error, ptr) = loadSymbol(lib.dlhandle_, "ibv_" #function_name); \
     if (error) {                                                             \
-      return {error, IbvLib()};                                              \
+      return std::make_tuple(std::move(error), IbvLib());                    \
     }                                                                        \
     TP_THROW_ASSERT_IF(ptr == nullptr);                                      \
     lib.function_name##_ptr_ =                                               \
@@ -648,7 +648,7 @@ class IbvLib {
   }
     TP_FORALL_IBV_SYMBOLS(TP_LOAD_SYMBOL)
 #undef TP_LOAD_SYMBOL
-    return {Error::kSuccess, std::move(lib)};
+    return std::make_tuple(Error::kSuccess, std::move(lib));
   }
 
 #define TP_FORWARD_CALL(function_name, return_type, args_types)  \

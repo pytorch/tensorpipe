@@ -45,9 +45,10 @@ inline std::tuple<Error, DynamicLibraryHandle> createDynamicLibraryHandle(
     int flags) {
   void* ptr = ::dlopen(filename, flags);
   if (ptr == nullptr) {
-    return {TP_CREATE_ERROR(DlError, ::dlerror()), DynamicLibraryHandle()};
+    return std::make_tuple(
+        TP_CREATE_ERROR(DlError, ::dlerror()), DynamicLibraryHandle());
   }
-  return {Error::kSuccess, DynamicLibraryHandle(ptr)};
+  return std::make_tuple(Error::kSuccess, DynamicLibraryHandle(ptr));
 }
 
 inline std::tuple<Error, void*> loadSymbol(
@@ -61,9 +62,9 @@ inline std::tuple<Error, void*> loadSymbol(
   void* ptr = ::dlsym(handle.get(), name);
   char* err = ::dlerror();
   if (err != nullptr) {
-    return {TP_CREATE_ERROR(DlError, err), nullptr};
+    return std::make_tuple(TP_CREATE_ERROR(DlError, err), nullptr);
   }
-  return {Error::kSuccess, ptr};
+  return std::make_tuple(Error::kSuccess, ptr);
 }
 
 } // namespace tensorpipe

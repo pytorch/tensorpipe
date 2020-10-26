@@ -61,19 +61,21 @@ std::tuple<Error, InterfaceAddresses> createInterfaceAddresses() {
   struct ifaddrs* ifaddrs;
   auto rv = ::getifaddrs(&ifaddrs);
   if (rv < 0) {
-    return {TP_CREATE_ERROR(SystemError, "getifaddrs", errno),
-            InterfaceAddresses()};
+    return std::make_tuple(
+        TP_CREATE_ERROR(SystemError, "getifaddrs", errno),
+        InterfaceAddresses());
   }
-  return {Error::kSuccess, InterfaceAddresses(ifaddrs)};
+  return std::make_tuple(Error::kSuccess, InterfaceAddresses(ifaddrs));
 }
 
 std::tuple<Error, std::string> getHostname() {
   std::array<char, HOST_NAME_MAX> hostname;
   auto rv = ::gethostname(hostname.data(), hostname.size());
   if (rv < 0) {
-    return {TP_CREATE_ERROR(SystemError, "gethostname", errno), std::string()};
+    return std::make_tuple(
+        TP_CREATE_ERROR(SystemError, "gethostname", errno), std::string());
   }
-  return {Error::kSuccess, std::string(hostname.data())};
+  return std::make_tuple(Error::kSuccess, std::string(hostname.data()));
 }
 
 struct AddressInfoDeleter {
@@ -94,9 +96,10 @@ std::tuple<Error, AddressInfo> createAddressInfo(std::string host) {
   struct addrinfo* result;
   auto rv = ::getaddrinfo(host.c_str(), nullptr, &hints, &result);
   if (rv != 0) {
-    return {TP_CREATE_ERROR(GetaddrinfoError, rv), AddressInfo()};
+    return std::make_tuple(
+        TP_CREATE_ERROR(GetaddrinfoError, rv), AddressInfo());
   }
-  return {Error::kSuccess, AddressInfo(result)};
+  return std::make_tuple(Error::kSuccess, AddressInfo(result));
 }
 
 } // namespace
@@ -258,7 +261,7 @@ std::tuple<Error, std::string> Context::Impl::lookupAddrForIface(
   InterfaceAddresses addresses;
   std::tie(error, addresses) = createInterfaceAddresses();
   if (error) {
-    return {std::move(error), std::string()};
+    return std::make_tuple(std::move(error), std::string());
   }
 
   struct ifaddrs* ifa;
@@ -274,15 +277,17 @@ std::tuple<Error, std::string> Context::Impl::lookupAddrForIface(
 
     switch (ifa->ifa_addr->sa_family) {
       case AF_INET:
-        return {Error::kSuccess,
-                Sockaddr(ifa->ifa_addr, sizeof(struct sockaddr_in)).str()};
+        return std::make_tuple(
+            Error::kSuccess,
+            Sockaddr(ifa->ifa_addr, sizeof(struct sockaddr_in)).str());
       case AF_INET6:
-        return {Error::kSuccess,
-                Sockaddr(ifa->ifa_addr, sizeof(struct sockaddr_in6)).str()};
+        return std::make_tuple(
+            Error::kSuccess,
+            Sockaddr(ifa->ifa_addr, sizeof(struct sockaddr_in6)).str());
     }
   }
 
-  return {TP_CREATE_ERROR(NoAddrFoundError), std::string()};
+  return std::make_tuple(TP_CREATE_ERROR(NoAddrFoundError), std::string());
 }
 
 std::tuple<Error, std::string> Context::lookupAddrForHostname() {
@@ -294,13 +299,13 @@ std::tuple<Error, std::string> Context::Impl::lookupAddrForHostname() {
   std::string hostname;
   std::tie(error, hostname) = getHostname();
   if (error) {
-    return {std::move(error), std::string()};
+    return std::make_tuple(std::move(error), std::string());
   }
 
   AddressInfo info;
   std::tie(error, info) = createAddressInfo(std::move(hostname));
   if (error) {
-    return {std::move(error), std::string()};
+    return std::make_tuple(std::move(error), std::string());
   }
 
   Error firstError;
@@ -327,13 +332,13 @@ std::tuple<Error, std::string> Context::Impl::lookupAddrForHostname() {
       continue;
     }
 
-    return {Error::kSuccess, addr.str()};
+    return std::make_tuple(Error::kSuccess, addr.str());
   }
 
   if (firstError) {
-    return {std::move(firstError), std::string()};
+    return std::make_tuple(std::move(firstError), std::string());
   } else {
-    return {TP_CREATE_ERROR(NoAddrFoundError), std::string()};
+    return std::make_tuple(TP_CREATE_ERROR(NoAddrFoundError), std::string());
   }
 }
 
