@@ -72,8 +72,14 @@ class Channel::Impl : public std::enable_shared_from_this<Channel::Impl> {
   // Shared between read and write callback entry points.
   void handleError_();
 
+  // Proxy static method for cudaStreamAddCallback(), which does not accept
+  // lambdas.
+  static void CUDART_CB invokeCudaCallback_(cudaStream_t, cudaError_t, void*);
+
   std::shared_ptr<Context::PrivateIface> context_;
   std::shared_ptr<CpuChannel> cpuChannel_;
+  std::unordered_map<uint64_t, std::function<void(cudaError_t)>>
+      cudaSendCallbacks_;
   Error error_{Error::kSuccess};
   ClosingReceiver closingReceiver_;
 
@@ -160,9 +166,6 @@ void Channel::Impl::sendFromLoop_(
   auto tmpBuffer = std::shared_ptr<uint8_t>(
       new uint8_t[buffer.length], std::default_delete<uint8_t[]>());
   CpuBuffer cpuBuffer{tmpBuffer.get(), buffer.length};
-  // TODO: Use cudaMemcpyAsync.
-  TP_CUDA_CHECK(cudaMemcpy(
-      cpuBuffer.ptr, buffer.ptr, buffer.length, cudaMemcpyDeviceToHost));
 
   descriptorCallback = [this,
                         sequenceNumber,
@@ -194,10 +197,46 @@ void Channel::Impl::sendFromLoop_(
     return;
   }
 
-  TP_VLOG(6) << "Channel " << id_ << " is writing payload (#" << sequenceNumber
-             << ")";
-  cpuChannel_->send(
-      cpuBuffer, std::move(descriptorCallback), std::move(callback));
+  TP_CUDA_CHECK(cudaMemcpyAsync(
+      cpuBuffer.ptr,
+      buffer.ptr,
+      buffer.length,
+      cudaMemcpyDeviceToHost,
+      buffer.stream));
+
+  TP_DCHECK(
+      cudaSendCallbacks_.find(sequenceNumber) == cudaSendCallbacks_.end());
+  cudaSendCallbacks_[sequenceNumber] =
+      [this,
+       sequenceNumber,
+       cpuBuffer,
+       descriptorCallback{std::move(descriptorCallback)},
+       callback{std::move(callback)}](cudaError_t cudaError) {
+        TP_CUDA_CHECK(cudaError);
+        TP_VLOG(6) << "Channel " << id_ << " is writing payload (#"
+                   << sequenceNumber << ")";
+        cpuChannel_->send(
+            cpuBuffer, std::move(descriptorCallback), std::move(callback));
+
+        // Deleting the lambda from within the lambda. It looks shady but it is
+        // fine.
+        cudaSendCallbacks_.erase(sequenceNumber);
+      };
+  TP_CUDA_CHECK(cudaStreamAddCallback(
+      buffer.stream,
+      invokeCudaCallback_,
+      &cudaSendCallbacks_[sequenceNumber],
+      0));
+}
+
+void Channel::Impl::invokeCudaCallback_(
+    cudaStream_t /* stream */,
+    cudaError_t status,
+    void* callbackPtr) {
+  auto& callback =
+      *reinterpret_cast<std::function<void(cudaError_t)>*>(callbackPtr);
+
+  callback(status);
 }
 
 // Receive memory region from peer.
@@ -245,8 +284,12 @@ void Channel::Impl::recvFromLoop_(
               buffer,
               tmpBuffer{std::move(tmpBuffer)},
               callback{std::move(callback)}](const Error& error) {
-    TP_CUDA_CHECK(cudaMemcpy(
-        buffer.ptr, tmpBuffer.get(), buffer.length, cudaMemcpyHostToDevice));
+    TP_CUDA_CHECK(cudaMemcpyAsync(
+        buffer.ptr,
+        tmpBuffer.get(),
+        buffer.length,
+        cudaMemcpyHostToDevice,
+        buffer.stream));
     // There is no requirement for the channel to invoke callbacks in order.
     TP_VLOG(4) << "Channel " << id_ << " is calling a recv callback (#"
                << sequenceNumber << ")";
@@ -326,6 +369,11 @@ void Channel::Impl::handleError_() {
   TP_VLOG(5) << "Channel " << id_ << " is handling error " << error_.what();
 
   cpuChannel_->close();
+
+  // Since we cannot un-schedule a callback from a CUDA stream, we have to
+  // ensure they have all been processed before destroying.
+  while (!cudaSendCallbacks_.empty())
+    ;
 }
 
 } // namespace cuda_basic
