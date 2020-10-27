@@ -42,16 +42,6 @@ class Context : public channel::CudaContext {
   class PrivateIface {
    public:
     virtual ClosingEmitter& getClosingEmitter() = 0;
-
-    using copy_request_callback_fn = std::function<void(const Error&)>;
-
-    virtual void requestCopy(
-        void* remotePtr,
-        void* localPtr,
-        size_t length,
-        cudaStream_t stream,
-        copy_request_callback_fn fn) = 0;
-
     virtual ~PrivateIface() = default;
   };
 

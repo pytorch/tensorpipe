@@ -23,11 +23,6 @@
 #include <tensorpipe/common/queue.h>
 #include <tensorpipe/common/system.h>
 
-#define TP_CUDA_CHECK(a)                                                      \
-  TP_THROW_ASSERT_IF(cudaSuccess != (a))                                      \
-      << __TP_EXPAND_OPD(a) << " " << cudaGetErrorName(cudaPeekAtLastError()) \
-      << " (" << cudaGetErrorString(cudaPeekAtLastError()) << ")"
-
 namespace tensorpipe {
 namespace channel {
 namespace cuda_xth {
@@ -64,15 +59,6 @@ class Context::Impl : public Context::PrivateIface,
 
   ClosingEmitter& getClosingEmitter() override;
 
-  using copy_request_callback_fn = std::function<void(const Error&)>;
-
-  void requestCopy(
-      void* remotePtr,
-      void* localPtr,
-      size_t length,
-      cudaStream_t stream,
-      copy_request_callback_fn fn) override;
-
   void close();
 
   void join();
@@ -80,23 +66,10 @@ class Context::Impl : public Context::PrivateIface,
   ~Impl() override = default;
 
  private:
-  struct CopyRequest {
-    void* remotePtr;
-    void* localPtr;
-    size_t length;
-    cudaStream_t stream;
-    copy_request_callback_fn callback;
-  };
-
   std::string domainDescriptor_;
-  std::thread thread_;
-  Queue<optional<CopyRequest>> requests_;
   std::atomic<bool> closed_{false};
   std::atomic<bool> joined_{false};
   ClosingEmitter closingEmitter_;
-
-  // This is atomic because it may be accessed from outside the loop.
-  std::atomic<uint64_t> nextRequestId_{0};
 
   // An identifier for the context, composed of the identifier for the context,
   // combined with the channel's name. It will only be used for logging and
@@ -113,11 +86,7 @@ class Context::Impl : public Context::PrivateIface,
 
 Context::Context() : impl_(std::make_shared<Context::Impl>()) {}
 
-Context::Impl::Impl()
-    : domainDescriptor_(generateDomainDescriptor()),
-      requests_(std::numeric_limits<int>::max()) {
-  thread_ = std::thread(&Impl::handleCopyRequests_, this);
-}
+Context::Impl::Impl() : domainDescriptor_(generateDomainDescriptor()) {}
 
 void Context::close() {
   impl_->close();
@@ -128,7 +97,6 @@ void Context::Impl::close() {
     TP_VLOG(4) << "Channel context " << id_ << " is closing";
 
     closingEmitter_.close();
-    requests_.push(nullopt);
 
     TP_VLOG(4) << "Channel context " << id_ << " done closing";
   }
@@ -143,10 +111,6 @@ void Context::Impl::join() {
 
   if (!joined_.exchange(true)) {
     TP_VLOG(4) << "Channel context " << id_ << " is joining";
-
-    thread_.join();
-    // TP_DCHECK(requests_.empty());
-
     TP_VLOG(4) << "Channel context " << id_ << " done joining";
   }
 }
@@ -194,54 +158,6 @@ std::shared_ptr<channel::CudaChannel> Context::Impl::createChannel(
       std::static_pointer_cast<PrivateIface>(shared_from_this()),
       std::move(connection),
       std::move(channelId));
-}
-
-void Context::Impl::requestCopy(
-    void* remotePtr,
-    void* localPtr,
-    size_t length,
-    cudaStream_t stream,
-    std::function<void(const Error&)> fn) {
-  uint64_t requestId = nextRequestId_++;
-  TP_VLOG(4) << "Channel context " << id_ << " received a copy request (#"
-             << requestId << ")";
-
-  fn = [this, requestId, fn{std::move(fn)}](const Error& error) {
-    TP_VLOG(4) << "Channel context " << id_
-               << " is calling a copy request callback (#" << requestId << ")";
-    fn(error);
-    TP_VLOG(4) << "Channel context " << id_
-               << " done calling a copy request callback (#" << requestId
-               << ")";
-  };
-
-  requests_.push(
-      CopyRequest{remotePtr, localPtr, length, stream, std::move(fn)});
-}
-
-void Context::Impl::handleCopyRequests_() {
-  setThreadName("TP_CUDA_XTH_loop");
-  while (true) {
-    auto maybeRequest = requests_.pop();
-    if (!maybeRequest.has_value()) {
-      break;
-    }
-    CopyRequest request = std::move(maybeRequest).value();
-
-    // Don't even call memcpy on a length of 0 to avoid issues with the pointer
-    // possibly being null.
-    if (request.length > 0) {
-      // Perform copy.
-      // TODO: Use cudaMemcpyAsync.
-      TP_CUDA_CHECK(cudaMemcpy(
-          request.localPtr,
-          request.remotePtr,
-          request.length,
-          cudaMemcpyDeviceToDevice));
-    }
-
-    request.callback(Error::kSuccess);
-  }
 }
 
 } // namespace cuda_xth

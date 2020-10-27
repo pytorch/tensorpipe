@@ -40,6 +40,7 @@ class SendOperation {
   void process(CudaBuffer dstBuffer) {
     startEv_.wait(dstBuffer.stream);
 
+    TP_DCHECK_EQ(buffer_.length, dstBuffer.length);
     TP_CUDA_CHECK(cudaMemcpyAsync(
         dstBuffer.ptr,
         buffer_.ptr,
@@ -225,6 +226,7 @@ void Channel::Impl::sendFromLoop_(
     return;
   }
 
+  // The op must be kept alive until the notification has been received.
   auto op = std::make_shared<SendOperation>(sequenceNumber, buffer);
   NopHolder<Descriptor> nopHolder;
   Descriptor& nopDescriptor = nopHolder.getObject();
