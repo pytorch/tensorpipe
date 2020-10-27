@@ -9,45 +9,35 @@
 #pragma once
 
 #include <atomic>
-#include <condition_variable>
-#include <functional>
-#include <future>
-#include <list>
 #include <memory>
 #include <mutex>
+#include <string>
 #include <thread>
+#include <unordered_map>
 #include <vector>
 
 #include <sys/epoll.h>
 
-#include <tensorpipe/common/callback.h>
+#include <tensorpipe/common/deferred_executor.h>
 #include <tensorpipe/common/fd.h>
-#include <tensorpipe/transport/ibv/reactor.h>
 
 namespace tensorpipe {
-namespace transport {
-namespace ibv {
 
-class Connection;
-class Listener;
-
-// Abstract base class called by the epoll(2) event loop.
-//
-// Dispatch to multiple types is needed because we must deal with a
-// few listening sockets and an eventfd(2) per connection.
-//
-class EventHandler {
+class EpollLoop final {
  public:
-  virtual ~EventHandler() = default;
+  // Abstract base class called by the epoll(2) event loop.
+  //
+  // Dispatch to multiple types is needed because we must deal with a
+  // few listening sockets and an eventfd(2) per connection.
+  //
+  class EventHandler {
+   public:
+    virtual ~EventHandler() = default;
 
-  virtual void handleEventsFromLoop(int events) = 0;
-};
+    virtual void handleEventsFromLoop(int events) = 0;
+  };
 
-class Loop final {
- public:
-  using TDeferredFunction = std::function<void()>;
-
-  explicit Loop(Reactor& reactor);
+  explicit EpollLoop(DeferredExecutor& deferredExecutor);
 
   // Register file descriptor with event loop.
   //
@@ -75,7 +65,7 @@ class Loop final {
   // Tell loop to terminate when no more handlers remain.
   void join();
 
-  ~Loop();
+  ~EpollLoop();
 
   static std::string formatEpollEvents(uint32_t events);
 
@@ -83,7 +73,7 @@ class Loop final {
   static constexpr auto kCapacity_ = 64;
 
   // The reactor is used to process events for this loop.
-  Reactor& reactor_;
+  DeferredExecutor& deferredExecutor_;
 
   // Wake up the event loop.
   void wakeup();
@@ -145,11 +135,6 @@ class Loop final {
 
   // Deferred to the reactor to handle the events received by epoll_wait(2).
   void handleEpollEventsFromLoop(std::vector<struct epoll_event> epollEvents);
-
-  friend class Connection;
-  friend class Listener;
 };
 
-} // namespace ibv
-} // namespace transport
 } // namespace tensorpipe

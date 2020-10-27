@@ -11,16 +11,15 @@
 #include <deque>
 
 #include <tensorpipe/common/defs.h>
-#include <tensorpipe/transport/ibv/loop.h>
+#include <tensorpipe/common/epoll_loop.h>
 
 #include <gtest/gtest.h>
 
 using namespace tensorpipe;
-using namespace tensorpipe::transport::ibv;
 
 namespace {
 
-class Handler : public EventHandler {
+class Handler : public EpollLoop::EventHandler {
  public:
   void handleEventsFromLoop(int events) override {
     std::unique_lock<std::mutex> lock(m_);
@@ -30,9 +29,7 @@ class Handler : public EventHandler {
 
   int nextEvents() {
     std::unique_lock<std::mutex> lock(m_);
-    while (events_.empty()) {
-      cv_.wait(lock);
-    }
+    cv_.wait(lock, [&]() { return !events_.empty(); });
     int events = events_.front();
     events_.pop_front();
     return events;
@@ -51,14 +48,14 @@ class Handler : public EventHandler {
 // the monitor has been destructed.
 //
 class FunctionEventHandler
-    : public EventHandler,
+    : public EpollLoop::EventHandler,
       public std::enable_shared_from_this<FunctionEventHandler> {
  public:
   using TFunction = std::function<void(FunctionEventHandler&)>;
 
   FunctionEventHandler(
-      Reactor& reactor,
-      Loop& loop,
+      DeferredExecutor& deferredExecutor,
+      EpollLoop& loop,
       int fd,
       int event,
       TFunction fn);
@@ -72,8 +69,8 @@ class FunctionEventHandler
   void handleEventsFromLoop(int events) override;
 
  private:
-  Reactor& reactor_;
-  Loop& loop_;
+  DeferredExecutor& deferredExecutor_;
+  EpollLoop& loop_;
   const int fd_;
   const int event_;
   TFunction fn_;
@@ -83,12 +80,12 @@ class FunctionEventHandler
 };
 
 FunctionEventHandler::FunctionEventHandler(
-    Reactor& reactor,
-    Loop& loop,
+    DeferredExecutor& deferredExecutor,
+    EpollLoop& loop,
     int fd,
     int event,
     TFunction fn)
-    : reactor_(reactor),
+    : deferredExecutor_(deferredExecutor),
       loop_(loop),
       fd_(fd),
       event_(event),
@@ -99,14 +96,14 @@ FunctionEventHandler::~FunctionEventHandler() {
 }
 
 void FunctionEventHandler::start() {
-  reactor_.runInLoop(
+  deferredExecutor_.runInLoop(
       [&]() { loop_.registerDescriptor(fd_, event_, shared_from_this()); });
 }
 
 void FunctionEventHandler::cancel() {
   std::unique_lock<std::mutex> lock(mutex_);
   if (!cancelled_) {
-    reactor_.runInLoop([&]() {
+    deferredExecutor_.runInLoop([&]() {
       loop_.unregisterDescriptor(fd_);
       cancelled_ = true;
     });
@@ -122,8 +119,8 @@ void FunctionEventHandler::handleEventsFromLoop(int events) {
 // Instantiates an event monitor for the specified fd.
 template <typename T>
 std::shared_ptr<FunctionEventHandler> createMonitor(
-    Reactor& reactor,
-    Loop& loop,
+    DeferredExecutor& reactor,
+    EpollLoop& loop,
     std::shared_ptr<T> shared,
     int fd,
     int event,
@@ -146,37 +143,37 @@ std::shared_ptr<FunctionEventHandler> createMonitor(
 
 } // namespace
 
-TEST(IbvLoop, RegisterUnregister) {
-  Reactor reactor;
-  Loop loop{reactor};
+TEST(ShmLoop, RegisterUnregister) {
+  OnDemandDeferredExecutor deferredExecutor;
+  EpollLoop loop{deferredExecutor};
   auto handler = std::make_shared<Handler>();
   auto efd = Fd(eventfd(0, EFD_NONBLOCK));
 
   {
     // Test if writable (always).
-    reactor.runInLoop([&]() {
+    deferredExecutor.runInLoop([&]() {
       loop.registerDescriptor(efd.fd(), EPOLLOUT | EPOLLONESHOT, handler);
     });
     ASSERT_EQ(handler->nextEvents(), EPOLLOUT);
     efd.writeOrThrow<uint64_t>(1337);
 
     // Test if readable (only if previously written to).
-    reactor.runInLoop([&]() {
+    deferredExecutor.runInLoop([&]() {
       loop.registerDescriptor(efd.fd(), EPOLLIN | EPOLLONESHOT, handler);
     });
     ASSERT_EQ(handler->nextEvents(), EPOLLIN);
     ASSERT_EQ(efd.readOrThrow<uint64_t>(), 1337);
 
     // Test if we can unregister the descriptor.
-    reactor.runInLoop([&]() { loop.unregisterDescriptor(efd.fd()); });
+    deferredExecutor.runInLoop([&]() { loop.unregisterDescriptor(efd.fd()); });
   }
 
   loop.join();
 }
 
-TEST(IbvLoop, Monitor) {
-  Reactor reactor;
-  Loop loop{reactor};
+TEST(ShmLoop, Monitor) {
+  OnDemandDeferredExecutor deferredExecutor;
+  EpollLoop loop{deferredExecutor};
   auto efd = Fd(eventfd(0, EFD_NONBLOCK));
   constexpr uint64_t kValue = 1337;
 
@@ -188,7 +185,7 @@ TEST(IbvLoop, Monitor) {
     // Test if writable (always).
     auto shared = std::make_shared<int>(1338);
     auto monitor = createMonitor<int>(
-        reactor,
+        deferredExecutor,
         loop,
         shared,
         efd.fd(),
@@ -206,9 +203,7 @@ TEST(IbvLoop, Monitor) {
 
     // Wait for monitor to trigger and perform a write.
     std::unique_lock<std::mutex> lock(mutex);
-    while (!done) {
-      cv.wait(lock);
-    }
+    cv.wait(lock, [&]() { return done; });
   }
 
   {
@@ -220,7 +215,7 @@ TEST(IbvLoop, Monitor) {
     // Test if readable (only if previously written to).
     auto shared = std::make_shared<int>(1338);
     auto monitor = createMonitor<int>(
-        reactor,
+        deferredExecutor,
         loop,
         shared,
         efd.fd(),
@@ -238,9 +233,7 @@ TEST(IbvLoop, Monitor) {
 
     // Wait for monitor to trigger and perform a read.
     std::unique_lock<std::mutex> lock(mutex);
-    while (!done) {
-      cv.wait(lock);
-    }
+    cv.wait(lock, [&]() { return done; });
 
     // Verify we read the correct value.
     ASSERT_EQ(value, kValue);
@@ -249,12 +242,11 @@ TEST(IbvLoop, Monitor) {
   loop.join();
 }
 
-TEST(IbvLoop, Defer) {
-  Reactor reactor;
+TEST(ShmLoop, Defer) {
+  OnDemandDeferredExecutor deferredExecutor;
   auto promise = std::make_shared<std::promise<void>>();
   auto future = promise->get_future();
-  reactor.deferToLoop([promise]() { promise->set_value(); });
+  deferredExecutor.deferToLoop([promise]() { promise->set_value(); });
   future.wait();
   ASSERT_TRUE(future.valid());
-  reactor.join();
 }

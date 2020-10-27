@@ -15,6 +15,7 @@
 
 #include <tensorpipe/common/callback.h>
 #include <tensorpipe/common/defs.h>
+#include <tensorpipe/common/epoll_loop.h>
 #include <tensorpipe/common/error_macros.h>
 #include <tensorpipe/common/ibv.h>
 #include <tensorpipe/common/memory.h>
@@ -22,7 +23,6 @@
 #include <tensorpipe/transport/error.h>
 #include <tensorpipe/transport/ibv/context_impl.h>
 #include <tensorpipe/transport/ibv/error.h>
-#include <tensorpipe/transport/ibv/loop.h>
 #include <tensorpipe/transport/ibv/reactor.h>
 #include <tensorpipe/transport/ibv/sockaddr.h>
 #include <tensorpipe/util/ringbuffer/consumer.h>
@@ -319,7 +319,7 @@ void WriteOperation::handleError(const Error& error) {
 } // namespace
 
 class Connection::Impl : public std::enable_shared_from_this<Connection::Impl>,
-                         public EventHandler,
+                         public EpollLoop::EventHandler,
                          public IbvEventHandler {
   enum State {
     INITIALIZING = 1,
@@ -895,7 +895,7 @@ void Connection::Impl::setIdFromLoop_(std::string id) {
 void Connection::Impl::handleEventsFromLoop(int events) {
   TP_DCHECK(context_->inLoop());
   TP_VLOG(9) << "Connection " << id_ << " is handling an event on its socket ("
-             << Loop::formatEpollEvents(events) << ")";
+             << EpollLoop::formatEpollEvents(events) << ")";
 
   // Handle only one of the events in the mask. Events on the control
   // file descriptor are rare enough for the cost of having epoll call

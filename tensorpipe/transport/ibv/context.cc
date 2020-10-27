@@ -18,6 +18,7 @@
 
 #include <climits>
 
+#include <tensorpipe/common/epoll_loop.h>
 #include <tensorpipe/common/ibv.h>
 #include <tensorpipe/common/socket.h>
 #include <tensorpipe/common/system.h>
@@ -25,7 +26,7 @@
 #include <tensorpipe/transport/ibv/context_impl.h>
 #include <tensorpipe/transport/ibv/error.h>
 #include <tensorpipe/transport/ibv/listener.h>
-#include <tensorpipe/transport/ibv/loop.h>
+#include <tensorpipe/transport/ibv/reactor.h>
 #include <tensorpipe/transport/ibv/sockaddr.h>
 
 namespace tensorpipe {
@@ -129,8 +130,10 @@ class Context::Impl : public Context::PrivateIface,
 
   void deferToLoop(std::function<void()> fn) override;
 
-  void registerDescriptor(int fd, int events, std::shared_ptr<EventHandler> h)
-      override;
+  void registerDescriptor(
+      int fd,
+      int events,
+      std::shared_ptr<EpollLoop::EventHandler> h) override;
 
   void unregisterDescriptor(int fd) override;
 
@@ -144,7 +147,7 @@ class Context::Impl : public Context::PrivateIface,
 
  private:
   Reactor reactor_;
-  Loop loop_{this->reactor_};
+  EpollLoop loop_{this->reactor_};
   std::atomic<bool> closed_{false};
   std::atomic<bool> joined_{false};
   ClosingEmitter closingEmitter_;
@@ -177,6 +180,7 @@ void Context::Impl::close() {
 
     closingEmitter_.close();
     loop_.close();
+    reactor_.close();
 
     TP_VLOG(7) << "Transport context " << id_ << " done closing";
   }
@@ -193,6 +197,7 @@ void Context::Impl::join() {
     TP_VLOG(7) << "Transport context " << id_ << " is joining";
 
     loop_.join();
+    reactor_.join();
 
     TP_VLOG(7) << "Transport context " << id_ << " done joining";
   }
@@ -365,7 +370,7 @@ void Context::Impl::deferToLoop(std::function<void()> fn) {
 void Context::Impl::registerDescriptor(
     int fd,
     int events,
-    std::shared_ptr<EventHandler> h) {
+    std::shared_ptr<EpollLoop::EventHandler> h) {
   loop_.registerDescriptor(fd, events, std::move(h));
 }
 

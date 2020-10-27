@@ -12,13 +12,13 @@
 #include <memory>
 
 #include <tensorpipe/common/callback.h>
+#include <tensorpipe/common/epoll_loop.h>
 #include <tensorpipe/transport/ibv/context.h>
 
 namespace tensorpipe {
 namespace transport {
 namespace ibv {
 
-class EventHandler;
 class Reactor;
 
 class Context::PrivateIface : public DeferredExecutor {
@@ -28,7 +28,7 @@ class Context::PrivateIface : public DeferredExecutor {
   virtual void registerDescriptor(
       int fd,
       int events,
-      std::shared_ptr<EventHandler> h) = 0;
+      std::shared_ptr<EpollLoop::EventHandler> h) = 0;
 
   virtual void unregisterDescriptor(int fd) = 0;
 

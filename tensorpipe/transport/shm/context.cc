@@ -8,11 +8,12 @@
 
 #include <tensorpipe/transport/shm/context.h>
 
+#include <tensorpipe/common/epoll_loop.h>
 #include <tensorpipe/common/system.h>
 #include <tensorpipe/transport/shm/connection.h>
 #include <tensorpipe/transport/shm/context_impl.h>
 #include <tensorpipe/transport/shm/listener.h>
-#include <tensorpipe/transport/shm/loop.h>
+#include <tensorpipe/transport/shm/reactor.h>
 
 namespace tensorpipe {
 namespace transport {
@@ -51,8 +52,10 @@ class Context::Impl : public Context::PrivateIface,
 
   void deferToLoop(std::function<void()> fn) override;
 
-  void registerDescriptor(int fd, int events, std::shared_ptr<EventHandler> h)
-      override;
+  void registerDescriptor(
+      int fd,
+      int events,
+      std::shared_ptr<EpollLoop::EventHandler> h) override;
 
   void unregisterDescriptor(int fd) override;
 
@@ -70,7 +73,7 @@ class Context::Impl : public Context::PrivateIface,
 
  private:
   Reactor reactor_;
-  Loop loop_{this->reactor_};
+  EpollLoop loop_{this->reactor_};
   std::atomic<bool> closed_{false};
   std::atomic<bool> joined_{false};
   ClosingEmitter closingEmitter_;
@@ -103,6 +106,7 @@ void Context::Impl::close() {
 
     closingEmitter_.close();
     loop_.close();
+    reactor_.close();
 
     TP_VLOG(7) << "Transport context " << id_ << " done closing";
   }
@@ -119,6 +123,7 @@ void Context::Impl::join() {
     TP_VLOG(7) << "Transport context " << id_ << " is joining";
 
     loop_.join();
+    reactor_.join();
 
     TP_VLOG(7) << "Transport context " << id_ << " done joining";
   }
@@ -191,7 +196,7 @@ void Context::Impl::deferToLoop(std::function<void()> fn) {
 void Context::Impl::registerDescriptor(
     int fd,
     int events,
-    std::shared_ptr<EventHandler> h) {
+    std::shared_ptr<EpollLoop::EventHandler> h) {
   loop_.registerDescriptor(fd, events, std::move(h));
 }
 
