@@ -37,6 +37,10 @@ class Consumer {
     TP_THROW_ASSERT_IF(inTx());
   }
 
+  size_t getSize() const {
+    return header_.kDataPoolByteSize;
+  }
+
   //
   // Transaction based API.
   //
