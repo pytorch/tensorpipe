@@ -125,11 +125,9 @@ class Context::Impl : public Context::PrivateIface,
 
   ClosingEmitter& getClosingEmitter() override;
 
-  bool inLoopThread() override;
+  bool inLoop() override;
 
   void deferToLoop(std::function<void()> fn) override;
-
-  void runInLoop(std::function<void()> fn) override;
 
   void registerDescriptor(int fd, int events, std::shared_ptr<EventHandler> h)
       override;
@@ -356,16 +354,12 @@ ClosingEmitter& Context::Impl::getClosingEmitter() {
   return closingEmitter_;
 };
 
-bool Context::Impl::inLoopThread() {
-  return reactor_.inReactorThread();
+bool Context::Impl::inLoop() {
+  return reactor_.inLoop();
 };
 
 void Context::Impl::deferToLoop(std::function<void()> fn) {
   reactor_.deferToLoop(std::move(fn));
-};
-
-void Context::Impl::runInLoop(std::function<void()> fn) {
-  reactor_.runInLoop(std::move(fn));
 };
 
 void Context::Impl::registerDescriptor(

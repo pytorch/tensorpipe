@@ -55,7 +55,7 @@ class Listener::Impl : public Listener::PrivateIface,
   ~Impl() override = default;
 
  private:
-  OnDemandLoop loop_;
+  OnDemandDeferredExecutor loop_;
 
   void acceptFromLoop_(accept_callback_fn);
 

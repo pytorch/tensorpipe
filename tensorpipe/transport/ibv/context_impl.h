@@ -21,15 +21,9 @@ namespace ibv {
 class EventHandler;
 class Reactor;
 
-class Context::PrivateIface {
+class Context::PrivateIface : public DeferredExecutor {
  public:
   virtual ClosingEmitter& getClosingEmitter() = 0;
-
-  virtual bool inLoopThread() = 0;
-
-  virtual void deferToLoop(std::function<void()> fn) = 0;
-
-  virtual void runInLoop(std::function<void()> fn) = 0;
 
   virtual void registerDescriptor(
       int fd,

@@ -108,7 +108,7 @@ Listener::Impl::Impl(
       id_(std::move(id)) {}
 
 void Listener::Impl::initFromLoop() {
-  TP_DCHECK(context_->inLoopThread());
+  TP_DCHECK(context_->inLoop());
 
   closingReceiver_.activate(*this);
 
@@ -159,7 +159,7 @@ void Listener::Impl::init() {
 }
 
 void Listener::Impl::closeFromLoop() {
-  TP_DCHECK(context_->inLoopThread());
+  TP_DCHECK(context_->inLoop());
   TP_VLOG(7) << "Listener " << id_ << " is closing";
   setError_(TP_CREATE_ERROR(ListenerClosedError));
 }
@@ -176,7 +176,7 @@ void Listener::Impl::setError_(Error error) {
 }
 
 void Listener::Impl::handleError() {
-  TP_DCHECK(context_->inLoopThread());
+  TP_DCHECK(context_->inLoop());
   TP_VLOG(8) << "Listener " << id_ << " is handling error " << error_.what();
 
   if (!fns_.empty()) {
@@ -214,7 +214,7 @@ void Listener::Impl::accept(accept_callback_fn fn) {
 }
 
 void Listener::Impl::acceptFromLoop(accept_callback_fn fn) {
-  TP_DCHECK(context_->inLoopThread());
+  TP_DCHECK(context_->inLoop());
 
   uint64_t sequenceNumber = nextConnectionBeingAccepted_++;
   TP_VLOG(7) << "Listener " << id_ << " received an accept request (#"
@@ -257,7 +257,7 @@ std::string Listener::Impl::addr() const {
 }
 
 std::string Listener::Impl::addrFromLoop() const {
-  TP_DCHECK(context_->inLoopThread());
+  TP_DCHECK(context_->inLoop());
   struct sockaddr_storage ss;
   struct sockaddr* addr = reinterpret_cast<struct sockaddr*>(&ss);
   socklen_t addrlen = sizeof(ss);
@@ -278,13 +278,13 @@ void Listener::Impl::setId(std::string id) {
 }
 
 void Listener::Impl::setIdFromLoop_(std::string id) {
-  TP_DCHECK(context_->inLoopThread());
+  TP_DCHECK(context_->inLoop());
   TP_VLOG(7) << "Listener " << id_ << " was renamed to " << id;
   id_ = std::move(id);
 }
 
 void Listener::Impl::handleEventsFromLoop(int events) {
-  TP_DCHECK(context_->inLoopThread());
+  TP_DCHECK(context_->inLoop());
   TP_VLOG(9) << "Listener " << id_ << " is handling an event on its socket ("
              << Loop::formatEpollEvents(events) << ")";
 

@@ -72,7 +72,7 @@ void Loop::registerDescriptor(
     int fd,
     int events,
     std::shared_ptr<EventHandler> h) {
-  TP_DCHECK(reactor_.inReactorThread());
+  TP_DCHECK(reactor_.inLoop());
 
   std::lock_guard<std::mutex> lock(handlersMutex_);
 
@@ -101,7 +101,7 @@ void Loop::registerDescriptor(
 }
 
 void Loop::unregisterDescriptor(int fd) {
-  TP_DCHECK(reactor_.inReactorThread());
+  TP_DCHECK(reactor_.inLoop());
 
   std::lock_guard<std::mutex> lock(handlersMutex_);
 

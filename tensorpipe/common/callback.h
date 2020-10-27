@@ -17,6 +17,7 @@
 #include <tuple>
 #include <unordered_map>
 
+#include <tensorpipe/common/deferred_executor.h>
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/error.h>
 #include <tensorpipe/common/optional.h>
@@ -112,67 +113,6 @@ class RearmableCallback {
   std::deque<TStoredArgs> args_;
 };
 
-// Dealing with thread-safety using per-object mutexes is prone to deadlocks
-// because of reentrant calls (both "upward", when invoking a callback that
-// calls back into a method of the object, and "downward", when passing a
-// callback to an operation of another object that calls it inline) and lock
-// inversions (object A calling a method of object B and attempting to acquire
-// its lock, with the reverse happening at the same time). Using a "loop" model,
-// where operations aren't called inlined and piled up on the stack but instead
-// deferred to a later iteration of the loop, solves many of these issues.
-// Transports typically have their own thread they can use to host such loops,
-// but many objects (like pipes) don't naturally own threads and introducing
-// them would also mean introducing latency costs due to context switching.
-// In order to give these objects a loop they can use to defer their operations
-// to, we can have them temporarily hijack the calling thread and repurpose it
-// to run an ephemeral loop on which to run the original task and all the ones
-// that a task running on the loop chooses to defer to a later iteration of the
-// loop, recursively. Once all these tasks have been completed, the makeshift
-// loop is dismantled and control of the thread is returned to the caller.
-class OnDemandLoop {
- public:
-  using TTask = std::function<void()>;
-
-  inline bool inLoop() {
-    // If the current thread is already holding the lock (i.e., it's already in
-    // this function somewhere higher up in the stack) then this check won't
-    // race and we will detect it correctly. If this is not the case, then this
-    // check may race with another thread, but that's nothing to worry about
-    // because in either case the outcome will be negative.
-    return currentLoop_ == std::this_thread::get_id();
-  }
-
-  void deferToLoop(TTask fn) {
-    {
-      std::unique_lock<std::mutex> lock(mutex_);
-      pendingTasks_.push_back(std::move(fn));
-      if (currentLoop_ != std::thread::id()) {
-        return;
-      }
-      currentLoop_ = std::this_thread::get_id();
-    }
-
-    while (true) {
-      TTask task;
-      {
-        std::unique_lock<std::mutex> lock(mutex_);
-        if (pendingTasks_.empty()) {
-          currentLoop_ = std::thread::id();
-          return;
-        }
-        task = std::move(pendingTasks_.front());
-        pendingTasks_.pop_front();
-      }
-      task();
-    }
-  }
-
- private:
-  std::mutex mutex_;
-  std::atomic<std::thread::id> currentLoop_{std::thread::id()};
-  std::deque<TTask> pendingTasks_;
-};
-
 // This class provides some boilerplate that is used by the pipe, the listener
 // and others when passing a callback to some lower-level component.
 // It is called "lazy" because it will only acquire a weak_ptr to the object
@@ -184,7 +124,7 @@ class LazyCallbackWrapper {
  public:
   LazyCallbackWrapper(
       std::enable_shared_from_this<TSubject>& subject,
-      OnDemandLoop& loop)
+      OnDemandDeferredExecutor& loop)
       : subject_(subject), loop_(loop){};
 
   template <typename TBoundFn>
@@ -203,7 +143,7 @@ class LazyCallbackWrapper {
 
  private:
   std::enable_shared_from_this<TSubject>& subject_;
-  OnDemandLoop& loop_;
+  OnDemandDeferredExecutor& loop_;
 
   template <typename TBoundFn, typename... Args>
   void entryPoint_(
@@ -249,7 +189,7 @@ class EagerCallbackWrapper {
  public:
   EagerCallbackWrapper(
       std::enable_shared_from_this<TSubject>& subject,
-      OnDemandLoop& loop)
+      OnDemandDeferredExecutor& loop)
       : subject_(subject), loop_(loop){};
 
   template <typename TBoundFn>
@@ -266,7 +206,7 @@ class EagerCallbackWrapper {
 
  private:
   std::enable_shared_from_this<TSubject>& subject_;
-  OnDemandLoop& loop_;
+  OnDemandDeferredExecutor& loop_;
 
   template <typename TBoundFn, typename... Args>
   void entryPoint_(
@@ -318,7 +258,7 @@ class ClosingEmitter {
 
  private:
   // FIXME We should share the on-demand loop with the object owning the emitter
-  OnDemandLoop loop_;
+  OnDemandDeferredExecutor loop_;
   std::unordered_map<uintptr_t, std::function<void()>> receivers_;
 
   void subscribeFromLoop_(uintptr_t token, std::function<void()> fn) {

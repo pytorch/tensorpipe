@@ -20,7 +20,7 @@ namespace transport {
 namespace uv {
 
 void TCPHandle::initFromLoop() {
-  TP_DCHECK(this->loop_.inLoopThread());
+  TP_DCHECK(this->loop_.inLoop());
   leak();
   int rv;
   rv = uv_tcp_init(loop_.ptr(), this->ptr());
@@ -30,7 +30,7 @@ void TCPHandle::initFromLoop() {
 }
 
 int TCPHandle::bindFromLoop(const Sockaddr& addr) {
-  TP_DCHECK(this->loop_.inLoopThread());
+  TP_DCHECK(this->loop_.inLoop());
   auto rv = uv_tcp_bind(ptr(), addr.addr(), 0);
   // We don't throw in case of errors here because sometimes we bind in order to
   // try if an address works and want to handle errors gracefully.
@@ -38,7 +38,7 @@ int TCPHandle::bindFromLoop(const Sockaddr& addr) {
 }
 
 Sockaddr TCPHandle::sockNameFromLoop() {
-  TP_DCHECK(this->loop_.inLoopThread());
+  TP_DCHECK(this->loop_.inLoop());
   struct sockaddr_storage ss;
   struct sockaddr* addr = reinterpret_cast<struct sockaddr*>(&ss);
   int addrlen = sizeof(ss);
@@ -50,7 +50,7 @@ Sockaddr TCPHandle::sockNameFromLoop() {
 void TCPHandle::connectFromLoop(
     const Sockaddr& addr,
     ConnectRequest::TConnectCallback fn) {
-  TP_DCHECK(this->loop_.inLoopThread());
+  TP_DCHECK(this->loop_.inLoop());
   auto request = ConnectRequest::create(loop_, std::move(fn));
   auto rv =
       uv_tcp_connect(request->ptr(), ptr(), addr.addr(), request->callback());

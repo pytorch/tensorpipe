@@ -507,7 +507,7 @@ Connection::Impl::Impl(
       id_(std::move(id)) {}
 
 void Connection::Impl::initFromLoop() {
-  TP_DCHECK(context_->inLoopThread());
+  TP_DCHECK(context_->inLoop());
 
   closingReceiver_.activate(*this);
 
@@ -569,7 +569,7 @@ void Connection::Impl::read(read_callback_fn fn) {
 }
 
 void Connection::Impl::readFromLoop(read_callback_fn fn) {
-  TP_DCHECK(context_->inLoopThread());
+  TP_DCHECK(context_->inLoop());
 
   uint64_t sequenceNumber = nextBufferBeingRead_++;
   TP_VLOG(7) << "Connection " << id_ << " received an unsized read request (#"
@@ -615,7 +615,7 @@ void Connection::Impl::read(
 void Connection::Impl::readFromLoop(
     AbstractNopHolder& object,
     read_nop_callback_fn fn) {
-  TP_DCHECK(context_->inLoopThread());
+  TP_DCHECK(context_->inLoop());
 
   uint64_t sequenceNumber = nextBufferBeingRead_++;
   TP_VLOG(7) << "Connection " << id_ << " received a nop object read request (#"
@@ -664,7 +664,7 @@ void Connection::Impl::readFromLoop(
     void* ptr,
     size_t length,
     read_callback_fn fn) {
-  TP_DCHECK(context_->inLoopThread());
+  TP_DCHECK(context_->inLoop());
 
   uint64_t sequenceNumber = nextBufferBeingRead_++;
   TP_VLOG(7) << "Connection " << id_ << " received a sized read request (#"
@@ -711,7 +711,7 @@ void Connection::Impl::writeFromLoop(
     const void* ptr,
     size_t length,
     write_callback_fn fn) {
-  TP_DCHECK(context_->inLoopThread());
+  TP_DCHECK(context_->inLoop());
 
   uint64_t sequenceNumber = nextBufferBeingWritten_++;
   TP_VLOG(7) << "Connection " << id_ << " received a write request (#"
@@ -754,7 +754,7 @@ void Connection::Impl::write(
 void Connection::Impl::writeFromLoop(
     const AbstractNopHolder& object,
     write_callback_fn fn) {
-  TP_DCHECK(context_->inLoopThread());
+  TP_DCHECK(context_->inLoop());
 
   uint64_t sequenceNumber = nextBufferBeingWritten_++;
   TP_VLOG(7) << "Connection " << id_
@@ -796,13 +796,13 @@ void Connection::Impl::setId(std::string id) {
 }
 
 void Connection::Impl::setIdFromLoop_(std::string id) {
-  TP_DCHECK(context_->inLoopThread());
+  TP_DCHECK(context_->inLoop());
   TP_VLOG(7) << "Connection " << id_ << " was renamed to " << id;
   id_ = std::move(id);
 }
 
 void Connection::Impl::handleEventsFromLoop(int events) {
-  TP_DCHECK(context_->inLoopThread());
+  TP_DCHECK(context_->inLoop());
   TP_VLOG(9) << "Connection " << id_ << " is handling an event on its socket ("
              << Loop::formatEpollEvents(events) << ")";
 
@@ -850,7 +850,7 @@ void Connection::Impl::handleEventsFromLoop(int events) {
 }
 
 void Connection::Impl::handleEventInFromLoop() {
-  TP_DCHECK(context_->inLoopThread());
+  TP_DCHECK(context_->inLoop());
   if (state_ == RECV_FDS) {
     Fd reactorHeaderFd;
     Fd reactorDataFd;
@@ -906,7 +906,7 @@ void Connection::Impl::handleEventInFromLoop() {
 }
 
 void Connection::Impl::handleEventOutFromLoop() {
-  TP_DCHECK(context_->inLoopThread());
+  TP_DCHECK(context_->inLoop());
   if (state_ == SEND_FDS) {
     int reactorHeaderFd;
     int reactorDataFd;
@@ -935,7 +935,7 @@ void Connection::Impl::handleEventOutFromLoop() {
 }
 
 void Connection::Impl::processReadOperationsFromLoop() {
-  TP_DCHECK(context_->inLoopThread());
+  TP_DCHECK(context_->inLoop());
 
   // Process all read read operations that we can immediately serve, only
   // when connection is established.
@@ -958,7 +958,7 @@ void Connection::Impl::processReadOperationsFromLoop() {
 }
 
 void Connection::Impl::processWriteOperationsFromLoop() {
-  TP_DCHECK(context_->inLoopThread());
+  TP_DCHECK(context_->inLoop());
 
   if (state_ != ESTABLISHED) {
     return;
@@ -990,7 +990,7 @@ void Connection::Impl::setError_(Error error) {
 }
 
 void Connection::Impl::handleError() {
-  TP_DCHECK(context_->inLoopThread());
+  TP_DCHECK(context_->inLoop());
   TP_VLOG(8) << "Connection " << id_ << " is handling error " << error_.what();
 
   for (auto& readOperation : readOperations_) {
@@ -1018,7 +1018,7 @@ void Connection::Impl::handleError() {
 }
 
 void Connection::Impl::closeFromLoop() {
-  TP_DCHECK(context_->inLoopThread());
+  TP_DCHECK(context_->inLoop());
   TP_VLOG(7) << "Connection " << id_ << " is closing";
   setError_(TP_CREATE_ERROR(ConnectionClosedError));
 }

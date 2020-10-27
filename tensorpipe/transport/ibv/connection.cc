@@ -563,7 +563,7 @@ Connection::Impl::Impl(
       id_(std::move(id)) {}
 
 void Connection::Impl::initFromLoop() {
-  TP_DCHECK(context_->inLoopThread());
+  TP_DCHECK(context_->inLoop());
 
   closingReceiver_.activate(*this);
 
@@ -660,7 +660,7 @@ void Connection::Impl::read(read_callback_fn fn) {
 }
 
 void Connection::Impl::readFromLoop(read_callback_fn fn) {
-  TP_DCHECK(context_->inLoopThread());
+  TP_DCHECK(context_->inLoop());
 
   uint64_t sequenceNumber = nextBufferBeingRead_++;
   TP_VLOG(7) << "Connection " << id_ << " received an unsized read request (#"
@@ -706,7 +706,7 @@ void Connection::Impl::read(
 void Connection::Impl::readFromLoop(
     AbstractNopHolder& object,
     read_nop_callback_fn fn) {
-  TP_DCHECK(context_->inLoopThread());
+  TP_DCHECK(context_->inLoop());
 
   uint64_t sequenceNumber = nextBufferBeingRead_++;
   TP_VLOG(7) << "Connection " << id_ << " received a nop object read request (#"
@@ -755,7 +755,7 @@ void Connection::Impl::readFromLoop(
     void* ptr,
     size_t length,
     read_callback_fn fn) {
-  TP_DCHECK(context_->inLoopThread());
+  TP_DCHECK(context_->inLoop());
 
   uint64_t sequenceNumber = nextBufferBeingRead_++;
   TP_VLOG(7) << "Connection " << id_ << " received a sized read request (#"
@@ -802,7 +802,7 @@ void Connection::Impl::writeFromLoop(
     const void* ptr,
     size_t length,
     write_callback_fn fn) {
-  TP_DCHECK(context_->inLoopThread());
+  TP_DCHECK(context_->inLoop());
 
   uint64_t sequenceNumber = nextBufferBeingWritten_++;
   TP_VLOG(7) << "Connection " << id_ << " received a write request (#"
@@ -845,7 +845,7 @@ void Connection::Impl::write(
 void Connection::Impl::writeFromLoop(
     const AbstractNopHolder& object,
     write_callback_fn fn) {
-  TP_DCHECK(context_->inLoopThread());
+  TP_DCHECK(context_->inLoop());
 
   uint64_t sequenceNumber = nextBufferBeingWritten_++;
   TP_VLOG(7) << "Connection " << id_
@@ -887,13 +887,13 @@ void Connection::Impl::setId(std::string id) {
 }
 
 void Connection::Impl::setIdFromLoop_(std::string id) {
-  TP_DCHECK(context_->inLoopThread());
+  TP_DCHECK(context_->inLoop());
   TP_VLOG(7) << "Connection " << id_ << " was renamed to " << id;
   id_ = std::move(id);
 }
 
 void Connection::Impl::handleEventsFromLoop(int events) {
-  TP_DCHECK(context_->inLoopThread());
+  TP_DCHECK(context_->inLoop());
   TP_VLOG(9) << "Connection " << id_ << " is handling an event on its socket ("
              << Loop::formatEpollEvents(events) << ")";
 
@@ -941,7 +941,7 @@ void Connection::Impl::handleEventsFromLoop(int events) {
 }
 
 void Connection::Impl::handleEventInFromLoop() {
-  TP_DCHECK(context_->inLoopThread());
+  TP_DCHECK(context_->inLoop());
   if (state_ == RECV_ADDR) {
     struct Exchange ex;
 
@@ -986,7 +986,7 @@ void Connection::Impl::handleEventInFromLoop() {
 }
 
 void Connection::Impl::handleEventOutFromLoop() {
-  TP_DCHECK(context_->inLoopThread());
+  TP_DCHECK(context_->inLoop());
   if (state_ == SEND_ADDR) {
     Exchange ex;
     ibvSelfInfo_ =
@@ -1013,7 +1013,7 @@ void Connection::Impl::handleEventOutFromLoop() {
 }
 
 void Connection::Impl::processReadOperationsFromLoop() {
-  TP_DCHECK(context_->inLoopThread());
+  TP_DCHECK(context_->inLoop());
 
   // Process all read read operations that we can immediately serve, only
   // when connection is established.
@@ -1047,7 +1047,7 @@ void Connection::Impl::processReadOperationsFromLoop() {
 }
 
 void Connection::Impl::processWriteOperationsFromLoop() {
-  TP_DCHECK(context_->inLoopThread());
+  TP_DCHECK(context_->inLoop());
 
   if (state_ != ESTABLISHED) {
     return;
@@ -1121,7 +1121,7 @@ void Connection::Impl::processWriteOperationsFromLoop() {
 }
 
 void Connection::Impl::onRemoteProducedData(uint32_t length) {
-  TP_DCHECK(context_->inLoopThread());
+  TP_DCHECK(context_->inLoop());
   TP_VLOG(9) << "Connection " << id_ << " was signalled that " << length
              << " bytes were written to its inbox on QP " << qp_->qp_num;
   // We could start a transaction and use the proper methods for this, but as
@@ -1132,7 +1132,7 @@ void Connection::Impl::onRemoteProducedData(uint32_t length) {
 }
 
 void Connection::Impl::onRemoteConsumedData(uint32_t length) {
-  TP_DCHECK(context_->inLoopThread());
+  TP_DCHECK(context_->inLoop());
   TP_VLOG(9) << "Connection " << id_ << " was signalled that " << length
              << " bytes were read from its outbox on QP " << qp_->qp_num;
   // We could start a transaction and use the proper methods for this, but as
@@ -1144,7 +1144,7 @@ void Connection::Impl::onRemoteConsumedData(uint32_t length) {
 }
 
 void Connection::Impl::onWriteCompleted() {
-  TP_DCHECK(context_->inLoopThread());
+  TP_DCHECK(context_->inLoop());
   TP_VLOG(9) << "Connection " << id_
              << " done posting a RDMA write request on QP " << qp_->qp_num;
   numWritesInFlight_--;
@@ -1152,7 +1152,7 @@ void Connection::Impl::onWriteCompleted() {
 }
 
 void Connection::Impl::onAckCompleted() {
-  TP_DCHECK(context_->inLoopThread());
+  TP_DCHECK(context_->inLoop());
   TP_VLOG(9) << "Connection " << id_ << " done posting a send request on QP "
              << qp_->qp_num;
   numAcksInFlight_--;
@@ -1160,7 +1160,7 @@ void Connection::Impl::onAckCompleted() {
 }
 
 void Connection::Impl::onError(IbvLib::wc_status status, uint64_t wr_id) {
-  TP_DCHECK(context_->inLoopThread());
+  TP_DCHECK(context_->inLoop());
   setError_(TP_CREATE_ERROR(
       IbvError, context_->getReactor().getIbvLib().wc_status_str(status)));
   if (wr_id == kWriteRequestId) {
@@ -1182,7 +1182,7 @@ void Connection::Impl::setError_(Error error) {
 }
 
 void Connection::Impl::handleError() {
-  TP_DCHECK(context_->inLoopThread());
+  TP_DCHECK(context_->inLoop());
   TP_VLOG(8) << "Connection " << id_ << " is handling error " << error_.what();
 
   for (auto& readOperation : readOperations_) {
@@ -1207,7 +1207,7 @@ void Connection::Impl::handleError() {
 }
 
 void Connection::Impl::tryCleanup_() {
-  TP_DCHECK(context_->inLoopThread());
+  TP_DCHECK(context_->inLoop());
   // Setting the queue pair to an error state will cause all its work requests
   // (both those that had started being served, and those that hadn't; including
   // those from a shared receive queue) to be flushed. We need to wait for the
@@ -1233,7 +1233,7 @@ void Connection::Impl::tryCleanup_() {
 }
 
 void Connection::Impl::cleanup_() {
-  TP_DCHECK(context_->inLoopThread());
+  TP_DCHECK(context_->inLoop());
   TP_VLOG(8) << "Connection " << id_ << " is cleaning up";
 
   context_->getReactor().unregisterQp(qp_->qp_num);
@@ -1246,7 +1246,7 @@ void Connection::Impl::cleanup_() {
 }
 
 void Connection::Impl::closeFromLoop() {
-  TP_DCHECK(context_->inLoopThread());
+  TP_DCHECK(context_->inLoop());
   TP_VLOG(7) << "Connection " << id_ << " is closing";
   setError_(TP_CREATE_ERROR(ConnectionClosedError));
 }

@@ -150,7 +150,7 @@ class Channel::Impl : public std::enable_shared_from_this<Channel::Impl> {
   // logging and debugging purposes.
   std::string id_;
 
-  OnDemandLoop loop_;
+  OnDemandDeferredExecutor loop_;
   Error error_{Error::kSuccess};
   LazyCallbackWrapper<Impl> lazyCallbackWrapper_{*this, this->loop_};
   EagerCallbackWrapper<Impl> eagerCallbackWrapper_{*this, this->loop_};
