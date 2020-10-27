@@ -74,7 +74,7 @@ class Listener::Impl : public std::enable_shared_from_this<Listener::Impl>,
   void handleError();
 
   std::shared_ptr<Context::PrivateIface> context_;
-  std::shared_ptr<Socket> socket_;
+  Socket socket_;
   Sockaddr sockaddr_;
   Error error_{Error::kSuccess};
   std::deque<accept_callback_fn> fns_;
@@ -113,29 +113,29 @@ void Listener::Impl::initFromLoop() {
   closingReceiver_.activate(*this);
 
   Error error;
-  TP_DCHECK(socket_ == nullptr);
+  TP_DCHECK(!socket_.hasValue());
   std::tie(error, socket_) =
       Socket::createForFamily(sockaddr_.addr()->sa_family);
   if (error) {
     setError_(std::move(error));
     return;
   }
-  error = socket_->reuseAddr(true);
+  error = socket_.reuseAddr(true);
   if (error) {
     setError_(std::move(error));
     return;
   }
-  error = socket_->bind(sockaddr_);
+  error = socket_.bind(sockaddr_);
   if (error) {
     setError_(std::move(error));
     return;
   }
-  error = socket_->block(false);
+  error = socket_.block(false);
   if (error) {
     setError_(std::move(error));
     return;
   }
-  error = socket_->listen(128);
+  error = socket_.listen(128);
   if (error) {
     setError_(std::move(error));
     return;
@@ -180,7 +180,7 @@ void Listener::Impl::handleError() {
   TP_VLOG(8) << "Listener " << id_ << " is handling error " << error_.what();
 
   if (!fns_.empty()) {
-    context_->unregisterDescriptor(socket_->fd());
+    context_->unregisterDescriptor(socket_.fd());
   }
   socket_.reset();
   for (auto& fn : fns_) {
@@ -242,7 +242,7 @@ void Listener::Impl::acceptFromLoop(accept_callback_fn fn) {
   // already had a pending callback and thus we were already registered.
   if (fns_.size() == 1) {
     // Register with loop for readability events.
-    context_->registerDescriptor(socket_->fd(), EPOLLIN, shared_from_this());
+    context_->registerDescriptor(socket_.fd(), EPOLLIN, shared_from_this());
   }
 }
 
@@ -261,7 +261,7 @@ std::string Listener::Impl::addrFromLoop() const {
   struct sockaddr_storage ss;
   struct sockaddr* addr = reinterpret_cast<struct sockaddr*>(&ss);
   socklen_t addrlen = sizeof(ss);
-  int rv = getsockname(socket_->fd(), addr, &addrlen);
+  int rv = getsockname(socket_.fd(), addr, &addrlen);
   TP_THROW_SYSTEM_IF(rv < 0, errno);
   return Sockaddr(addr, addrlen).str();
 }
@@ -292,7 +292,7 @@ void Listener::Impl::handleEventsFromLoop(int events) {
     int error;
     socklen_t errorlen = sizeof(error);
     int rv = getsockopt(
-        socket_->fd(),
+        socket_.fd(),
         SOL_SOCKET,
         SO_ERROR,
         reinterpret_cast<void*>(&error),
@@ -311,8 +311,8 @@ void Listener::Impl::handleEventsFromLoop(int events) {
   TP_ARG_CHECK_EQ(events, EPOLLIN);
 
   Error error;
-  std::shared_ptr<Socket> socket;
-  std::tie(error, socket) = socket_->accept();
+  Socket socket;
+  std::tie(error, socket) = socket_.accept();
   if (error) {
     setError_(std::move(error));
     return;
@@ -324,7 +324,7 @@ void Listener::Impl::handleEventsFromLoop(int events) {
   auto fn = std::move(fns_.front());
   fns_.pop_front();
   if (fns_.empty()) {
-    context_->unregisterDescriptor(socket_->fd());
+    context_->unregisterDescriptor(socket_.fd());
   }
   std::string connectionId = id_ + ".c" + std::to_string(connectionCounter_++);
   TP_VLOG(7) << "Listener " << id_ << " is opening connection " << connectionId;

@@ -23,7 +23,9 @@ class Fd {
 
   explicit Fd(int fd) : fd_(fd) {}
 
-  virtual ~Fd();
+  virtual ~Fd() {
+    reset();
+  }
 
   // Disable copy constructor.
   Fd(const Fd&) = delete;
@@ -43,8 +45,19 @@ class Fd {
   }
 
   // Return underlying file descriptor.
-  inline int fd() const {
+  int fd() const {
     return fd_;
+  }
+
+  bool hasValue() const {
+    return fd_ >= 0;
+  }
+
+  void reset() {
+    if (hasValue()) {
+      ::close(fd_);
+      fd_ = -1;
+    }
   }
 
   // Proxy to read(2) with EINTR retry.

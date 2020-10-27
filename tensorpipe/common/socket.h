@@ -187,8 +187,10 @@ class Sockaddr {
 
 class Socket final : public Fd {
  public:
-  [[nodiscard]] static std::tuple<Error, std::shared_ptr<Socket>>
-  createForFamily(sa_family_t ai_family);
+  [[nodiscard]] static std::tuple<Error, Socket> createForFamily(
+      sa_family_t ai_family);
+
+  Socket() = default;
 
   explicit Socket(int fd) : Fd(fd) {}
 
@@ -205,7 +207,7 @@ class Socket final : public Fd {
   [[nodiscard]] Error listen(int backlog);
 
   // Accept new socket connecting to listening socket.
-  [[nodiscard]] std::tuple<Error, std::shared_ptr<Socket>> accept();
+  [[nodiscard]] std::tuple<Error, Socket> accept();
 
   // Connect to address.
   [[nodiscard]] Error connect(const Sockaddr& addr);
