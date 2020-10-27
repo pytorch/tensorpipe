@@ -25,7 +25,8 @@ Loop::Loop()
   rv = uv_async_init(loop_.get(), async_.get(), uv__async_cb);
   TP_THROW_UV_IF(rv < 0, rv);
   async_->data = this;
-  thread_ = std::thread(&Loop::loop, this);
+
+  startThread("TP_UV_loop");
 }
 
 void Loop::close() {
@@ -41,43 +42,20 @@ void Loop::join() {
   close();
 
   if (!joined_.exchange(true)) {
-    // Wait for event loop thread to terminate.
-    thread_.join();
-
-    // There should not be any pending deferred work at this time.
-    TP_DCHECK(fns_.empty());
+    joinThread();
   }
 }
 
 Loop::~Loop() noexcept {
   join();
-
-  // Release resources associated with loop.
-  auto rv = uv_loop_close(loop_.get());
-  TP_THROW_UV_IF(rv < 0, rv);
 }
 
-void Loop::deferToLoop(std::function<void()> fn) {
-  {
-    std::unique_lock<std::mutex> lock(mutex_);
-    if (likely(isThreadConsumingDeferredFunctions_)) {
-      fns_.push_back(std::move(fn));
-      wakeup();
-      return;
-    }
-  }
-  // Must call it without holding the lock, as it could cause a reentrant call.
-  onDemandLoop_.deferToLoop(std::move(fn));
-}
-
-void Loop::wakeup() {
+void Loop::wakeupEventLoopToDeferFunction() {
   auto rv = uv_async_send(async_.get());
   TP_THROW_UV_IF(rv < 0, rv);
 }
 
-void Loop::loop() {
-  setThreadName("TP_UV_loop");
-
+void Loop::eventLoop() {
   int rv;
 
   rv = uv_run(loop_.get(), UV_RUN_DEFAULT);
@@ -91,43 +69,14 @@ void Loop::loop() {
   TP_THROW_ASSERT_IF(rv > 0)
       << ": uv_run returned with active handles or requests";
 
-  // The loop is winding down and "handing over" control to the on demand loop.
-  // But it can only do so safely once there are no pending deferred functions,
-  // as otherwise those may risk never being executed.
-  while (true) {
-    decltype(fns_) fns;
-
-    {
-      std::unique_lock<std::mutex> lock(mutex_);
-      if (fns_.empty()) {
-        isThreadConsumingDeferredFunctions_ = false;
-        break;
-      }
-      std::swap(fns, fns_);
-    }
-
-    for (auto& fn : fns) {
-      fn();
-    }
-  }
+  // Release resources associated with loop.
+  rv = uv_loop_close(loop_.get());
+  TP_THROW_UV_IF(rv < 0, rv);
 }
 
 void Loop::uv__async_cb(uv_async_t* handle) {
   auto& loop = *reinterpret_cast<Loop*>(handle->data);
-  loop.runFunctionsFromLoop();
-}
-
-void Loop::runFunctionsFromLoop() {
-  decltype(fns_) fns;
-
-  {
-    std::unique_lock<std::mutex> lock(mutex_);
-    std::swap(fns, fns_);
-  }
-
-  for (auto& fn : fns) {
-    fn();
-  }
+  loop.runDeferredFunctionsFromEventLoop();
 }
 
 } // namespace uv

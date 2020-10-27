@@ -24,21 +24,9 @@ namespace tensorpipe {
 namespace transport {
 namespace uv {
 
-class Loop final : public DeferredExecutor {
+class Loop final : public EventLoopDeferredExecutor {
  public:
   Loop();
-
-  void deferToLoop(std::function<void()> fn) override;
-
-  inline bool inLoop() override {
-    {
-      std::unique_lock<std::mutex> lock(mutex_);
-      if (likely(isThreadConsumingDeferredFunctions_)) {
-        return std::this_thread::get_id() == thread_.get_id();
-      }
-    }
-    return onDemandLoop_.inLoop();
-  }
 
   uv_loop_t* ptr() {
     return loop_.get();
@@ -50,44 +38,22 @@ class Loop final : public DeferredExecutor {
 
   ~Loop() noexcept;
 
+ protected:
+  // Event loop thread entry function.
+  void eventLoop() override;
+
+  // Wake up the event loop.
+  void wakeupEventLoopToDeferFunction() override;
+
  private:
-  std::mutex mutex_;
-  std::thread thread_;
   std::unique_ptr<uv_loop_t> loop_;
   std::unique_ptr<uv_async_t> async_;
   std::atomic<bool> closed_{false};
   std::atomic<bool> joined_{false};
 
-  // Wake up the event loop.
-  void wakeup();
-
-  // Event loop thread entry function.
-  void loop();
-
-  // List of deferred functions to run when the loop is ready.
-  std::vector<std::function<void()>> fns_;
-
-  // Whether the thread is still taking care of running the deferred functions
-  //
-  // This is part of what can only be described as a hack. Sometimes, even when
-  // using the API as intended, objects try to defer tasks to the loop after
-  // that loop has been closed and joined. Since those tasks may be lambdas that
-  // captured shared_ptrs to the objects in their closures, this may lead to a
-  // reference cycle and thus a leak. Our hack is to have this flag to record
-  // when we can no longer defer tasks to the loop and in that case we just run
-  // those tasks inline. In order to keep ensuring the single-threadedness
-  // assumption of our model (which is what we rely on to be safe from race
-  // conditions) we use an on-demand loop.
-  bool isThreadConsumingDeferredFunctions_{true};
-  OnDemandDeferredExecutor onDemandLoop_;
-
   // This function is called by the event loop thread whenever
   // we have to run a number of deferred functions.
   static void uv__async_cb(uv_async_t* handle);
-
-  // Companion function to uv__async_cb as member function
-  // on the loop class.
-  void runFunctionsFromLoop();
 };
 
 } // namespace uv
