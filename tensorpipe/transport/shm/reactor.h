@@ -17,6 +17,7 @@
 #include <thread>
 #include <vector>
 
+#include <tensorpipe/common/busy_polling_loop.h>
 #include <tensorpipe/common/callback.h>
 #include <tensorpipe/common/fd.h>
 #include <tensorpipe/common/optional.h>
@@ -36,7 +37,7 @@ namespace shm {
 // machine. It uses extra data in the ring buffer header to store a
 // mutex and condition variable to avoid a busy loop.
 //
-class Reactor final : public EventLoopDeferredExecutor {
+class Reactor final : public BusyPollingLoop {
   // This allows for buffering 1M triggers (at 4 bytes a piece).
   static constexpr auto kSize = 4 * 1024 * 1024;
 
@@ -63,10 +64,9 @@ class Reactor final : public EventLoopDeferredExecutor {
   ~Reactor();
 
  protected:
-  // Reactor thread entry point.
-  void eventLoop() override;
+  bool pollOnce() override;
 
-  void wakeupEventLoopToDeferFunction() override;
+  bool readyToClose() override;
 
  private:
   util::shm::Segment headerSegment_;
@@ -76,8 +76,6 @@ class Reactor final : public EventLoopDeferredExecutor {
   std::mutex mutex_;
   std::atomic<bool> closed_{false};
   std::atomic<bool> joined_{false};
-
-  std::atomic<int64_t> deferredFunctionCount_{0};
 
   // Tokens are placed in this set if they can be reused.
   std::set<TToken> reusableTokens_;

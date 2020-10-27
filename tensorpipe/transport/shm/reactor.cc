@@ -51,7 +51,7 @@ Reactor::Reactor() {
 
 void Reactor::close() {
   if (!closed_.exchange(true)) {
-    // No need to wake up the reactor, since it is busy-waiting.
+    stopBusyPolling();
   }
 }
 
@@ -105,37 +105,34 @@ std::tuple<int, int> Reactor::fds() const {
   return std::make_tuple(headerSegment_.getFd(), dataSegment_.getFd());
 }
 
-void Reactor::eventLoop() {
+bool Reactor::pollOnce() {
   util::ringbuffer::Consumer reactorConsumer(rb_);
-  // Stop when another thread has asked the reactor the close and when
-  // all functions have been removed.
-  while (!closed_ || functionCount_ > 0) {
-    uint32_t token;
-    auto ret = reactorConsumer.read(&token, sizeof(token));
-    if (ret == -ENODATA) {
-      if (deferredFunctionCount_ > 0) {
-        deferredFunctionCount_ -= runDeferredFunctionsFromEventLoop();
-      } else {
-        std::this_thread::yield();
-      }
-      continue;
-    }
-    TP_THROW_SYSTEM_IF(ret < 0, -ret);
-
-    TFunction fn;
-
-    // Make copy of std::function so we don't need
-    // to hold the lock while executing it.
-    {
-      std::unique_lock<std::mutex> lock(mutex_);
-      TP_DCHECK_LT(token, functions_.size());
-      fn = functions_[token];
-    }
-
-    if (fn) {
-      fn();
-    }
+  uint32_t token;
+  auto ret = reactorConsumer.read(&token, sizeof(token));
+  if (ret == -ENODATA) {
+    return false;
   }
+  TP_THROW_SYSTEM_IF(ret < 0, -ret);
+
+  TFunction fn;
+
+  // Make copy of std::function so we don't need
+  // to hold the lock while executing it.
+  {
+    std::unique_lock<std::mutex> lock(mutex_);
+    TP_DCHECK_LT(token, functions_.size());
+    fn = functions_[token];
+  }
+
+  if (fn) {
+    fn();
+  }
+
+  return true;
+}
+
+bool Reactor::readyToClose() {
+  return functionCount_ == 0;
 }
 
 Reactor::Trigger::Trigger(Fd headerFd, Fd dataFd) {
@@ -148,11 +145,6 @@ Reactor::Trigger::Trigger(Fd headerFd, Fd dataFd) {
 void Reactor::Trigger::run(TToken token) {
   util::ringbuffer::Producer producer(rb_);
   writeToken(producer, token);
-}
-
-void Reactor::wakeupEventLoopToDeferFunction() {
-  ++deferredFunctionCount_;
-  // No need to wake up the reactor, since it is busy-waiting.
 }
 
 } // namespace shm

@@ -17,6 +17,7 @@
 #include <thread>
 #include <vector>
 
+#include <tensorpipe/common/busy_polling_loop.h>
 #include <tensorpipe/common/callback.h>
 #include <tensorpipe/common/fd.h>
 #include <tensorpipe/common/ibv.h>
@@ -52,11 +53,8 @@ class IbvEventHandler {
 // machine. It uses extra data in the ring buffer header to store a
 // mutex and condition variable to avoid a busy loop.
 //
-class Reactor final : public EventLoopDeferredExecutor {
+class Reactor final : public BusyPollingLoop {
  public:
-  using TFunction = std::function<void()>;
-  using TToken = uint32_t;
-
   Reactor();
 
   IbvLib& getIbvLib() {
@@ -102,10 +100,9 @@ class Reactor final : public EventLoopDeferredExecutor {
   ~Reactor();
 
  protected:
-  // Reactor thread entry point.
-  void eventLoop() override;
+  bool pollOnce() override;
 
-  void wakeupEventLoopToDeferFunction() override;
+  bool readyToClose() override;
 
  private:
   // InfiniBand stuff
@@ -121,9 +118,6 @@ class Reactor final : public EventLoopDeferredExecutor {
 
   std::atomic<bool> closed_{false};
   std::atomic<bool> joined_{false};
-
-  std::atomic<int64_t> deferredFunctionCount_{0};
-
   // An identifier for the context, composed of the identifier for the context,
   // combined with the transport's name. It will only be used for logging and
   // debugging purposes.
