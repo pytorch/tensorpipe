@@ -60,7 +60,9 @@ class DeferredExecutor {
       // we use it from a std::function which must be copyable.
       auto promise = std::make_shared<std::promise<void>>();
       auto future = promise->get_future();
-      deferToLoop([promise, fn{std::forward<F>(fn)}]() {
+      // Marked as mutable because the fn might hold some state (e.g., the
+      // closure of a lambda) which it might want to modify.
+      deferToLoop([promise, fn{std::forward<F>(fn)}]() mutable {
         try {
           fn();
           promise->set_value();

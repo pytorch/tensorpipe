@@ -15,11 +15,11 @@
 
 #include <tensorpipe/common/callback.h>
 #include <tensorpipe/common/defs.h>
+#include <tensorpipe/common/epoll_loop.h>
 #include <tensorpipe/common/optional.h>
 #include <tensorpipe/transport/error.h>
 #include <tensorpipe/transport/shm/connection.h>
 #include <tensorpipe/transport/shm/context_impl.h>
-#include <tensorpipe/transport/shm/loop.h>
 #include <tensorpipe/transport/shm/sockaddr.h>
 
 namespace tensorpipe {
@@ -27,7 +27,7 @@ namespace transport {
 namespace shm {
 
 class Listener::Impl : public std::enable_shared_from_this<Listener::Impl>,
-                       public EventHandler {
+                       public EpollLoop::EventHandler {
  public:
   // Create a listener that listens on the specified address.
   Impl(
@@ -275,7 +275,7 @@ void Listener::Impl::setIdFromLoop_(std::string id) {
 void Listener::Impl::handleEventsFromLoop(int events) {
   TP_DCHECK(context_->inLoop());
   TP_VLOG(9) << "Listener " << id_ << " is handling an event on its socket ("
-             << Loop::formatEpollEvents(events) << ")";
+             << EpollLoop::formatEpollEvents(events) << ")";
 
   if (events & EPOLLERR) {
     int error;

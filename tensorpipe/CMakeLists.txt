@@ -95,10 +95,10 @@ target_link_libraries(tensorpipe PRIVATE uv::uv)
 
 if(TP_ENABLE_SHM)
   target_sources(tensorpipe PRIVATE
+    common/epoll_loop.cc
     transport/shm/context.cc
     transport/shm/connection.cc
     transport/shm/listener.cc
-    transport/shm/loop.cc
     transport/shm/reactor.cc
     transport/shm/sockaddr.cc
     util/ringbuffer/shm.cc
@@ -112,12 +112,12 @@ endif()
 
 if(TP_ENABLE_IBV)
   target_sources(tensorpipe PRIVATE
+    common/epoll_loop.cc
     common/ibv.cc
     transport/ibv/connection.cc
     transport/ibv/context.cc
     transport/ibv/error.cc
     transport/ibv/listener.cc
-    transport/ibv/loop.cc
     transport/ibv/reactor.cc
     transport/ibv/sockaddr.cc)
   set(TENSORPIPE_HAS_IBV_TRANSPORT 1)

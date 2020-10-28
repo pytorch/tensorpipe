@@ -6,25 +6,23 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <tensorpipe/transport/shm/loop.h>
+#include <tensorpipe/common/epoll_loop.h>
 
 #include <sys/eventfd.h>
 
-#include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/system.h>
 
 namespace tensorpipe {
-namespace transport {
-namespace shm {
 
-Loop::Loop(Reactor& reactor) : reactor_(reactor) {
+EpollLoop::EpollLoop(DeferredExecutor& deferredExecutor)
+    : deferredExecutor_(deferredExecutor) {
   {
-    auto rv = epoll_create(1);
+    auto rv = ::epoll_create(1);
     TP_THROW_SYSTEM_IF(rv == -1, errno);
     epollFd_ = Fd(rv);
   }
   {
-    auto rv = eventfd(0, EFD_NONBLOCK);
+    auto rv = ::eventfd(0, EFD_NONBLOCK);
     TP_THROW_SYSTEM_IF(rv == -1, errno);
     eventFd_ = Fd(rv);
   }
@@ -34,45 +32,43 @@ Loop::Loop(Reactor& reactor) : reactor_(reactor) {
     struct epoll_event ev;
     ev.events = EPOLLIN;
     ev.data.u64 = 0;
-    auto rv = epoll_ctl(epollFd_.fd(), EPOLL_CTL_ADD, eventFd_.fd(), &ev);
+    auto rv = ::epoll_ctl(epollFd_.fd(), EPOLL_CTL_ADD, eventFd_.fd(), &ev);
     TP_THROW_SYSTEM_IF(rv == -1, errno);
   }
 
   // Start epoll(2) thread.
-  thread_ = std::thread(&Loop::loop, this);
+  thread_ = std::thread(&EpollLoop::loop, this);
 }
 
-void Loop::close() {
+void EpollLoop::close() {
   if (!closed_.exchange(true)) {
-    reactor_.close();
     wakeup();
   }
 }
 
-void Loop::join() {
+void EpollLoop::join() {
   close();
 
   if (!joined_.exchange(true)) {
-    reactor_.join();
     thread_.join();
   }
 }
 
-Loop::~Loop() {
+EpollLoop::~EpollLoop() {
   join();
 
   // Unregister the eventfd with epoll.
   {
-    auto rv = epoll_ctl(epollFd_.fd(), EPOLL_CTL_DEL, eventFd_.fd(), nullptr);
+    auto rv = ::epoll_ctl(epollFd_.fd(), EPOLL_CTL_DEL, eventFd_.fd(), nullptr);
     TP_THROW_SYSTEM_IF(rv == -1, errno);
   }
 }
 
-void Loop::registerDescriptor(
+void EpollLoop::registerDescriptor(
     int fd,
     int events,
     std::shared_ptr<EventHandler> h) {
-  TP_DCHECK(reactor_.inLoop());
+  TP_DCHECK(deferredExecutor_.inLoop());
 
   std::lock_guard<std::mutex> lock(handlersMutex_);
 
@@ -87,7 +83,7 @@ void Loop::registerDescriptor(
     fdToRecord_.emplace(fd, record);
     recordToHandler_.emplace(record, h);
 
-    auto rv = epoll_ctl(epollFd_.fd(), EPOLL_CTL_ADD, fd, &ev);
+    auto rv = ::epoll_ctl(epollFd_.fd(), EPOLL_CTL_ADD, fd, &ev);
     TP_THROW_SYSTEM_IF(rv == -1, errno);
   } else {
     uint64_t oldRecord = fdIter->second;
@@ -95,13 +91,13 @@ void Loop::registerDescriptor(
     recordToHandler_.erase(oldRecord);
     recordToHandler_.emplace(record, h);
 
-    auto rv = epoll_ctl(epollFd_.fd(), EPOLL_CTL_MOD, fd, &ev);
+    auto rv = ::epoll_ctl(epollFd_.fd(), EPOLL_CTL_MOD, fd, &ev);
     TP_THROW_SYSTEM_IF(rv == -1, errno);
   }
 }
 
-void Loop::unregisterDescriptor(int fd) {
-  TP_DCHECK(reactor_.inLoop());
+void EpollLoop::unregisterDescriptor(int fd) {
+  TP_DCHECK(deferredExecutor_.inLoop());
 
   std::lock_guard<std::mutex> lock(handlersMutex_);
 
@@ -111,7 +107,7 @@ void Loop::unregisterDescriptor(int fd) {
   fdToRecord_.erase(fdIter);
   recordToHandler_.erase(oldRecord);
 
-  auto rv = epoll_ctl(epollFd_.fd(), EPOLL_CTL_DEL, fd, nullptr);
+  auto rv = ::epoll_ctl(epollFd_.fd(), EPOLL_CTL_DEL, fd, nullptr);
   TP_THROW_SYSTEM_IF(rv == -1, errno);
 
   // Maybe we're done and the event loop is waiting for the last handlers to
@@ -121,19 +117,19 @@ void Loop::unregisterDescriptor(int fd) {
   }
 }
 
-void Loop::wakeup() {
+void EpollLoop::wakeup() {
   // Perform a write to eventfd to wake up epoll_wait(2).
   eventFd_.writeOrThrow<uint64_t>(1);
 }
 
-bool Loop::hasRegisteredHandlers() {
+bool EpollLoop::hasRegisteredHandlers() {
   std::lock_guard<std::mutex> lock(handlersMutex_);
   TP_DCHECK_EQ(fdToRecord_.size(), recordToHandler_.size());
   return !fdToRecord_.empty();
 }
 
-void Loop::loop() {
-  setThreadName("TP_SHM_loop");
+void EpollLoop::loop() {
+  setThreadName("TP_IBV_loop");
 
   // Stop when another thread has asked the loop the close and when all
   // handlers have been unregistered except for the wakeup eventfd one.
@@ -143,7 +139,7 @@ void Loop::loop() {
 
     // Block waiting for something to happen...
     auto nfds =
-        epoll_wait(epollFd_.fd(), epollEvents.data(), epollEvents.size(), -1);
+        ::epoll_wait(epollFd_.fd(), epollEvents.data(), epollEvents.size(), -1);
     if (nfds == -1) {
       if (errno == EINTR) {
         continue;
@@ -167,15 +163,17 @@ void Loop::loop() {
     epollEvents.resize(nfds);
 
     // Defer handling to reactor and wait for it to process these events.
-    // FIXME We should mark the lambda mutable, but it causes a compile error...
-    reactor_.runInLoop([this, epollEvents{std::move(epollEvents)}]() {
-      handleEpollEventsFromLoop(std::move(epollEvents));
-    });
+    deferredExecutor_.runInLoop(
+        [this, epollEvents{std::move(epollEvents)}]() mutable {
+          handleEpollEventsFromLoop(std::move(epollEvents));
+        });
   }
 }
 
-void Loop::handleEpollEventsFromLoop(
+void EpollLoop::handleEpollEventsFromLoop(
     std::vector<struct epoll_event> epollEvents) {
+  TP_DCHECK(deferredExecutor_.inLoop());
+
   // Process events returned by epoll_wait(2).
   for (const auto& event : epollEvents) {
     const uint64_t record = event.data.u64;
@@ -196,7 +194,7 @@ void Loop::handleEpollEventsFromLoop(
   }
 }
 
-std::string Loop::formatEpollEvents(uint32_t events) {
+std::string EpollLoop::formatEpollEvents(uint32_t events) {
   std::string res;
   if (events & EPOLLIN) {
     res = res.empty() ? "IN" : res + " | IN";
@@ -221,6 +219,4 @@ std::string Loop::formatEpollEvents(uint32_t events) {
   return res;
 }
 
-} // namespace shm
-} // namespace transport
 } // namespace tensorpipe

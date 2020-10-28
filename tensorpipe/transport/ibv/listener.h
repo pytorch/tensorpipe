@@ -22,7 +22,6 @@ namespace transport {
 namespace ibv {
 
 class Context;
-class Loop;
 
 class Listener final : public transport::Listener {
   // Use the passkey idiom to allow make_shared to call what should be a private
