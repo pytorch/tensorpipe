@@ -17,6 +17,7 @@
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/epoll_loop.h>
 #include <tensorpipe/common/error_macros.h>
+#include <tensorpipe/common/ringbuffer_read_write_ops.h>
 #include <tensorpipe/transport/error.h>
 #include <tensorpipe/transport/shm/context_impl.h>
 #include <tensorpipe/transport/shm/reactor.h>
@@ -32,268 +33,6 @@ namespace shm {
 namespace {
 
 constexpr auto kBufferSize = 2 * 1024 * 1024;
-
-// Reads happen only if the user supplied a callback (and optionally
-// a destination buffer). The callback is run from the event loop
-// thread upon receiving a notification from our peer.
-//
-// The memory pointer argument to the callback is valid only for the
-// duration of the callback. If the memory contents must be
-// preserved for longer, it must be copied elsewhere.
-//
-class ReadOperation {
-  enum Mode {
-    READ_LENGTH,
-    READ_PAYLOAD,
-  };
-
- public:
-  using read_callback_fn = Connection::read_callback_fn;
-  // Read into a user-provided buffer of known length.
-  explicit ReadOperation(void* ptr, size_t len, read_callback_fn fn);
-  // Read into an auto-allocated buffer, whose length is read from the wire.
-  explicit ReadOperation(read_callback_fn fn);
-  // Read into a user-provided libnop object, read length from the wire.
-  explicit ReadOperation(AbstractNopHolder* nopObject, read_callback_fn fn);
-
-  // Processes a pending read.
-  size_t handleRead(util::ringbuffer::Consumer& consumer);
-
-  bool completed() const {
-    return (mode_ == READ_PAYLOAD && bytesRead_ == len_);
-  }
-
-  void handleError(const Error& error);
-
- private:
-  Mode mode_{READ_LENGTH};
-  void* ptr_{nullptr};
-  AbstractNopHolder* nopObject_{nullptr};
-  std::unique_ptr<uint8_t[]> buf_;
-  size_t len_{0};
-  size_t bytesRead_{0};
-  read_callback_fn fn_;
-  // Use a separare flag, rather than checking if ptr_ == nullptr, to catch the
-  // case of a user explicitly passing in a nullptr with length zero, in which
-  // case we must check that the length matches the header we see on the wire.
-  const bool ptrProvided_;
-
-  ssize_t readNopObject_(util::ringbuffer::Consumer& consumer);
-};
-
-// Writes happen only if the user supplied a memory pointer, the
-// number of bytes to write, and a callback to execute upon
-// completion of the write.
-//
-// The memory pointed to by the pointer may only be reused or freed
-// after the callback has been called.
-//
-class WriteOperation {
-  enum Mode {
-    WRITE_LENGTH,
-    WRITE_PAYLOAD,
-  };
-
- public:
-  using write_callback_fn = Connection::write_callback_fn;
-  // Write from a user-provided buffer of known length.
-  WriteOperation(const void* ptr, size_t len, write_callback_fn fn);
-  // Write from a user-provided libnop object.
-  WriteOperation(const AbstractNopHolder* nopObject, write_callback_fn fn);
-
-  size_t handleWrite(util::ringbuffer::Producer& producer);
-
-  bool completed() const {
-    return (mode_ == WRITE_PAYLOAD && bytesWritten_ == len_);
-  }
-
-  void handleError(const Error& error);
-
- private:
-  Mode mode_{WRITE_LENGTH};
-  const void* ptr_{nullptr};
-  const AbstractNopHolder* nopObject_{nullptr};
-  size_t len_{0};
-  size_t bytesWritten_{0};
-  write_callback_fn fn_;
-
-  ssize_t writeNopObject_(util::ringbuffer::Producer& producer);
-};
-
-ReadOperation::ReadOperation(void* ptr, size_t len, read_callback_fn fn)
-    : ptr_(ptr), len_(len), fn_(std::move(fn)), ptrProvided_(true) {}
-
-ReadOperation::ReadOperation(read_callback_fn fn)
-    : fn_(std::move(fn)), ptrProvided_(false) {}
-
-ReadOperation::ReadOperation(AbstractNopHolder* nopObject, read_callback_fn fn)
-    : nopObject_(nopObject), fn_(std::move(fn)), ptrProvided_(false) {}
-
-size_t ReadOperation::handleRead(util::ringbuffer::Consumer& inbox) {
-  ssize_t ret;
-  size_t bytesReadNow = 0;
-
-  // Start read transaction. This end of the connection is the only consumer for
-  // this ringbuffer, and all reads are done from the reactor thread, so there
-  // cannot be another transaction already going on. Fail hard in case.
-  ret = inbox.startTx();
-  TP_THROW_SYSTEM_IF(ret < 0, -ret);
-
-  if (mode_ == READ_LENGTH) {
-    uint32_t length;
-    ret = inbox.readInTx</*allowPartial=*/false>(&length, sizeof(length));
-    if (likely(ret >= 0)) {
-      mode_ = READ_PAYLOAD;
-      bytesReadNow += ret;
-      if (nopObject_ != nullptr) {
-        len_ = length;
-        TP_THROW_ASSERT_IF(len_ > kBufferSize);
-      } else if (ptrProvided_) {
-        TP_DCHECK_EQ(length, len_);
-      } else {
-        len_ = length;
-        buf_ = std::make_unique<uint8_t[]>(len_);
-        ptr_ = buf_.get();
-      }
-    } else if (unlikely(ret != -ENODATA)) {
-      TP_THROW_SYSTEM(-ret);
-    }
-  }
-
-  if (mode_ == READ_PAYLOAD) {
-    if (nopObject_ != nullptr) {
-      ret = readNopObject_(inbox);
-    } else {
-      ret = inbox.readInTx</*allowPartial=*/true>(
-          reinterpret_cast<uint8_t*>(ptr_) + bytesRead_, len_ - bytesRead_);
-    }
-    if (likely(ret >= 0)) {
-      bytesRead_ += ret;
-      bytesReadNow += ret;
-    } else if (unlikely(ret != -ENODATA)) {
-      TP_THROW_SYSTEM(-ret);
-    }
-  }
-
-  ret = inbox.commitTx();
-  TP_THROW_SYSTEM_IF(ret < 0, -ret);
-
-  if (completed()) {
-    fn_(Error::kSuccess, ptr_, len_);
-  }
-
-  return bytesReadNow;
-}
-
-ssize_t ReadOperation::readNopObject_(util::ringbuffer::Consumer& inbox) {
-  ssize_t numBuffers;
-  std::array<util::ringbuffer::Consumer::Buffer, 2> buffers;
-  std::tie(numBuffers, buffers) =
-      inbox.accessContiguousInTx</*allowPartial=*/false>(len_);
-  if (unlikely(numBuffers < 0)) {
-    return numBuffers;
-  }
-
-  NopReader reader(
-      buffers[0].ptr, buffers[0].len, buffers[1].ptr, buffers[1].len);
-  nop::Status<void> status = nopObject_->read(reader);
-  if (status.error() == nop::ErrorStatus::ReadLimitReached) {
-    return -ENODATA;
-  } else if (status.has_error()) {
-    return -EINVAL;
-  }
-
-  return len_;
-}
-
-void ReadOperation::handleError(const Error& error) {
-  fn_(error, nullptr, 0);
-}
-
-WriteOperation::WriteOperation(
-    const void* ptr,
-    size_t len,
-    write_callback_fn fn)
-    : ptr_(ptr), len_(len), fn_(std::move(fn)) {}
-
-WriteOperation::WriteOperation(
-    const AbstractNopHolder* nopObject,
-    write_callback_fn fn)
-    : nopObject_(nopObject), len_(nopObject_->getSize()), fn_(std::move(fn)) {
-  TP_THROW_ASSERT_IF(len_ > kBufferSize);
-}
-
-size_t WriteOperation::handleWrite(util::ringbuffer::Producer& outbox) {
-  ssize_t ret;
-  size_t bytesWrittenNow = 0;
-
-  // Start write transaction. This end of the connection is the only producer
-  // for this ringbuffer, and all writes are done from the reactor thread, so
-  // there cannot be another transaction already going on. Fail hard in case.
-  ret = outbox.startTx();
-  TP_THROW_SYSTEM_IF(ret < 0, -ret);
-
-  if (mode_ == WRITE_LENGTH) {
-    uint32_t length = len_;
-    ret = outbox.writeInTx</*allowPartial=*/false>(&length, sizeof(length));
-    if (likely(ret >= 0)) {
-      mode_ = WRITE_PAYLOAD;
-      bytesWrittenNow += ret;
-    } else if (unlikely(ret != -ENOSPC)) {
-      TP_THROW_SYSTEM(-ret);
-    }
-  }
-
-  if (mode_ == WRITE_PAYLOAD) {
-    if (nopObject_ != nullptr) {
-      ret = writeNopObject_(outbox);
-    } else {
-      ret = outbox.writeInTx</*allowPartial=*/true>(
-          reinterpret_cast<const uint8_t*>(ptr_) + bytesWritten_,
-          len_ - bytesWritten_);
-    }
-    if (likely(ret >= 0)) {
-      bytesWritten_ += ret;
-      bytesWrittenNow += ret;
-    } else if (unlikely(ret != -ENOSPC)) {
-      TP_THROW_SYSTEM(-ret);
-    }
-  }
-
-  ret = outbox.commitTx();
-  TP_THROW_SYSTEM_IF(ret < 0, -ret);
-
-  if (completed()) {
-    fn_(Error::kSuccess);
-  }
-
-  return bytesWrittenNow;
-}
-
-ssize_t WriteOperation::writeNopObject_(util::ringbuffer::Producer& outbox) {
-  ssize_t numBuffers;
-  std::array<util::ringbuffer::Producer::Buffer, 2> buffers;
-  std::tie(numBuffers, buffers) =
-      outbox.accessContiguousInTx</*allowPartial=*/false>(len_);
-  if (unlikely(numBuffers < 0)) {
-    return numBuffers;
-  }
-
-  NopWriter writer(
-      buffers[0].ptr, buffers[0].len, buffers[1].ptr, buffers[1].len);
-  nop::Status<void> status = nopObject_->write(writer);
-  if (status.error() == nop::ErrorStatus::WriteLimitReached) {
-    return -ENOSPC;
-  } else if (status.has_error()) {
-    return -EINVAL;
-  }
-
-  return len_;
-}
-
-void WriteOperation::handleError(const Error& error) {
-  fn_(error);
-}
 
 } // namespace
 
@@ -397,10 +136,10 @@ class Connection::Impl : public std::enable_shared_from_this<Connection::Impl>,
   optional<Reactor::TToken> peerOutboxReactorToken_;
 
   // Pending read operations.
-  std::deque<ReadOperation> readOperations_;
+  std::deque<RingbufferReadOperation> readOperations_;
 
   // Pending write operations.
-  std::deque<WriteOperation> writeOperations_;
+  std::deque<RingbufferWriteOperation> writeOperations_;
 
   // A sequence number for the calls to read.
   uint64_t nextBufferBeingRead_{0};
@@ -945,7 +684,7 @@ void Connection::Impl::processReadOperationsFromLoop() {
   // Serve read operations
   util::ringbuffer::Consumer inboxConsumer(inboxRb_);
   while (!readOperations_.empty()) {
-    ReadOperation& readOperation = readOperations_.front();
+    RingbufferReadOperation& readOperation = readOperations_.front();
     if (readOperation.handleRead(inboxConsumer) > 0) {
       peerReactorTrigger_->run(peerOutboxReactorToken_.value());
     }
@@ -966,7 +705,7 @@ void Connection::Impl::processWriteOperationsFromLoop() {
 
   util::ringbuffer::Producer outboxProducer(outboxRb_);
   while (!writeOperations_.empty()) {
-    WriteOperation& writeOperation = writeOperations_.front();
+    RingbufferWriteOperation& writeOperation = writeOperations_.front();
     if (writeOperation.handleWrite(outboxProducer) > 0) {
       peerReactorTrigger_->run(peerInboxReactorToken_.value());
     }
