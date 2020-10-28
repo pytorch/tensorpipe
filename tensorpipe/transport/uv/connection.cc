@@ -15,6 +15,7 @@
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/error_macros.h>
 #include <tensorpipe/common/optional.h>
+#include <tensorpipe/common/stream_read_write_ops.h>
 #include <tensorpipe/transport/uv/context_impl.h>
 #include <tensorpipe/transport/uv/error.h>
 #include <tensorpipe/transport/uv/loop.h>
@@ -24,173 +25,6 @@
 namespace tensorpipe {
 namespace transport {
 namespace uv {
-
-namespace {
-
-// The read operation captures all state associated with reading a
-// fixed length chunk of data from the underlying connection. All
-// reads are required to include a word-sized header containing the
-// number of bytes in the operation. This makes it possible for the
-// read side of the connection to either 1) not know how many bytes
-// to expected, and dynamically allocate, or 2) know how many bytes
-// to expect, and preallocate the destination memory.
-class ReadOperation {
-  enum Mode {
-    READ_LENGTH,
-    READ_PAYLOAD,
-    COMPLETE,
-  };
-
- public:
-  using read_callback_fn = Connection::read_callback_fn;
-
-  explicit ReadOperation(read_callback_fn fn);
-
-  ReadOperation(void* ptr, size_t length, read_callback_fn fn);
-
-  // Called when libuv is about to read data from connection.
-  void allocFromLoop(uv_buf_t* buf);
-
-  // Called when libuv has read data from connection.
-  void readFromLoop(ssize_t nread, const uv_buf_t* buf);
-
-  // Returns if this read operation is complete.
-  inline bool completeFromLoop() const;
-
-  // Invoke user callback.
-  inline void callbackFromLoop(const Error& error);
-
- private:
-  Mode mode_{READ_LENGTH};
-  char* ptr_{nullptr};
-
-  // Number of bytes as specified by the user (if applicable).
-  optional<size_t> givenLength_;
-
-  // Number of bytes to expect as read from the connection.
-  size_t readLength_{0};
-
-  // Number of bytes read from the connection.
-  // This is reset to 0 when we advance from READ_LENGTH to READ_PAYLOAD.
-  size_t bytesRead_{0};
-
-  // Holds temporary allocation if no length was specified.
-  std::unique_ptr<char[]> buffer_{nullptr};
-
-  // User callback.
-  read_callback_fn fn_;
-};
-
-ReadOperation::ReadOperation(read_callback_fn fn) : fn_(std::move(fn)) {}
-
-ReadOperation::ReadOperation(void* ptr, size_t length, read_callback_fn fn)
-    : ptr_(static_cast<char*>(ptr)), givenLength_(length), fn_(std::move(fn)) {}
-
-void ReadOperation::allocFromLoop(uv_buf_t* buf) {
-  if (mode_ == READ_LENGTH) {
-    TP_DCHECK_LT(bytesRead_, sizeof(readLength_));
-    buf->base = reinterpret_cast<char*>(&readLength_) + bytesRead_;
-    buf->len = sizeof(readLength_) - bytesRead_;
-  } else if (mode_ == READ_PAYLOAD) {
-    TP_DCHECK_LT(bytesRead_, readLength_);
-    TP_DCHECK(ptr_ != nullptr);
-    buf->base = ptr_ + bytesRead_;
-    buf->len = readLength_ - bytesRead_;
-  } else {
-    TP_THROW_ASSERT() << "invalid mode " << mode_;
-  }
-}
-
-void ReadOperation::readFromLoop(ssize_t nread, const uv_buf_t* buf) {
-  TP_DCHECK_GE(nread, 0);
-  bytesRead_ += nread;
-  if (mode_ == READ_LENGTH) {
-    TP_DCHECK_LE(bytesRead_, sizeof(readLength_));
-    if (bytesRead_ == sizeof(readLength_)) {
-      if (givenLength_.has_value()) {
-        TP_DCHECK(ptr_ != nullptr || givenLength_.value() == 0);
-        TP_DCHECK_EQ(readLength_, givenLength_.value());
-      } else {
-        TP_DCHECK(ptr_ == nullptr);
-        buffer_ = std::make_unique<char[]>(readLength_);
-        ptr_ = buffer_.get();
-      }
-      if (readLength_ == 0) {
-        mode_ = COMPLETE;
-      } else {
-        mode_ = READ_PAYLOAD;
-      }
-      bytesRead_ = 0;
-    }
-  } else if (mode_ == READ_PAYLOAD) {
-    TP_DCHECK_LE(bytesRead_, readLength_);
-    if (bytesRead_ == readLength_) {
-      mode_ = COMPLETE;
-    }
-  } else {
-    TP_THROW_ASSERT() << "invalid mode " << mode_;
-  }
-}
-
-bool ReadOperation::completeFromLoop() const {
-  return mode_ == COMPLETE;
-}
-
-void ReadOperation::callbackFromLoop(const Error& error) {
-  fn_(error, ptr_, readLength_);
-}
-
-// The write operation captures all state associated with writing a
-// fixed length chunk of data from the underlying connection. The
-// write includes a word-sized header containing the length of the
-// write. This header is a member field on this class and therefore
-// the instance must be kept alive and the reference to the instance
-// must remain valid until the write callback has been called.
-class WriteOperation {
- public:
-  using write_callback_fn = Connection::write_callback_fn;
-
-  WriteOperation(const void* ptr, size_t length, write_callback_fn fn);
-
-  inline std::tuple<uv_buf_t*, unsigned int> getBufs();
-
-  // Invoke user callback.
-  inline void callbackFromLoop(const Error& error);
-
- private:
-  const char* ptr_;
-  const size_t length_;
-
-  // Buffers (structs with pointers and lengths) we pass to uv_write.
-  std::array<uv_buf_t, 2> bufs_;
-
-  // User callback.
-  write_callback_fn fn_;
-};
-
-WriteOperation::WriteOperation(
-    const void* ptr,
-    size_t length,
-    write_callback_fn fn)
-    : ptr_(static_cast<const char*>(ptr)), length_(length), fn_(std::move(fn)) {
-  bufs_[0].base = const_cast<char*>(reinterpret_cast<const char*>(&length_));
-  bufs_[0].len = sizeof(length_);
-  bufs_[1].base = const_cast<char*>(ptr_);
-  bufs_[1].len = length_;
-}
-
-std::tuple<uv_buf_t*, unsigned int> WriteOperation::getBufs() {
-  // Libuv doesn't like when we pass it empty buffers (it fails with ENOBUFS),
-  // so if the second buffer is empty we only pass it the first one.
-  unsigned int numBuffers = length_ == 0 ? 1 : 2;
-  return std::make_tuple(bufs_.data(), numBuffers);
-}
-
-void WriteOperation::callbackFromLoop(const Error& error) {
-  fn_(error);
-}
-
-} // namespace
 
 class Connection::Impl : public std::enable_shared_from_this<Connection::Impl> {
  public:
@@ -258,8 +92,8 @@ class Connection::Impl : public std::enable_shared_from_this<Connection::Impl> {
   Error error_{Error::kSuccess};
   ClosingReceiver closingReceiver_;
 
-  std::deque<ReadOperation> readOperations_;
-  std::deque<WriteOperation> writeOperations_;
+  std::deque<StreamReadOperation> readOperations_;
+  std::deque<StreamWriteOperation> writeOperations_;
 
   // A sequence number for the calls to read and write.
   uint64_t nextBufferBeingRead_{0};
@@ -411,10 +245,13 @@ void Connection::Impl::writeFromLoop(
   writeOperations_.emplace_back(ptr, length, std::move(fn));
 
   auto& writeOperation = writeOperations_.back();
-  uv_buf_t* bufsPtr;
+  StreamWriteOperation::Buf* bufsPtr;
   unsigned int bufsLen;
   std::tie(bufsPtr, bufsLen) = writeOperation.getBufs();
-  handle_->writeFromLoop(bufsPtr, bufsLen, [this](int status) {
+  const std::array<uv_buf_t, 2> uvBufs = {
+      uv_buf_t{bufsPtr[0].base, bufsPtr[0].len},
+      uv_buf_t{bufsPtr[1].base, bufsPtr[1].len}};
+  handle_->writeFromLoop(uvBufs.data(), bufsLen, [this](int status) {
     this->writeCallbackFromLoop_(status);
   });
 }
@@ -448,7 +285,7 @@ void Connection::Impl::allocCallbackFromLoop_(uv_buf_t* buf) {
   TP_THROW_ASSERT_IF(readOperations_.empty());
   TP_VLOG(9) << "Connection " << id_
              << " has incoming data for which it needs to provide a buffer";
-  readOperations_.front().allocFromLoop(buf);
+  readOperations_.front().allocFromLoop(&buf->base, &buf->len);
 }
 
 void Connection::Impl::readCallbackFromLoop_(
@@ -467,7 +304,7 @@ void Connection::Impl::readCallbackFromLoop_(
 
   TP_THROW_ASSERT_IF(readOperations_.empty());
   auto& readOperation = readOperations_.front();
-  readOperation.readFromLoop(nread, buf);
+  readOperation.readFromLoop(nread);
   if (readOperation.completeFromLoop()) {
     readOperation.callbackFromLoop(Error::kSuccess);
     // Remove the completed operation.
