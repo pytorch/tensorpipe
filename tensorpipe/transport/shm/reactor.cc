@@ -45,7 +45,8 @@ void writeToken(util::ringbuffer::Producer& producer, Reactor::TToken token) {
 Reactor::Reactor() {
   std::tie(headerSegment_, dataSegment_, rb_) =
       util::ringbuffer::shm::create(kSize);
-  thread_ = std::thread(&Reactor::run, this);
+
+  startThread("TP_SHM_reactor");
 }
 
 void Reactor::close() {
@@ -58,7 +59,7 @@ void Reactor::join() {
   close();
 
   if (!joined_.exchange(true)) {
-    thread_.join();
+    joinThread();
   }
 }
 
@@ -104,9 +105,7 @@ std::tuple<int, int> Reactor::fds() const {
   return std::make_tuple(headerSegment_.getFd(), dataSegment_.getFd());
 }
 
-void Reactor::run() {
-  setThreadName("TP_SHM_reactor");
-
+void Reactor::eventLoop() {
   util::ringbuffer::Consumer reactorConsumer(rb_);
   // Stop when another thread has asked the reactor the close and when
   // all functions have been removed.
@@ -115,18 +114,7 @@ void Reactor::run() {
     auto ret = reactorConsumer.read(&token, sizeof(token));
     if (ret == -ENODATA) {
       if (deferredFunctionCount_ > 0) {
-        decltype(deferredFunctionList_) fns;
-
-        {
-          std::unique_lock<std::mutex> lock(deferredFunctionMutex_);
-          std::swap(fns, deferredFunctionList_);
-        }
-
-        deferredFunctionCount_ -= fns.size();
-
-        for (auto& fn : fns) {
-          fn();
-        }
+        deferredFunctionCount_ -= runDeferredFunctionsFromEventLoop();
       } else {
         std::this_thread::yield();
       }
@@ -148,26 +136,6 @@ void Reactor::run() {
       fn();
     }
   }
-
-  // The loop is winding down and "handing over" control to the on demand loop.
-  // But it can only do so safely once there are no pending deferred functions,
-  // as otherwise those may risk never being executed.
-  while (true) {
-    decltype(deferredFunctionList_) fns;
-
-    {
-      std::unique_lock<std::mutex> lock(deferredFunctionMutex_);
-      if (deferredFunctionList_.empty()) {
-        isThreadConsumingDeferredFunctions_ = false;
-        break;
-      }
-      std::swap(fns, deferredFunctionList_);
-    }
-
-    for (auto& fn : fns) {
-      fn();
-    }
-  }
 }
 
 Reactor::Trigger::Trigger(Fd headerFd, Fd dataFd) {
@@ -182,18 +150,9 @@ void Reactor::Trigger::run(TToken token) {
   writeToken(producer, token);
 }
 
-void Reactor::deferToLoop(TDeferredFunction fn) {
-  {
-    std::unique_lock<std::mutex> lock(deferredFunctionMutex_);
-    if (likely(isThreadConsumingDeferredFunctions_)) {
-      deferredFunctionList_.push_back(std::move(fn));
-      ++deferredFunctionCount_;
-      // No need to wake up the reactor, since it is busy-waiting.
-      return;
-    }
-  }
-  // Must call it without holding the lock, as it could cause a reentrant call.
-  onDemandLoop_.deferToLoop(std::move(fn));
+void Reactor::wakeupEventLoopToDeferFunction() {
+  ++deferredFunctionCount_;
+  // No need to wake up the reactor, since it is busy-waiting.
 }
 
 } // namespace shm

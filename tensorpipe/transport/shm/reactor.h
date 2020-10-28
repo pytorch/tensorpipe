@@ -36,7 +36,7 @@ namespace shm {
 // machine. It uses extra data in the ring buffer header to store a
 // mutex and condition variable to avoid a busy loop.
 //
-class Reactor final : public DeferredExecutor {
+class Reactor final : public EventLoopDeferredExecutor {
   // This allows for buffering 1M triggers (at 4 bytes a piece).
   static constexpr auto kSize = 4 * 1024 * 1024;
 
@@ -45,12 +45,6 @@ class Reactor final : public DeferredExecutor {
   using TToken = uint32_t;
 
   Reactor();
-
-  using TDeferredFunction = std::function<void()>;
-
-  // Run function on reactor thread.
-  // If the function throws, the thread crashes.
-  void deferToLoop(TDeferredFunction fn) override;
 
   // Add function to the reactor.
   // Returns token that can be used to trigger it.
@@ -62,21 +56,17 @@ class Reactor final : public DeferredExecutor {
   // Returns the file descriptors for the underlying ring buffer.
   std::tuple<int, int> fds() const;
 
-  inline bool inLoop() override {
-    {
-      std::unique_lock<std::mutex> lock(deferredFunctionMutex_);
-      if (likely(isThreadConsumingDeferredFunctions_)) {
-        return std::this_thread::get_id() == thread_.get_id();
-      }
-    }
-    return onDemandLoop_.inLoop();
-  }
-
   void close();
 
   void join();
 
   ~Reactor();
+
+ protected:
+  // Reactor thread entry point.
+  void eventLoop() override;
+
+  void wakeupEventLoopToDeferFunction() override;
 
  private:
   util::shm::Segment headerSegment_;
@@ -84,30 +74,10 @@ class Reactor final : public DeferredExecutor {
   util::ringbuffer::RingBuffer rb_;
 
   std::mutex mutex_;
-  std::thread thread_;
   std::atomic<bool> closed_{false};
   std::atomic<bool> joined_{false};
 
-  std::mutex deferredFunctionMutex_;
-  std::list<TDeferredFunction> deferredFunctionList_;
   std::atomic<int64_t> deferredFunctionCount_{0};
-
-  // Whether the thread is still taking care of running the deferred functions
-  //
-  // This is part of what can only be described as a hack. Sometimes, even when
-  // using the API as intended, objects try to defer tasks to the loop after
-  // that loop has been closed and joined. Since those tasks may be lambdas that
-  // captured shared_ptrs to the objects in their closures, this may lead to a
-  // reference cycle and thus a leak. Our hack is to have this flag to record
-  // when we can no longer defer tasks to the loop and in that case we just run
-  // those tasks inline. In order to keep ensuring the single-threadedness
-  // assumption of our model (which is what we rely on to be safe from race
-  // conditions) we use an on-demand loop.
-  bool isThreadConsumingDeferredFunctions_{true};
-  OnDemandDeferredExecutor onDemandLoop_;
-
-  // Reactor thread entry point.
-  void run();
 
   // Tokens are placed in this set if they can be reused.
   std::set<TToken> reusableTokens_;

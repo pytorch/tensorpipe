@@ -15,8 +15,13 @@
 #include <future>
 #include <memory>
 #include <mutex>
+#include <string>
 #include <thread>
 #include <utility>
+#include <vector>
+
+#include <tensorpipe/common/defs.h>
+#include <tensorpipe/common/system.h>
 
 namespace tensorpipe {
 
@@ -120,6 +125,132 @@ class OnDemandDeferredExecutor : public DeferredExecutor {
   std::mutex mutex_;
   std::atomic<std::thread::id> currentLoop_{std::thread::id()};
   std::deque<TTask> pendingTasks_;
+};
+
+class EventLoopDeferredExecutor : public virtual DeferredExecutor {
+ public:
+  void deferToLoop(TTask fn) override {
+    {
+      std::unique_lock<std::mutex> lock(mutex_);
+      if (likely(isThreadConsumingDeferredFunctions_)) {
+        fns_.push_back(std::move(fn));
+        wakeupEventLoopToDeferFunction();
+        return;
+      }
+    }
+    // Must call it without holding the lock, as it could cause a reentrant
+    // call.
+    onDemandLoop_.deferToLoop(std::move(fn));
+  };
+
+  inline bool inLoop() override {
+    {
+      std::unique_lock<std::mutex> lock(mutex_);
+      if (likely(isThreadConsumingDeferredFunctions_)) {
+        return std::this_thread::get_id() == thread_.get_id();
+      }
+    }
+    return onDemandLoop_.inLoop();
+  }
+
+ protected:
+  // This is the actual long-running event loop, which is implemented by
+  // subclasses and called inside the thread owned by this parent class.
+  virtual void eventLoop() = 0;
+
+  // This function is called by the parent class when a function is deferred to
+  // it, and must be implemented by subclasses, which are required to have their
+  // event loop call runDeferredFunctionsFromEventLoop as soon as possible. This
+  // function is guaranteed to be called once per function deferral (in case
+  // subclasses want to keep count).
+  virtual void wakeupEventLoopToDeferFunction() = 0;
+
+  // Called by subclasses to have the parent class start the thread. We cannot
+  // implicitly call this in the parent class's constructor because it could
+  // lead to a race condition between the event loop (run by the thread) and the
+  // subclass's constructor (which is executed after the parent class's one).
+  // Hence this method should be invoked at the end of the subclass constructor.
+  void startThread(std::string threadName) {
+    thread_ = std::thread(
+        &EventLoopDeferredExecutor::loop_, this, std::move(threadName));
+  }
+
+  // This is basically the reverse operation of the above, and is needed for the
+  // same (reversed) reason. Note that this only waits for the thread to finish:
+  // the subclass must have its own way of telling its event loop to stop and
+  // return control.
+  void joinThread() {
+    thread_.join();
+  }
+
+  // Must be called by the subclass after it was woken up. Even if multiple
+  // functions were deferred, this method only needs to be called once. However,
+  // care must be taken to avoid races between this call and new wakeups. This
+  // method also returns the number of functions it executed, in case the
+  // subclass is keeping count.
+  size_t runDeferredFunctionsFromEventLoop() {
+    decltype(fns_) fns;
+
+    {
+      std::unique_lock<std::mutex> lock(mutex_);
+      std::swap(fns, fns_);
+    }
+
+    for (auto& fn : fns) {
+      fn();
+    }
+
+    return fns.size();
+  }
+
+ private:
+  void loop_(std::string threadName) {
+    setThreadName(std::move(threadName));
+
+    eventLoop();
+
+    // The loop is winding down and "handing over" control to the on demand
+    // loop. But it can only do so safely once there are no pending deferred
+    // functions, as otherwise those may risk never being executed.
+    while (true) {
+      decltype(fns_) fns;
+
+      {
+        std::unique_lock<std::mutex> lock(mutex_);
+        if (fns_.empty()) {
+          isThreadConsumingDeferredFunctions_ = false;
+          break;
+        }
+        std::swap(fns, fns_);
+      }
+
+      for (auto& fn : fns) {
+        fn();
+      }
+    }
+  }
+
+  std::thread thread_;
+
+  // Whether the thread is still taking care of running the deferred functions
+  //
+  // This is part of what can only be described as a hack. Sometimes, even when
+  // using the API as intended, objects try to defer tasks to the loop after
+  // that loop has been closed and joined. Since those tasks may be lambdas that
+  // captured shared_ptrs to the objects in their closures, this may lead to a
+  // reference cycle and thus a leak. Our hack is to have this flag to record
+  // when we can no longer defer tasks to the loop and in that case we just run
+  // those tasks inline. In order to keep ensuring the single-threadedness
+  // assumption of our model (which is what we rely on to be safe from race
+  // conditions) we use an on-demand loop.
+  bool isThreadConsumingDeferredFunctions_{true};
+  OnDemandDeferredExecutor onDemandLoop_;
+
+  // Mutex to guard the deferring and the running of functions.
+  std::mutex mutex_;
+
+  // List of deferred functions to run when the loop is ready.
+  std::vector<std::function<void()>> fns_;
 };
 
 } // namespace tensorpipe

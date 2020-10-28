@@ -49,7 +49,7 @@ Reactor::Reactor() {
 
   postRecvRequestsOnSRQ_(kNumPendingRecvReqs);
 
-  thread_ = std::thread(&Reactor::run, this);
+  startThread("TP_IBV_reactor");
 }
 
 bool Reactor::isViable() const {
@@ -85,7 +85,7 @@ void Reactor::join() {
   close();
 
   if (!joined_.exchange(true)) {
-    thread_.join();
+    joinThread();
   }
 }
 
@@ -93,9 +93,7 @@ Reactor::~Reactor() {
   join();
 }
 
-void Reactor::run() {
-  setThreadName("TP_IBV_reactor");
-
+void Reactor::eventLoop() {
   // Stop when another thread has asked the reactor the close and when
   // all functions have been removed.
   while (!closed_ || queuePairEventHandler_.size() > 0) {
@@ -104,18 +102,7 @@ void Reactor::run() {
 
     if (rv == 0) {
       if (deferredFunctionCount_ > 0) {
-        decltype(deferredFunctionList_) fns;
-
-        {
-          std::unique_lock<std::mutex> lock(deferredFunctionMutex_);
-          std::swap(fns, deferredFunctionList_);
-        }
-
-        deferredFunctionCount_ -= fns.size();
-
-        for (auto& fn : fns) {
-          fn();
-        }
+        deferredFunctionCount_ -= runDeferredFunctionsFromEventLoop();
       } else {
         std::this_thread::yield();
       }
@@ -188,26 +175,6 @@ void Reactor::run() {
       pendingQpAcks_.pop_front();
     }
   }
-
-  // The loop is winding down and "handing over" control to the on demand loop.
-  // But it can only do so safely once there are no pending deferred functions,
-  // as otherwise those may risk never being executed.
-  while (true) {
-    decltype(deferredFunctionList_) fns;
-
-    {
-      std::unique_lock<std::mutex> lock(deferredFunctionMutex_);
-      if (deferredFunctionList_.empty()) {
-        isThreadConsumingDeferredFunctions_ = false;
-        break;
-      }
-      std::swap(fns, deferredFunctionList_);
-    }
-
-    for (auto& fn : fns) {
-      fn();
-    }
-  }
 }
 
 void Reactor::registerQp(
@@ -220,18 +187,9 @@ void Reactor::unregisterQp(uint32_t qpn) {
   queuePairEventHandler_.erase(qpn);
 }
 
-void Reactor::deferToLoop(TDeferredFunction fn) {
-  {
-    std::unique_lock<std::mutex> lock(deferredFunctionMutex_);
-    if (likely(isThreadConsumingDeferredFunctions_)) {
-      deferredFunctionList_.push_back(std::move(fn));
-      ++deferredFunctionCount_;
-      // No need to wake up the reactor, since it is busy-waiting.
-      return;
-    }
-  }
-  // Must call it without holding the lock, as it could cause a reentrant call.
-  onDemandLoop_.deferToLoop(std::move(fn));
+void Reactor::wakeupEventLoopToDeferFunction() {
+  ++deferredFunctionCount_;
+  // No need to wake up the reactor, since it is busy-waiting.
 }
 
 void Reactor::postWrite(IbvQueuePair& qp, IbvLib::send_wr& wr) {
