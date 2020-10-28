@@ -47,7 +47,7 @@ class Channel::Impl : public std::enable_shared_from_this<Channel::Impl> {
   void close();
 
  private:
-  OnDemandLoop loop_;
+  OnDemandDeferredExecutor loop_;
 
   void sendFromLoop_(
       CpuBuffer buffer,

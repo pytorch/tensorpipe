@@ -132,7 +132,7 @@ void Listener::Impl::initFromLoop() {
 }
 
 void Listener::Impl::acceptFromLoop(accept_callback_fn fn) {
-  TP_DCHECK(context_->inLoopThread());
+  TP_DCHECK(context_->inLoop());
 
   uint64_t sequenceNumber = nextConnectionBeingAccepted_++;
   TP_VLOG(7) << "Listener " << id_ << " received an accept request (#"
@@ -158,7 +158,7 @@ void Listener::Impl::acceptFromLoop(accept_callback_fn fn) {
 }
 
 std::string Listener::Impl::addrFromLoop() const {
-  TP_DCHECK(context_->inLoopThread());
+  TP_DCHECK(context_->inLoop());
   return handle_->sockNameFromLoop().str();
 }
 
@@ -170,7 +170,7 @@ void Listener::Impl::setId(std::string id) {
 }
 
 void Listener::Impl::setIdFromLoop_(std::string id) {
-  TP_DCHECK(context_->inLoopThread());
+  TP_DCHECK(context_->inLoop());
   TP_VLOG(7) << "Listener " << id_ << " was renamed to " << id;
   id_ = std::move(id);
 }
@@ -181,13 +181,13 @@ void Listener::Impl::close() {
 }
 
 void Listener::Impl::closeFromLoop() {
-  TP_DCHECK(context_->inLoopThread());
+  TP_DCHECK(context_->inLoop());
   TP_VLOG(7) << "Listener " << id_ << " is closing";
   setError_(TP_CREATE_ERROR(ListenerClosedError));
 }
 
 void Listener::Impl::connectionCallbackFromLoop_(int status) {
-  TP_DCHECK(context_->inLoopThread());
+  TP_DCHECK(context_->inLoop());
   TP_VLOG(9) << "Listener " << id_
              << " has an incoming connection ready to be accepted ("
              << formatUvError(status) << ")";
@@ -228,7 +228,7 @@ void Listener::Impl::setError_(Error error) {
 }
 
 void Listener::Impl::handleError_() {
-  TP_DCHECK(context_->inLoopThread());
+  TP_DCHECK(context_->inLoop());
   TP_VLOG(8) << "Listener " << id_ << " is handling error " << error_.what();
   callback_.triggerAll([&]() {
     return std::make_tuple(std::cref(error_), std::shared_ptr<Connection>());

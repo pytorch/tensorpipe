@@ -36,7 +36,7 @@ namespace shm {
 // machine. It uses extra data in the ring buffer header to store a
 // mutex and condition variable to avoid a busy loop.
 //
-class Reactor final {
+class Reactor final : public DeferredExecutor {
   // This allows for buffering 1M triggers (at 4 bytes a piece).
   static constexpr auto kSize = 4 * 1024 * 1024;
 
@@ -50,36 +50,7 @@ class Reactor final {
 
   // Run function on reactor thread.
   // If the function throws, the thread crashes.
-  void deferToLoop(TDeferredFunction fn);
-
-  // Prefer using deferToLoop over runInLoop when you don't need to wait for the
-  // result.
-  template <typename F>
-  void runInLoop(F&& fn) {
-    // When called from the event loop thread itself (e.g., from a callback),
-    // deferring would cause a deadlock because the given callable can only be
-    // run when the loop is allowed to proceed. On the other hand, it means it
-    // is thread-safe to run it immediately. The danger here however is that it
-    // can lead to an inconsistent order between operations run from the event
-    // loop, from outside of it, and deferred.
-    if (inReactorThread()) {
-      fn();
-    } else {
-      // Must use a copyable wrapper around std::promise because
-      // we use it from a std::function which must be copyable.
-      auto promise = std::make_shared<std::promise<void>>();
-      auto future = promise->get_future();
-      deferToLoop([promise, fn{std::forward<F>(fn)}]() {
-        try {
-          fn();
-          promise->set_value();
-        } catch (...) {
-          promise->set_exception(std::current_exception());
-        }
-      });
-      future.get();
-    }
-  }
+  void deferToLoop(TDeferredFunction fn) override;
 
   // Add function to the reactor.
   // Returns token that can be used to trigger it.
@@ -91,7 +62,7 @@ class Reactor final {
   // Returns the file descriptors for the underlying ring buffer.
   std::tuple<int, int> fds() const;
 
-  inline bool inReactorThread() {
+  inline bool inLoop() override {
     {
       std::unique_lock<std::mutex> lock(deferredFunctionMutex_);
       if (likely(isThreadConsumingDeferredFunctions_)) {
@@ -133,7 +104,7 @@ class Reactor final {
   // assumption of our model (which is what we rely on to be safe from race
   // conditions) we use an on-demand loop.
   bool isThreadConsumingDeferredFunctions_{true};
-  OnDemandLoop onDemandLoop_;
+  OnDemandDeferredExecutor onDemandLoop_;
 
   // Reactor thread entry point.
   void run();

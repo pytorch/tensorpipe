@@ -100,7 +100,7 @@ class BaseHandle : public BaseResource<T, U> {
   }
 
   void armCloseCallbackFromLoop(TCloseCallback fn) {
-    TP_DCHECK(this->loop_.inLoopThread());
+    TP_DCHECK(this->loop_.inLoop());
     TP_THROW_ASSERT_IF(closeCallback_.has_value());
     closeCallback_ = std::move(fn);
   }
@@ -206,7 +206,7 @@ class StreamHandle : public BaseHandle<T, U> {
   // TODO Split this into a armConnectionCallback, a listenStart and a
   // listenStop method, to propagate the backpressure to the clients.
   void listenFromLoop(TConnectionCallback connectionCallback) {
-    TP_DCHECK(this->loop_.inLoopThread());
+    TP_DCHECK(this->loop_.inLoop());
     TP_THROW_ASSERT_IF(connectionCallback_.has_value());
     connectionCallback_ = std::move(connectionCallback);
     auto rv = uv_listen(
@@ -218,7 +218,7 @@ class StreamHandle : public BaseHandle<T, U> {
 
   template <typename V>
   void acceptFromLoop(std::shared_ptr<V> other) {
-    TP_DCHECK(this->loop_.inLoopThread());
+    TP_DCHECK(this->loop_.inLoop());
     auto rv = uv_accept(
         reinterpret_cast<uv_stream_t*>(this->ptr()),
         reinterpret_cast<uv_stream_t*>(other->ptr()));
@@ -226,19 +226,19 @@ class StreamHandle : public BaseHandle<T, U> {
   }
 
   void armAllocCallbackFromLoop(TAllocCallback fn) {
-    TP_DCHECK(this->loop_.inLoopThread());
+    TP_DCHECK(this->loop_.inLoop());
     TP_THROW_ASSERT_IF(allocCallback_.has_value());
     allocCallback_ = std::move(fn);
   }
 
   void armReadCallbackFromLoop(TReadCallback fn) {
-    TP_DCHECK(this->loop_.inLoopThread());
+    TP_DCHECK(this->loop_.inLoop());
     TP_THROW_ASSERT_IF(readCallback_.has_value());
     readCallback_ = std::move(fn);
   }
 
   void readStartFromLoop() {
-    TP_DCHECK(this->loop_.inLoopThread());
+    TP_DCHECK(this->loop_.inLoop());
     TP_THROW_ASSERT_IF(!allocCallback_.has_value());
     TP_THROW_ASSERT_IF(!readCallback_.has_value());
     auto rv = uv_read_start(
@@ -247,7 +247,7 @@ class StreamHandle : public BaseHandle<T, U> {
   }
 
   void readStopFromLoop() {
-    TP_DCHECK(this->loop_.inLoopThread());
+    TP_DCHECK(this->loop_.inLoop());
     auto rv = uv_read_stop(reinterpret_cast<uv_stream_t*>(this->ptr()));
     TP_THROW_UV_IF(rv < 0, rv);
   }
@@ -256,7 +256,7 @@ class StreamHandle : public BaseHandle<T, U> {
       const uv_buf_t bufs[],
       unsigned int nbufs,
       WriteRequest::TWriteCallback fn) {
-    TP_DCHECK(this->loop_.inLoopThread());
+    TP_DCHECK(this->loop_.inLoop());
     auto request = WriteRequest::create(this->loop_, std::move(fn));
     auto rv = uv_write(
         request->ptr(),

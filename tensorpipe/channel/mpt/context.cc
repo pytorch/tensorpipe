@@ -120,7 +120,7 @@ class Context::Impl : public Context::PrivateIface,
   // used for logging and debugging.
   std::atomic<uint64_t> channelCounter_{0};
 
-  OnDemandLoop loop_;
+  OnDemandDeferredExecutor loop_;
   Error error_{Error::kSuccess};
   LazyCallbackWrapper<Impl> lazyCallbackWrapper_{*this, this->loop_};
   EagerCallbackWrapper<Impl> eagerCallbackWrapper_{*this, this->loop_};

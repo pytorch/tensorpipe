@@ -362,7 +362,7 @@ class Pipe::Impl : public std::enable_shared_from_this<Pipe::Impl> {
   void close();
 
  private:
-  OnDemandLoop loop_;
+  OnDemandDeferredExecutor loop_;
 
   void initFromLoop_();
 
