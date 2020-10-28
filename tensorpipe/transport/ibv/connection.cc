@@ -332,7 +332,7 @@ class Connection::Impl : public std::enable_shared_from_this<Connection::Impl>,
   // Create a connection that is already connected (e.g. from a listener).
   Impl(
       std::shared_ptr<Context::PrivateIface> context,
-      std::shared_ptr<Socket> socket,
+      Socket socket,
       std::string id);
 
   // Create a connection that connects to the specified address.
@@ -402,7 +402,7 @@ class Connection::Impl : public std::enable_shared_from_this<Connection::Impl>,
   State state_{INITIALIZING};
   Error error_{Error::kSuccess};
   std::shared_ptr<Context::PrivateIface> context_;
-  std::shared_ptr<Socket> socket_;
+  Socket socket_;
   optional<Sockaddr> sockaddr_;
   ClosingReceiver closingReceiver_;
 
@@ -506,7 +506,7 @@ class Connection::Impl : public std::enable_shared_from_this<Connection::Impl>,
 Connection::Connection(
     ConstructorToken /* unused */,
     std::shared_ptr<Context::PrivateIface> context,
-    std::shared_ptr<Socket> socket,
+    Socket socket,
     std::string id)
     : impl_(std::make_shared<Impl>(
           std::move(context),
@@ -546,7 +546,7 @@ Connection::~Connection() {
 
 Connection::Impl::Impl(
     std::shared_ptr<Context::PrivateIface> context,
-    std::shared_ptr<Socket> socket,
+    Socket socket,
     std::string id)
     : context_(std::move(context)),
       socket_(std::move(socket)),
@@ -569,20 +569,20 @@ void Connection::Impl::initFromLoop() {
 
   Error error;
   // The connection either got a socket or an address, but not both.
-  TP_DCHECK((socket_ != nullptr) ^ sockaddr_.has_value());
-  if (socket_ == nullptr) {
+  TP_DCHECK(socket_.hasValue() ^ sockaddr_.has_value());
+  if (!socket_.hasValue()) {
     std::tie(error, socket_) =
         Socket::createForFamily(sockaddr_->addr()->sa_family);
     if (error) {
       setError_(std::move(error));
       return;
     }
-    error = socket_->reuseAddr(true);
+    error = socket_.reuseAddr(true);
     if (error) {
       setError_(std::move(error));
       return;
     }
-    error = socket_->connect(sockaddr_.value());
+    error = socket_.connect(sockaddr_.value());
     if (error) {
       setError_(std::move(error));
       return;
@@ -590,7 +590,7 @@ void Connection::Impl::initFromLoop() {
   }
   // Ensure underlying control socket is non-blocking such that it
   // works well with event driven I/O.
-  error = socket_->block(false);
+  error = socket_.block(false);
   if (error) {
     setError_(std::move(error));
     return;
@@ -645,7 +645,7 @@ void Connection::Impl::initFromLoop() {
 
   // We're sending address first, so wait for writability.
   state_ = SEND_ADDR;
-  context_->registerDescriptor(socket_->fd(), EPOLLOUT, shared_from_this());
+  context_->registerDescriptor(socket_.fd(), EPOLLOUT, shared_from_this());
 }
 
 void Connection::read(read_callback_fn fn) {
@@ -911,7 +911,7 @@ void Connection::Impl::handleEventsFromLoop(int events) {
     int error;
     socklen_t errorlen = sizeof(error);
     int rv = getsockopt(
-        socket_->fd(),
+        socket_.fd(),
         SOL_SOCKET,
         SO_ERROR,
         reinterpret_cast<void*>(&error),
@@ -945,7 +945,7 @@ void Connection::Impl::handleEventInFromLoop() {
   if (state_ == RECV_ADDR) {
     struct Exchange ex;
 
-    auto err = socket_->read(&ex, sizeof(ex));
+    auto err = socket_.read(&ex, sizeof(ex));
     // Crossing our fingers that the exchange information is small enough that
     // it can be read in a single chunk.
     if (err != sizeof(ex)) {
@@ -995,7 +995,7 @@ void Connection::Impl::handleEventOutFromLoop() {
     ex.memoryRegionPtr = reinterpret_cast<uint64_t>(inboxBuf_.ptr());
     ex.memoryRegionKey = inboxMr_->rkey;
 
-    auto err = socket_->write(reinterpret_cast<void*>(&ex), sizeof(ex));
+    auto err = socket_.write(reinterpret_cast<void*>(&ex), sizeof(ex));
     // Crossing our fingers that the exchange information is small enough that
     // it can be written in a single chunk.
     if (err != sizeof(ex)) {
@@ -1005,7 +1005,7 @@ void Connection::Impl::handleEventOutFromLoop() {
 
     // Sent our address. Wait for address from peer.
     state_ = RECV_ADDR;
-    context_->registerDescriptor(socket_->fd(), EPOLLIN, shared_from_this());
+    context_->registerDescriptor(socket_.fd(), EPOLLIN, shared_from_this());
     return;
   }
 
@@ -1198,9 +1198,9 @@ void Connection::Impl::handleError() {
 
   tryCleanup_();
 
-  if (socket_ != nullptr) {
+  if (socket_.hasValue()) {
     if (state_ > INITIALIZING) {
-      context_->unregisterDescriptor(socket_->fd());
+      context_->unregisterDescriptor(socket_.fd());
     }
     socket_.reset();
   }

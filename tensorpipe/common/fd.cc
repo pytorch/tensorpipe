@@ -16,12 +16,6 @@
 
 namespace tensorpipe {
 
-Fd::~Fd() {
-  if (fd_ >= 0) {
-    ::close(fd_);
-  }
-}
-
 ssize_t Fd::read(void* buf, size_t count) {
   ssize_t rv = -1;
   for (;;) {

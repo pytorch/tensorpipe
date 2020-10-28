@@ -22,24 +22,22 @@
 
 namespace tensorpipe {
 
-std::tuple<Error, std::shared_ptr<Socket>> Socket::createForFamily(
-    sa_family_t ai_family) {
+std::tuple<Error, Socket> Socket::createForFamily(sa_family_t ai_family) {
   auto rv = socket(ai_family, SOCK_STREAM | SOCK_NONBLOCK, 0);
   if (rv == -1) {
     return std::make_tuple(
-        TP_CREATE_ERROR(SystemError, "socket", errno),
-        std::shared_ptr<Socket>());
+        TP_CREATE_ERROR(SystemError, "socket", errno), Socket());
   }
-  auto sock = std::make_shared<Socket>(rv);
+  Socket sock(rv);
 #ifndef SOCK_NONBLOCK
   // The SOCK_NONBLOCK option of socket() is Linux-only. On OSX, we need to
   // manually set the socket to non-blocking after its creation.
   auto err = sock->block(false);
   if (err) {
-    return std::make_tuple(err, sock);
+    return std::make_tuple(err, Socket());
   }
 #endif // SOCK_NONBLOCK
-  return std::make_tuple(Error::kSuccess, sock);
+  return std::make_tuple(Error::kSuccess, std::move(sock));
 }
 
 Error Socket::block(bool on) {
@@ -87,7 +85,7 @@ Error Socket::listen(int backlog) {
   return Error::kSuccess;
 }
 
-std::tuple<Error, std::shared_ptr<Socket>> Socket::accept() {
+std::tuple<Error, Socket> Socket::accept() {
   struct sockaddr_storage addr;
   socklen_t addrlen = sizeof(addr);
   int rv = -1;
@@ -98,12 +96,11 @@ std::tuple<Error, std::shared_ptr<Socket>> Socket::accept() {
         continue;
       }
       return std::make_tuple(
-          TP_CREATE_ERROR(SystemError, "accept", errno),
-          std::shared_ptr<Socket>());
+          TP_CREATE_ERROR(SystemError, "accept", errno), Socket());
     }
     break;
   }
-  return std::make_tuple(Error::kSuccess, std::make_shared<Socket>(rv));
+  return std::make_tuple(Error::kSuccess, Socket(rv));
 }
 
 Error Socket::connect(const Sockaddr& addr) {

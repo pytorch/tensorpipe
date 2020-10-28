@@ -316,11 +316,11 @@ std::tuple<Error, std::string> Context::Impl::lookupAddrForHostname() {
 
     Sockaddr addr = Sockaddr(rp->ai_addr, rp->ai_addrlen);
 
-    std::shared_ptr<Socket> socket;
+    Socket socket;
     std::tie(error, socket) = Socket::createForFamily(rp->ai_family);
 
     if (!error) {
-      error = socket->bind(addr);
+      error = socket.bind(addr);
     }
 
     if (error) {

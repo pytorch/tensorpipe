@@ -34,7 +34,7 @@ class Connection final : public transport::Connection {
   Connection(
       ConstructorToken,
       std::shared_ptr<Context::PrivateIface> context,
-      std::shared_ptr<Socket> socket,
+      Socket socket,
       std::string id);
 
   // Create a connection that connects to the specified address.

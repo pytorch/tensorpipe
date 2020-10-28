@@ -310,7 +310,7 @@ class Connection::Impl : public std::enable_shared_from_this<Connection::Impl>,
   // Create a connection that is already connected (e.g. from a listener).
   Impl(
       std::shared_ptr<Context::PrivateIface> context,
-      std::shared_ptr<Socket> socket,
+      Socket socket,
       std::string id);
 
   // Create a connection that connects to the specified address.
@@ -375,7 +375,7 @@ class Connection::Impl : public std::enable_shared_from_this<Connection::Impl>,
   State state_{INITIALIZING};
   Error error_{Error::kSuccess};
   std::shared_ptr<Context::PrivateIface> context_;
-  std::shared_ptr<Socket> socket_;
+  Socket socket_;
   optional<Sockaddr> sockaddr_;
   ClosingReceiver closingReceiver_;
 
@@ -450,7 +450,7 @@ class Connection::Impl : public std::enable_shared_from_this<Connection::Impl>,
 Connection::Connection(
     ConstructorToken /* unused */,
     std::shared_ptr<Context::PrivateIface> context,
-    std::shared_ptr<Socket> socket,
+    Socket socket,
     std::string id)
     : impl_(std::make_shared<Impl>(
           std::move(context),
@@ -490,7 +490,7 @@ Connection::~Connection() {
 
 Connection::Impl::Impl(
     std::shared_ptr<Context::PrivateIface> context,
-    std::shared_ptr<Socket> socket,
+    Socket socket,
     std::string id)
     : context_(std::move(context)),
       socket_(std::move(socket)),
@@ -513,14 +513,14 @@ void Connection::Impl::initFromLoop() {
 
   Error error;
   // The connection either got a socket or an address, but not both.
-  TP_DCHECK((socket_ != nullptr) ^ sockaddr_.has_value());
-  if (socket_ == nullptr) {
+  TP_DCHECK(socket_.hasValue() ^ sockaddr_.has_value());
+  if (!socket_.hasValue()) {
     std::tie(error, socket_) = Socket::createForFamily(AF_UNIX);
     if (error) {
       setError_(std::move(error));
       return;
     }
-    error = socket_->connect(sockaddr_.value());
+    error = socket_.connect(sockaddr_.value());
     if (error) {
       setError_(std::move(error));
       return;
@@ -528,7 +528,7 @@ void Connection::Impl::initFromLoop() {
   }
   // Ensure underlying control socket is non-blocking such that it
   // works well with event driven I/O.
-  error = socket_->block(false);
+  error = socket_.block(false);
   if (error) {
     setError_(std::move(error));
     return;
@@ -554,7 +554,7 @@ void Connection::Impl::initFromLoop() {
 
   // We're sending file descriptors first, so wait for writability.
   state_ = SEND_FDS;
-  context_->registerDescriptor(socket_->fd(), EPOLLOUT, shared_from_this());
+  context_->registerDescriptor(socket_.fd(), EPOLLOUT, shared_from_this());
 }
 
 void Connection::read(read_callback_fn fn) {
@@ -820,7 +820,7 @@ void Connection::Impl::handleEventsFromLoop(int events) {
     int error;
     socklen_t errorlen = sizeof(error);
     int rv = getsockopt(
-        socket_->fd(),
+        socket_.fd(),
         SOL_SOCKET,
         SO_ERROR,
         reinterpret_cast<void*>(&error),
@@ -860,7 +860,7 @@ void Connection::Impl::handleEventInFromLoop() {
     Reactor::TToken peerOutboxReactorToken;
 
     // Receive the reactor token, reactor fds, and inbox fds.
-    auto err = socket_->recvPayloadAndFds(
+    auto err = socket_.recvPayloadAndFds(
         peerInboxReactorToken,
         peerOutboxReactorToken,
         reactorHeaderFd,
@@ -913,7 +913,7 @@ void Connection::Impl::handleEventOutFromLoop() {
     std::tie(reactorHeaderFd, reactorDataFd) = context_->reactorFds();
 
     // Send our reactor token, reactor fds, and inbox fds.
-    auto err = socket_->sendPayloadAndFds(
+    auto err = socket_.sendPayloadAndFds(
         inboxReactorToken_.value(),
         outboxReactorToken_.value(),
         reactorHeaderFd,
@@ -927,7 +927,7 @@ void Connection::Impl::handleEventOutFromLoop() {
 
     // Sent our fds. Wait for fds from peer.
     state_ = RECV_FDS;
-    context_->registerDescriptor(socket_->fd(), EPOLLIN, shared_from_this());
+    context_->registerDescriptor(socket_.fd(), EPOLLIN, shared_from_this());
     return;
   }
 
@@ -1009,9 +1009,9 @@ void Connection::Impl::handleError() {
     context_->removeReaction(outboxReactorToken_.value());
     outboxReactorToken_.reset();
   }
-  if (socket_ != nullptr) {
+  if (socket_.hasValue()) {
     if (state_ > INITIALIZING) {
-      context_->unregisterDescriptor(socket_->fd());
+      context_->unregisterDescriptor(socket_.fd());
     }
     socket_.reset();
   }
