@@ -9,7 +9,9 @@
 #include <tensorpipe/channel/cuda_basic/channel.h>
 
 #include <algorithm>
+#include <condition_variable>
 #include <list>
+#include <mutex>
 
 #include <tensorpipe/channel/error.h>
 #include <tensorpipe/channel/helpers.h>
@@ -18,6 +20,7 @@
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/error.h>
 #include <tensorpipe/common/error_macros.h>
+#include <tensorpipe/common/system.h>
 #include <tensorpipe/transport/connection.h>
 
 namespace tensorpipe {
@@ -329,7 +332,7 @@ void Channel::Impl::recvFromLoop_(
         buffer.ptr,
         tmpBuffer.get(),
         buffer.length,
-        HostToDevice,
+        cudaHostToDevice,
         buffer.stream));
 
     callback(error_);
