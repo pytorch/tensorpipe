@@ -24,6 +24,18 @@ namespace tensorpipe {
 namespace channel {
 namespace cuda_basic {
 
+namespace {
+
+std::shared_ptr<uint8_t> makeCudaPinnedBuffer(size_t length) {
+  void* ptr;
+  TP_CUDA_CHECK(cudaMallocHost(&ptr, length));
+  return std::shared_ptr<uint8_t>(
+      reinterpret_cast<uint8_t*>(ptr),
+      [](uint8_t* ptr) { TP_CUDA_CHECK(cudaFreeHost(ptr)); });
+}
+
+} // namespace
+
 class Channel::Impl : public std::enable_shared_from_this<Channel::Impl> {
  public:
   Impl(
@@ -74,12 +86,29 @@ class Channel::Impl : public std::enable_shared_from_this<Channel::Impl> {
 
   // Proxy static method for cudaStreamAddCallback(), which does not accept
   // lambdas.
-  static void CUDART_CB invokeCudaCallback_(cudaStream_t, cudaError_t, void*);
+  static void CUDART_CB signalOperationReady_(cudaStream_t, cudaError_t, void*);
+  void processOperations_();
+
+  std::thread opThread_;
+  std::mutex opMutex_;
+  std::condition_variable opCondVar_;
+
+  struct Operation {
+    std::function<void(cudaError_t)> process;
+    std::function<void(cudaError_t)> signalReady;
+    bool ready{false};
+    cudaError_t cudaError;
+  };
+
+  std::deque<Operation> sendOperations_;
+  std::deque<Operation> recvOperations_;
 
   std::shared_ptr<Context::PrivateIface> context_;
   std::shared_ptr<CpuChannel> cpuChannel_;
   std::unordered_map<uint64_t, std::function<void(cudaError_t)>>
       cudaSendCallbacks_;
+  std::unordered_map<uint64_t, std::function<void(cudaError_t)>>
+      cudaRecvCallbacks_;
   Error error_{Error::kSuccess};
   ClosingReceiver closingReceiver_;
 
@@ -145,6 +174,41 @@ void Channel::Impl::send(
   });
 }
 
+void Channel::Impl::processOperations_() {
+  setThreadName("TP_CUDA_BASIC_loop");
+  static int sendOpId = 0;
+  static int recvOpId = 0;
+
+  for (;;) {
+    std::unique_lock<std::mutex> lock(opMutex_);
+    opCondVar_.wait(lock);
+
+    while (!sendOperations_.empty()) {
+      auto& op = sendOperations_.front();
+      if (!op.ready) {
+        break;
+      }
+
+      op.process(op.cudaError);
+      sendOperations_.pop_front();
+    }
+
+    while (!recvOperations_.empty()) {
+      auto& op = recvOperations_.front();
+      if (!op.ready) {
+        break;
+      }
+      op.process(op.cudaError);
+      recvOperations_.pop_front();
+      recvOpId++;
+    }
+
+    if (error_ && sendOperations_.empty() && recvOperations_.empty()) {
+      break;
+    }
+  }
+}
+
 // Send memory region to peer.
 void Channel::Impl::sendFromLoop_(
     CudaBuffer buffer,
@@ -156,87 +220,57 @@ void Channel::Impl::sendFromLoop_(
   TP_VLOG(4) << "Channel " << id_ << " received a send request (#"
              << sequenceNumber << ")";
 
-  // Using a shared_ptr instead of unique_ptr because if the lambda captures a
-  // unique_ptr then it becomes non-copyable, which prevents it from being
-  // converted to a function. In C++20 use std::make_shared<uint8_t[]>(len).
-  //
-  // Note: this is a std::shared_ptr<uint8_t[]> semantically. A shared_ptr
-  // with array type is supported in C++17 and higher.
-  //
-  auto tmpBuffer = std::shared_ptr<uint8_t>(
-      new uint8_t[buffer.length], std::default_delete<uint8_t[]>());
-  CpuBuffer cpuBuffer{tmpBuffer.get(), buffer.length};
-
-  descriptorCallback = [this,
-                        sequenceNumber,
-                        descriptorCallback{std::move(descriptorCallback)}](
-                           const Error& error, TDescriptor descriptor) {
-    // There is no requirement for the channel to invoke callbacks in order.
-    TP_VLOG(4) << "Channel " << id_ << " is calling a descriptor callback (#"
-               << sequenceNumber << ")";
-    descriptorCallback(error, std::move(descriptor));
-    TP_VLOG(4) << "Channel " << id_ << " done calling a descriptor callback (#"
-               << sequenceNumber << ")";
-  };
-
-  callback = [this,
-              sequenceNumber,
-              tmpBuffer{std::move(tmpBuffer)},
-              callback{std::move(callback)}](const Error& error) {
-    // There is no requirement for the channel to invoke callbacks in order.
-    TP_VLOG(4) << "Channel " << id_ << " is calling a send callback (#"
-               << sequenceNumber << ")";
-    callback(error);
-    TP_VLOG(4) << "Channel " << id_ << " done calling a send callback (#"
-               << sequenceNumber << ")";
-  };
-
   if (error_) {
     descriptorCallback(error_, std::string());
     callback(error_);
     return;
   }
 
+  TP_VLOG(4) << "Channel " << id_
+             << " is copying buffer from CUDA device to CPU";
+  auto tmpBuffer = makeCudaPinnedBuffer(buffer.length);
   TP_CUDA_CHECK(cudaMemcpyAsync(
-      cpuBuffer.ptr,
+      tmpBuffer.get(),
       buffer.ptr,
       buffer.length,
       cudaMemcpyDeviceToHost,
       buffer.stream));
 
-  TP_DCHECK(
-      cudaSendCallbacks_.find(sequenceNumber) == cudaSendCallbacks_.end());
-  cudaSendCallbacks_[sequenceNumber] =
-      [this,
-       sequenceNumber,
-       cpuBuffer,
-       descriptorCallback{std::move(descriptorCallback)},
-       callback{std::move(callback)}](cudaError_t cudaError) {
-        TP_CUDA_CHECK(cudaError);
-        TP_VLOG(6) << "Channel " << id_ << " is writing payload (#"
-                   << sequenceNumber << ")";
-        cpuChannel_->send(
-            cpuBuffer, std::move(descriptorCallback), std::move(callback));
-
-        // Deleting the lambda from within the lambda. It looks shady but it is
-        // fine.
-        cudaSendCallbacks_.erase(sequenceNumber);
-      };
+  sendOperations_.emplace_back();
+  auto& op = sendOperations_.back();
+  op.process = [this,
+                sequenceNumber,
+                buffer,
+                tmpBuffer{std::move(tmpBuffer)},
+                descriptorCallback{std::move(descriptorCallback)},
+                callback{std::move(callback)}](cudaError_t cudaError) {
+    TP_VLOG(4) << "Channel " << id_
+               << " is done copying buffer from CUDA device to CPU";
+    TP_CUDA_CHECK(cudaError);
+    CpuBuffer cpuBuffer{tmpBuffer.get(), buffer.length};
+    cpuChannel_->send(
+        cpuBuffer,
+        std::move(descriptorCallback),
+        [tmpBuffer{std::move(tmpBuffer)}, callback{std::move(callback)}](
+            const Error& error) { callback(error); });
+  };
+  op.signalReady = [this, &op, sequenceNumber](cudaError_t cudaError) {
+    std::unique_lock<std::mutex> lock(opMutex_);
+    op.cudaError = cudaError;
+    op.ready = true;
+    opCondVar_.notify_all();
+  };
   TP_CUDA_CHECK(cudaStreamAddCallback(
-      buffer.stream,
-      invokeCudaCallback_,
-      &cudaSendCallbacks_[sequenceNumber],
-      0));
+      buffer.stream, signalOperationReady_, &op.signalReady, 0));
 }
 
-void Channel::Impl::invokeCudaCallback_(
+void Channel::Impl::signalOperationReady_(
     cudaStream_t /* stream */,
     cudaError_t status,
-    void* callbackPtr) {
-  auto& callback =
-      *reinterpret_cast<std::function<void(cudaError_t)>*>(callbackPtr);
-
-  callback(status);
+    void* opReadyPtr) {
+  auto& opReady =
+      *reinterpret_cast<std::function<void(cudaError_t)>*>(opReadyPtr);
+  opReady(status);
 }
 
 // Receive memory region from peer.
@@ -269,44 +303,53 @@ void Channel::Impl::recvFromLoop_(
   TP_VLOG(4) << "Channel " << id_ << " received a recv request (#"
              << sequenceNumber << ")";
 
-  // Using a shared_ptr instead of unique_ptr because if the lambda captures a
-  // unique_ptr then it becomes non-copyable, which prevents it from being
-  // converted to a function. In C++20 use std::make_shared<uint8_t[]>(len).
-  //
-  // Note: this is a std::shared_ptr<uint8_t[]> semantically. A shared_ptr
-  // with array type is supported in C++17 and higher.
-  //
-  auto tmpBuffer = std::shared_ptr<uint8_t>(
-      new uint8_t[buffer.length], std::default_delete<uint8_t[]>());
-  CpuBuffer cpuBuffer{tmpBuffer.get(), buffer.length};
-  callback = [this,
-              sequenceNumber,
-              buffer,
-              tmpBuffer{std::move(tmpBuffer)},
-              callback{std::move(callback)}](const Error& error) {
-    TP_CUDA_CHECK(cudaMemcpyAsync(
-        buffer.ptr,
-        tmpBuffer.get(),
-        buffer.length,
-        cudaMemcpyHostToDevice,
-        buffer.stream));
-    // There is no requirement for the channel to invoke callbacks in order.
-    TP_VLOG(4) << "Channel " << id_ << " is calling a recv callback (#"
-               << sequenceNumber << ")";
-    callback(error);
-    TP_VLOG(4) << "Channel " << id_ << " done calling a recv callback (#"
-               << sequenceNumber << ")";
-  };
-
   if (error_) {
     callback(error_);
     return;
   }
 
-  TP_DCHECK_EQ(descriptor, std::string());
+  auto tmpBuffer = makeCudaPinnedBuffer(buffer.length);
 
-  TP_VLOG(6) << "Channel " << id_ << " is reading payload (#" << sequenceNumber
-             << ")";
+  TP_DCHECK_EQ(descriptor, std::string());
+  std::unique_lock<std::mutex> lock(opMutex_);
+
+  recvOperations_.emplace_back();
+  auto& op = recvOperations_.back();
+
+  CpuBuffer cpuBuffer{tmpBuffer.get(), buffer.length};
+  callback = [this,
+              &op,
+              sequenceNumber,
+              buffer,
+              tmpBuffer{std::move(tmpBuffer)},
+              callback{std::move(callback)}](const Error& error) {
+    TP_VLOG(4) << "Channel " << id_
+               << " is copying buffer from CPU to CUDA device";
+    TP_CUDA_CHECK(cudaMemcpyAsync(
+        buffer.ptr,
+        tmpBuffer.get(),
+        buffer.length,
+        HostToDevice,
+        buffer.stream));
+
+    callback(error_);
+
+    op.process = [this, sequenceNumber, tmpBuffer{std::move(tmpBuffer)}](
+                     cudaError_t cudaError) {
+      TP_VLOG(4) << "Channel " << id_
+                 << " is done copying buffer from CPU to CUDA device";
+      TP_CUDA_CHECK(cudaError);
+    };
+    op.signalReady = [this, &op, sequenceNumber](cudaError_t cudaError) {
+      std::unique_lock<std::mutex> lock(opMutex_);
+      op.cudaError = cudaError;
+      op.ready = true;
+      opCondVar_.notify_all();
+    };
+    TP_CUDA_CHECK(cudaStreamAddCallback(
+        buffer.stream, signalOperationReady_, &op.signalReady, 0));
+  };
+
   cpuChannel_->recv(std::move(descriptor), cpuBuffer, std::move(callback));
 }
 
@@ -317,6 +360,7 @@ void Channel::Impl::init() {
 void Channel::Impl::initFromLoop_() {
   TP_DCHECK(loop_.inLoop());
   closingReceiver_.activate(*this);
+  opThread_ = std::thread([this]() { processOperations_(); });
 }
 
 void Channel::setId(std::string id) {
@@ -369,11 +413,11 @@ void Channel::Impl::handleError_() {
   TP_VLOG(5) << "Channel " << id_ << " is handling error " << error_.what();
 
   cpuChannel_->close();
-
-  // Since we cannot un-schedule a callback from a CUDA stream, we have to
-  // ensure they have all been processed before destroying.
-  while (!cudaSendCallbacks_.empty())
-    ;
+  {
+    std::unique_lock<std::mutex> lock(opMutex_);
+    opCondVar_.notify_all();
+  }
+  opThread_.join();
 }
 
 } // namespace cuda_basic
