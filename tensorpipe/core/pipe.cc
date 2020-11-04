@@ -364,15 +364,15 @@ class Pipe::Impl : public std::enable_shared_from_this<Pipe::Impl> {
  private:
   OnDemandDeferredExecutor loop_;
 
-  void initFromLoop_();
+  void initFromLoop();
 
-  void readDescriptorFromLoop_(read_descriptor_callback_fn);
+  void readDescriptorFromLoop(read_descriptor_callback_fn);
 
-  void readFromLoop_(Message, read_callback_fn);
+  void readFromLoop(Message, read_callback_fn);
 
-  void writeFromLoop_(Message, write_callback_fn);
+  void writeFromLoop(Message, write_callback_fn);
 
-  void closeFromLoop_();
+  void closeFromLoop();
 
   enum State {
     INITIALIZING,
@@ -461,51 +461,51 @@ class Pipe::Impl : public std::enable_shared_from_this<Pipe::Impl> {
   // Helpers to schedule our callbacks into user code
   //
 
-  void callReadDescriptorCallback_(ReadOperation& op);
-  void callReadCallback_(ReadOperation& op);
-  void callWriteCallback_(WriteOperation& op);
+  void callReadDescriptorCallback(ReadOperation& op);
+  void callReadCallback(ReadOperation& op);
+  void callWriteCallback(WriteOperation& op);
 
   //
   // Error handling
   //
 
-  void setError_(Error error);
+  void setError(Error error);
 
-  void handleError_();
+  void handleError();
 
   //
   // Everything else
   //
 
-  void startReadingUponEstablishingPipe_();
-  void startWritingUponEstablishingPipe_();
+  void startReadingUponEstablishingPipe();
+  void startWritingUponEstablishingPipe();
 
-  void advanceReadOperation_(ReadOperation& op);
-  void advanceWriteOperation_(WriteOperation& op);
+  void advanceReadOperation(ReadOperation& op);
+  void advanceWriteOperation(WriteOperation& op);
 
-  bool advanceOneReadOperation_(ReadOperation& op);
-  bool advanceOneWriteOperation_(WriteOperation& op);
+  bool advanceOneReadOperation(ReadOperation& op);
+  bool advanceOneWriteOperation(WriteOperation& op);
 
-  void readDescriptorOfMessage_(ReadOperation&);
+  void readDescriptorOfMessage(ReadOperation&);
   void readPayloadsAndReceiveTensorsOfMessage(ReadOperation&);
-  void sendTensorsOfMessage_(WriteOperation&);
-  void writeDescriptorAndPayloadsOfMessage_(WriteOperation&);
-  void onReadWhileServerWaitingForBrochure_(const Packet&);
-  void onReadWhileClientWaitingForBrochureAnswer_(const Packet&);
-  void onAcceptWhileServerWaitingForConnection_(
+  void sendTensorsOfMessage(WriteOperation&);
+  void writeDescriptorAndPayloadsOfMessage(WriteOperation&);
+  void onReadWhileServerWaitingForBrochure(const Packet&);
+  void onReadWhileClientWaitingForBrochureAnswer(const Packet&);
+  void onAcceptWhileServerWaitingForConnection(
       std::string,
       std::shared_ptr<transport::Connection>);
   template <typename TBuffer>
-  void onAcceptWhileServerWaitingForChannel_(
+  void onAcceptWhileServerWaitingForChannel(
       std::string,
       std::string,
       std::shared_ptr<transport::Connection>);
-  void onReadOfMessageDescriptor_(ReadOperation&, const Packet&);
-  void onDescriptorOfTensor_(WriteOperation&, int64_t, channel::TDescriptor);
-  void onReadOfPayload_(ReadOperation&);
-  void onRecvOfTensor_(ReadOperation&);
-  void onWriteOfPayload_(WriteOperation&);
-  void onSendOfTensor_(WriteOperation&);
+  void onReadOfMessageDescriptor(ReadOperation&, const Packet&);
+  void onDescriptorOfTensor(WriteOperation&, int64_t, channel::TDescriptor);
+  void onReadOfPayload(ReadOperation&);
+  void onRecvOfTensor(ReadOperation&);
+  void onWriteOfPayload(WriteOperation&);
+  void onSendOfTensor(WriteOperation&);
 
   ReadOperation* findReadOperation(int64_t sequenceNumber);
   WriteOperation* findWriteOperation(int64_t sequenceNumber);
@@ -514,13 +514,13 @@ class Pipe::Impl : public std::enable_shared_from_this<Pipe::Impl> {
   const std::map<
       int64_t,
       std::tuple<std::string, std::shared_ptr<channel::Context<TBuffer>>>>&
-  getOrderedChannels_();
+  getOrderedChannels();
 
   template <typename TBuffer>
-  std::shared_ptr<channel::Context<TBuffer>> getChannelContext_(
+  std::shared_ptr<channel::Context<TBuffer>> getChannelContext(
       const std::string& channelName);
 
-  bool pendingRegistrations_();
+  bool pendingRegistrations();
 
   template <typename T>
   friend class LazyCallbackWrapper;
@@ -602,7 +602,7 @@ template <>
 const std::map<
     int64_t,
     std::tuple<std::string, std::shared_ptr<channel::Context<CpuBuffer>>>>&
-Pipe::Impl::getOrderedChannels_() {
+Pipe::Impl::getOrderedChannels() {
   return context_->getOrderedCpuChannels();
 }
 
@@ -611,16 +611,16 @@ template <>
 const std::map<
     int64_t,
     std::tuple<std::string, std::shared_ptr<channel::Context<CudaBuffer>>>>&
-Pipe::Impl::getOrderedChannels_() {
+Pipe::Impl::getOrderedChannels() {
   return context_->getOrderedCudaChannels();
 }
 #endif // TENSORPIPE_SUPPORTS_CUDA
 
 void Pipe::Impl::init() {
-  loop_.deferToLoop([this]() { initFromLoop_(); });
+  loop_.deferToLoop([this]() { initFromLoop(); });
 }
 
-void Pipe::Impl::initFromLoop_() {
+void Pipe::Impl::initFromLoop() {
   TP_DCHECK(loop_.inLoop());
   closingReceiver_.activate(*this);
   if (state_ == CLIENT_ABOUT_TO_SEND_HELLO_AND_BROCHURE) {
@@ -654,7 +654,7 @@ void Pipe::Impl::initFromLoop_() {
     }
     forEachDeviceType([&](auto buffer) {
       for (const auto& channelContextIter :
-           this->getOrderedChannels_<decltype(buffer)>()) {
+           this->getOrderedChannels<decltype(buffer)>()) {
         const std::string& channelName = std::get<0>(channelContextIter.second);
         const channel::Context<decltype(buffer)>& channelContext =
             *(std::get<1>(channelContextIter.second));
@@ -679,7 +679,7 @@ void Pipe::Impl::initFromLoop_() {
         *nopHolderIn, lazyCallbackWrapper_([nopHolderIn](Impl& impl) {
           TP_VLOG(3) << "Pipe " << impl.id_
                      << " done reading nop object (brochure answer)";
-          impl.onReadWhileClientWaitingForBrochureAnswer_(
+          impl.onReadWhileClientWaitingForBrochureAnswer(
               nopHolderIn->getObject());
         }));
   }
@@ -690,7 +690,7 @@ void Pipe::Impl::initFromLoop_() {
         *nopHolderIn, lazyCallbackWrapper_([nopHolderIn](Impl& impl) {
           TP_VLOG(3) << "Pipe " << impl.id_
                      << " done reading nop object (brochure)";
-          impl.onReadWhileServerWaitingForBrochure_(nopHolderIn->getObject());
+          impl.onReadWhileServerWaitingForBrochure(nopHolderIn->getObject());
         }));
   }
 }
@@ -712,13 +712,13 @@ void Pipe::close() {
 }
 
 void Pipe::Impl::close() {
-  loop_.deferToLoop([this]() { closeFromLoop_(); });
+  loop_.deferToLoop([this]() { closeFromLoop(); });
 }
 
-void Pipe::Impl::closeFromLoop_() {
+void Pipe::Impl::closeFromLoop() {
   TP_DCHECK(loop_.inLoop());
   TP_VLOG(1) << "Pipe " << id_ << " is closing";
-  setError_(TP_CREATE_ERROR(PipeClosedError));
+  setError(TP_CREATE_ERROR(PipeClosedError));
 }
 
 //
@@ -731,11 +731,11 @@ void Pipe::readDescriptor(read_descriptor_callback_fn fn) {
 
 void Pipe::Impl::readDescriptor(read_descriptor_callback_fn fn) {
   loop_.deferToLoop([this, fn{std::move(fn)}]() mutable {
-    readDescriptorFromLoop_(std::move(fn));
+    readDescriptorFromLoop(std::move(fn));
   });
 }
 
-void Pipe::Impl::readDescriptorFromLoop_(read_descriptor_callback_fn fn) {
+void Pipe::Impl::readDescriptorFromLoop(read_descriptor_callback_fn fn) {
   TP_DCHECK(loop_.inLoop());
 
   readOperations_.emplace_back();
@@ -757,7 +757,7 @@ void Pipe::Impl::readDescriptorFromLoop_(read_descriptor_callback_fn fn) {
 
   op.readDescriptorCallback = std::move(fn);
 
-  advanceReadOperation_(op);
+  advanceReadOperation(op);
 }
 
 void Pipe::read(Message message, read_callback_fn fn) {
@@ -771,11 +771,11 @@ void Pipe::Impl::read(Message message, read_callback_fn fn) {
   loop_.deferToLoop([this,
                      sharedMessage{std::move(sharedMessage)},
                      fn{std::move(fn)}]() mutable {
-    readFromLoop_(std::move(*sharedMessage), std::move(fn));
+    readFromLoop(std::move(*sharedMessage), std::move(fn));
   });
 }
 
-void Pipe::Impl::readFromLoop_(Message message, read_callback_fn fn) {
+void Pipe::Impl::readFromLoop(Message message, read_callback_fn fn) {
   TP_DCHECK(loop_.inLoop());
 
   // This is such a bad logical error on the user's side that it doesn't deserve
@@ -812,7 +812,7 @@ void Pipe::Impl::readFromLoop_(Message message, read_callback_fn fn) {
              << op.message.payloads.size() << " payloads and "
              << op.message.tensors.size() << " tensors)";
 
-  advanceReadOperation_(op);
+  advanceReadOperation(op);
 }
 
 void Pipe::Impl::readPayloadsAndReceiveTensorsOfMessage(ReadOperation& op) {
@@ -841,7 +841,7 @@ void Pipe::Impl::readPayloadsAndReceiveTensorsOfMessage(ReadOperation& op) {
                 Impl& impl, const void* /* unused */, size_t /* unused */) {
               TP_VLOG(3) << "Pipe " << impl.id_ << " done reading payload #"
                          << op.sequenceNumber << "." << payloadIdx;
-              impl.onReadOfPayload_(op);
+              impl.onReadOfPayload(op);
             }));
     ++op.numPayloadsBeingRead;
   }
@@ -866,7 +866,7 @@ void Pipe::Impl::readPayloadsAndReceiveTensorsOfMessage(ReadOperation& op) {
               eagerCallbackWrapper_([&op, tensorIdx](Impl& impl) {
                 TP_VLOG(3) << "Pipe " << impl.id_ << " done receiving tensor #"
                            << op.sequenceNumber << "." << tensorIdx;
-                impl.onRecvOfTensor_(op);
+                impl.onRecvOfTensor(op);
               }));
           ++op.numTensorsBeingReceived;
         });
@@ -884,11 +884,11 @@ void Pipe::Impl::write(Message message, write_callback_fn fn) {
   loop_.deferToLoop([this,
                      sharedMessage{std::move(sharedMessage)},
                      fn{std::move(fn)}]() mutable {
-    writeFromLoop_(std::move(*sharedMessage), std::move(fn));
+    writeFromLoop(std::move(*sharedMessage), std::move(fn));
   });
 }
 
-void Pipe::Impl::writeFromLoop_(Message message, write_callback_fn fn) {
+void Pipe::Impl::writeFromLoop(Message message, write_callback_fn fn) {
   TP_DCHECK(loop_.inLoop());
 
   writeOperations_.emplace_back();
@@ -912,14 +912,14 @@ void Pipe::Impl::writeFromLoop_(Message message, write_callback_fn fn) {
   op.message = std::move(message);
   op.writeCallback = std::move(fn);
 
-  advanceWriteOperation_(op);
+  advanceWriteOperation(op);
 }
 
 //
 // Helpers to schedule our callbacks into user code
 //
 
-void Pipe::Impl::callReadDescriptorCallback_(ReadOperation& op) {
+void Pipe::Impl::callReadDescriptorCallback(ReadOperation& op) {
   TP_DCHECK(loop_.inLoop());
   // Don't check state_ == ESTABLISHED: it can be called after failed handshake
 
@@ -936,7 +936,7 @@ void Pipe::Impl::callReadDescriptorCallback_(ReadOperation& op) {
   op.readDescriptorCallback = nullptr;
 }
 
-void Pipe::Impl::callReadCallback_(ReadOperation& op) {
+void Pipe::Impl::callReadCallback(ReadOperation& op) {
   TP_DCHECK(loop_.inLoop());
   // Don't check state_ == ESTABLISHED: it can be called after failed handshake
 
@@ -950,7 +950,7 @@ void Pipe::Impl::callReadCallback_(ReadOperation& op) {
   op.readCallback = nullptr;
 }
 
-void Pipe::Impl::callWriteCallback_(WriteOperation& op) {
+void Pipe::Impl::callWriteCallback(WriteOperation& op) {
   TP_DCHECK(loop_.inLoop());
   // Don't check state_ == ESTABLISHED: it can be called after failed handshake
 
@@ -969,7 +969,7 @@ void Pipe::Impl::callWriteCallback_(WriteOperation& op) {
 // Error handling
 //
 
-void Pipe::Impl::setError_(Error error) {
+void Pipe::Impl::setError(Error error) {
   // Don't overwrite an error that's already set.
   if (error_ || !error) {
     return;
@@ -977,10 +977,10 @@ void Pipe::Impl::setError_(Error error) {
 
   error_ = std::move(error);
 
-  handleError_();
+  handleError();
 }
 
-void Pipe::Impl::handleError_() {
+void Pipe::Impl::handleError() {
   TP_DCHECK(loop_.inLoop());
   TP_VLOG(2) << "Pipe " << id_ << " is handling error " << error_.what();
 
@@ -1003,10 +1003,10 @@ void Pipe::Impl::handleError_() {
   });
 
   if (!readOperations_.empty()) {
-    advanceReadOperation_(readOperations_.front());
+    advanceReadOperation(readOperations_.front());
   }
   if (!writeOperations_.empty()) {
-    advanceWriteOperation_(writeOperations_.front());
+    advanceWriteOperation(writeOperations_.front());
   }
 }
 
@@ -1014,37 +1014,37 @@ void Pipe::Impl::handleError_() {
 // Everything else
 //
 
-void Pipe::Impl::startReadingUponEstablishingPipe_() {
+void Pipe::Impl::startReadingUponEstablishingPipe() {
   TP_DCHECK(loop_.inLoop());
   TP_DCHECK_EQ(state_, ESTABLISHED);
 
   if (!readOperations_.empty()) {
-    advanceReadOperation_(readOperations_.front());
+    advanceReadOperation(readOperations_.front());
   }
 }
 
-void Pipe::Impl::startWritingUponEstablishingPipe_() {
+void Pipe::Impl::startWritingUponEstablishingPipe() {
   TP_DCHECK(loop_.inLoop());
   TP_DCHECK_EQ(state_, ESTABLISHED);
 
   if (!writeOperations_.empty()) {
-    advanceWriteOperation_(writeOperations_.front());
+    advanceWriteOperation(writeOperations_.front());
   }
 }
 
-void Pipe::Impl::advanceReadOperation_(ReadOperation& initialOp) {
+void Pipe::Impl::advanceReadOperation(ReadOperation& initialOp) {
   // Advancing one operation may unblock later ones that could have progressed
   // but were prevented from overtaking. Thus each time an operation manages to
   // advance we'll try to also advance the one after.
   for (int64_t sequenceNumber = initialOp.sequenceNumber;; ++sequenceNumber) {
     ReadOperation* opPtr = findReadOperation(sequenceNumber);
-    if (opPtr == nullptr || !advanceOneReadOperation_(*opPtr)) {
+    if (opPtr == nullptr || !advanceOneReadOperation(*opPtr)) {
       break;
     }
   }
 }
 
-bool Pipe::Impl::advanceOneReadOperation_(ReadOperation& op) {
+bool Pipe::Impl::advanceOneReadOperation(ReadOperation& op) {
   TP_DCHECK(loop_.inLoop());
   // Don't check state_ == ESTABLISHED: it can be called after failed handshake
 
@@ -1086,26 +1086,26 @@ bool Pipe::Impl::advanceOneReadOperation_(ReadOperation& op) {
       /*from=*/ReadOperation::UNINITIALIZED,
       /*to=*/ReadOperation::ASKING_FOR_ALLOCATION,
       /*cond=*/error_,
-      /*action=*/&Impl::callReadDescriptorCallback_);
+      /*action=*/&Impl::callReadDescriptorCallback);
 
   attemptTransition(
       /*from=*/ReadOperation::UNINITIALIZED,
       /*to=*/ReadOperation::READING_DESCRIPTOR,
       /*cond=*/!error_ && state_ == ESTABLISHED &&
           prevOpState >= ReadOperation::READING_PAYLOADS_AND_RECEIVING_TENSORS,
-      /*action=*/&Impl::readDescriptorOfMessage_);
+      /*action=*/&Impl::readDescriptorOfMessage);
 
   attemptTransition(
       /*from=*/ReadOperation::READING_DESCRIPTOR,
       /*to=*/ReadOperation::ASKING_FOR_ALLOCATION,
       /*cond=*/error_ || op.doneReadingDescriptor,
-      /*action=*/&Impl::callReadDescriptorCallback_);
+      /*action=*/&Impl::callReadDescriptorCallback);
 
   attemptTransition(
       /*from=*/ReadOperation::ASKING_FOR_ALLOCATION,
       /*to=*/ReadOperation::FINISHED,
       /*cond=*/error_ && op.doneGettingAllocation,
-      /*action=*/&Impl::callReadCallback_);
+      /*action=*/&Impl::callReadCallback);
 
   attemptTransition(
       /*from=*/ReadOperation::ASKING_FOR_ALLOCATION,
@@ -1117,7 +1117,7 @@ bool Pipe::Impl::advanceOneReadOperation_(ReadOperation& op) {
       /*from=*/ReadOperation::READING_PAYLOADS_AND_RECEIVING_TENSORS,
       /*to=*/ReadOperation::FINISHED,
       /*cond=*/op.numPayloadsBeingRead == 0 && op.numTensorsBeingReceived == 0,
-      /*action=*/&Impl::callReadCallback_);
+      /*action=*/&Impl::callReadCallback);
 
   // Compute return value now in case we next delete the operation.
   bool hasAdvanced = op.state != initialState;
@@ -1130,19 +1130,19 @@ bool Pipe::Impl::advanceOneReadOperation_(ReadOperation& op) {
   return hasAdvanced;
 }
 
-void Pipe::Impl::advanceWriteOperation_(WriteOperation& initialOp) {
+void Pipe::Impl::advanceWriteOperation(WriteOperation& initialOp) {
   // Advancing one operation may unblock later ones that could have progressed
   // but were prevented from overtaking. Thus each time an operation manages to
   // advance we'll try to also advance the one after.
   for (int64_t sequenceNumber = initialOp.sequenceNumber;; ++sequenceNumber) {
     WriteOperation* opPtr = findWriteOperation(sequenceNumber);
-    if (opPtr == nullptr || !advanceOneWriteOperation_(*opPtr)) {
+    if (opPtr == nullptr || !advanceOneWriteOperation(*opPtr)) {
       break;
     }
   }
 }
 
-bool Pipe::Impl::advanceOneWriteOperation_(WriteOperation& op) {
+bool Pipe::Impl::advanceOneWriteOperation(WriteOperation& op) {
   TP_DCHECK(loop_.inLoop());
   // Don't check state_ == ESTABLISHED: it can be called after failed handshake
 
@@ -1184,32 +1184,32 @@ bool Pipe::Impl::advanceOneWriteOperation_(WriteOperation& op) {
       /*from=*/WriteOperation::UNINITIALIZED,
       /*to=*/WriteOperation::FINISHED,
       /*cond=*/error_,
-      /*action=*/&Impl::callWriteCallback_);
+      /*action=*/&Impl::callWriteCallback);
 
   attemptTransition(
       /*from=*/WriteOperation::UNINITIALIZED,
       /*to=*/WriteOperation::SENDING_TENSORS_AND_COLLECTING_DESCRIPTORS,
       /*cond=*/!error_ && state_ == ESTABLISHED,
-      /*action=*/&Impl::sendTensorsOfMessage_);
+      /*action=*/&Impl::sendTensorsOfMessage);
 
   attemptTransition(
       /*from=*/WriteOperation::SENDING_TENSORS_AND_COLLECTING_DESCRIPTORS,
       /*to=*/WriteOperation::FINISHED,
       /*cond=*/error_ && op.numTensorDescriptorsBeingCollected == 0 &&
           op.numTensorsBeingSent == 0,
-      /*action=*/&Impl::callWriteCallback_);
+      /*action=*/&Impl::callWriteCallback);
 
   attemptTransition(
       /*from=*/WriteOperation::SENDING_TENSORS_AND_COLLECTING_DESCRIPTORS,
       /*to=*/WriteOperation::WRITING_PAYLOADS_AND_SENDING_TENSORS,
       /*cond=*/!error_ && op.numTensorDescriptorsBeingCollected == 0,
-      /*action=*/&Impl::writeDescriptorAndPayloadsOfMessage_);
+      /*action=*/&Impl::writeDescriptorAndPayloadsOfMessage);
 
   attemptTransition(
       /*from=*/WriteOperation::WRITING_PAYLOADS_AND_SENDING_TENSORS,
       /*to=*/WriteOperation::FINISHED,
       /*cond=*/op.numPayloadsBeingWritten == 0 && op.numTensorsBeingSent == 0,
-      /*action=*/&Impl::callWriteCallback_);
+      /*action=*/&Impl::callWriteCallback);
 
   // Compute return value now in case we next delete the operation.
   bool hasAdvanced = op.state != initialState;
@@ -1222,7 +1222,7 @@ bool Pipe::Impl::advanceOneWriteOperation_(WriteOperation& op) {
   return hasAdvanced;
 }
 
-void Pipe::Impl::readDescriptorOfMessage_(ReadOperation& op) {
+void Pipe::Impl::readDescriptorOfMessage(ReadOperation& op) {
   TP_DCHECK(loop_.inLoop());
   TP_DCHECK_EQ(state_, ESTABLISHED);
 
@@ -1242,12 +1242,12 @@ void Pipe::Impl::readDescriptorOfMessage_(ReadOperation& op) {
         TP_VLOG(3) << "Pipe " << impl.id_
                    << " done reading nop object (message descriptor #"
                    << op.sequenceNumber << ")";
-        impl.onReadOfMessageDescriptor_(op, nopHolderIn->getObject());
+        impl.onReadOfMessageDescriptor(op, nopHolderIn->getObject());
       }));
   connectionState_ = AWAITING_PAYLOADS;
 }
 
-void Pipe::Impl::sendTensorsOfMessage_(WriteOperation& op) {
+void Pipe::Impl::sendTensorsOfMessage(WriteOperation& op) {
   TP_DCHECK(loop_.inLoop());
   TP_DCHECK_EQ(state_, ESTABLISHED);
 
@@ -1261,7 +1261,7 @@ void Pipe::Impl::sendTensorsOfMessage_(WriteOperation& op) {
     const auto& tensor = op.message.tensors[tensorIdx];
 
     auto t = switchOnDeviceType(tensor.buffer.type, [&](auto buffer) {
-      auto& orderedChannels = this->getOrderedChannels_<decltype(buffer)>();
+      auto& orderedChannels = this->getOrderedChannels<decltype(buffer)>();
       auto& availableChannels = channels_.get<decltype(buffer)>();
       for (const auto& channelContextIter : orderedChannels) {
         const std::string& channelName = std::get<0>(channelContextIter.second);
@@ -1281,13 +1281,13 @@ void Pipe::Impl::sendTensorsOfMessage_(WriteOperation& op) {
                   TP_VLOG(3)
                       << "Pipe " << impl.id_ << " got tensor descriptor #"
                       << op.sequenceNumber << "." << tensorIdx;
-                  impl.onDescriptorOfTensor_(
+                  impl.onDescriptorOfTensor(
                       op, tensorIdx, std::move(descriptor));
                 }),
             eagerCallbackWrapper_([&op, tensorIdx](Impl& impl) {
               TP_VLOG(3) << "Pipe " << impl.id_ << " done sending tensor #"
                          << op.sequenceNumber << "." << tensorIdx;
-              impl.onSendOfTensor_(op);
+              impl.onSendOfTensor(op);
             }));
         return WriteOperation::Tensor{tensor.buffer.type, channelName};
       }
@@ -1302,7 +1302,7 @@ void Pipe::Impl::sendTensorsOfMessage_(WriteOperation& op) {
   }
 }
 
-void Pipe::Impl::writeDescriptorAndPayloadsOfMessage_(WriteOperation& op) {
+void Pipe::Impl::writeDescriptorAndPayloadsOfMessage(WriteOperation& op) {
   TP_DCHECK(loop_.inLoop());
   TP_DCHECK_EQ(state_, ESTABLISHED);
 
@@ -1338,13 +1338,13 @@ void Pipe::Impl::writeDescriptorAndPayloadsOfMessage_(WriteOperation& op) {
         eagerCallbackWrapper_([&op, payloadIdx](Impl& impl) {
           TP_VLOG(3) << "Pipe " << impl.id_ << " done writing payload #"
                      << op.sequenceNumber << "." << payloadIdx;
-          impl.onWriteOfPayload_(op);
+          impl.onWriteOfPayload(op);
         }));
     ++op.numPayloadsBeingWritten;
   }
 }
 
-void Pipe::Impl::onReadWhileServerWaitingForBrochure_(
+void Pipe::Impl::onReadWhileServerWaitingForBrochure(
     const Packet& nopPacketIn) {
   TP_DCHECK(loop_.inLoop());
   TP_DCHECK_EQ(state_, SERVER_WAITING_FOR_BROCHURE);
@@ -1401,7 +1401,7 @@ void Pipe::Impl::onReadWhileServerWaitingForBrochure_(
                  std::shared_ptr<transport::Connection> connection) {
                 TP_VLOG(3) << "Pipe " << impl.id_
                            << " done requesting connection (as replacement)";
-                impl.onAcceptWhileServerWaitingForConnection_(
+                impl.onAcceptWhileServerWaitingForConnection(
                     std::move(transport), std::move(connection));
               }));
       registrationId_.emplace(token);
@@ -1416,7 +1416,7 @@ void Pipe::Impl::onReadWhileServerWaitingForBrochure_(
 
   forEachDeviceType([&](auto buffer) {
     for (const auto& channelContextIter :
-         this->getOrderedChannels_<decltype(buffer)>()) {
+         this->getOrderedChannels<decltype(buffer)>()) {
       const std::string& channelName = std::get<0>(channelContextIter.second);
       const channel::Context<decltype(buffer)>& channelContext =
           *(std::get<1>(channelContextIter.second));
@@ -1447,7 +1447,7 @@ void Pipe::Impl::onReadWhileServerWaitingForBrochure_(
                 TP_VLOG(3) << "Pipe " << impl.id_
                            << " done requesting connection (for channel "
                            << channelName << ")";
-                impl.onAcceptWhileServerWaitingForChannel_<decltype(buffer)>(
+                impl.onAcceptWhileServerWaitingForChannel<decltype(buffer)>(
                     channelName, std::move(transport), std::move(connection));
               }));
       channelRegistrationIds_.get<decltype(buffer)>()[channelName] = token;
@@ -1469,28 +1469,28 @@ void Pipe::Impl::onReadWhileServerWaitingForBrochure_(
 
   if (!needToWaitForConnections) {
     state_ = ESTABLISHED;
-    startReadingUponEstablishingPipe_();
-    startWritingUponEstablishingPipe_();
+    startReadingUponEstablishingPipe();
+    startWritingUponEstablishingPipe();
   } else {
     state_ = SERVER_WAITING_FOR_CONNECTIONS;
   }
 }
 
 template <>
-std::shared_ptr<channel::Context<CpuBuffer>> Pipe::Impl::getChannelContext_(
+std::shared_ptr<channel::Context<CpuBuffer>> Pipe::Impl::getChannelContext(
     const std::string& channelName) {
   return context_->getCpuChannel(channelName);
 }
 
 #if TENSORPIPE_SUPPORTS_CUDA
 template <>
-std::shared_ptr<channel::Context<CudaBuffer>> Pipe::Impl::getChannelContext_(
+std::shared_ptr<channel::Context<CudaBuffer>> Pipe::Impl::getChannelContext(
     const std::string& channelName) {
   return context_->getCudaChannel(channelName);
 }
 #endif // TENSORPIPE_SUPPORTS_CUDA
 
-void Pipe::Impl::onReadWhileClientWaitingForBrochureAnswer_(
+void Pipe::Impl::onReadWhileClientWaitingForBrochureAnswer(
     const Packet& nopPacketIn) {
   TP_DCHECK(loop_.inLoop());
   TP_DCHECK_EQ(state_, CLIENT_WAITING_FOR_BROCHURE_ANSWER);
@@ -1534,7 +1534,7 @@ void Pipe::Impl::onReadWhileClientWaitingForBrochureAnswer_(
           nopChannelSelectionIter.second;
 
       std::shared_ptr<channel::Context<decltype(buffer)>> channelContext =
-          this->getChannelContext_<decltype(buffer)>(channelName);
+          this->getChannelContext<decltype(buffer)>(channelName);
 
       TP_VLOG(3) << "Pipe " << id_ << " is opening connection (for channel "
                  << channelName << ")";
@@ -1567,11 +1567,11 @@ void Pipe::Impl::onReadWhileClientWaitingForBrochureAnswer_(
   });
 
   state_ = ESTABLISHED;
-  startReadingUponEstablishingPipe_();
-  startWritingUponEstablishingPipe_();
+  startReadingUponEstablishingPipe();
+  startWritingUponEstablishingPipe();
 }
 
-void Pipe::Impl::onAcceptWhileServerWaitingForConnection_(
+void Pipe::Impl::onAcceptWhileServerWaitingForConnection(
     std::string receivedTransport,
     std::shared_ptr<transport::Connection> receivedConnection) {
   TP_DCHECK(loop_.inLoop());
@@ -1584,15 +1584,15 @@ void Pipe::Impl::onAcceptWhileServerWaitingForConnection_(
   connection_.reset();
   connection_ = std::move(receivedConnection);
 
-  if (!pendingRegistrations_()) {
+  if (!pendingRegistrations()) {
     state_ = ESTABLISHED;
-    startReadingUponEstablishingPipe_();
-    startWritingUponEstablishingPipe_();
+    startReadingUponEstablishingPipe();
+    startWritingUponEstablishingPipe();
   }
 }
 
 template <typename TBuffer>
-void Pipe::Impl::onAcceptWhileServerWaitingForChannel_(
+void Pipe::Impl::onAcceptWhileServerWaitingForChannel(
     std::string channelName,
     std::string receivedTransport,
     std::shared_ptr<transport::Connection> receivedConnection) {
@@ -1610,7 +1610,7 @@ void Pipe::Impl::onAcceptWhileServerWaitingForChannel_(
   TP_DCHECK(channels.find(channelName) == channels.end());
 
   std::shared_ptr<channel::Context<TBuffer>> channelContext =
-      getChannelContext_<TBuffer>(channelName);
+      getChannelContext<TBuffer>(channelName);
 
   std::shared_ptr<channel::Channel<TBuffer>> channel =
       channelContext->createChannel(
@@ -1618,14 +1618,14 @@ void Pipe::Impl::onAcceptWhileServerWaitingForChannel_(
   channel->setId(id_ + ".ch_" + channelName);
   channels.emplace(channelName, std::move(channel));
 
-  if (!pendingRegistrations_()) {
+  if (!pendingRegistrations()) {
     state_ = ESTABLISHED;
-    startReadingUponEstablishingPipe_();
-    startWritingUponEstablishingPipe_();
+    startReadingUponEstablishingPipe();
+    startWritingUponEstablishingPipe();
   }
 }
 
-void Pipe::Impl::onReadOfMessageDescriptor_(
+void Pipe::Impl::onReadOfMessageDescriptor(
     ReadOperation& op,
     const Packet& nopPacketIn) {
   TP_DCHECK(loop_.inLoop());
@@ -1635,10 +1635,10 @@ void Pipe::Impl::onReadOfMessageDescriptor_(
   parseDescriptorOfMessage(op, nopPacketIn);
   op.doneReadingDescriptor = true;
 
-  advanceReadOperation_(op);
+  advanceReadOperation(op);
 }
 
-void Pipe::Impl::onDescriptorOfTensor_(
+void Pipe::Impl::onDescriptorOfTensor(
     WriteOperation& op,
     int64_t tensorIdx,
     channel::TDescriptor descriptor) {
@@ -1650,37 +1650,37 @@ void Pipe::Impl::onDescriptorOfTensor_(
   op.tensors[tensorIdx].descriptor = std::move(descriptor);
   --op.numTensorDescriptorsBeingCollected;
 
-  advanceWriteOperation_(op);
+  advanceWriteOperation(op);
 }
 
-void Pipe::Impl::onReadOfPayload_(ReadOperation& op) {
+void Pipe::Impl::onReadOfPayload(ReadOperation& op) {
   TP_DCHECK(loop_.inLoop());
 
   TP_DCHECK_EQ(op.state, ReadOperation::READING_PAYLOADS_AND_RECEIVING_TENSORS);
   op.numPayloadsBeingRead--;
 
-  advanceReadOperation_(op);
+  advanceReadOperation(op);
 }
 
-void Pipe::Impl::onRecvOfTensor_(ReadOperation& op) {
+void Pipe::Impl::onRecvOfTensor(ReadOperation& op) {
   TP_DCHECK(loop_.inLoop());
 
   TP_DCHECK_EQ(op.state, ReadOperation::READING_PAYLOADS_AND_RECEIVING_TENSORS);
   op.numTensorsBeingReceived--;
 
-  advanceReadOperation_(op);
+  advanceReadOperation(op);
 }
 
-void Pipe::Impl::onWriteOfPayload_(WriteOperation& op) {
+void Pipe::Impl::onWriteOfPayload(WriteOperation& op) {
   TP_DCHECK(loop_.inLoop());
 
   TP_DCHECK_EQ(op.state, WriteOperation::WRITING_PAYLOADS_AND_SENDING_TENSORS);
   op.numPayloadsBeingWritten--;
 
-  advanceWriteOperation_(op);
+  advanceWriteOperation(op);
 }
 
-void Pipe::Impl::onSendOfTensor_(WriteOperation& op) {
+void Pipe::Impl::onSendOfTensor(WriteOperation& op) {
   TP_DCHECK(loop_.inLoop());
 
   TP_DCHECK_GE(
@@ -1688,7 +1688,7 @@ void Pipe::Impl::onSendOfTensor_(WriteOperation& op) {
   TP_DCHECK_LE(op.state, WriteOperation::WRITING_PAYLOADS_AND_SENDING_TENSORS);
   op.numTensorsBeingSent--;
 
-  advanceWriteOperation_(op);
+  advanceWriteOperation(op);
 }
 
 ReadOperation* Pipe::Impl::findReadOperation(int64_t sequenceNumber) {
@@ -1717,7 +1717,7 @@ WriteOperation* Pipe::Impl::findWriteOperation(int64_t sequenceNumber) {
   return &op;
 }
 
-bool Pipe::Impl::pendingRegistrations_() {
+bool Pipe::Impl::pendingRegistrations() {
   if (registrationId_.has_value()) {
     return true;
   }

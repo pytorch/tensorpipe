@@ -63,12 +63,12 @@ class Listener::Impl : public std::enable_shared_from_this<Listener::Impl>,
   // Obtain the listener's address.
   std::string addrFromLoop() const;
 
-  void setIdFromLoop_(std::string id);
+  void setIdFromLoop(std::string id);
 
   // Shut down the connection and its resources.
   void closeFromLoop();
 
-  void setError_(Error error);
+  void setError(Error error);
 
   // Deal with an error.
   void handleError();
@@ -116,22 +116,22 @@ void Listener::Impl::initFromLoop() {
   TP_DCHECK(!socket_.hasValue());
   std::tie(error, socket_) = Socket::createForFamily(AF_UNIX);
   if (error) {
-    setError_(std::move(error));
+    setError(std::move(error));
     return;
   }
   error = socket_.bind(sockaddr_);
   if (error) {
-    setError_(std::move(error));
+    setError(std::move(error));
     return;
   }
   error = socket_.block(false);
   if (error) {
-    setError_(std::move(error));
+    setError(std::move(error));
     return;
   }
   error = socket_.listen(128);
   if (error) {
-    setError_(std::move(error));
+    setError(std::move(error));
     return;
   }
 }
@@ -155,10 +155,10 @@ void Listener::Impl::init() {
 void Listener::Impl::closeFromLoop() {
   TP_DCHECK(context_->inLoop());
   TP_VLOG(7) << "Listener " << id_ << " is closing";
-  setError_(TP_CREATE_ERROR(ListenerClosedError));
+  setError(TP_CREATE_ERROR(ListenerClosedError));
 }
 
-void Listener::Impl::setError_(Error error) {
+void Listener::Impl::setError(Error error) {
   // Don't overwrite an error that's already set.
   if (error_ || !error) {
     return;
@@ -262,11 +262,11 @@ void Listener::setId(std::string id) {
 void Listener::Impl::setId(std::string id) {
   context_->deferToLoop(
       [impl{shared_from_this()}, id{std::move(id)}]() mutable {
-        impl->setIdFromLoop_(std::move(id));
+        impl->setIdFromLoop(std::move(id));
       });
 }
 
-void Listener::Impl::setIdFromLoop_(std::string id) {
+void Listener::Impl::setIdFromLoop(std::string id) {
   TP_DCHECK(context_->inLoop());
   TP_VLOG(7) << "Listener " << id_ << " was renamed to " << id;
   id_ = std::move(id);
@@ -287,14 +287,14 @@ void Listener::Impl::handleEventsFromLoop(int events) {
         reinterpret_cast<void*>(&error),
         &errorlen);
     if (rv == -1) {
-      setError_(TP_CREATE_ERROR(SystemError, "getsockopt", rv));
+      setError(TP_CREATE_ERROR(SystemError, "getsockopt", rv));
     } else {
-      setError_(TP_CREATE_ERROR(SystemError, "async error on socket", error));
+      setError(TP_CREATE_ERROR(SystemError, "async error on socket", error));
     }
     return;
   }
   if (events & EPOLLHUP) {
-    setError_(TP_CREATE_ERROR(EOFError));
+    setError(TP_CREATE_ERROR(EOFError));
     return;
   }
   TP_ARG_CHECK_EQ(events, EPOLLIN);
@@ -303,7 +303,7 @@ void Listener::Impl::handleEventsFromLoop(int events) {
   Socket socket;
   std::tie(error, socket) = socket_.accept();
   if (error) {
-    setError_(std::move(error));
+    setError(std::move(error));
     return;
   }
 

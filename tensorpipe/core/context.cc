@@ -130,7 +130,7 @@ class Context::Impl : public Context::PrivateIface,
   ClosingEmitter closingEmitter_;
 
   template <typename TBuffer>
-  std::shared_ptr<channel::Context<TBuffer>> getChannel_(const std::string&);
+  std::shared_ptr<channel::Context<TBuffer>> getChannel(const std::string&);
 };
 
 Context::Context(ContextOptions opts)
@@ -273,7 +273,7 @@ std::shared_ptr<transport::Context> Context::Impl::getTransport(
 }
 
 template <typename TBuffer>
-std::shared_ptr<channel::Context<TBuffer>> Context::Impl::getChannel_(
+std::shared_ptr<channel::Context<TBuffer>> Context::Impl::getChannel(
     const std::string& channel) {
   auto& channels = channels_.get<TBuffer>();
   auto iter = channels.find(channel);
@@ -285,13 +285,13 @@ std::shared_ptr<channel::Context<TBuffer>> Context::Impl::getChannel_(
 
 std::shared_ptr<channel::CpuContext> Context::Impl::getCpuChannel(
     const std::string& channel) {
-  return getChannel_<CpuBuffer>(channel);
+  return getChannel<CpuBuffer>(channel);
 }
 
 #if TENSORPIPE_SUPPORTS_CUDA
 std::shared_ptr<channel::CudaContext> Context::Impl::getCudaChannel(
     const std::string& channel) {
-  return getChannel_<CudaBuffer>(channel);
+  return getChannel<CudaBuffer>(channel);
 }
 #endif // TENSORPIPE_SUPPORTS_CUDA
 

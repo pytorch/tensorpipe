@@ -51,7 +51,7 @@ class Listener::Impl : public std::enable_shared_from_this<Listener::Impl> {
   // Obtain the listener's address.
   std::string addrFromLoop() const;
 
-  void setIdFromLoop_(std::string id);
+  void setIdFromLoop(std::string id);
 
   // Shut down the connection and its resources.
   void closeFromLoop();
@@ -59,15 +59,15 @@ class Listener::Impl : public std::enable_shared_from_this<Listener::Impl> {
   // Called by libuv if the listening socket can accept a new connection. Status
   // is 0 in case of success, < 0 otherwise. See `uv_connection_cb` for more
   // information.
-  void connectionCallbackFromLoop_(int status);
+  void connectionCallbackFromLoop(int status);
 
   // Called when libuv has closed the handle.
-  void closeCallbackFromLoop_();
+  void closeCallbackFromLoop();
 
-  void setError_(Error error);
+  void setError(Error error);
 
   // Deal with an error.
-  void handleError_();
+  void handleError();
 
   std::shared_ptr<Context::PrivateIface> context_;
   std::shared_ptr<TCPHandle> handle_;
@@ -126,9 +126,9 @@ void Listener::Impl::initFromLoop() {
   auto rv = handle_->bindFromLoop(sockaddr_);
   TP_THROW_UV_IF(rv < 0, rv);
   handle_->armCloseCallbackFromLoop(
-      [this]() { this->closeCallbackFromLoop_(); });
+      [this]() { this->closeCallbackFromLoop(); });
   handle_->listenFromLoop(
-      [this](int status) { this->connectionCallbackFromLoop_(status); });
+      [this](int status) { this->connectionCallbackFromLoop(status); });
 }
 
 void Listener::Impl::acceptFromLoop(accept_callback_fn fn) {
@@ -165,11 +165,11 @@ std::string Listener::Impl::addrFromLoop() const {
 void Listener::Impl::setId(std::string id) {
   context_->deferToLoop(
       [impl{shared_from_this()}, id{std::move(id)}]() mutable {
-        impl->setIdFromLoop_(std::move(id));
+        impl->setIdFromLoop(std::move(id));
       });
 }
 
-void Listener::Impl::setIdFromLoop_(std::string id) {
+void Listener::Impl::setIdFromLoop(std::string id) {
   TP_DCHECK(context_->inLoop());
   TP_VLOG(7) << "Listener " << id_ << " was renamed to " << id;
   id_ = std::move(id);
@@ -183,17 +183,17 @@ void Listener::Impl::close() {
 void Listener::Impl::closeFromLoop() {
   TP_DCHECK(context_->inLoop());
   TP_VLOG(7) << "Listener " << id_ << " is closing";
-  setError_(TP_CREATE_ERROR(ListenerClosedError));
+  setError(TP_CREATE_ERROR(ListenerClosedError));
 }
 
-void Listener::Impl::connectionCallbackFromLoop_(int status) {
+void Listener::Impl::connectionCallbackFromLoop(int status) {
   TP_DCHECK(context_->inLoop());
   TP_VLOG(9) << "Listener " << id_
              << " has an incoming connection ready to be accepted ("
              << formatUvError(status) << ")";
 
   if (status != 0) {
-    setError_(TP_CREATE_ERROR(UVError, status));
+    setError(TP_CREATE_ERROR(UVError, status));
     return;
   }
 
@@ -211,12 +211,12 @@ void Listener::Impl::connectionCallbackFromLoop_(int status) {
           std::move(connectionId)));
 }
 
-void Listener::Impl::closeCallbackFromLoop_() {
+void Listener::Impl::closeCallbackFromLoop() {
   TP_VLOG(9) << "Listener " << id_ << " has finished closing its handle";
   leak_.reset();
 }
 
-void Listener::Impl::setError_(Error error) {
+void Listener::Impl::setError(Error error) {
   // Don't overwrite an error that's already set.
   if (error_ || !error) {
     return;
@@ -224,10 +224,10 @@ void Listener::Impl::setError_(Error error) {
 
   error_ = std::move(error);
 
-  handleError_();
+  handleError();
 }
 
-void Listener::Impl::handleError_() {
+void Listener::Impl::handleError() {
   TP_DCHECK(context_->inLoop());
   TP_VLOG(8) << "Listener " << id_ << " is handling error " << error_.what();
   callback_.triggerAll([&]() {

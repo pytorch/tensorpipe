@@ -64,27 +64,27 @@ class Connection::Impl : public std::enable_shared_from_this<Connection::Impl> {
   // Perform a write operation.
   void writeFromLoop(const void* ptr, size_t length, write_callback_fn fn);
 
-  void setIdFromLoop_(std::string id);
+  void setIdFromLoop(std::string id);
 
   // Shut down the connection and its resources.
   void closeFromLoop();
 
   // Called when libuv is about to read data from connection.
-  void allocCallbackFromLoop_(uv_buf_t* buf);
+  void allocCallbackFromLoop(uv_buf_t* buf);
 
   // Called when libuv has read data from connection.
-  void readCallbackFromLoop_(ssize_t nread, const uv_buf_t* buf);
+  void readCallbackFromLoop(ssize_t nread, const uv_buf_t* buf);
 
   // Called when libuv has written data to connection.
-  void writeCallbackFromLoop_(int status);
+  void writeCallbackFromLoop(int status);
 
   // Called when libuv has closed the handle.
-  void closeCallbackFromLoop_();
+  void closeCallbackFromLoop();
 
-  void setError_(Error error);
+  void setError(Error error);
 
   // Deal with an error.
-  void handleError_();
+  void handleError();
 
   std::shared_ptr<Context::PrivateIface> context_;
   std::shared_ptr<TCPHandle> handle_;
@@ -142,16 +142,16 @@ void Connection::Impl::initFromLoop() {
     handle_->initFromLoop();
     handle_->connectFromLoop(sockaddr_.value(), [this](int status) {
       if (status < 0) {
-        setError_(TP_CREATE_ERROR(UVError, status));
+        setError(TP_CREATE_ERROR(UVError, status));
       }
     });
   }
   handle_->armCloseCallbackFromLoop(
-      [this]() { this->closeCallbackFromLoop_(); });
+      [this]() { this->closeCallbackFromLoop(); });
   handle_->armAllocCallbackFromLoop(
-      [this](uv_buf_t* buf) { this->allocCallbackFromLoop_(buf); });
+      [this](uv_buf_t* buf) { this->allocCallbackFromLoop(buf); });
   handle_->armReadCallbackFromLoop([this](ssize_t nread, const uv_buf_t* buf) {
-    this->readCallbackFromLoop_(nread, buf);
+    this->readCallbackFromLoop(nread, buf);
   });
 }
 
@@ -252,18 +252,18 @@ void Connection::Impl::writeFromLoop(
       uv_buf_t{bufsPtr[0].base, bufsPtr[0].len},
       uv_buf_t{bufsPtr[1].base, bufsPtr[1].len}};
   handle_->writeFromLoop(uvBufs.data(), bufsLen, [this](int status) {
-    this->writeCallbackFromLoop_(status);
+    this->writeCallbackFromLoop(status);
   });
 }
 
 void Connection::Impl::setId(std::string id) {
   context_->deferToLoop(
       [impl{shared_from_this()}, id{std::move(id)}]() mutable {
-        impl->setIdFromLoop_(std::move(id));
+        impl->setIdFromLoop(std::move(id));
       });
 }
 
-void Connection::Impl::setIdFromLoop_(std::string id) {
+void Connection::Impl::setIdFromLoop(std::string id) {
   TP_DCHECK(context_->inLoop());
   TP_VLOG(7) << "Connection " << id_ << " was renamed to " << id;
   id_ = std::move(id);
@@ -277,10 +277,10 @@ void Connection::Impl::close() {
 void Connection::Impl::closeFromLoop() {
   TP_DCHECK(context_->inLoop());
   TP_VLOG(7) << "Connection " << id_ << " is closing";
-  setError_(TP_CREATE_ERROR(ConnectionClosedError));
+  setError(TP_CREATE_ERROR(ConnectionClosedError));
 }
 
-void Connection::Impl::allocCallbackFromLoop_(uv_buf_t* buf) {
+void Connection::Impl::allocCallbackFromLoop(uv_buf_t* buf) {
   TP_DCHECK(context_->inLoop());
   TP_THROW_ASSERT_IF(readOperations_.empty());
   TP_VLOG(9) << "Connection " << id_
@@ -288,7 +288,7 @@ void Connection::Impl::allocCallbackFromLoop_(uv_buf_t* buf) {
   readOperations_.front().allocFromLoop(&buf->base, &buf->len);
 }
 
-void Connection::Impl::readCallbackFromLoop_(
+void Connection::Impl::readCallbackFromLoop(
     ssize_t nread,
     const uv_buf_t* buf) {
   TP_DCHECK(context_->inLoop());
@@ -298,7 +298,7 @@ void Connection::Impl::readCallbackFromLoop_(
              << ")";
 
   if (nread < 0) {
-    setError_(TP_CREATE_ERROR(UVError, nread));
+    setError(TP_CREATE_ERROR(UVError, nread));
     return;
   }
 
@@ -317,13 +317,13 @@ void Connection::Impl::readCallbackFromLoop_(
   }
 }
 
-void Connection::Impl::writeCallbackFromLoop_(int status) {
+void Connection::Impl::writeCallbackFromLoop(int status) {
   TP_DCHECK(context_->inLoop());
   TP_VLOG(9) << "Connection " << id_ << " has completed a write request ("
              << formatUvError(status) << ")";
 
   if (status < 0) {
-    setError_(TP_CREATE_ERROR(UVError, status));
+    setError(TP_CREATE_ERROR(UVError, status));
     // Do NOT return, because the error handler method will only fire the
     // callbacks of the read operations, because we can only fire the callbacks
     // of the write operations after their corresponding UV requests complete
@@ -338,14 +338,14 @@ void Connection::Impl::writeCallbackFromLoop_(int status) {
   writeOperations_.pop_front();
 }
 
-void Connection::Impl::closeCallbackFromLoop_() {
+void Connection::Impl::closeCallbackFromLoop() {
   TP_DCHECK(context_->inLoop());
   TP_VLOG(9) << "Connection " << id_ << " has finished closing its handle";
   TP_DCHECK(writeOperations_.empty());
   leak_.reset();
 }
 
-void Connection::Impl::setError_(Error error) {
+void Connection::Impl::setError(Error error) {
   // Don't overwrite an error that's already set.
   if (error_ || !error) {
     return;
@@ -353,10 +353,10 @@ void Connection::Impl::setError_(Error error) {
 
   error_ = std::move(error);
 
-  handleError_();
+  handleError();
 }
 
-void Connection::Impl::handleError_() {
+void Connection::Impl::handleError() {
   TP_DCHECK(context_->inLoop());
   TP_VLOG(8) << "Connection " << id_ << " is handling error " << error_.what();
 

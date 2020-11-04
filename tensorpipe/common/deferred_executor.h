@@ -174,7 +174,7 @@ class EventLoopDeferredExecutor : public virtual DeferredExecutor {
   // Hence this method should be invoked at the end of the subclass constructor.
   void startThread(std::string threadName) {
     thread_ = std::thread(
-        &EventLoopDeferredExecutor::loop_, this, std::move(threadName));
+        &EventLoopDeferredExecutor::loop, this, std::move(threadName));
   }
 
   // This is basically the reverse operation of the above, and is needed for the
@@ -206,7 +206,7 @@ class EventLoopDeferredExecutor : public virtual DeferredExecutor {
   }
 
  private:
-  void loop_(std::string threadName) {
+  void loop(std::string threadName) {
     setThreadName(std::move(threadName));
 
     eventLoop();

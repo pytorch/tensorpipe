@@ -70,7 +70,7 @@ class RingbufferReadOperation {
   // case we must check that the length matches the header we see on the wire.
   const bool ptrProvided_;
 
-  inline ssize_t readNopObject_(util::ringbuffer::Consumer& consumer);
+  inline ssize_t readNopObject(util::ringbuffer::Consumer& consumer);
 };
 
 // Writes happen only if the user supplied a memory pointer, the
@@ -114,7 +114,7 @@ class RingbufferWriteOperation {
   size_t bytesWritten_{0};
   write_callback_fn fn_;
 
-  inline ssize_t writeNopObject_(util::ringbuffer::Producer& producer);
+  inline ssize_t writeNopObject(util::ringbuffer::Producer& producer);
 };
 
 RingbufferReadOperation::RingbufferReadOperation(
@@ -163,7 +163,7 @@ size_t RingbufferReadOperation::handleRead(util::ringbuffer::Consumer& inbox) {
 
   if (mode_ == READ_PAYLOAD) {
     if (nopObject_ != nullptr) {
-      ret = readNopObject_(inbox);
+      ret = readNopObject(inbox);
     } else {
       ret = inbox.readInTx</*allowPartial=*/true>(
           reinterpret_cast<uint8_t*>(ptr_) + bytesRead_, len_ - bytesRead_);
@@ -186,7 +186,7 @@ size_t RingbufferReadOperation::handleRead(util::ringbuffer::Consumer& inbox) {
   return bytesReadNow;
 }
 
-ssize_t RingbufferReadOperation::readNopObject_(
+ssize_t RingbufferReadOperation::readNopObject(
     util::ringbuffer::Consumer& inbox) {
   TP_THROW_ASSERT_IF(len_ > inbox.getSize());
 
@@ -249,7 +249,7 @@ size_t RingbufferWriteOperation::handleWrite(
 
   if (mode_ == WRITE_PAYLOAD) {
     if (nopObject_ != nullptr) {
-      ret = writeNopObject_(outbox);
+      ret = writeNopObject(outbox);
     } else {
       ret = outbox.writeInTx</*allowPartial=*/true>(
           reinterpret_cast<const uint8_t*>(ptr_) + bytesWritten_,
@@ -273,7 +273,7 @@ size_t RingbufferWriteOperation::handleWrite(
   return bytesWrittenNow;
 }
 
-ssize_t RingbufferWriteOperation::writeNopObject_(
+ssize_t RingbufferWriteOperation::writeNopObject(
     util::ringbuffer::Producer& outbox) {
   TP_THROW_ASSERT_IF(len_ > outbox.getSize());
 

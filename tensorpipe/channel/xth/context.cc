@@ -102,7 +102,7 @@ class Context::Impl : public Context::PrivateIface,
   // used for logging and debugging.
   std::atomic<uint64_t> channelCounter_{0};
 
-  void handleCopyRequests_();
+  void handleCopyRequests();
 };
 
 Context::Context() : impl_(std::make_shared<Context::Impl>()) {}
@@ -110,7 +110,7 @@ Context::Context() : impl_(std::make_shared<Context::Impl>()) {}
 Context::Impl::Impl()
     : domainDescriptor_(generateDomainDescriptor()),
       requests_(std::numeric_limits<int>::max()) {
-  thread_ = std::thread(&Impl::handleCopyRequests_, this);
+  thread_ = std::thread(&Impl::handleCopyRequests, this);
 }
 
 void Context::close() {
@@ -211,7 +211,7 @@ void Context::Impl::requestCopy(
   requests_.push(CopyRequest{remotePtr, localPtr, length, std::move(fn)});
 }
 
-void Context::Impl::handleCopyRequests_() {
+void Context::Impl::handleCopyRequests() {
   setThreadName("TP_XTH_loop");
   while (true) {
     auto maybeRequest = requests_.pop();

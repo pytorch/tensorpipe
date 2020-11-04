@@ -69,28 +69,28 @@ class Context::Impl : public Context::PrivateIface,
   ~Impl() override = default;
 
  private:
-  void initFromLoop_();
+  void initFromLoop();
 
-  void closeFromLoop_();
+  void closeFromLoop();
 
-  void setIdFromLoop_(std::string id);
+  void setIdFromLoop(std::string id);
 
-  void registerConnectionRequestFromLoop_(
+  void registerConnectionRequestFromLoop(
       uint64_t laneIdx,
       uint64_t registrationId,
       connection_request_callback_fn);
 
-  void unregisterConnectionRequestFromLoop_(uint64_t);
+  void unregisterConnectionRequestFromLoop(uint64_t);
 
-  void acceptLane_(uint64_t);
-  void onAcceptOfLane_(std::shared_ptr<transport::Connection>);
-  void onReadClientHelloOnLane_(
+  void acceptLane(uint64_t);
+  void onAcceptOfLane(std::shared_ptr<transport::Connection>);
+  void onReadClientHelloOnLane(
       std::shared_ptr<transport::Connection>,
       const Packet&);
 
-  void setError_(Error error);
+  void setError(Error error);
 
-  void handleError_();
+  void handleError();
 
   std::vector<std::shared_ptr<transport::Context>> contexts_;
   std::vector<std::shared_ptr<transport::Listener>> listeners_;
@@ -163,14 +163,14 @@ Context::Impl::Impl(
 }
 
 void Context::Impl::init() {
-  loop_.deferToLoop([this]() { initFromLoop_(); });
+  loop_.deferToLoop([this]() { initFromLoop(); });
 }
 
-void Context::Impl::initFromLoop_() {
+void Context::Impl::initFromLoop() {
   TP_DCHECK(loop_.inLoop());
 
   for (uint64_t laneIdx = 0; laneIdx < numLanes_; ++laneIdx) {
-    acceptLane_(laneIdx);
+    acceptLane(laneIdx);
   }
 }
 
@@ -224,13 +224,13 @@ uint64_t Context::Impl::registerConnectionRequest(
   uint64_t registrationId = nextConnectionRequestRegistrationId_++;
   loop_.deferToLoop(
       [this, laneIdx, registrationId, fn{std::move(fn)}]() mutable {
-        registerConnectionRequestFromLoop_(
+        registerConnectionRequestFromLoop(
             laneIdx, registrationId, std::move(fn));
       });
   return registrationId;
 }
 
-void Context::Impl::registerConnectionRequestFromLoop_(
+void Context::Impl::registerConnectionRequestFromLoop(
     uint64_t laneIdx,
     uint64_t registrationId,
     connection_request_callback_fn fn) {
@@ -255,11 +255,11 @@ void Context::Impl::registerConnectionRequestFromLoop_(
 
 void Context::Impl::unregisterConnectionRequest(uint64_t registrationId) {
   loop_.deferToLoop([this, registrationId]() {
-    unregisterConnectionRequestFromLoop_(registrationId);
+    unregisterConnectionRequestFromLoop(registrationId);
   });
 }
 
-void Context::Impl::unregisterConnectionRequestFromLoop_(
+void Context::Impl::unregisterConnectionRequestFromLoop(
     uint64_t registrationId) {
   TP_DCHECK(loop_.inLoop());
 
@@ -278,7 +278,7 @@ std::shared_ptr<transport::Connection> Context::Impl::connect(
   return contexts_[laneIdx]->connect(std::move(address));
 }
 
-void Context::Impl::acceptLane_(uint64_t laneIdx) {
+void Context::Impl::acceptLane(uint64_t laneIdx) {
   TP_DCHECK(loop_.inLoop());
 
   TP_VLOG(6) << "Channel context " << id_ << " accepting connection on lane "
@@ -287,12 +287,12 @@ void Context::Impl::acceptLane_(uint64_t laneIdx) {
       [laneIdx](Impl& impl, std::shared_ptr<transport::Connection> connection) {
         TP_VLOG(6) << "Channel context " << impl.id_
                    << " done accepting connection on lane " << laneIdx;
-        impl.onAcceptOfLane_(std::move(connection));
-        impl.acceptLane_(laneIdx);
+        impl.onAcceptOfLane(std::move(connection));
+        impl.acceptLane(laneIdx);
       }));
 }
 
-void Context::Impl::onAcceptOfLane_(
+void Context::Impl::onAcceptOfLane(
     std::shared_ptr<transport::Connection> connection) {
   TP_DCHECK(loop_.inLoop());
 
@@ -312,12 +312,12 @@ void Context::Impl::onAcceptOfLane_(
             weakConnection.lock();
         TP_DCHECK(connection);
         impl.connectionsWaitingForHello_.erase(connection);
-        impl.onReadClientHelloOnLane_(
+        impl.onReadClientHelloOnLane(
             std::move(connection), npHolderIn->getObject());
       }));
 }
 
-void Context::Impl::onReadClientHelloOnLane_(
+void Context::Impl::onReadClientHelloOnLane(
     std::shared_ptr<transport::Connection> connection,
     const Packet& nopPacketIn) {
   TP_DCHECK(loop_.inLoop());
@@ -335,7 +335,7 @@ void Context::Impl::onReadClientHelloOnLane_(
   }
 }
 
-void Context::Impl::setError_(Error error) {
+void Context::Impl::setError(Error error) {
   // Don't overwrite an error that's already set.
   if (error_ || !error) {
     return;
@@ -343,10 +343,10 @@ void Context::Impl::setError_(Error error) {
 
   error_ = std::move(error);
 
-  handleError_();
+  handleError();
 }
 
-void Context::Impl::handleError_() {
+void Context::Impl::handleError() {
   TP_DCHECK(loop_.inLoop());
   TP_VLOG(5) << "Channel context " << id_ << " handling error "
              << error_.what();
@@ -374,10 +374,10 @@ void Context::setId(std::string id) {
 
 void Context::Impl::setId(std::string id) {
   loop_.deferToLoop(
-      [this, id{std::move(id)}]() mutable { setIdFromLoop_(std::move(id)); });
+      [this, id{std::move(id)}]() mutable { setIdFromLoop(std::move(id)); });
 }
 
-void Context::Impl::setIdFromLoop_(std::string id) {
+void Context::Impl::setIdFromLoop(std::string id) {
   TP_DCHECK(loop_.inLoop());
   TP_VLOG(4) << "Channel context " << id_ << " was renamed to " << id;
   id_ = std::move(id);
@@ -394,15 +394,15 @@ void Context::close() {
 }
 
 void Context::Impl::close() {
-  loop_.deferToLoop([this]() { closeFromLoop_(); });
+  loop_.deferToLoop([this]() { closeFromLoop(); });
 }
 
-void Context::Impl::closeFromLoop_() {
+void Context::Impl::closeFromLoop() {
   TP_DCHECK(loop_.inLoop());
 
   TP_VLOG(4) << "Channel context " << id_ << " is closing";
 
-  setError_(TP_CREATE_ERROR(ContextClosedError));
+  setError(TP_CREATE_ERROR(ContextClosedError));
 
   TP_VLOG(4) << "Channel context " << id_ << " done closing";
 }

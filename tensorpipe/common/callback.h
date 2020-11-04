@@ -133,7 +133,7 @@ class LazyCallbackWrapper {
         subject_,
         [this, fn{std::move(fn)}](
             TSubject& subject, const Error& error, auto&&... args) mutable {
-          this->entryPoint_(
+          this->entryPoint(
               subject,
               std::move(fn),
               error,
@@ -146,7 +146,7 @@ class LazyCallbackWrapper {
   OnDemandDeferredExecutor& loop_;
 
   template <typename TBoundFn, typename... Args>
-  void entryPoint_(
+  void entryPoint(
       TSubject& subject,
       TBoundFn&& fn,
       const Error& error,
@@ -154,20 +154,20 @@ class LazyCallbackWrapper {
     // FIXME We're copying the args here...
     loop_.deferToLoop(
         [this, &subject, fn{std::move(fn)}, error, args...]() mutable {
-          entryPointFromLoop_(
+          entryPointFromLoop(
               subject, std::move(fn), error, std::forward<Args>(args)...);
         });
   }
 
   template <typename TBoundFn, typename... Args>
-  void entryPointFromLoop_(
+  void entryPointFromLoop(
       TSubject& subject,
       TBoundFn fn,
       const Error& error,
       Args&&... args) {
     TP_DCHECK(loop_.inLoop());
 
-    subject.setError_(error);
+    subject.setError(error);
     // Proceed only in case of success: this is why it's called "lazy".
     if (!subject.error_) {
       fn(subject, std::forward<Args>(args)...);
@@ -196,7 +196,7 @@ class EagerCallbackWrapper {
   auto operator()(TBoundFn&& fn) {
     return [this, subject{subject_.shared_from_this()}, fn{std::move(fn)}](
                const Error& error, auto&&... args) mutable {
-      this->entryPoint_(
+      this->entryPoint(
           *subject,
           std::move(fn),
           error,
@@ -209,7 +209,7 @@ class EagerCallbackWrapper {
   OnDemandDeferredExecutor& loop_;
 
   template <typename TBoundFn, typename... Args>
-  void entryPoint_(
+  void entryPoint(
       TSubject& subject,
       TBoundFn&& fn,
       const Error& error,
@@ -217,20 +217,20 @@ class EagerCallbackWrapper {
     // FIXME We're copying the args here...
     loop_.deferToLoop(
         [this, &subject, fn{std::move(fn)}, error, args...]() mutable {
-          entryPointFromLoop_(
+          entryPointFromLoop(
               subject, std::move(fn), error, std::forward<Args>(args)...);
         });
   }
 
   template <typename TBoundFn, typename... Args>
-  void entryPointFromLoop_(
+  void entryPointFromLoop(
       TSubject& subject,
       TBoundFn fn,
       const Error& error,
       Args&&... args) {
     TP_DCHECK(loop_.inLoop());
 
-    subject.setError_(error);
+    subject.setError(error);
     // Proceed regardless of any error: this is why it's called "eager".
     fn(subject, std::forward<Args>(args)...);
   }
@@ -244,16 +244,16 @@ class ClosingEmitter {
  public:
   void subscribe(uintptr_t token, std::function<void()> fn) {
     loop_.deferToLoop([this, token, fn{std::move(fn)}]() mutable {
-      subscribeFromLoop_(token, std::move(fn));
+      subscribeFromLoop(token, std::move(fn));
     });
   }
 
   void unsubscribe(uintptr_t token) {
-    loop_.deferToLoop([this, token]() { unsubscribeFromLoop_(token); });
+    loop_.deferToLoop([this, token]() { unsubscribeFromLoop(token); });
   }
 
   void close() {
-    loop_.deferToLoop([this]() { closeFromLoop_(); });
+    loop_.deferToLoop([this]() { closeFromLoop(); });
   }
 
  private:
@@ -261,15 +261,15 @@ class ClosingEmitter {
   OnDemandDeferredExecutor loop_;
   std::unordered_map<uintptr_t, std::function<void()>> receivers_;
 
-  void subscribeFromLoop_(uintptr_t token, std::function<void()> fn) {
+  void subscribeFromLoop(uintptr_t token, std::function<void()> fn) {
     receivers_.emplace(token, std::move(fn));
   }
 
-  void unsubscribeFromLoop_(uintptr_t token) {
+  void unsubscribeFromLoop(uintptr_t token) {
     receivers_.erase(token);
   }
 
-  void closeFromLoop_() {
+  void closeFromLoop() {
     for (auto& it : receivers_) {
       it.second();
     }

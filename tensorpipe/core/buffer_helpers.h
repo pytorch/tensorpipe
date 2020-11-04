@@ -11,17 +11,17 @@
 #include <tensorpipe/config.h>
 #include <tensorpipe/core/buffer.h>
 
-#define TP_CPU_DEVICE_FIELD_AND_ACCESSOR(t)          \
-  t cpu;                                             \
-  auto& get_(::tensorpipe::CpuBuffer /* unused */) { \
-    return cpu;                                      \
+#define TP_CPU_DEVICE_FIELD_AND_ACCESSOR(t)         \
+  t cpu;                                            \
+  auto& get(::tensorpipe::CpuBuffer /* unused */) { \
+    return cpu;                                     \
   }
 
 #if TENSORPIPE_SUPPORTS_CUDA
-#define TP_CUDA_DEVICE_FIELD_AND_ACCESSOR(t)          \
-  t cuda;                                             \
-  auto& get_(::tensorpipe::CudaBuffer /* unused */) { \
-    return cuda;                                      \
+#define TP_CUDA_DEVICE_FIELD_AND_ACCESSOR(t)         \
+  t cuda;                                            \
+  auto& get(::tensorpipe::CudaBuffer /* unused */) { \
+    return cuda;                                     \
   }
 #else
 #define TP_CUDA_DEVICE_FIELD_AND_ACCESSOR(t)
@@ -36,7 +36,7 @@
    public:                                        \
     template <typename TBuffer>                   \
     auto& get() {                                 \
-      return get_(TBuffer());                     \
+      return get(TBuffer());                      \
     }                                             \
   }
 

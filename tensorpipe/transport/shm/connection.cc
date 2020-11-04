@@ -92,7 +92,7 @@ class Connection::Impl : public std::enable_shared_from_this<Connection::Impl>,
   void writeFromLoop(const void* ptr, size_t length, write_callback_fn fn);
   void writeFromLoop(const AbstractNopHolder& object, write_callback_fn fn);
 
-  void setIdFromLoop_(std::string id);
+  void setIdFromLoop(std::string id);
 
   // Shut down the connection and its resources.
   void closeFromLoop();
@@ -180,7 +180,7 @@ class Connection::Impl : public std::enable_shared_from_this<Connection::Impl>,
   // a new write operation is queued.
   void processWriteOperationsFromLoop();
 
-  void setError_(Error error);
+  void setError(Error error);
 
   // Deal with an error.
   void handleError();
@@ -256,12 +256,12 @@ void Connection::Impl::initFromLoop() {
   if (!socket_.hasValue()) {
     std::tie(error, socket_) = Socket::createForFamily(AF_UNIX);
     if (error) {
-      setError_(std::move(error));
+      setError(std::move(error));
       return;
     }
     error = socket_.connect(sockaddr_.value());
     if (error) {
-      setError_(std::move(error));
+      setError(std::move(error));
       return;
     }
   }
@@ -269,7 +269,7 @@ void Connection::Impl::initFromLoop() {
   // works well with event driven I/O.
   error = socket_.block(false);
   if (error) {
-    setError_(std::move(error));
+    setError(std::move(error));
     return;
   }
 
@@ -530,11 +530,11 @@ void Connection::setId(std::string id) {
 void Connection::Impl::setId(std::string id) {
   context_->deferToLoop(
       [impl{shared_from_this()}, id{std::move(id)}]() mutable {
-        impl->setIdFromLoop_(std::move(id));
+        impl->setIdFromLoop(std::move(id));
       });
 }
 
-void Connection::Impl::setIdFromLoop_(std::string id) {
+void Connection::Impl::setIdFromLoop(std::string id) {
   TP_DCHECK(context_->inLoop());
   TP_VLOG(7) << "Connection " << id_ << " was renamed to " << id;
   id_ = std::move(id);
@@ -565,9 +565,9 @@ void Connection::Impl::handleEventsFromLoop(int events) {
         reinterpret_cast<void*>(&error),
         &errorlen);
     if (rv == -1) {
-      setError_(TP_CREATE_ERROR(SystemError, "getsockopt", rv));
+      setError(TP_CREATE_ERROR(SystemError, "getsockopt", rv));
     } else {
-      setError_(TP_CREATE_ERROR(SystemError, "async error on socket", error));
+      setError(TP_CREATE_ERROR(SystemError, "async error on socket", error));
     }
     return;
   }
@@ -583,7 +583,7 @@ void Connection::Impl::handleEventsFromLoop(int events) {
   // there's still data to be read from the socket, so we want to deal with that
   // before dealing with the hangup.
   if (events & EPOLLHUP) {
-    setError_(TP_CREATE_ERROR(EOFError));
+    setError(TP_CREATE_ERROR(EOFError));
     return;
   }
 }
@@ -607,7 +607,7 @@ void Connection::Impl::handleEventInFromLoop() {
         outboxHeaderFd,
         outboxDataFd);
     if (err) {
-      setError_(std::move(err));
+      setError(std::move(err));
       return;
     }
 
@@ -637,7 +637,7 @@ void Connection::Impl::handleEventInFromLoop() {
     // We don't expect to read anything on this socket once the
     // connection has been established. If we do, assume it's a
     // zero-byte read indicating EOF.
-    setError_(TP_CREATE_ERROR(EOFError));
+    setError(TP_CREATE_ERROR(EOFError));
     return;
   }
 
@@ -660,7 +660,7 @@ void Connection::Impl::handleEventOutFromLoop() {
         inboxHeaderSegment_.getFd(),
         inboxDataSegment_.getFd());
     if (err) {
-      setError_(std::move(err));
+      setError(std::move(err));
       return;
     }
 
@@ -717,7 +717,7 @@ void Connection::Impl::processWriteOperationsFromLoop() {
   }
 }
 
-void Connection::Impl::setError_(Error error) {
+void Connection::Impl::setError(Error error) {
   // Don't overwrite an error that's already set.
   if (error_ || !error) {
     return;
@@ -759,7 +759,7 @@ void Connection::Impl::handleError() {
 void Connection::Impl::closeFromLoop() {
   TP_DCHECK(context_->inLoop());
   TP_VLOG(7) << "Connection " << id_ << " is closing";
-  setError_(TP_CREATE_ERROR(ConnectionClosedError));
+  setError(TP_CREATE_ERROR(ConnectionClosedError));
 }
 
 } // namespace shm

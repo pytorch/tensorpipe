@@ -57,9 +57,9 @@ class Listener::Impl : public Listener::PrivateIface,
  private:
   OnDemandDeferredExecutor loop_;
 
-  void acceptFromLoop_(accept_callback_fn);
+  void acceptFromLoop(accept_callback_fn);
 
-  void closeFromLoop_();
+  void closeFromLoop();
 
   Error error_{Error::kSuccess};
 
@@ -108,17 +108,17 @@ class Listener::Impl : public Listener::PrivateIface,
   // Initialization
   //
 
-  void initFromLoop_();
+  void initFromLoop();
 
   //
   // Entry points for internal code
   //
 
-  void registerConnectionRequestFromLoop_(
+  void registerConnectionRequestFromLoop(
       uint64_t,
       connection_request_callback_fn);
 
-  void unregisterConnectionRequestFromLoop_(uint64_t);
+  void unregisterConnectionRequestFromLoop(uint64_t);
 
   //
   // Helpers to prepare callbacks from transports
@@ -130,17 +130,17 @@ class Listener::Impl : public Listener::PrivateIface,
   // Error handling
   //
 
-  void setError_(Error error);
+  void setError(Error error);
 
-  void handleError_();
+  void handleError();
 
   //
   // Everything else
   //
 
-  void armListener_(std::string);
-  void onAccept_(std::string, std::shared_ptr<transport::Connection>);
-  void onConnectionHelloRead_(
+  void armListener(std::string);
+  void onAccept(std::string, std::shared_ptr<transport::Connection>);
+  void onConnectionHelloRead(
       std::string,
       std::shared_ptr<transport::Connection>,
       const Packet&);
@@ -182,14 +182,14 @@ Listener::Impl::Impl(
 }
 
 void Listener::Impl::init() {
-  loop_.deferToLoop([this]() { initFromLoop_(); });
+  loop_.deferToLoop([this]() { initFromLoop(); });
 }
 
-void Listener::Impl::initFromLoop_() {
+void Listener::Impl::initFromLoop() {
   TP_DCHECK(loop_.inLoop());
   closingReceiver_.activate(*this);
   for (const auto& listener : listeners_) {
-    armListener_(listener.first);
+    armListener(listener.first);
   }
 }
 
@@ -198,13 +198,13 @@ void Listener::close() {
 }
 
 void Listener::Impl::close() {
-  loop_.deferToLoop([this]() { closeFromLoop_(); });
+  loop_.deferToLoop([this]() { closeFromLoop(); });
 }
 
-void Listener::Impl::closeFromLoop_() {
+void Listener::Impl::closeFromLoop() {
   TP_DCHECK(loop_.inLoop());
   TP_VLOG(1) << "Listener " << id_ << " is closing";
-  setError_(TP_CREATE_ERROR(ListenerClosedError));
+  setError(TP_CREATE_ERROR(ListenerClosedError));
 }
 
 Listener::~Listener() {
@@ -221,10 +221,10 @@ void Listener::accept(accept_callback_fn fn) {
 
 void Listener::Impl::accept(accept_callback_fn fn) {
   loop_.deferToLoop(
-      [this, fn{std::move(fn)}]() mutable { acceptFromLoop_(std::move(fn)); });
+      [this, fn{std::move(fn)}]() mutable { acceptFromLoop(std::move(fn)); });
 }
 
-void Listener::Impl::acceptFromLoop_(accept_callback_fn fn) {
+void Listener::Impl::acceptFromLoop(accept_callback_fn fn) {
   TP_DCHECK(loop_.inLoop());
 
   uint64_t sequenceNumber = nextPipeBeingAccepted_++;
@@ -295,12 +295,12 @@ uint64_t Listener::Impl::registerConnectionRequest(
   // this accept a callback that is called with the registration ID.
   uint64_t registrationId = nextConnectionRequestRegistrationId_++;
   loop_.deferToLoop([this, registrationId, fn{std::move(fn)}]() mutable {
-    registerConnectionRequestFromLoop_(registrationId, std::move(fn));
+    registerConnectionRequestFromLoop(registrationId, std::move(fn));
   });
   return registrationId;
 }
 
-void Listener::Impl::registerConnectionRequestFromLoop_(
+void Listener::Impl::registerConnectionRequestFromLoop(
     uint64_t registrationId,
     connection_request_callback_fn fn) {
   TP_DCHECK(loop_.inLoop());
@@ -331,11 +331,11 @@ void Listener::Impl::registerConnectionRequestFromLoop_(
 
 void Listener::Impl::unregisterConnectionRequest(uint64_t registrationId) {
   loop_.deferToLoop([this, registrationId]() {
-    unregisterConnectionRequestFromLoop_(registrationId);
+    unregisterConnectionRequestFromLoop(registrationId);
   });
 }
 
-void Listener::Impl::unregisterConnectionRequestFromLoop_(
+void Listener::Impl::unregisterConnectionRequestFromLoop(
     uint64_t registrationId) {
   TP_DCHECK(loop_.inLoop());
   TP_VLOG(1) << "Listener " << id_
@@ -348,7 +348,7 @@ void Listener::Impl::unregisterConnectionRequestFromLoop_(
 // Error handling
 //
 
-void Listener::Impl::setError_(Error error) {
+void Listener::Impl::setError(Error error) {
   // Don't overwrite an error that's already set.
   if (error_ || !error) {
     return;
@@ -356,10 +356,10 @@ void Listener::Impl::setError_(Error error) {
 
   error_ = std::move(error);
 
-  handleError_();
+  handleError();
 }
 
-void Listener::Impl::handleError_() {
+void Listener::Impl::handleError() {
   TP_DCHECK(loop_.inLoop());
   TP_VLOG(2) << "Listener " << id_ << " is handling error " << error_.what();
 
@@ -382,7 +382,7 @@ void Listener::Impl::handleError_() {
 // Everything else
 //
 
-void Listener::Impl::onAccept_(
+void Listener::Impl::onAccept(
     std::string transport,
     std::shared_ptr<transport::Connection> connection) {
   TP_DCHECK(loop_.inLoop());
@@ -404,14 +404,14 @@ void Listener::Impl::onAccept_(
             weakConnection.lock();
         TP_DCHECK(connection);
         impl.connectionsWaitingForHello_.erase(connection);
-        impl.onConnectionHelloRead_(
+        impl.onConnectionHelloRead(
             std::move(transport),
             std::move(connection),
             nopHolderIn->getObject());
       }));
 }
 
-void Listener::Impl::armListener_(std::string transport) {
+void Listener::Impl::armListener(std::string transport) {
   TP_DCHECK(loop_.inLoop());
   auto iter = listeners_.find(transport);
   if (iter == listeners_.end()) {
@@ -425,12 +425,12 @@ void Listener::Impl::armListener_(std::string transport) {
           Impl& impl, std::shared_ptr<transport::Connection> connection) {
         TP_VLOG(3) << "Listener " << impl.id_
                    << " done accepting connection on transport " << transport;
-        impl.onAccept_(transport, std::move(connection));
-        impl.armListener_(transport);
+        impl.onAccept(transport, std::move(connection));
+        impl.armListener(transport);
       }));
 }
 
-void Listener::Impl::onConnectionHelloRead_(
+void Listener::Impl::onConnectionHelloRead(
     std::string transport,
     std::shared_ptr<transport::Connection> connection,
     const Packet& nopPacketIn) {

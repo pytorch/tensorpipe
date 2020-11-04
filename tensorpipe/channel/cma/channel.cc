@@ -71,29 +71,29 @@ class Channel::Impl : public std::enable_shared_from_this<Channel::Impl> {
  private:
   OnDemandDeferredExecutor loop_;
 
-  void initFromLoop_();
+  void initFromLoop();
 
   // Send memory region to peer.
-  void sendFromLoop_(
+  void sendFromLoop(
       CpuBuffer buffer,
       TDescriptorCallback descriptorCallback,
       TSendCallback callback);
 
   // Receive memory region from peer.
-  void recvFromLoop_(
+  void recvFromLoop(
       TDescriptor descriptor,
       CpuBuffer buffer,
       TRecvCallback callback);
 
-  void setIdFromLoop_(std::string id);
+  void setIdFromLoop(std::string id);
 
-  void closeFromLoop_();
+  void closeFromLoop();
 
-  void setError_(Error error);
+  void setError(Error error);
 
   // Helper function to process transport error.
   // Shared between read and write callback entry points.
-  void handleError_();
+  void handleError();
 
   std::shared_ptr<Context::PrivateIface> context_;
   std::shared_ptr<transport::Connection> connection_;
@@ -144,10 +144,10 @@ Channel::Impl::Impl(
       id_(std::move(id)) {}
 
 void Channel::Impl::init() {
-  loop_.deferToLoop([this]() { initFromLoop_(); });
+  loop_.deferToLoop([this]() { initFromLoop(); });
 }
 
-void Channel::Impl::initFromLoop_() {
+void Channel::Impl::initFromLoop() {
   TP_DCHECK(loop_.inLoop());
   closingReceiver_.activate(*this);
 }
@@ -167,11 +167,11 @@ void Channel::Impl::send(
                      buffer,
                      descriptorCallback{std::move(descriptorCallback)},
                      callback{std::move(callback)}]() mutable {
-    sendFromLoop_(buffer, std::move(descriptorCallback), std::move(callback));
+    sendFromLoop(buffer, std::move(descriptorCallback), std::move(callback));
   });
 }
 
-void Channel::Impl::sendFromLoop_(
+void Channel::Impl::sendFromLoop(
     CpuBuffer buffer,
     TDescriptorCallback descriptorCallback,
     TSendCallback callback) {
@@ -247,11 +247,11 @@ void Channel::Impl::recv(
                      descriptor{std::move(descriptor)},
                      buffer,
                      callback{std::move(callback)}]() mutable {
-    recvFromLoop_(std::move(descriptor), buffer, std::move(callback));
+    recvFromLoop(std::move(descriptor), buffer, std::move(callback));
   });
 }
 
-void Channel::Impl::recvFromLoop_(
+void Channel::Impl::recvFromLoop(
     TDescriptor descriptor,
     CpuBuffer buffer,
     TRecvCallback callback) {
@@ -314,10 +314,10 @@ void Channel::setId(std::string id) {
 
 void Channel::Impl::setId(std::string id) {
   loop_.deferToLoop(
-      [this, id{std::move(id)}]() mutable { setIdFromLoop_(std::move(id)); });
+      [this, id{std::move(id)}]() mutable { setIdFromLoop(std::move(id)); });
 }
 
-void Channel::Impl::setIdFromLoop_(std::string id) {
+void Channel::Impl::setIdFromLoop(std::string id) {
   TP_DCHECK(loop_.inLoop());
   TP_VLOG(4) << "Channel " << id_ << " was renamed to " << id;
   id_ = std::move(id);
@@ -332,16 +332,16 @@ Channel::~Channel() {
 }
 
 void Channel::Impl::close() {
-  loop_.deferToLoop([this]() { closeFromLoop_(); });
+  loop_.deferToLoop([this]() { closeFromLoop(); });
 }
 
-void Channel::Impl::closeFromLoop_() {
+void Channel::Impl::closeFromLoop() {
   TP_DCHECK(loop_.inLoop());
   TP_VLOG(4) << "Channel " << id_ << " is closing";
-  setError_(TP_CREATE_ERROR(ChannelClosedError));
+  setError(TP_CREATE_ERROR(ChannelClosedError));
 }
 
-void Channel::Impl::setError_(Error error) {
+void Channel::Impl::setError(Error error) {
   // Don't overwrite an error that's already set.
   if (error_ || !error) {
     return;
@@ -349,10 +349,10 @@ void Channel::Impl::setError_(Error error) {
 
   error_ = std::move(error);
 
-  handleError_();
+  handleError();
 }
 
-void Channel::Impl::handleError_() {
+void Channel::Impl::handleError() {
   TP_DCHECK(loop_.inLoop());
   TP_VLOG(5) << "Channel " << id_ << " is handling error " << error_.what();
 

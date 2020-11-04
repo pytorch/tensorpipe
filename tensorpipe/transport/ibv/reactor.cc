@@ -47,7 +47,7 @@ Reactor::Reactor() {
 
   addr_ = makeIbvAddress(getIbvLib(), ctx_, kPortNum, kGlobalIdentifierIndex);
 
-  postRecvRequestsOnSRQ_(kNumPendingRecvReqs);
+  postRecvRequestsOnSRQ(kNumPendingRecvReqs);
 
   startThread("TP_IBV_reactor");
 }
@@ -56,7 +56,7 @@ bool Reactor::isViable() const {
   return foundIbvLib_ && const_cast<IbvContext&>(ctx_).get() != nullptr;
 }
 
-void Reactor::postRecvRequestsOnSRQ_(int num) {
+void Reactor::postRecvRequestsOnSRQ(int num) {
   while (num > 0) {
     IbvLib::recv_wr* badRecvWr = nullptr;
     std::array<IbvLib::recv_wr, kNumPolledWorkCompletions> wrs;
@@ -149,7 +149,7 @@ bool Reactor::pollOnce() {
     }
   }
 
-  postRecvRequestsOnSRQ_(numRecvs);
+  postRecvRequestsOnSRQ(numRecvs);
 
   numAvailableWrites_ += numWrites;
   while (!pendingQpWrites_.empty() && numAvailableWrites_ > 0) {

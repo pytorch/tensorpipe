@@ -81,51 +81,51 @@ class Channel::Impl : public std::enable_shared_from_this<Channel::Impl> {
     ESTABLISHED,
   };
 
-  void initFromLoop_();
+  void initFromLoop();
 
-  void sendFromLoop_(
+  void sendFromLoop(
       CpuBuffer buffer,
       TDescriptorCallback descriptorCallback,
       TSendCallback callback);
 
-  void recvFromLoop_(
+  void recvFromLoop(
       TDescriptor descriptor,
       CpuBuffer buffer,
       TRecvCallback callback);
 
-  void setIdFromLoop_(std::string id);
+  void setIdFromLoop(std::string id);
 
-  void closeFromLoop_();
+  void closeFromLoop();
 
   // Called when client reads the server's hello on backbone connection
-  void onClientReadHelloOnConnection_(const Packet& nopPacketIn);
+  void onClientReadHelloOnConnection(const Packet& nopPacketIn);
 
   // Called when server accepts new client connection for lane
-  void onServerAcceptOfLane_(
+  void onServerAcceptOfLane(
       uint64_t laneIdx,
       std::shared_ptr<transport::Connection> connection);
 
   // Called when channel endpoint has all lanes established, and processes
   // operations that were performed in the meantime and queued.
-  void startSendingAndReceivingUponEstablishingChannel_();
+  void startSendingAndReceivingUponEstablishingChannel();
 
   // Performs the chunking and the writing of one send operation.
-  void sendOperation_(SendOperation& op);
+  void sendOperation(SendOperation& op);
 
   // Performs the chunking and the reading of one recv operation.
-  void recvOperation_(RecvOperation& op);
+  void recvOperation(RecvOperation& op);
 
   // Called when the write of one chunk of a send operation has been completed.
-  void onWriteOfPayload_(SendOperation& op);
+  void onWriteOfPayload(SendOperation& op);
 
   // Called when the read of one chunk of a recv operation has been completed.
-  void onReadOfPayload_(RecvOperation& op);
+  void onReadOfPayload(RecvOperation& op);
 
-  void setError_(Error error);
+  void setError(Error error);
 
   // Helper function to process transport error.
   // Shared between read and write callback entry points.
-  void handleError_();
+  void handleError();
 
   std::shared_ptr<Context::PrivateIface> context_;
   std::shared_ptr<transport::Connection> connection_;
@@ -194,10 +194,10 @@ Channel::Impl::Impl(
       closingReceiver_(context_, context_->getClosingEmitter()) {}
 
 void Channel::Impl::init() {
-  loop_.deferToLoop([this]() { initFromLoop_(); });
+  loop_.deferToLoop([this]() { initFromLoop(); });
 }
 
-void Channel::Impl::initFromLoop_() {
+void Channel::Impl::initFromLoop() {
   TP_DCHECK(loop_.inLoop());
   closingReceiver_.activate(*this);
 
@@ -210,7 +210,7 @@ void Channel::Impl::initFromLoop_() {
         *nopHolderIn, lazyCallbackWrapper_([nopHolderIn](Impl& impl) {
           TP_VLOG(6) << "Channel " << impl.id_
                      << " done reading nop object (server hello)";
-          impl.onClientReadHelloOnConnection_(nopHolderIn->getObject());
+          impl.onClientReadHelloOnConnection(nopHolderIn->getObject());
         }));
   } else if (endpoint_ == Endpoint::kListen) {
     state_ = SERVER_ACCEPTING_LANES;
@@ -236,7 +236,7 @@ void Channel::Impl::initFromLoop_() {
                 TP_VLOG(6) << "Channel " << impl.id_
                            << " done requesting connection (for lane "
                            << laneIdx << ")";
-                impl.onServerAcceptOfLane_(laneIdx, std::move(connection));
+                impl.onServerAcceptOfLane(laneIdx, std::move(connection));
               }));
       laneRegistrationIds_.emplace(laneIdx, token);
       nopLaneAdvertisement.registrationId = token;
@@ -268,11 +268,11 @@ void Channel::Impl::send(
                      buffer,
                      descriptorCallback{std::move(descriptorCallback)},
                      callback{std::move(callback)}]() mutable {
-    sendFromLoop_(buffer, std::move(descriptorCallback), std::move(callback));
+    sendFromLoop(buffer, std::move(descriptorCallback), std::move(callback));
   });
 }
 
-void Channel::Impl::sendFromLoop_(
+void Channel::Impl::sendFromLoop(
     CpuBuffer buffer,
     TDescriptorCallback descriptorCallback,
     TSendCallback callback) {
@@ -318,7 +318,7 @@ void Channel::Impl::sendFromLoop_(
   op.callback = std::move(callback);
 
   if (state_ == ESTABLISHED) {
-    sendOperation_(op);
+    sendOperation(op);
   }
 
   descriptorCallback(Error::kSuccess, std::string());
@@ -339,11 +339,11 @@ void Channel::Impl::recv(
                      descriptor{std::move(descriptor)},
                      buffer,
                      callback{std::move(callback)}]() mutable {
-    recvFromLoop_(std::move(descriptor), buffer, std::move(callback));
+    recvFromLoop(std::move(descriptor), buffer, std::move(callback));
   });
 }
 
-void Channel::Impl::recvFromLoop_(
+void Channel::Impl::recvFromLoop(
     TDescriptor descriptor,
     CpuBuffer buffer,
     TRecvCallback callback) {
@@ -378,7 +378,7 @@ void Channel::Impl::recvFromLoop_(
   op.callback = std::move(callback);
 
   if (state_ == ESTABLISHED) {
-    recvOperation_(op);
+    recvOperation(op);
   }
 }
 
@@ -388,16 +388,16 @@ void Channel::setId(std::string id) {
 
 void Channel::Impl::setId(std::string id) {
   loop_.deferToLoop(
-      [this, id{std::move(id)}]() mutable { setIdFromLoop_(std::move(id)); });
+      [this, id{std::move(id)}]() mutable { setIdFromLoop(std::move(id)); });
 }
 
-void Channel::Impl::setIdFromLoop_(std::string id) {
+void Channel::Impl::setIdFromLoop(std::string id) {
   TP_DCHECK(loop_.inLoop());
   TP_VLOG(4) << "Channel " << id_ << " was renamed to " << id;
   id_ = std::move(id);
 }
 
-void Channel::Impl::onClientReadHelloOnConnection_(const Packet& nopPacketIn) {
+void Channel::Impl::onClientReadHelloOnConnection(const Packet& nopPacketIn) {
   TP_DCHECK(loop_.inLoop());
   TP_DCHECK_EQ(state_, CLIENT_READING_HELLO);
   TP_DCHECK_EQ(nopPacketIn.index(), nopPacketIn.index_of<ServerHello>());
@@ -428,10 +428,10 @@ void Channel::Impl::onClientReadHelloOnConnection_(const Packet& nopPacketIn) {
   }
 
   state_ = ESTABLISHED;
-  startSendingAndReceivingUponEstablishingChannel_();
+  startSendingAndReceivingUponEstablishingChannel();
 }
 
-void Channel::Impl::onServerAcceptOfLane_(
+void Channel::Impl::onServerAcceptOfLane(
     uint64_t laneIdx,
     std::shared_ptr<transport::Connection> connection) {
   TP_DCHECK(loop_.inLoop());
@@ -448,23 +448,23 @@ void Channel::Impl::onServerAcceptOfLane_(
 
   if (numLanesBeingAccepted_ == 0) {
     state_ = ESTABLISHED;
-    startSendingAndReceivingUponEstablishingChannel_();
+    startSendingAndReceivingUponEstablishingChannel();
   }
 }
 
-void Channel::Impl::startSendingAndReceivingUponEstablishingChannel_() {
+void Channel::Impl::startSendingAndReceivingUponEstablishingChannel() {
   TP_DCHECK(loop_.inLoop());
   TP_DCHECK_EQ(state_, ESTABLISHED);
 
   for (SendOperation& op : sendOperations_) {
-    sendOperation_(op);
+    sendOperation(op);
   }
   for (RecvOperation& op : recvOperations_) {
-    recvOperation_(op);
+    recvOperation(op);
   }
 }
 
-void Channel::Impl::sendOperation_(SendOperation& op) {
+void Channel::Impl::sendOperation(SendOperation& op) {
   TP_DCHECK(loop_.inLoop());
   TP_DCHECK_EQ(state_, ESTABLISHED);
 
@@ -485,13 +485,13 @@ void Channel::Impl::sendOperation_(SendOperation& op) {
         ptr, length, eagerCallbackWrapper_([&op, laneIdx](Impl& impl) {
           TP_VLOG(6) << "Channel " << impl.id_ << " done writing payload #"
                      << op.sequenceNumber << " on lane " << laneIdx;
-          impl.onWriteOfPayload_(op);
+          impl.onWriteOfPayload(op);
         }));
     ++op.numChunksBeingWritten;
   }
 }
 
-void Channel::Impl::recvOperation_(RecvOperation& op) {
+void Channel::Impl::recvOperation(RecvOperation& op) {
   TP_DCHECK(loop_.inLoop());
   TP_DCHECK_EQ(state_, ESTABLISHED);
 
@@ -516,7 +516,7 @@ void Channel::Impl::recvOperation_(RecvOperation& op) {
                 Impl& impl, const void* /* unused */, size_t /* unused */) {
               TP_VLOG(6) << "Channel " << impl.id_ << " done reading payload #"
                          << op.sequenceNumber << " on lane " << laneIdx;
-              impl.onReadOfPayload_(op);
+              impl.onReadOfPayload(op);
             }));
     ++op.numChunksBeingRead;
   }
@@ -531,16 +531,16 @@ Channel::~Channel() {
 }
 
 void Channel::Impl::close() {
-  loop_.deferToLoop([this]() { closeFromLoop_(); });
+  loop_.deferToLoop([this]() { closeFromLoop(); });
 }
 
-void Channel::Impl::closeFromLoop_() {
+void Channel::Impl::closeFromLoop() {
   TP_DCHECK(loop_.inLoop());
   TP_VLOG(4) << "Channel " << id_ << " is closing";
-  setError_(TP_CREATE_ERROR(ChannelClosedError));
+  setError(TP_CREATE_ERROR(ChannelClosedError));
 }
 
-void Channel::Impl::onWriteOfPayload_(SendOperation& op) {
+void Channel::Impl::onWriteOfPayload(SendOperation& op) {
   TP_DCHECK(loop_.inLoop());
 
   --op.numChunksBeingWritten;
@@ -555,7 +555,7 @@ void Channel::Impl::onWriteOfPayload_(SendOperation& op) {
   sendOperations_.pop_front();
 }
 
-void Channel::Impl::onReadOfPayload_(RecvOperation& op) {
+void Channel::Impl::onReadOfPayload(RecvOperation& op) {
   TP_DCHECK(loop_.inLoop());
   TP_DCHECK_EQ(state_, ESTABLISHED);
 
@@ -571,7 +571,7 @@ void Channel::Impl::onReadOfPayload_(RecvOperation& op) {
   recvOperations_.pop_front();
 }
 
-void Channel::Impl::setError_(Error error) {
+void Channel::Impl::setError(Error error) {
   // Don't overwrite an error that's already set.
   if (error_ || !error) {
     return;
@@ -579,10 +579,10 @@ void Channel::Impl::setError_(Error error) {
 
   error_ = std::move(error);
 
-  handleError_();
+  handleError();
 }
 
-void Channel::Impl::handleError_() {
+void Channel::Impl::handleError() {
   TP_DCHECK(loop_.inLoop());
   TP_VLOG(5) << "Channel " << id_ << " is handling error " << error_.what();
 

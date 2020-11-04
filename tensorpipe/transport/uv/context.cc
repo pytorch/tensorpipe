@@ -83,7 +83,7 @@ class Context::Impl : public Context::PrivateIface,
   std::atomic<uint64_t> listenerCounter_{0};
   std::atomic<uint64_t> connectionCounter_{0};
 
-  std::tuple<Error, std::string> lookupAddrForHostnameFromLoop_();
+  std::tuple<Error, std::string> lookupAddrForHostnameFromLoop();
 };
 
 Context::Context() : impl_(std::make_shared<Impl>()) {}
@@ -210,12 +210,12 @@ std::tuple<Error, std::string> Context::Impl::lookupAddrForHostname() {
   Error error;
   std::string addr;
   runInLoop([this, &error, &addr]() {
-    std::tie(error, addr) = lookupAddrForHostnameFromLoop_();
+    std::tie(error, addr) = lookupAddrForHostnameFromLoop();
   });
   return std::make_tuple(std::move(error), std::move(addr));
 }
 
-std::tuple<Error, std::string> Context::Impl::lookupAddrForHostnameFromLoop_() {
+std::tuple<Error, std::string> Context::Impl::lookupAddrForHostnameFromLoop() {
   int rv;
   std::string hostname;
   std::tie(rv, hostname) = getHostname();

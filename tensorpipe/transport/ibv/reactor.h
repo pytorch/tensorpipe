@@ -114,7 +114,7 @@ class Reactor final : public BusyPollingLoop {
   IbvSharedReceiveQueue srq_;
   IbvAddress addr_;
 
-  void postRecvRequestsOnSRQ_(int num);
+  void postRecvRequestsOnSRQ(int num);
 
   std::atomic<bool> closed_{false};
   std::atomic<bool> joined_{false};
