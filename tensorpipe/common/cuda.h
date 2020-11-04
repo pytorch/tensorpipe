@@ -19,10 +19,13 @@
 
 class CudaEvent {
  public:
-  explicit CudaEvent(int device) {
+  explicit CudaEvent(int device, bool interprocess = false) {
     TP_CUDA_CHECK(cudaSetDevice(device));
-    TP_CUDA_CHECK(cudaEventCreateWithFlags(
-        &ev_, cudaEventDisableTiming | cudaEventInterprocess));
+    int flags = cudaEventDisableTiming;
+    if (interprocess) {
+      flags |= cudaEventInterprocess;
+    }
+    TP_CUDA_CHECK(cudaEventCreateWithFlags(&ev_, flags));
   }
 
   explicit CudaEvent(cudaIpcEventHandle_t handle) {

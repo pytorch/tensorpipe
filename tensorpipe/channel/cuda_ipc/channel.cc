@@ -70,7 +70,7 @@ class SendOperation {
         callback(std::move(callback)),
         ptr_(ptr),
         stream_(stream),
-        startEv_(cudaDeviceForPointer(ptr)) {
+        startEv_(cudaDeviceForPointer(ptr), /* interprocess = */ true) {
     startEv_.record(stream_);
   }
 
@@ -84,7 +84,7 @@ class SendOperation {
   }
 
   void process(const cudaIpcEventHandle_t& stopEvHandle) {
-    CudaEvent stopEv(stopEvHandle);
+    CudaEvent stopEv(stopEvHandle, /* interprocess = */ true);
     stopEv.wait(stream_);
   }
 
@@ -107,7 +107,7 @@ struct RecvOperation {
         ptr_(ptr),
         stream_(stream),
         length_(length),
-        stopEv_(cudaDeviceForPointer(ptr)) {}
+        stopEv_(cudaDeviceForPointer(ptr), /* interprocess = */ true) {}
 
   Reply reply() {
     return Reply{stopEv_.serializedHandle()};
@@ -116,7 +116,7 @@ struct RecvOperation {
   void process(
       const cudaIpcEventHandle_t& startEvHandle,
       const cudaIpcMemHandle_t& remoteHandle) {
-    CudaEvent startEv(startEvHandle);
+    CudaEvent startEv(startEvHandle, /* interprocess = */ true);
     startEv.wait(stream_);
 
     void* remotePtr;
