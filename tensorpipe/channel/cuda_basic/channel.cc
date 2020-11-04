@@ -332,7 +332,7 @@ void Channel::Impl::recvFromLoop_(
         buffer.ptr,
         tmpBuffer.get(),
         buffer.length,
-        cudaHostToDevice,
+        cudaMemcpyHostToDevice,
         buffer.stream));
 
     callback(error_);
