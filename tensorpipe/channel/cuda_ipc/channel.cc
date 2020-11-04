@@ -84,7 +84,7 @@ class SendOperation {
   }
 
   void process(const cudaIpcEventHandle_t& stopEvHandle) {
-    CudaEvent stopEv(stopEvHandle, /* interprocess = */ true);
+    CudaEvent stopEv(stopEvHandle);
     stopEv.wait(stream_);
   }
 
@@ -116,7 +116,7 @@ struct RecvOperation {
   void process(
       const cudaIpcEventHandle_t& startEvHandle,
       const cudaIpcMemHandle_t& remoteHandle) {
-    CudaEvent startEv(startEvHandle, /* interprocess = */ true);
+    CudaEvent startEv(startEvHandle);
     startEv.wait(stream_);
 
     void* remotePtr;
