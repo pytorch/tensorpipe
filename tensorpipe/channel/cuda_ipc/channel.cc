@@ -24,6 +24,7 @@
 #include <tensorpipe/channel/error.h>
 #include <tensorpipe/channel/helpers.h>
 #include <tensorpipe/common/callback.h>
+#include <tensorpipe/common/cuda.h>
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/error.h>
 #include <tensorpipe/common/error_macros.h>
@@ -31,11 +32,6 @@
 #include <tensorpipe/common/queue.h>
 #include <tensorpipe/common/system.h>
 #include <tensorpipe/transport/connection.h>
-
-#define TP_CUDA_CHECK(a)                                                      \
-  TP_THROW_ASSERT_IF(cudaSuccess != (a))                                      \
-      << __TP_EXPAND_OPD(a) << " " << cudaGetErrorName(cudaPeekAtLastError()) \
-      << " (" << cudaGetErrorString(cudaPeekAtLastError()) << ")"
 
 namespace tensorpipe {
 namespace channel {
@@ -60,52 +56,6 @@ struct Ack {
 
 using Packet = nop::Variant<Reply, Ack>;
 
-class CudaEvent {
- public:
-  explicit CudaEvent(int device) {
-    TP_CUDA_CHECK(cudaSetDevice(device));
-    TP_CUDA_CHECK(cudaEventCreateWithFlags(
-        &ev_, cudaEventDisableTiming | cudaEventInterprocess));
-  }
-
-  explicit CudaEvent(cudaIpcEventHandle_t handle) {
-    TP_CUDA_CHECK(cudaIpcOpenEventHandle(&ev_, handle));
-  }
-
-  void record(cudaStream_t stream) {
-    TP_CUDA_CHECK(cudaEventRecord(ev_, stream));
-  }
-
-  void wait(cudaStream_t stream) {
-    TP_CUDA_CHECK(cudaStreamWaitEvent(stream, ev_, 0));
-  }
-
-  std::string serializedHandle() {
-    cudaIpcEventHandle_t handle;
-    TP_CUDA_CHECK(cudaIpcGetEventHandle(&handle, ev_));
-
-    return std::string(reinterpret_cast<const char*>(&handle), sizeof(handle));
-  }
-
-  ~CudaEvent() {
-    TP_CUDA_CHECK(cudaEventDestroy(ev_));
-  }
-
- private:
-  cudaEvent_t ev_;
-};
-
-int cudaDeviceForPointer(const void* ptr) {
-  cudaPointerAttributes attrs;
-  TP_CUDA_CHECK(cudaPointerGetAttributes(&attrs, ptr));
-#if (CUDART_VERSION >= 10000)
-  TP_DCHECK_EQ(cudaMemoryTypeDevice, attrs.type);
-#else
-  TP_DCHECK_EQ(cudaMemoryTypeDevice, attrs.memoryType);
-#endif
-  return attrs.device;
-}
-
 class SendOperation {
  public:
   uint64_t sequenceNumber;
@@ -120,7 +70,7 @@ class SendOperation {
         callback(std::move(callback)),
         ptr_(ptr),
         stream_(stream),
-        startEv_(cudaDeviceForPointer(ptr)) {
+        startEv_(cudaDeviceForPointer(ptr), /* interprocess = */ true) {
     startEv_.record(stream_);
   }
 
@@ -157,7 +107,7 @@ struct RecvOperation {
         ptr_(ptr),
         stream_(stream),
         length_(length),
-        stopEv_(cudaDeviceForPointer(ptr)) {}
+        stopEv_(cudaDeviceForPointer(ptr), /* interprocess = */ true) {}
 
   Reply reply() {
     return Reply{stopEv_.serializedHandle()};
