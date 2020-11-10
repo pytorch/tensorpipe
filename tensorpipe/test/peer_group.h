@@ -87,6 +87,32 @@ class ThreadPeerGroup : public PeerGroup {
   std::array<tensorpipe::Queue<std::string>, kNumPeers> q_;
 };
 
+class ForkedThreadPeerGroup : public ThreadPeerGroup {
+  void spawn(std::function<void()> f1, std::function<void()> f2) override {
+    // Some tests modify the global state of the process (such as initializing
+    // the CUDA context), which would cause other tests running as sub-processes
+    // to fail. Here, we run all thread-based tests in a sub-process to avoid
+    // this issue.
+    pid_t pid = fork();
+    TP_THROW_SYSTEM_IF(pid < 0, errno) << "Failed to fork";
+    if (pid == 0) {
+      ThreadPeerGroup::spawn(f1, f2);
+      std::exit(testing::Test::HasFailure());
+    }
+
+    int status;
+    TP_THROW_SYSTEM_IF(waitpid(pid, &status, 0) < 0, errno)
+        << "Failed to wait for child test process";
+    EXPECT_TRUE(WIFEXITED(status));
+    if (WIFSIGNALED(status)) {
+      TP_LOG_WARNING() << "Test process terminated with signal "
+                       << WTERMSIG(status);
+    }
+    const int exit_status = WEXITSTATUS(status);
+    EXPECT_EQ(0, exit_status);
+  }
+};
+
 class ProcessPeerGroup : public PeerGroup {
  public:
   void send(int receiverId, const std::string& str) override {

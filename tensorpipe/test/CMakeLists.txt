@@ -64,12 +64,16 @@ if(TP_USE_CUDA)
 
   cuda_add_library(tensorpipe_cuda_kernel channel/kernel.cu)
   target_link_libraries(tensorpipe_test PRIVATE tensorpipe_cuda_kernel)
-endif()
 
-if(TP_ENABLE_CUDA_IPC)
   target_sources(tensorpipe_test PRIVATE
-    channel/cuda_ipc/cuda_ipc_test.cc
+    channel/cuda_xth/cuda_xth_test.cc
     )
+
+  if(TP_ENABLE_CUDA_IPC)
+    target_sources(tensorpipe_test PRIVATE
+      channel/cuda_ipc/cuda_ipc_test.cc
+      )
+  endif()
 endif()
 
 
