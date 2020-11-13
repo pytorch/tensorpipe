@@ -122,10 +122,11 @@ if(TP_ENABLE_IBV)
   target_sources(tensorpipe PRIVATE
     common/epoll_loop.cc
     common/ibv.cc
-    transport/ibv/connection.cc
+    transport/ibv/connection_impl.cc
     transport/ibv/context.cc
+    transport/ibv/context_impl.cc
     transport/ibv/error.cc
-    transport/ibv/listener.cc
+    transport/ibv/listener_impl.cc
     transport/ibv/reactor.cc
     transport/ibv/sockaddr.cc)
   set(TENSORPIPE_HAS_IBV_TRANSPORT 1)

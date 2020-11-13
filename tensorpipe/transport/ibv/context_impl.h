@@ -10,31 +10,52 @@
 
 #include <functional>
 #include <memory>
+#include <string>
+#include <tuple>
 
-#include <tensorpipe/common/callback.h>
 #include <tensorpipe/common/epoll_loop.h>
-#include <tensorpipe/transport/ibv/context.h>
+#include <tensorpipe/transport/context_impl_boilerplate.h>
+#include <tensorpipe/transport/ibv/reactor.h>
 
 namespace tensorpipe {
 namespace transport {
 namespace ibv {
 
-class Reactor;
+class ConnectionImpl;
+class ListenerImpl;
 
-class Context::PrivateIface : public DeferredExecutor {
+class ContextImpl final
+    : public ContextImplBoilerplate<ContextImpl, ListenerImpl, ConnectionImpl> {
  public:
-  virtual ClosingEmitter& getClosingEmitter() = 0;
+  ContextImpl();
 
-  virtual void registerDescriptor(
+  bool isViable() const;
+
+  std::tuple<Error, std::string> lookupAddrForIface(std::string iface);
+
+  std::tuple<Error, std::string> lookupAddrForHostname();
+
+  // Implement the DeferredExecutor interface.
+  bool inLoop() override;
+  void deferToLoop(std::function<void()> fn) override;
+
+  void registerDescriptor(
       int fd,
       int events,
-      std::shared_ptr<EpollLoop::EventHandler> h) = 0;
+      std::shared_ptr<EpollLoop::EventHandler> h);
 
-  virtual void unregisterDescriptor(int fd) = 0;
+  void unregisterDescriptor(int fd);
 
-  virtual Reactor& getReactor() = 0;
+  Reactor& getReactor();
 
-  virtual ~PrivateIface() = default;
+ protected:
+  // Implement the entry points called by ContextImplBoilerplate.
+  void closeImpl() override;
+  void joinImpl() override;
+
+ private:
+  Reactor reactor_;
+  EpollLoop loop_{this->reactor_};
 };
 
 } // namespace ibv
