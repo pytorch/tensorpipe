@@ -59,6 +59,7 @@ class Context : public transport::Context {
   friend class Listener;
   // Allow connection to see the private interface.
   friend class Connection;
+  friend class ConnectionImpl;
 };
 
 } // namespace uv
