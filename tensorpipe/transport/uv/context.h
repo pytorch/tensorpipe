@@ -30,9 +30,9 @@ class Context : public transport::Context {
   Context& operator=(const Context&) = delete;
   Context& operator=(Context&&) = delete;
 
-  std::shared_ptr<transport::Connection> connect(std::string addr) override;
+  std::shared_ptr<Connection> connect(std::string addr) override;
 
-  std::shared_ptr<transport::Listener> listen(std::string addr) override;
+  std::shared_ptr<Listener> listen(std::string addr) override;
 
   const std::string& domainDescriptor() const override;
 
