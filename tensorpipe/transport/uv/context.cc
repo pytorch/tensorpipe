@@ -93,10 +93,7 @@ std::shared_ptr<transport::Connection> ContextImpl::connect(std::string addr) {
   TP_VLOG(7) << "Transport context " << id_ << " is opening connection "
              << connectionId << " to address " << addr;
   return std::make_shared<Connection>(
-      Connection::ConstructorToken(),
-      shared_from_this(),
-      std::move(addr),
-      std::move(connectionId));
+      shared_from_this(), std::move(addr), std::move(connectionId));
 }
 
 std::shared_ptr<transport::Listener> ContextImpl::listen(std::string addr) {
@@ -104,10 +101,7 @@ std::shared_ptr<transport::Listener> ContextImpl::listen(std::string addr) {
   TP_VLOG(7) << "Transport context " << id_ << " is opening listener "
              << listenerId << " on address " << addr;
   return std::make_shared<Listener>(
-      Listener::ConstructorToken(),
-      shared_from_this(),
-      std::move(addr),
-      std::move(listenerId));
+      shared_from_this(), std::move(addr), std::move(listenerId));
 }
 
 std::tuple<Error, std::string> ContextImpl::lookupAddrForIface(

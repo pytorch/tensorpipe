@@ -24,7 +24,6 @@ namespace transport {
 namespace uv {
 
 Listener::Listener(
-    ConstructorToken /* unused */,
     std::shared_ptr<ContextImpl> context,
     std::string addr,
     std::string id)
@@ -83,10 +82,7 @@ void ListenerImpl::connectionCallbackFromLoop(int status) {
   callback_.trigger(
       Error::kSuccess,
       std::make_shared<Connection>(
-          Connection::ConstructorToken(),
-          context_,
-          std::move(connection),
-          std::move(connectionId)));
+          context_, std::move(connection), std::move(connectionId)));
 }
 
 void ListenerImpl::closeCallbackFromLoop() {
