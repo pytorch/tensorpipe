@@ -25,19 +25,16 @@ namespace transport {
 namespace uv {
 
 class ConnectionImpl final
-    : public ConnectionImplBoilerplate<ConnectionImpl, Context::PrivateIface> {
+    : public ConnectionImplBoilerplate<ConnectionImpl, ContextImpl> {
  public:
   // Create a connection that is already connected (e.g. from a listener).
   ConnectionImpl(
-      std::shared_ptr<Context::PrivateIface>,
+      std::shared_ptr<ContextImpl>,
       std::shared_ptr<TCPHandle>,
       std::string);
 
   // Create a connection that connects to the specified address.
-  ConnectionImpl(
-      std::shared_ptr<Context::PrivateIface>,
-      std::string,
-      std::string);
+  ConnectionImpl(std::shared_ptr<ContextImpl>, std::string, std::string);
 
  protected:
   // Implement the entry points called by ConnectionImplBoilerplate.

@@ -24,13 +24,10 @@ namespace transport {
 namespace uv {
 
 class ListenerImpl final
-    : public ListenerImplBoilerplate<ListenerImpl, Context::PrivateIface> {
+    : public ListenerImplBoilerplate<ListenerImpl, ContextImpl> {
  public:
   // Create a listener that listens on the specified address.
-  ListenerImpl(
-      std::shared_ptr<Context::PrivateIface>,
-      std::string,
-      std::string);
+  ListenerImpl(std::shared_ptr<ContextImpl>, std::string, std::string);
 
  protected:
   // Implement the entry points called by ListenerImplBoilerplate.

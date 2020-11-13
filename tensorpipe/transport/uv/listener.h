@@ -20,8 +20,7 @@ namespace uv {
 
 class ListenerImpl;
 
-class Listener
-    : public ListenerBoilerplate<ListenerImpl, Context::PrivateIface> {
+class Listener : public ListenerBoilerplate<ListenerImpl, ContextImpl> {
   // Use the passkey idiom to allow make_shared to call what should be a private
   // constructor. See https://abseil.io/tips/134 for more information.
   struct ConstructorToken {};
@@ -30,12 +29,13 @@ class Listener
   // Create a listener that listens on the specified address.
   Listener(
       ConstructorToken,
-      std::shared_ptr<Context::PrivateIface> context,
+      std::shared_ptr<ContextImpl> context,
       std::string addr,
       std::string id);
 
   // Allow context to access constructor token.
   friend class Context;
+  friend class ContextImpl;
 };
 
 } // namespace uv
