@@ -12,35 +12,50 @@
 #include <memory>
 #include <tuple>
 
-#include <tensorpipe/common/callback.h>
 #include <tensorpipe/common/epoll_loop.h>
-#include <tensorpipe/transport/shm/context.h>
+#include <tensorpipe/transport/context_impl_boilerplate.h>
+#include <tensorpipe/transport/shm/reactor.h>
 
 namespace tensorpipe {
 namespace transport {
 namespace shm {
 
-class Context::PrivateIface : public DeferredExecutor {
- public:
-  virtual ClosingEmitter& getClosingEmitter() = 0;
+class ConnectionImpl;
+class ListenerImpl;
 
-  virtual void registerDescriptor(
+class ContextImpl final
+    : public ContextImplBoilerplate<ContextImpl, ListenerImpl, ConnectionImpl> {
+ public:
+  ContextImpl();
+
+  // Implement the DeferredExecutor interface.
+  bool inLoop() override;
+  void deferToLoop(std::function<void()> fn) override;
+
+  void registerDescriptor(
       int fd,
       int events,
-      std::shared_ptr<EpollLoop::EventHandler> h) = 0;
+      std::shared_ptr<EpollLoop::EventHandler> h);
 
-  virtual void unregisterDescriptor(int fd) = 0;
+  void unregisterDescriptor(int fd);
 
   using TToken = uint32_t;
   using TFunction = std::function<void()>;
 
-  virtual TToken addReaction(TFunction fn) = 0;
+  TToken addReaction(TFunction fn);
 
-  virtual void removeReaction(TToken token) = 0;
+  void removeReaction(TToken token);
 
-  virtual std::tuple<int, int> reactorFds() = 0;
+  std::tuple<int, int> reactorFds();
 
-  virtual ~PrivateIface() = default;
+ protected:
+  // Implement the entry points called by ContextImplBoilerplate.
+  void closeImpl() override;
+  void joinImpl() override;
+
+ private:
+  Reactor reactor_;
+  EpollLoop loop_{this->reactor_};
 };
 
 } // namespace shm
