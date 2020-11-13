@@ -9,11 +9,14 @@
 #pragma once
 
 #include <atomic>
+#include <memory>
 #include <string>
 #include <utility>
 
 #include <tensorpipe/common/callback.h>
 #include <tensorpipe/common/defs.h>
+#include <tensorpipe/transport/connection_boilerplate.h>
+#include <tensorpipe/transport/listener_boilerplate.h>
 
 namespace tensorpipe {
 namespace transport {
@@ -23,6 +26,10 @@ class ContextImplBoilerplate : public virtual DeferredExecutor,
                                public std::enable_shared_from_this<TCtx> {
  public:
   ContextImplBoilerplate(std::string domainDescriptor);
+
+  std::shared_ptr<Connection> connect(std::string addr);
+
+  std::shared_ptr<Listener> listen(std::string addr);
 
   const std::string& domainDescriptor() const;
 
@@ -51,12 +58,38 @@ class ContextImplBoilerplate : public virtual DeferredExecutor,
   ClosingEmitter closingEmitter_;
 
   const std::string domainDescriptor_;
+
+  // Sequence numbers for the listeners and connections created by this context,
+  // used to create their identifiers based off this context's identifier. They
+  // will only be used for logging and debugging.
+  std::atomic<uint64_t> listenerCounter_{0};
+  std::atomic<uint64_t> connectionCounter_{0};
 };
 
 template <typename TCtx, typename TList, typename TConn>
 ContextImplBoilerplate<TCtx, TList, TConn>::ContextImplBoilerplate(
     std::string domainDescriptor)
     : domainDescriptor_(std::move(domainDescriptor)) {}
+
+template <typename TCtx, typename TList, typename TConn>
+std::shared_ptr<Connection> ContextImplBoilerplate<TCtx, TList, TConn>::connect(
+    std::string addr) {
+  std::string connectionId = id_ + ".c" + std::to_string(connectionCounter_++);
+  TP_VLOG(7) << "Transport context " << id_ << " is opening connection "
+             << connectionId << " to address " << addr;
+  return std::make_shared<ConnectionBoilerplate<TCtx, TList, TConn>>(
+      this->shared_from_this(), std::move(connectionId), std::move(addr));
+}
+
+template <typename TCtx, typename TList, typename TConn>
+std::shared_ptr<Listener> ContextImplBoilerplate<TCtx, TList, TConn>::listen(
+    std::string addr) {
+  std::string listenerId = id_ + ".l" + std::to_string(listenerCounter_++);
+  TP_VLOG(7) << "Transport context " << id_ << " is opening listener "
+             << listenerId << " on address " << addr;
+  return std::make_shared<ListenerBoilerplate<TCtx, TList, TConn>>(
+      this->shared_from_this(), std::move(listenerId), std::move(addr));
+}
 
 template <typename TCtx, typename TList, typename TConn>
 const std::string& ContextImplBoilerplate<TCtx, TList, TConn>::

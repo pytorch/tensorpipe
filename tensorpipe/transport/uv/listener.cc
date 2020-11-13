@@ -10,7 +10,6 @@
 
 #include <tensorpipe/common/callback.h>
 #include <tensorpipe/common/error_macros.h>
-#include <tensorpipe/transport/uv/connection.h>
 #include <tensorpipe/transport/uv/connection_impl.h>
 #include <tensorpipe/transport/uv/context_impl.h>
 #include <tensorpipe/transport/uv/error.h>
@@ -23,20 +22,10 @@ namespace tensorpipe {
 namespace transport {
 namespace uv {
 
-Listener::Listener(
-    std::shared_ptr<ContextImpl> context,
-    std::string addr,
-    std::string id)
-    : ListenerBoilerplate<ContextImpl, ListenerImpl, ConnectionImpl>(
-          std::make_shared<ListenerImpl>(
-              std::move(context),
-              std::move(addr),
-              std::move(id))) {}
-
 ListenerImpl::ListenerImpl(
     std::shared_ptr<ContextImpl> context,
-    std::string addr,
-    std::string id)
+    std::string id,
+    std::string addr)
     : ListenerImplBoilerplate<ContextImpl, ListenerImpl, ConnectionImpl>(
           std::move(context),
           std::move(id)),
@@ -77,12 +66,7 @@ void ListenerImpl::connectionCallbackFromLoop(int status) {
   auto connection = context_->createHandle();
   connection->initFromLoop();
   handle_->acceptFromLoop(connection);
-  std::string connectionId = id_ + ".c" + std::to_string(connectionCounter_++);
-  TP_VLOG(7) << "Listener " << id_ << " is opening connection " << connectionId;
-  callback_.trigger(
-      Error::kSuccess,
-      std::make_shared<Connection>(
-          context_, std::move(connection), std::move(connectionId)));
+  callback_.trigger(Error::kSuccess, createConnection(std::move(connection)));
 }
 
 void ListenerImpl::closeCallbackFromLoop() {

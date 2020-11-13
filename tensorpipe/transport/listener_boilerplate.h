@@ -22,7 +22,8 @@ namespace transport {
 template <typename TCtx, typename TList, typename TConn>
 class ListenerBoilerplate : public Listener {
  public:
-  ListenerBoilerplate(std::shared_ptr<TList> impl);
+  template <typename... Args>
+  ListenerBoilerplate(std::shared_ptr<TCtx>, std::string, Args... args);
 
   // Queue a callback to be called when a connection comes in.
   void accept(accept_callback_fn fn) override;
@@ -45,9 +46,15 @@ class ListenerBoilerplate : public Listener {
 };
 
 template <typename TCtx, typename TList, typename TConn>
+template <typename... Args>
 ListenerBoilerplate<TCtx, TList, TConn>::ListenerBoilerplate(
-    std::shared_ptr<TList> impl)
-    : impl_(std::move(impl)) {
+    std::shared_ptr<TCtx> context,
+    std::string id,
+    Args... args)
+    : impl_(std::make_shared<TList>(
+          std::move(context),
+          std::move(id),
+          std::forward<Args>(args)...)) {
   static_assert(
       std::is_base_of<ListenerImplBoilerplate<TCtx, TList, TConn>, TList>::
           value,

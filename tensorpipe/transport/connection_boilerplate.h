@@ -23,7 +23,8 @@ namespace transport {
 template <typename TCtx, typename TList, typename TConn>
 class ConnectionBoilerplate : public Connection {
  public:
-  ConnectionBoilerplate(std::shared_ptr<TConn> impl);
+  template <typename... Args>
+  ConnectionBoilerplate(std::shared_ptr<TCtx>, std::string, Args... args);
 
   // Queue a read operation.
   void read(read_callback_fn fn) override;
@@ -47,9 +48,15 @@ class ConnectionBoilerplate : public Connection {
 };
 
 template <typename TCtx, typename TList, typename TConn>
+template <typename... Args>
 ConnectionBoilerplate<TCtx, TList, TConn>::ConnectionBoilerplate(
-    std::shared_ptr<TConn> impl)
-    : impl_(std::move(impl)) {
+    std::shared_ptr<TCtx> context,
+    std::string id,
+    Args... args)
+    : impl_(std::make_shared<TConn>(
+          std::move(context),
+          std::move(id),
+          std::forward<Args>(args)...)) {
   static_assert(
       std::is_base_of<ConnectionImplBoilerplate<TCtx, TList, TConn>, TConn>::
           value,
