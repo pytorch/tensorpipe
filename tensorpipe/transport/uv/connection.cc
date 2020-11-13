@@ -28,19 +28,23 @@ namespace transport {
 namespace uv {
 
 ConnectionImpl::ConnectionImpl(
+    ConstructorToken token,
     std::shared_ptr<ContextImpl> context,
     std::string id,
     std::shared_ptr<TCPHandle> handle)
     : ConnectionImplBoilerplate<ContextImpl, ListenerImpl, ConnectionImpl>(
+          token,
           std::move(context),
           std::move(id)),
       handle_(std::move(handle)) {}
 
 ConnectionImpl::ConnectionImpl(
+    ConstructorToken token,
     std::shared_ptr<ContextImpl> context,
     std::string id,
     std::string addr)
     : ConnectionImplBoilerplate<ContextImpl, ListenerImpl, ConnectionImpl>(
+          token,
           std::move(context),
           std::move(id)),
       handle_(context_->createHandle()),

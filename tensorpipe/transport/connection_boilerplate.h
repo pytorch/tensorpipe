@@ -24,7 +24,11 @@ template <typename TCtx, typename TList, typename TConn>
 class ConnectionBoilerplate : public Connection {
  public:
   template <typename... Args>
-  ConnectionBoilerplate(std::shared_ptr<TCtx>, std::string, Args... args);
+  ConnectionBoilerplate(
+      typename ConnectionImplBoilerplate<TCtx, TList, TConn>::ConstructorToken,
+      std::shared_ptr<TCtx>,
+      std::string,
+      Args... args);
 
   // Queue a read operation.
   void read(read_callback_fn fn) override;
@@ -50,10 +54,13 @@ class ConnectionBoilerplate : public Connection {
 template <typename TCtx, typename TList, typename TConn>
 template <typename... Args>
 ConnectionBoilerplate<TCtx, TList, TConn>::ConnectionBoilerplate(
+    typename ConnectionImplBoilerplate<TCtx, TList, TConn>::ConstructorToken
+        token,
     std::shared_ptr<TCtx> context,
     std::string id,
     Args... args)
     : impl_(std::make_shared<TConn>(
+          token,
           std::move(context),
           std::move(id),
           std::forward<Args>(args)...)) {

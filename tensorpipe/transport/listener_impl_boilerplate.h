@@ -27,7 +27,20 @@ namespace transport {
 template <typename TCtx, typename TList, typename TConn>
 class ListenerImplBoilerplate : public std::enable_shared_from_this<TList> {
  public:
-  ListenerImplBoilerplate(std::shared_ptr<TCtx> context, std::string id);
+  class ConstructorToken {
+   public:
+    ConstructorToken(const ConstructorToken&) = default;
+
+   private:
+    explicit ConstructorToken() {}
+    friend ContextImplBoilerplate<TCtx, TList, TConn>;
+    friend ListenerImplBoilerplate<TCtx, TList, TConn>;
+  };
+
+  ListenerImplBoilerplate(
+      ConstructorToken,
+      std::shared_ptr<TCtx> context,
+      std::string id);
 
   // Initialize member fields that need `shared_from_this`.
   void init();
@@ -102,6 +115,7 @@ class ListenerImplBoilerplate : public std::enable_shared_from_this<TList> {
 
 template <typename TCtx, typename TList, typename TConn>
 ListenerImplBoilerplate<TCtx, TList, TConn>::ListenerImplBoilerplate(
+    ConstructorToken /* unused */,
     std::shared_ptr<TCtx> context,
     std::string id)
     : context_(std::move(context)),
@@ -178,7 +192,11 @@ std::shared_ptr<Connection> ListenerImplBoilerplate<TCtx, TList, TConn>::
   std::string connectionId = id_ + ".c" + std::to_string(connectionCounter_++);
   TP_VLOG(7) << "Listener " << id_ << " is opening connection " << connectionId;
   return std::make_shared<ConnectionBoilerplate<TCtx, TList, TConn>>(
-      context_, std::move(connectionId), std::forward<Args>(args)...);
+      typename ConnectionImplBoilerplate<TCtx, TList, TConn>::
+          ConstructorToken(),
+      context_,
+      std::move(connectionId),
+      std::forward<Args>(args)...);
 }
 
 template <typename TCtx, typename TList, typename TConn>
