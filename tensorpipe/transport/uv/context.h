@@ -57,6 +57,7 @@ class Context : public transport::Context {
 
   // Allow listener to see the private interface.
   friend class Listener;
+  friend class ListenerImpl;
   // Allow connection to see the private interface.
   friend class Connection;
   friend class ConnectionImpl;
