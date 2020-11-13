@@ -17,7 +17,6 @@ add_library(tensorpipe
   core/error.cc
   core/listener.cc
   core/pipe.cc
-  transport/connection.cc
   transport/error.cc)
 
 # Support `#include <tensorpipe/foo.h>`.
