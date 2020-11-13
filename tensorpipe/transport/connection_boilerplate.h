@@ -20,10 +20,10 @@
 namespace tensorpipe {
 namespace transport {
 
-template <typename TImpl, typename TContextImpl>
+template <typename TCtx, typename TList, typename TConn>
 class ConnectionBoilerplate : public Connection {
  public:
-  ConnectionBoilerplate(std::shared_ptr<TImpl> impl);
+  ConnectionBoilerplate(std::shared_ptr<TConn> impl);
 
   // Queue a read operation.
   void read(read_callback_fn fn) override;
@@ -43,53 +43,53 @@ class ConnectionBoilerplate : public Connection {
  protected:
   // Using a shared_ptr allows us to detach the lifetime of the implementation
   // from the public object's one and perform the destruction asynchronously.
-  const std::shared_ptr<TImpl> impl_;
+  const std::shared_ptr<TConn> impl_;
 };
 
-template <typename TImpl, typename TContextImpl>
-ConnectionBoilerplate<TImpl, TContextImpl>::ConnectionBoilerplate(
-    std::shared_ptr<TImpl> impl)
+template <typename TCtx, typename TList, typename TConn>
+ConnectionBoilerplate<TCtx, TList, TConn>::ConnectionBoilerplate(
+    std::shared_ptr<TConn> impl)
     : impl_(std::move(impl)) {
   static_assert(
-      std::is_base_of<ConnectionImplBoilerplate<TImpl, TContextImpl>, TImpl>::
+      std::is_base_of<ConnectionImplBoilerplate<TCtx, TList, TConn>, TConn>::
           value,
       "");
   impl_->init();
 }
 
-template <typename TImpl, typename TContextImpl>
-void ConnectionBoilerplate<TImpl, TContextImpl>::read(read_callback_fn fn) {
+template <typename TCtx, typename TList, typename TConn>
+void ConnectionBoilerplate<TCtx, TList, TConn>::read(read_callback_fn fn) {
   impl_->read(std::move(fn));
 }
 
-template <typename TImpl, typename TContextImpl>
-void ConnectionBoilerplate<TImpl, TContextImpl>::read(
+template <typename TCtx, typename TList, typename TConn>
+void ConnectionBoilerplate<TCtx, TList, TConn>::read(
     void* ptr,
     size_t length,
     read_callback_fn fn) {
   impl_->read(ptr, length, std::move(fn));
 }
 
-template <typename TImpl, typename TContextImpl>
-void ConnectionBoilerplate<TImpl, TContextImpl>::write(
+template <typename TCtx, typename TList, typename TConn>
+void ConnectionBoilerplate<TCtx, TList, TConn>::write(
     const void* ptr,
     size_t length,
     write_callback_fn fn) {
   impl_->write(ptr, length, std::move(fn));
 }
 
-template <typename TImpl, typename TContextImpl>
-void ConnectionBoilerplate<TImpl, TContextImpl>::setId(std::string id) {
+template <typename TCtx, typename TList, typename TConn>
+void ConnectionBoilerplate<TCtx, TList, TConn>::setId(std::string id) {
   impl_->setId(std::move(id));
 }
 
-template <typename TImpl, typename TContextImpl>
-void ConnectionBoilerplate<TImpl, TContextImpl>::close() {
+template <typename TCtx, typename TList, typename TConn>
+void ConnectionBoilerplate<TCtx, TList, TConn>::close() {
   impl_->close();
 }
 
-template <typename TImpl, typename TContextImpl>
-ConnectionBoilerplate<TImpl, TContextImpl>::~ConnectionBoilerplate() {
+template <typename TCtx, typename TList, typename TConn>
+ConnectionBoilerplate<TCtx, TList, TConn>::~ConnectionBoilerplate() {
   close();
 }
 

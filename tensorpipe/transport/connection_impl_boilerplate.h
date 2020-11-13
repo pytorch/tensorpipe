@@ -22,12 +22,10 @@
 namespace tensorpipe {
 namespace transport {
 
-template <typename TImpl, typename TContextImpl>
-class ConnectionImplBoilerplate : public std::enable_shared_from_this<TImpl> {
+template <typename TCtx, typename TList, typename TConn>
+class ConnectionImplBoilerplate : public std::enable_shared_from_this<TConn> {
  public:
-  ConnectionImplBoilerplate(
-      std::shared_ptr<TContextImpl> context,
-      std::string id);
+  ConnectionImplBoilerplate(std::shared_ptr<TCtx> context, std::string id);
 
   // Initialize member fields that need `shared_from_this`.
   void init();
@@ -64,7 +62,7 @@ class ConnectionImplBoilerplate : public std::enable_shared_from_this<TImpl> {
 
   void setError(Error error);
 
-  const std::shared_ptr<TContextImpl> context_;
+  const std::shared_ptr<TCtx> context_;
 
   Error error_{Error::kSuccess};
 
@@ -103,37 +101,37 @@ class ConnectionImplBoilerplate : public std::enable_shared_from_this<TImpl> {
   uint64_t nextWriteCallbackToCall_{0};
 };
 
-template <typename TImpl, typename TContextImpl>
-ConnectionImplBoilerplate<TImpl, TContextImpl>::ConnectionImplBoilerplate(
-    std::shared_ptr<TContextImpl> context,
+template <typename TCtx, typename TList, typename TConn>
+ConnectionImplBoilerplate<TCtx, TList, TConn>::ConnectionImplBoilerplate(
+    std::shared_ptr<TCtx> context,
     std::string id)
     : context_(std::move(context)),
       id_(std::move(id)),
       closingReceiver_(context_, context_->getClosingEmitter()) {}
 
-template <typename TImpl, typename TContextImpl>
-void ConnectionImplBoilerplate<TImpl, TContextImpl>::init() {
+template <typename TCtx, typename TList, typename TConn>
+void ConnectionImplBoilerplate<TCtx, TList, TConn>::init() {
   context_->deferToLoop(
       [impl{this->shared_from_this()}]() { impl->initFromLoop(); });
 }
 
-template <typename TImpl, typename TContextImpl>
-void ConnectionImplBoilerplate<TImpl, TContextImpl>::initFromLoop() {
+template <typename TCtx, typename TList, typename TConn>
+void ConnectionImplBoilerplate<TCtx, TList, TConn>::initFromLoop() {
   closingReceiver_.activate(*this);
 
   initImplFromLoop();
 }
 
-template <typename TImpl, typename TContextImpl>
-void ConnectionImplBoilerplate<TImpl, TContextImpl>::read(read_callback_fn fn) {
+template <typename TCtx, typename TList, typename TConn>
+void ConnectionImplBoilerplate<TCtx, TList, TConn>::read(read_callback_fn fn) {
   context_->deferToLoop(
       [impl{this->shared_from_this()}, fn{std::move(fn)}]() mutable {
         impl->readFromLoop(std::move(fn));
       });
 }
 
-template <typename TImpl, typename TContextImpl>
-void ConnectionImplBoilerplate<TImpl, TContextImpl>::readFromLoop(
+template <typename TCtx, typename TList, typename TConn>
+void ConnectionImplBoilerplate<TCtx, TList, TConn>::readFromLoop(
     read_callback_fn fn) {
   TP_DCHECK(context_->inLoop());
 
@@ -159,8 +157,8 @@ void ConnectionImplBoilerplate<TImpl, TContextImpl>::readFromLoop(
   readImplFromLoop(std::move(fn));
 }
 
-template <typename TImpl, typename TContextImpl>
-void ConnectionImplBoilerplate<TImpl, TContextImpl>::read(
+template <typename TCtx, typename TList, typename TConn>
+void ConnectionImplBoilerplate<TCtx, TList, TConn>::read(
     void* ptr,
     size_t length,
     read_callback_fn fn) {
@@ -172,8 +170,8 @@ void ConnectionImplBoilerplate<TImpl, TContextImpl>::read(
   });
 }
 
-template <typename TImpl, typename TContextImpl>
-void ConnectionImplBoilerplate<TImpl, TContextImpl>::readFromLoop(
+template <typename TCtx, typename TList, typename TConn>
+void ConnectionImplBoilerplate<TCtx, TList, TConn>::readFromLoop(
     void* ptr,
     size_t length,
     read_callback_fn fn) {
@@ -201,8 +199,8 @@ void ConnectionImplBoilerplate<TImpl, TContextImpl>::readFromLoop(
   readImplFromLoop(ptr, length, std::move(fn));
 }
 
-template <typename TImpl, typename TContextImpl>
-void ConnectionImplBoilerplate<TImpl, TContextImpl>::write(
+template <typename TCtx, typename TList, typename TConn>
+void ConnectionImplBoilerplate<TCtx, TList, TConn>::write(
     const void* ptr,
     size_t length,
     write_callback_fn fn) {
@@ -214,8 +212,8 @@ void ConnectionImplBoilerplate<TImpl, TContextImpl>::write(
   });
 }
 
-template <typename TImpl, typename TContextImpl>
-void ConnectionImplBoilerplate<TImpl, TContextImpl>::writeFromLoop(
+template <typename TCtx, typename TList, typename TConn>
+void ConnectionImplBoilerplate<TCtx, TList, TConn>::writeFromLoop(
     const void* ptr,
     size_t length,
     write_callback_fn fn) {
@@ -242,37 +240,37 @@ void ConnectionImplBoilerplate<TImpl, TContextImpl>::writeFromLoop(
   writeImplFromLoop(ptr, length, std::move(fn));
 }
 
-template <typename TImpl, typename TContextImpl>
-void ConnectionImplBoilerplate<TImpl, TContextImpl>::setId(std::string id) {
+template <typename TCtx, typename TList, typename TConn>
+void ConnectionImplBoilerplate<TCtx, TList, TConn>::setId(std::string id) {
   context_->deferToLoop(
       [impl{this->shared_from_this()}, id{std::move(id)}]() mutable {
         impl->setIdFromLoop(std::move(id));
       });
 }
 
-template <typename TImpl, typename TContextImpl>
-void ConnectionImplBoilerplate<TImpl, TContextImpl>::setIdFromLoop(
+template <typename TCtx, typename TList, typename TConn>
+void ConnectionImplBoilerplate<TCtx, TList, TConn>::setIdFromLoop(
     std::string id) {
   TP_DCHECK(context_->inLoop());
   TP_VLOG(7) << "Connection " << id_ << " was renamed to " << id;
   id_ = std::move(id);
 }
 
-template <typename TImpl, typename TContextImpl>
-void ConnectionImplBoilerplate<TImpl, TContextImpl>::close() {
+template <typename TCtx, typename TList, typename TConn>
+void ConnectionImplBoilerplate<TCtx, TList, TConn>::close() {
   context_->deferToLoop(
       [impl{this->shared_from_this()}]() { impl->closeFromLoop(); });
 }
 
-template <typename TImpl, typename TContextImpl>
-void ConnectionImplBoilerplate<TImpl, TContextImpl>::closeFromLoop() {
+template <typename TCtx, typename TList, typename TConn>
+void ConnectionImplBoilerplate<TCtx, TList, TConn>::closeFromLoop() {
   TP_DCHECK(context_->inLoop());
   TP_VLOG(7) << "Connection " << id_ << " is closing";
   setError(TP_CREATE_ERROR(ConnectionClosedError));
 }
 
-template <typename TImpl, typename TContextImpl>
-void ConnectionImplBoilerplate<TImpl, TContextImpl>::setError(Error error) {
+template <typename TCtx, typename TList, typename TConn>
+void ConnectionImplBoilerplate<TCtx, TList, TConn>::setError(Error error) {
   // Don't overwrite an error that's already set.
   if (error_ || !error) {
     return;
@@ -283,8 +281,8 @@ void ConnectionImplBoilerplate<TImpl, TContextImpl>::setError(Error error) {
   handleError();
 }
 
-template <typename TImpl, typename TContextImpl>
-void ConnectionImplBoilerplate<TImpl, TContextImpl>::handleError() {
+template <typename TCtx, typename TList, typename TConn>
+void ConnectionImplBoilerplate<TCtx, TList, TConn>::handleError() {
   TP_DCHECK(context_->inLoop());
   TP_VLOG(8) << "Connection " << id_ << " is handling error " << error_.what();
 

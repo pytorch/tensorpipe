@@ -16,7 +16,6 @@
 #include <tensorpipe/common/optional.h>
 #include <tensorpipe/common/stream_read_write_ops.h>
 #include <tensorpipe/transport/connection_impl_boilerplate.h>
-#include <tensorpipe/transport/uv/context_impl.h>
 #include <tensorpipe/transport/uv/sockaddr.h>
 #include <tensorpipe/transport/uv/uv.h>
 
@@ -24,8 +23,13 @@ namespace tensorpipe {
 namespace transport {
 namespace uv {
 
-class ConnectionImpl final
-    : public ConnectionImplBoilerplate<ConnectionImpl, ContextImpl> {
+class ContextImpl;
+class ListenerImpl;
+
+class ConnectionImpl final : public ConnectionImplBoilerplate<
+                                 ContextImpl,
+                                 ListenerImpl,
+                                 ConnectionImpl> {
  public:
   // Create a connection that is already connected (e.g. from a listener).
   ConnectionImpl(

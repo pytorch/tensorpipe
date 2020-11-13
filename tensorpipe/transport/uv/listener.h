@@ -18,9 +18,11 @@ namespace tensorpipe {
 namespace transport {
 namespace uv {
 
+class ConnectionImpl;
 class ListenerImpl;
 
-class Listener : public ListenerBoilerplate<ListenerImpl, ContextImpl> {
+class Listener
+    : public ListenerBoilerplate<ContextImpl, ListenerImpl, ConnectionImpl> {
  public:
   // Create a listener that listens on the specified address.
   Listener(

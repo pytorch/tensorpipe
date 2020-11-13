@@ -27,7 +27,7 @@ Listener::Listener(
     std::shared_ptr<ContextImpl> context,
     std::string addr,
     std::string id)
-    : ListenerBoilerplate<ListenerImpl, ContextImpl>(
+    : ListenerBoilerplate<ContextImpl, ListenerImpl, ConnectionImpl>(
           std::make_shared<ListenerImpl>(
               std::move(context),
               std::move(addr),
@@ -37,7 +37,7 @@ ListenerImpl::ListenerImpl(
     std::shared_ptr<ContextImpl> context,
     std::string addr,
     std::string id)
-    : ListenerImplBoilerplate<ListenerImpl, ContextImpl>(
+    : ListenerImplBoilerplate<ContextImpl, ListenerImpl, ConnectionImpl>(
           std::move(context),
           std::move(id)),
       handle_(context_->createHandle()),

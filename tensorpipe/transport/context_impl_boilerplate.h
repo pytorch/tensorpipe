@@ -18,9 +18,9 @@
 namespace tensorpipe {
 namespace transport {
 
-template <typename TImpl>
+template <typename TCtx, typename TList, typename TConn>
 class ContextImplBoilerplate : public virtual DeferredExecutor,
-                               public std::enable_shared_from_this<TImpl> {
+                               public std::enable_shared_from_this<TCtx> {
  public:
   ContextImplBoilerplate(std::string domainDescriptor);
 
@@ -53,29 +53,31 @@ class ContextImplBoilerplate : public virtual DeferredExecutor,
   const std::string domainDescriptor_;
 };
 
-template <typename TImpl>
-ContextImplBoilerplate<TImpl>::ContextImplBoilerplate(
+template <typename TCtx, typename TList, typename TConn>
+ContextImplBoilerplate<TCtx, TList, TConn>::ContextImplBoilerplate(
     std::string domainDescriptor)
     : domainDescriptor_(std::move(domainDescriptor)) {}
 
-template <typename TImpl>
-const std::string& ContextImplBoilerplate<TImpl>::domainDescriptor() const {
+template <typename TCtx, typename TList, typename TConn>
+const std::string& ContextImplBoilerplate<TCtx, TList, TConn>::
+    domainDescriptor() const {
   return domainDescriptor_;
 }
 
-template <typename TImpl>
-ClosingEmitter& ContextImplBoilerplate<TImpl>::getClosingEmitter() {
+template <typename TCtx, typename TList, typename TConn>
+ClosingEmitter& ContextImplBoilerplate<TCtx, TList, TConn>::
+    getClosingEmitter() {
   return closingEmitter_;
 };
 
-template <typename TImpl>
-void ContextImplBoilerplate<TImpl>::setId(std::string id) {
+template <typename TCtx, typename TList, typename TConn>
+void ContextImplBoilerplate<TCtx, TList, TConn>::setId(std::string id) {
   TP_VLOG(7) << "Transport context " << id_ << " was renamed to " << id;
   id_ = std::move(id);
 }
 
-template <typename TImpl>
-void ContextImplBoilerplate<TImpl>::close() {
+template <typename TCtx, typename TList, typename TConn>
+void ContextImplBoilerplate<TCtx, TList, TConn>::close() {
   if (!closed_.exchange(true)) {
     TP_VLOG(7) << "Transport context " << id_ << " is closing";
 
@@ -86,8 +88,8 @@ void ContextImplBoilerplate<TImpl>::close() {
   }
 }
 
-template <typename TImpl>
-void ContextImplBoilerplate<TImpl>::join() {
+template <typename TCtx, typename TList, typename TConn>
+void ContextImplBoilerplate<TCtx, TList, TConn>::join() {
   close();
 
   if (!joined_.exchange(true)) {
