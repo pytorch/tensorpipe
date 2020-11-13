@@ -30,6 +30,11 @@ class ConnectionBoilerplate : public Connection {
       std::string,
       Args... args);
 
+  ConnectionBoilerplate(const ConnectionBoilerplate&) = delete;
+  ConnectionBoilerplate(ConnectionBoilerplate&&) = delete;
+  ConnectionBoilerplate& operator=(const ConnectionBoilerplate&) = delete;
+  ConnectionBoilerplate& operator=(ConnectionBoilerplate&&) = delete;
+
   // Queue a read operation.
   void read(read_callback_fn fn) override;
   void read(void* ptr, size_t length, read_callback_fn fn) override;

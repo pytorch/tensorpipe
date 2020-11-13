@@ -25,6 +25,11 @@ class Context : public transport::Context {
  public:
   Context();
 
+  Context(const Context&) = delete;
+  Context(Context&&) = delete;
+  Context& operator=(const Context&) = delete;
+  Context& operator=(Context&&) = delete;
+
   std::shared_ptr<transport::Connection> connect(std::string addr) override;
 
   std::shared_ptr<transport::Listener> listen(std::string addr) override;

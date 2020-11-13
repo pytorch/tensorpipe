@@ -27,6 +27,11 @@ class ContextImplBoilerplate : public virtual DeferredExecutor,
  public:
   ContextImplBoilerplate(std::string domainDescriptor);
 
+  ContextImplBoilerplate(const ContextImplBoilerplate&) = delete;
+  ContextImplBoilerplate(ContextImplBoilerplate&&) = delete;
+  ContextImplBoilerplate& operator=(const ContextImplBoilerplate&) = delete;
+  ContextImplBoilerplate& operator=(ContextImplBoilerplate&&) = delete;
+
   std::shared_ptr<Connection> connect(std::string addr);
 
   std::shared_ptr<Listener> listen(std::string addr);

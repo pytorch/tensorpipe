@@ -46,6 +46,12 @@ class ConnectionImplBoilerplate : public std::enable_shared_from_this<TConn> {
       std::shared_ptr<TCtx> context,
       std::string id);
 
+  ConnectionImplBoilerplate(const ConnectionImplBoilerplate&) = delete;
+  ConnectionImplBoilerplate(ConnectionImplBoilerplate&&) = delete;
+  ConnectionImplBoilerplate& operator=(const ConnectionImplBoilerplate&) =
+      delete;
+  ConnectionImplBoilerplate& operator=(ConnectionImplBoilerplate&&) = delete;
+
   // Initialize member fields that need `shared_from_this`.
   void init();
 
