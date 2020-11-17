@@ -22,29 +22,16 @@ class ConnectionImpl;
 class TCPHandle;
 
 class Connection : public ConnectionBoilerplate<ConnectionImpl, ContextImpl> {
-  // Use the passkey idiom to allow make_shared to call what should be a private
-  // constructor. See https://abseil.io/tips/134 for more information.
-  struct ConstructorToken {};
-
  public:
   Connection(
-      ConstructorToken,
       std::shared_ptr<ContextImpl> context,
       std::shared_ptr<TCPHandle> handle,
       std::string id);
 
   Connection(
-      ConstructorToken,
       std::shared_ptr<ContextImpl> context,
       std::string addr,
       std::string id);
-
-  // Allow context to access constructor token.
-  friend class Context;
-  friend class ContextImpl;
-  // Allow listener to access constructor token.
-  friend class Listener;
-  friend class ListenerImpl;
 };
 
 } // namespace uv

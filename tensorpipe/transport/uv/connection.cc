@@ -28,7 +28,6 @@ namespace transport {
 namespace uv {
 
 Connection::Connection(
-    ConstructorToken /* unused */,
     std::shared_ptr<ContextImpl> context,
     std::shared_ptr<TCPHandle> handle,
     std::string id)
@@ -39,7 +38,6 @@ Connection::Connection(
               std::move(id))) {}
 
 Connection::Connection(
-    ConstructorToken /* unused */,
     std::shared_ptr<ContextImpl> context,
     std::string addr,
     std::string id)
