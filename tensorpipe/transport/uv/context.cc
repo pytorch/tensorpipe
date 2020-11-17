@@ -10,6 +10,7 @@
 
 #include <tensorpipe/common/error_macros.h>
 #include <tensorpipe/transport/uv/connection.h>
+#include <tensorpipe/transport/uv/connection_impl.h>
 #include <tensorpipe/transport/uv/context_impl.h>
 #include <tensorpipe/transport/uv/error.h>
 #include <tensorpipe/transport/uv/listener.h>
