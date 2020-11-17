@@ -87,10 +87,11 @@ endif()
 ### uv
 
 target_sources(tensorpipe PRIVATE
-  transport/uv/connection.cc
+  transport/uv/connection_impl.cc
   transport/uv/context.cc
+  transport/uv/context_impl.cc
   transport/uv/error.cc
-  transport/uv/listener.cc
+  transport/uv/listener_impl.cc
   transport/uv/loop.cc
   transport/uv/sockaddr.cc
   transport/uv/uv.cc)

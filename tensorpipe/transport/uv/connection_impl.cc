@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <tensorpipe/transport/uv/connection.h>
+#include <tensorpipe/transport/uv/connection_impl.h>
 
 #include <array>
 #include <deque>
@@ -16,7 +16,6 @@
 #include <tensorpipe/common/error_macros.h>
 #include <tensorpipe/common/optional.h>
 #include <tensorpipe/common/stream_read_write_ops.h>
-#include <tensorpipe/transport/uv/connection_impl.h>
 #include <tensorpipe/transport/uv/context_impl.h>
 #include <tensorpipe/transport/uv/error.h>
 #include <tensorpipe/transport/uv/loop.h>
