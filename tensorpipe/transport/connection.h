@@ -45,7 +45,7 @@ class Connection {
   //
   using read_nop_callback_fn = std::function<void(const Error& error)>;
 
-  virtual void read(AbstractNopHolder& object, read_nop_callback_fn fn);
+  virtual void read(AbstractNopHolder& object, read_nop_callback_fn fn) = 0;
 
   // Serialize and write nop object.
   //
@@ -55,7 +55,7 @@ class Connection {
   // into a temporary buffer and instead instead serialize directly into
   // its peer's ring buffer. This saves an allocation and a memory copy.
   //
-  virtual void write(const AbstractNopHolder& object, write_callback_fn fn);
+  virtual void write(const AbstractNopHolder& object, write_callback_fn fn) = 0;
 
   // Tell the connection what its identifier is.
   //
