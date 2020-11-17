@@ -8,6 +8,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <memory>
 #include <string>
 #include <utility>
@@ -16,6 +17,7 @@
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/error.h>
 #include <tensorpipe/common/error_macros.h>
+#include <tensorpipe/transport/connection_boilerplate.h>
 #include <tensorpipe/transport/error.h>
 #include <tensorpipe/transport/listener.h>
 
@@ -57,6 +59,9 @@ class ListenerImplBoilerplate : public std::enable_shared_from_this<TList> {
 
   Error error_{Error::kSuccess};
 
+  template <typename... Args>
+  std::shared_ptr<Connection> createConnection(Args&&... args);
+
   // An identifier for the listener, composed of the identifier for the context,
   // combined with an increasing sequence number. It will be used as a prefix
   // for the identifiers of connections. All of them will only be used for
@@ -88,6 +93,11 @@ class ListenerImplBoilerplate : public std::enable_shared_from_this<TList> {
 
   // A sequence number for the invocations of the callbacks of accept.
   uint64_t nextAcceptCallbackToCall_{0};
+
+  // Sequence numbers for the connections created by this listener, used to
+  // create their identifiers based off this listener's identifier. They will
+  // only be used for logging and debugging.
+  std::atomic<uint64_t> connectionCounter_{0};
 };
 
 template <typename TCtx, typename TList, typename TConn>
@@ -159,6 +169,16 @@ std::string ListenerImplBoilerplate<TCtx, TList, TConn>::addrFromLoop() const {
   TP_DCHECK(context_->inLoop());
 
   return addrImplFromLoop();
+}
+
+template <typename TCtx, typename TList, typename TConn>
+template <typename... Args>
+std::shared_ptr<Connection> ListenerImplBoilerplate<TCtx, TList, TConn>::
+    createConnection(Args&&... args) {
+  std::string connectionId = id_ + ".c" + std::to_string(connectionCounter_++);
+  TP_VLOG(7) << "Listener " << id_ << " is opening connection " << connectionId;
+  return std::make_shared<ConnectionBoilerplate<TCtx, TList, TConn>>(
+      context_, std::move(connectionId), std::forward<Args>(args)...);
 }
 
 template <typename TCtx, typename TList, typename TConn>

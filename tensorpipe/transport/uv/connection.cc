@@ -27,30 +27,10 @@ namespace tensorpipe {
 namespace transport {
 namespace uv {
 
-Connection::Connection(
-    std::shared_ptr<ContextImpl> context,
-    std::shared_ptr<TCPHandle> handle,
-    std::string id)
-    : ConnectionBoilerplate<ContextImpl, ListenerImpl, ConnectionImpl>(
-          std::make_shared<ConnectionImpl>(
-              std::move(context),
-              std::move(handle),
-              std::move(id))) {}
-
-Connection::Connection(
-    std::shared_ptr<ContextImpl> context,
-    std::string addr,
-    std::string id)
-    : ConnectionBoilerplate<ContextImpl, ListenerImpl, ConnectionImpl>(
-          std::make_shared<ConnectionImpl>(
-              std::move(context),
-              std::move(addr),
-              std::move(id))) {}
-
 ConnectionImpl::ConnectionImpl(
     std::shared_ptr<ContextImpl> context,
-    std::shared_ptr<TCPHandle> handle,
-    std::string id)
+    std::string id,
+    std::shared_ptr<TCPHandle> handle)
     : ConnectionImplBoilerplate<ContextImpl, ListenerImpl, ConnectionImpl>(
           std::move(context),
           std::move(id)),
@@ -58,8 +38,8 @@ ConnectionImpl::ConnectionImpl(
 
 ConnectionImpl::ConnectionImpl(
     std::shared_ptr<ContextImpl> context,
-    std::string addr,
-    std::string id)
+    std::string id,
+    std::string addr)
     : ConnectionImplBoilerplate<ContextImpl, ListenerImpl, ConnectionImpl>(
           std::move(context),
           std::move(id)),

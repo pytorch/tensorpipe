@@ -8,7 +8,6 @@
 
 #pragma once
 
-#include <atomic>
 #include <memory>
 #include <string>
 
@@ -59,11 +58,6 @@ class ListenerImpl final : public ListenerImplBoilerplate<
   // what to do with them and don't want them. Thus we must store them
   // somewhere. This is what RearmableCallback is for.
   RearmableCallback<const Error&, std::shared_ptr<Connection>> callback_;
-
-  // Sequence numbers for the connections created by this listener, used to
-  // create their identifiers based off this listener's identifier. They will
-  // only be used for logging and debugging.
-  std::atomic<uint64_t> connectionCounter_{0};
 
   // By having the instance store a shared_ptr to itself we create a reference
   // cycle which will "leak" the instance. This allows us to detach its

@@ -8,33 +8,18 @@
 
 #pragma once
 
-#include <memory>
-#include <string>
-
 #include <tensorpipe/transport/connection_boilerplate.h>
-#include <tensorpipe/transport/uv/context.h>
 
 namespace tensorpipe {
 namespace transport {
 namespace uv {
 
 class ConnectionImpl;
+class ContextImpl;
 class ListenerImpl;
-class TCPHandle;
 
-class Connection
-    : public ConnectionBoilerplate<ContextImpl, ListenerImpl, ConnectionImpl> {
- public:
-  Connection(
-      std::shared_ptr<ContextImpl> context,
-      std::shared_ptr<TCPHandle> handle,
-      std::string id);
-
-  Connection(
-      std::shared_ptr<ContextImpl> context,
-      std::string addr,
-      std::string id);
-};
+using Connection =
+    ConnectionBoilerplate<ContextImpl, ListenerImpl, ConnectionImpl>;
 
 } // namespace uv
 } // namespace transport

@@ -9,11 +9,9 @@
 #include <tensorpipe/transport/uv/context.h>
 
 #include <tensorpipe/common/error_macros.h>
-#include <tensorpipe/transport/uv/connection.h>
 #include <tensorpipe/transport/uv/connection_impl.h>
 #include <tensorpipe/transport/uv/context_impl.h>
 #include <tensorpipe/transport/uv/error.h>
-#include <tensorpipe/transport/uv/listener.h>
 #include <tensorpipe/transport/uv/listener_impl.h>
 #include <tensorpipe/transport/uv/loop.h>
 #include <tensorpipe/transport/uv/sockaddr.h>
@@ -87,22 +85,6 @@ void ContextImpl::closeImpl() {
 
 void ContextImpl::joinImpl() {
   loop_.join();
-}
-
-std::shared_ptr<transport::Connection> ContextImpl::connect(std::string addr) {
-  std::string connectionId = id_ + ".c" + std::to_string(connectionCounter_++);
-  TP_VLOG(7) << "Transport context " << id_ << " is opening connection "
-             << connectionId << " to address " << addr;
-  return std::make_shared<Connection>(
-      shared_from_this(), std::move(addr), std::move(connectionId));
-}
-
-std::shared_ptr<transport::Listener> ContextImpl::listen(std::string addr) {
-  std::string listenerId = id_ + ".l" + std::to_string(listenerCounter_++);
-  TP_VLOG(7) << "Transport context " << id_ << " is opening listener "
-             << listenerId << " on address " << addr;
-  return std::make_shared<Listener>(
-      shared_from_this(), std::move(addr), std::move(listenerId));
 }
 
 std::tuple<Error, std::string> ContextImpl::lookupAddrForIface(

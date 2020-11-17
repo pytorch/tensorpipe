@@ -34,8 +34,8 @@ class ConnectionImpl final : public ConnectionImplBoilerplate<
   // Create a connection that is already connected (e.g. from a listener).
   ConnectionImpl(
       std::shared_ptr<ContextImpl>,
-      std::shared_ptr<TCPHandle>,
-      std::string);
+      std::string,
+      std::shared_ptr<TCPHandle>);
 
   // Create a connection that connects to the specified address.
   ConnectionImpl(std::shared_ptr<ContextImpl>, std::string, std::string);

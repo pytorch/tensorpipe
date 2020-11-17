@@ -8,7 +8,6 @@
 
 #pragma once
 
-#include <atomic>
 #include <functional>
 #include <memory>
 #include <string>
@@ -31,10 +30,6 @@ class ContextImpl final
  public:
   ContextImpl();
 
-  std::shared_ptr<transport::Connection> connect(std::string addr);
-
-  std::shared_ptr<transport::Listener> listen(std::string addr);
-
   std::tuple<Error, std::string> lookupAddrForIface(std::string iface);
 
   std::tuple<Error, std::string> lookupAddrForHostname();
@@ -52,12 +47,6 @@ class ContextImpl final
 
  private:
   Loop loop_;
-
-  // Sequence numbers for the listeners and connections created by this context,
-  // used to create their identifiers based off this context's identifier. They
-  // will only be used for logging and debugging.
-  std::atomic<uint64_t> listenerCounter_{0};
-  std::atomic<uint64_t> connectionCounter_{0};
 
   std::tuple<Error, std::string> lookupAddrForHostnameFromLoop();
 };

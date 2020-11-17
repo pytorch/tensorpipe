@@ -8,28 +8,17 @@
 
 #pragma once
 
-#include <memory>
-#include <string>
-
 #include <tensorpipe/transport/listener_boilerplate.h>
-#include <tensorpipe/transport/uv/context.h>
 
 namespace tensorpipe {
 namespace transport {
 namespace uv {
 
 class ConnectionImpl;
+class ContextImpl;
 class ListenerImpl;
 
-class Listener
-    : public ListenerBoilerplate<ContextImpl, ListenerImpl, ConnectionImpl> {
- public:
-  // Create a listener that listens on the specified address.
-  Listener(
-      std::shared_ptr<ContextImpl> context,
-      std::string addr,
-      std::string id);
-};
+using Listener = ListenerBoilerplate<ContextImpl, ListenerImpl, ConnectionImpl>;
 
 } // namespace uv
 } // namespace transport
