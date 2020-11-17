@@ -57,12 +57,15 @@ class ConnectionImplBoilerplate : public std::enable_shared_from_this<TConn> {
 
   // Queue a read operation.
   using read_callback_fn = Connection::read_callback_fn;
+  using read_nop_callback_fn = Connection::read_nop_callback_fn;
   void read(read_callback_fn fn);
+  void read(AbstractNopHolder& object, read_nop_callback_fn fn);
   void read(void* ptr, size_t length, read_callback_fn fn);
 
   // Perform a write operation.
   using write_callback_fn = Connection::write_callback_fn;
   void write(const void* ptr, size_t length, write_callback_fn fn);
+  void write(const AbstractNopHolder& object, write_callback_fn fn);
 
   // Tell the connection what its identifier is.
   void setId(std::string id);
@@ -76,6 +79,9 @@ class ConnectionImplBoilerplate : public std::enable_shared_from_this<TConn> {
   virtual void initImplFromLoop() = 0;
   virtual void readImplFromLoop(read_callback_fn fn) = 0;
   virtual void readImplFromLoop(
+      AbstractNopHolder& object,
+      read_nop_callback_fn fn);
+  virtual void readImplFromLoop(
       void* ptr,
       size_t length,
       read_callback_fn fn) = 0;
@@ -83,6 +89,9 @@ class ConnectionImplBoilerplate : public std::enable_shared_from_this<TConn> {
       const void* ptr,
       size_t length,
       write_callback_fn fn) = 0;
+  virtual void writeImplFromLoop(
+      const AbstractNopHolder& object,
+      write_callback_fn fn);
   virtual void handleErrorImpl() = 0;
 
   void setError(Error error);
@@ -102,10 +111,12 @@ class ConnectionImplBoilerplate : public std::enable_shared_from_this<TConn> {
 
   // Queue a read operation.
   void readFromLoop(read_callback_fn fn);
+  void readFromLoop(AbstractNopHolder& object, read_nop_callback_fn fn);
   void readFromLoop(void* ptr, size_t length, read_callback_fn fn);
 
   // Perform a write operation.
   void writeFromLoop(const void* ptr, size_t length, write_callback_fn fn);
+  void writeFromLoop(const AbstractNopHolder& object, write_callback_fn fn);
 
   void setIdFromLoop(std::string id);
 
@@ -181,6 +192,61 @@ void ConnectionImplBoilerplate<TCtx, TList, TConn>::readFromLoop(
   }
 
   readImplFromLoop(std::move(fn));
+}
+
+template <typename TCtx, typename TList, typename TConn>
+void ConnectionImplBoilerplate<TCtx, TList, TConn>::read(
+    AbstractNopHolder& object,
+    read_nop_callback_fn fn) {
+  context_->deferToLoop(
+      [impl{this->shared_from_this()}, &object, fn{std::move(fn)}]() mutable {
+        impl->readFromLoop(object, std::move(fn));
+      });
+}
+
+template <typename TCtx, typename TList, typename TConn>
+void ConnectionImplBoilerplate<TCtx, TList, TConn>::readFromLoop(
+    AbstractNopHolder& object,
+    read_nop_callback_fn fn) {
+  TP_DCHECK(context_->inLoop());
+
+  uint64_t sequenceNumber = nextBufferBeingRead_++;
+  TP_VLOG(7) << "Connection " << id_ << " received a nop object read request (#"
+             << sequenceNumber << ")";
+
+  fn = [this, sequenceNumber, fn{std::move(fn)}](const Error& error) {
+    TP_DCHECK_EQ(sequenceNumber, nextReadCallbackToCall_++);
+    TP_VLOG(7) << "Connection " << id_
+               << " is calling a nop object read callback (#" << sequenceNumber
+               << ")";
+    fn(error);
+    TP_VLOG(7) << "Connection " << id_
+               << " done calling a nop object read callback (#"
+               << sequenceNumber << ")";
+  };
+
+  if (error_) {
+    fn(error_);
+    return;
+  }
+
+  readImplFromLoop(object, std::move(fn));
+}
+
+template <typename TCtx, typename TList, typename TConn>
+void ConnectionImplBoilerplate<TCtx, TList, TConn>::readImplFromLoop(
+    AbstractNopHolder& object,
+    read_nop_callback_fn fn) {
+  readImplFromLoop([&object, fn{std::move(fn)}](
+                       const Error& error, const void* ptr, size_t len) {
+    if (!error) {
+      NopReader reader(reinterpret_cast<const uint8_t*>(ptr), len);
+      nop::Status<void> status = object.read(reader);
+      TP_THROW_ASSERT_IF(status.has_error())
+          << "Error reading nop object: " << status.GetErrorMessage();
+    }
+    fn(error);
+  });
 }
 
 template <typename TCtx, typename TList, typename TConn>
@@ -264,6 +330,79 @@ void ConnectionImplBoilerplate<TCtx, TList, TConn>::writeFromLoop(
   }
 
   writeImplFromLoop(ptr, length, std::move(fn));
+}
+
+template <typename TCtx, typename TList, typename TConn>
+void ConnectionImplBoilerplate<TCtx, TList, TConn>::write(
+    const AbstractNopHolder& object,
+    write_callback_fn fn) {
+  context_->deferToLoop(
+      [impl{this->shared_from_this()}, &object, fn{std::move(fn)}]() mutable {
+        impl->writeFromLoop(object, std::move(fn));
+      });
+}
+
+template <typename TCtx, typename TList, typename TConn>
+void ConnectionImplBoilerplate<TCtx, TList, TConn>::writeFromLoop(
+    const AbstractNopHolder& object,
+    write_callback_fn fn) {
+  TP_DCHECK(context_->inLoop());
+
+  uint64_t sequenceNumber = nextBufferBeingWritten_++;
+  TP_VLOG(7) << "Connection " << id_
+             << " received a nop object write request (#" << sequenceNumber
+             << ")";
+
+  fn = [this, sequenceNumber, fn{std::move(fn)}](const Error& error) {
+    TP_DCHECK_EQ(sequenceNumber, nextWriteCallbackToCall_++);
+    TP_VLOG(7) << "Connection " << id_
+               << " is calling a nop object write callback (#" << sequenceNumber
+               << ")";
+    fn(error);
+    TP_VLOG(7) << "Connection " << id_
+               << " done calling a nop object write callback (#"
+               << sequenceNumber << ")";
+  };
+
+  if (error_) {
+    fn(error_);
+    return;
+  }
+
+  writeImplFromLoop(object, std::move(fn));
+}
+
+template <typename TCtx, typename TList, typename TConn>
+void ConnectionImplBoilerplate<TCtx, TList, TConn>::writeImplFromLoop(
+    const AbstractNopHolder& object,
+    write_callback_fn fn) {
+  const size_t len = object.getSize();
+
+  // Using a shared_ptr instead of unique_ptr because if the lambda captures a
+  // unique_ptr then it becomes non-copyable, which prevents it from being
+  // converted to a function. In C++20 use std::make_shared<uint8_t[]>(len).
+  //
+  // Note: this is a std::shared_ptr<uint8_t[]> semantically. A shared_ptr
+  // with array type is supported in C++17 and higher.
+  //
+  auto buf = std::shared_ptr<uint8_t>(
+      new uint8_t[len], std::default_delete<uint8_t[]>());
+  auto ptr = buf.get();
+
+  NopWriter writer(ptr, len);
+  nop::Status<void> status = object.write(writer);
+  TP_THROW_ASSERT_IF(status.has_error())
+      << "Error writing nop object: " << status.GetErrorMessage();
+
+  // Perform write and forward callback.
+  writeImplFromLoop(
+      ptr,
+      len,
+      [buf{std::move(buf)}, fn{std::move(fn)}](const Error& error) mutable {
+        // The write has completed; destroy write buffer.
+        buf.reset();
+        fn(error);
+      });
 }
 
 template <typename TCtx, typename TList, typename TConn>

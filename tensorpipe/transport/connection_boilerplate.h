@@ -37,10 +37,12 @@ class ConnectionBoilerplate : public Connection {
 
   // Queue a read operation.
   void read(read_callback_fn fn) override;
+  void read(AbstractNopHolder& object, read_nop_callback_fn fn) override;
   void read(void* ptr, size_t length, read_callback_fn fn) override;
 
   // Perform a write operation.
   void write(const void* ptr, size_t length, write_callback_fn fn) override;
+  void write(const AbstractNopHolder& object, write_callback_fn fn) override;
 
   // Tell the connection what its identifier is.
   void setId(std::string id) override;
@@ -83,6 +85,13 @@ void ConnectionBoilerplate<TCtx, TList, TConn>::read(read_callback_fn fn) {
 
 template <typename TCtx, typename TList, typename TConn>
 void ConnectionBoilerplate<TCtx, TList, TConn>::read(
+    AbstractNopHolder& object,
+    read_nop_callback_fn fn) {
+  impl_->read(object, std::move(fn));
+}
+
+template <typename TCtx, typename TList, typename TConn>
+void ConnectionBoilerplate<TCtx, TList, TConn>::read(
     void* ptr,
     size_t length,
     read_callback_fn fn) {
@@ -95,6 +104,13 @@ void ConnectionBoilerplate<TCtx, TList, TConn>::write(
     size_t length,
     write_callback_fn fn) {
   impl_->write(ptr, length, std::move(fn));
+}
+
+template <typename TCtx, typename TList, typename TConn>
+void ConnectionBoilerplate<TCtx, TList, TConn>::write(
+    const AbstractNopHolder& object,
+    write_callback_fn fn) {
+  impl_->write(object, std::move(fn));
 }
 
 template <typename TCtx, typename TList, typename TConn>
