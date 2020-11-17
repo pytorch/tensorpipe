@@ -44,6 +44,7 @@ class Connection
   friend class Context;
   // Allow listener to access constructor token.
   friend class Listener;
+  friend class ListenerImpl;
 };
 
 } // namespace uv
