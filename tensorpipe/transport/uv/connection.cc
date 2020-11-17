@@ -29,10 +29,10 @@ namespace uv {
 
 Connection::Connection(
     ConstructorToken /* unused */,
-    std::shared_ptr<Context::PrivateIface> context,
+    std::shared_ptr<ContextImpl> context,
     std::shared_ptr<TCPHandle> handle,
     std::string id)
-    : ConnectionBoilerplate<ConnectionImpl, Context::PrivateIface>(
+    : ConnectionBoilerplate<ConnectionImpl, ContextImpl>(
           std::make_shared<ConnectionImpl>(
               std::move(context),
               std::move(handle),
@@ -40,29 +40,29 @@ Connection::Connection(
 
 Connection::Connection(
     ConstructorToken /* unused */,
-    std::shared_ptr<Context::PrivateIface> context,
+    std::shared_ptr<ContextImpl> context,
     std::string addr,
     std::string id)
-    : ConnectionBoilerplate<ConnectionImpl, Context::PrivateIface>(
+    : ConnectionBoilerplate<ConnectionImpl, ContextImpl>(
           std::make_shared<ConnectionImpl>(
               std::move(context),
               std::move(addr),
               std::move(id))) {}
 
 ConnectionImpl::ConnectionImpl(
-    std::shared_ptr<Context::PrivateIface> context,
+    std::shared_ptr<ContextImpl> context,
     std::shared_ptr<TCPHandle> handle,
     std::string id)
-    : ConnectionImplBoilerplate<ConnectionImpl, Context::PrivateIface>(
+    : ConnectionImplBoilerplate<ConnectionImpl, ContextImpl>(
           std::move(context),
           std::move(id)),
       handle_(std::move(handle)) {}
 
 ConnectionImpl::ConnectionImpl(
-    std::shared_ptr<Context::PrivateIface> context,
+    std::shared_ptr<ContextImpl> context,
     std::string addr,
     std::string id)
-    : ConnectionImplBoilerplate<ConnectionImpl, Context::PrivateIface>(
+    : ConnectionImplBoilerplate<ConnectionImpl, ContextImpl>(
           std::move(context),
           std::move(id)),
       handle_(context_->createHandle()),

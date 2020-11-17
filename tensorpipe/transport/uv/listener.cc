@@ -25,20 +25,20 @@ namespace uv {
 
 Listener::Listener(
     ConstructorToken /* unused */,
-    std::shared_ptr<Context::PrivateIface> context,
+    std::shared_ptr<ContextImpl> context,
     std::string addr,
     std::string id)
-    : ListenerBoilerplate<ListenerImpl, Context::PrivateIface>(
+    : ListenerBoilerplate<ListenerImpl, ContextImpl>(
           std::make_shared<ListenerImpl>(
               std::move(context),
               std::move(addr),
               std::move(id))) {}
 
 ListenerImpl::ListenerImpl(
-    std::shared_ptr<Context::PrivateIface> context,
+    std::shared_ptr<ContextImpl> context,
     std::string addr,
     std::string id)
-    : ListenerImplBoilerplate<ListenerImpl, Context::PrivateIface>(
+    : ListenerImplBoilerplate<ListenerImpl, ContextImpl>(
           std::move(context),
           std::move(id)),
       handle_(context_->createHandle()),

@@ -35,142 +35,82 @@ std::string generateDomainDescriptor() {
 
 } // namespace
 
-class Context::Impl : public Context::PrivateIface,
-                      public std::enable_shared_from_this<Context::Impl> {
- public:
-  Impl();
+Context::Context() : impl_(std::make_shared<ContextImpl>()) {}
 
-  const std::string& domainDescriptor() const;
-
-  std::shared_ptr<transport::Connection> connect(std::string addr);
-
-  std::shared_ptr<transport::Listener> listen(std::string addr);
-
-  std::tuple<Error, std::string> lookupAddrForIface(std::string iface);
-
-  std::tuple<Error, std::string> lookupAddrForHostname();
-
-  void setId(std::string id);
-
-  ClosingEmitter& getClosingEmitter() override;
-
-  bool inLoop() override;
-
-  void deferToLoop(std::function<void()> fn) override;
-
-  std::shared_ptr<TCPHandle> createHandle() override;
-
-  void close();
-
-  void join();
-
-  ~Impl() override = default;
-
- private:
-  Loop loop_;
-  std::atomic<bool> closed_{false};
-  std::atomic<bool> joined_{false};
-  ClosingEmitter closingEmitter_;
-
-  std::string domainDescriptor_;
-
-  // An identifier for the context, composed of the identifier for the context,
-  // combined with the transport's name. It will only be used for logging and
-  // debugging purposes.
-  std::string id_{"N/A"};
-
-  // Sequence numbers for the listeners and connections created by this context,
-  // used to create their identifiers based off this context's identifier. They
-  // will only be used for logging and debugging.
-  std::atomic<uint64_t> listenerCounter_{0};
-  std::atomic<uint64_t> connectionCounter_{0};
-
-  std::tuple<Error, std::string> lookupAddrForHostnameFromLoop();
-};
-
-Context::Context() : impl_(std::make_shared<Impl>()) {}
-
-Context::Impl::Impl() : domainDescriptor_(generateDomainDescriptor()) {}
-
-void Context::close() {
-  impl_->close();
-}
-
-void Context::Impl::close() {
-  if (!closed_.exchange(true)) {
-    TP_VLOG(7) << "Transport context " << id_ << " is closing";
-
-    closingEmitter_.close();
-    loop_.close();
-
-    TP_VLOG(7) << "Transport context " << id_ << " done closing";
-  }
-}
-
-void Context::join() {
-  impl_->join();
-}
-
-void Context::Impl::join() {
-  close();
-
-  if (!joined_.exchange(true)) {
-    TP_VLOG(7) << "Transport context " << id_ << " is joining";
-
-    loop_.join();
-
-    TP_VLOG(7) << "Transport context " << id_ << " done joining";
-  }
-}
-
-Context::~Context() {
-  join();
-}
+// Explicitly define all methods of the context, which just forward to the impl.
+// We cannot use an intermediate ContextBoilerplate class without forcing a
+// recursive include of private headers into the public ones.
 
 std::shared_ptr<transport::Connection> Context::connect(std::string addr) {
   return impl_->connect(std::move(addr));
-}
-
-std::shared_ptr<transport::Connection> Context::Impl::connect(
-    std::string addr) {
-  std::string connectionId = id_ + ".c" + std::to_string(connectionCounter_++);
-  TP_VLOG(7) << "Transport context " << id_ << " is opening connection "
-             << connectionId << " to address " << addr;
-  return std::make_shared<Connection>(
-      Connection::ConstructorToken(),
-      std::static_pointer_cast<PrivateIface>(shared_from_this()),
-      std::move(addr),
-      std::move(connectionId));
 }
 
 std::shared_ptr<transport::Listener> Context::listen(std::string addr) {
   return impl_->listen(std::move(addr));
 }
 
-std::shared_ptr<transport::Listener> Context::Impl::listen(std::string addr) {
-  std::string listenerId = id_ + ".l" + std::to_string(listenerCounter_++);
-  TP_VLOG(7) << "Transport context " << id_ << " is opening listener "
-             << listenerId << " on address " << addr;
-  return std::make_shared<Listener>(
-      Listener::ConstructorToken(),
-      std::static_pointer_cast<PrivateIface>(shared_from_this()),
-      std::move(addr),
-      std::move(listenerId));
-}
-
 const std::string& Context::domainDescriptor() const {
   return impl_->domainDescriptor();
 }
 
-const std::string& Context::Impl::domainDescriptor() const {
-  return domainDescriptor_;
+void Context::setId(std::string id) {
+  impl_->setId(std::move(id));
+}
+
+void Context::close() {
+  impl_->close();
+}
+
+void Context::join() {
+  impl_->join();
+}
+
+Context::~Context() {
+  join();
 }
 
 std::tuple<Error, std::string> Context::lookupAddrForIface(std::string iface) {
   return impl_->lookupAddrForIface(std::move(iface));
 }
 
-std::tuple<Error, std::string> Context::Impl::lookupAddrForIface(
+std::tuple<Error, std::string> Context::lookupAddrForHostname() {
+  return impl_->lookupAddrForHostname();
+}
+
+ContextImpl::ContextImpl()
+    : ContextImplBoilerplate<ContextImpl>(generateDomainDescriptor()) {}
+
+void ContextImpl::closeImpl() {
+  loop_.close();
+}
+
+void ContextImpl::joinImpl() {
+  loop_.join();
+}
+
+std::shared_ptr<transport::Connection> ContextImpl::connect(std::string addr) {
+  std::string connectionId = id_ + ".c" + std::to_string(connectionCounter_++);
+  TP_VLOG(7) << "Transport context " << id_ << " is opening connection "
+             << connectionId << " to address " << addr;
+  return std::make_shared<Connection>(
+      Connection::ConstructorToken(),
+      shared_from_this(),
+      std::move(addr),
+      std::move(connectionId));
+}
+
+std::shared_ptr<transport::Listener> ContextImpl::listen(std::string addr) {
+  std::string listenerId = id_ + ".l" + std::to_string(listenerCounter_++);
+  TP_VLOG(7) << "Transport context " << id_ << " is opening listener "
+             << listenerId << " on address " << addr;
+  return std::make_shared<Listener>(
+      Listener::ConstructorToken(),
+      shared_from_this(),
+      std::move(addr),
+      std::move(listenerId));
+}
+
+std::tuple<Error, std::string> ContextImpl::lookupAddrForIface(
     std::string iface) {
   int rv;
   InterfaceAddresses addresses;
@@ -204,11 +144,7 @@ std::tuple<Error, std::string> Context::Impl::lookupAddrForIface(
   return std::make_tuple(TP_CREATE_ERROR(NoAddrFoundError), std::string());
 }
 
-std::tuple<Error, std::string> Context::lookupAddrForHostname() {
-  return impl_->lookupAddrForHostname();
-}
-
-std::tuple<Error, std::string> Context::Impl::lookupAddrForHostname() {
+std::tuple<Error, std::string> ContextImpl::lookupAddrForHostname() {
   Error error;
   std::string addr;
   runInLoop([this, &error, &addr]() {
@@ -217,7 +153,7 @@ std::tuple<Error, std::string> Context::Impl::lookupAddrForHostname() {
   return std::make_tuple(std::move(error), std::move(addr));
 }
 
-std::tuple<Error, std::string> Context::Impl::lookupAddrForHostnameFromLoop() {
+std::tuple<Error, std::string> ContextImpl::lookupAddrForHostnameFromLoop() {
   int rv;
   std::string hostname;
   std::tie(rv, hostname) = getHostname();
@@ -263,28 +199,15 @@ std::tuple<Error, std::string> Context::Impl::lookupAddrForHostnameFromLoop() {
   }
 }
 
-void Context::setId(std::string id) {
-  impl_->setId(std::move(id));
-}
-
-void Context::Impl::setId(std::string id) {
-  TP_VLOG(7) << "Transport context " << id_ << " was renamed to " << id;
-  id_ = std::move(id);
-}
-
-ClosingEmitter& Context::Impl::getClosingEmitter() {
-  return closingEmitter_;
-};
-
-bool Context::Impl::inLoop() {
+bool ContextImpl::inLoop() {
   return loop_.inLoop();
 };
 
-void Context::Impl::deferToLoop(std::function<void()> fn) {
+void ContextImpl::deferToLoop(std::function<void()> fn) {
   loop_.deferToLoop(std::move(fn));
 };
 
-std::shared_ptr<TCPHandle> Context::Impl::createHandle() {
+std::shared_ptr<TCPHandle> ContextImpl::createHandle() {
   return TCPHandle::create(loop_);
 };
 
