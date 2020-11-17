@@ -42,6 +42,11 @@ class ListenerImplBoilerplate : public std::enable_shared_from_this<TList> {
       std::shared_ptr<TCtx> context,
       std::string id);
 
+  ListenerImplBoilerplate(const ListenerImplBoilerplate&) = delete;
+  ListenerImplBoilerplate(ListenerImplBoilerplate&&) = delete;
+  ListenerImplBoilerplate& operator=(const ListenerImplBoilerplate&) = delete;
+  ListenerImplBoilerplate& operator=(ListenerImplBoilerplate&&) = delete;
+
   // Initialize member fields that need `shared_from_this`.
   void init();
 

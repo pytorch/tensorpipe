@@ -29,6 +29,11 @@ class ListenerBoilerplate : public Listener {
       std::string,
       Args... args);
 
+  ListenerBoilerplate(const ListenerBoilerplate&) = delete;
+  ListenerBoilerplate(ListenerBoilerplate&&) = delete;
+  ListenerBoilerplate& operator=(const ListenerBoilerplate&) = delete;
+  ListenerBoilerplate& operator=(ListenerBoilerplate&&) = delete;
+
   // Queue a callback to be called when a connection comes in.
   void accept(accept_callback_fn fn) override;
 
