@@ -29,7 +29,11 @@ class ListenerImpl final : public ListenerImplBoilerplate<
                                ConnectionImpl> {
  public:
   // Create a listener that listens on the specified address.
-  ListenerImpl(std::shared_ptr<ContextImpl>, std::string, std::string);
+  ListenerImpl(
+      ConstructorToken,
+      std::shared_ptr<ContextImpl>,
+      std::string,
+      std::string);
 
  protected:
   // Implement the entry points called by ListenerImplBoilerplate.

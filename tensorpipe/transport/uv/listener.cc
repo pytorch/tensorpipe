@@ -23,10 +23,12 @@ namespace transport {
 namespace uv {
 
 ListenerImpl::ListenerImpl(
+    ConstructorToken token,
     std::shared_ptr<ContextImpl> context,
     std::string id,
     std::string addr)
     : ListenerImplBoilerplate<ContextImpl, ListenerImpl, ConnectionImpl>(
+          token,
           std::move(context),
           std::move(id)),
       handle_(context_->createHandle()),

@@ -23,7 +23,11 @@ template <typename TCtx, typename TList, typename TConn>
 class ListenerBoilerplate : public Listener {
  public:
   template <typename... Args>
-  ListenerBoilerplate(std::shared_ptr<TCtx>, std::string, Args... args);
+  ListenerBoilerplate(
+      typename ListenerImplBoilerplate<TCtx, TList, TConn>::ConstructorToken,
+      std::shared_ptr<TCtx>,
+      std::string,
+      Args... args);
 
   // Queue a callback to be called when a connection comes in.
   void accept(accept_callback_fn fn) override;
@@ -48,10 +52,13 @@ class ListenerBoilerplate : public Listener {
 template <typename TCtx, typename TList, typename TConn>
 template <typename... Args>
 ListenerBoilerplate<TCtx, TList, TConn>::ListenerBoilerplate(
+    typename ListenerImplBoilerplate<TCtx, TList, TConn>::ConstructorToken
+        token,
     std::shared_ptr<TCtx> context,
     std::string id,
     Args... args)
     : impl_(std::make_shared<TList>(
+          token,
           std::move(context),
           std::move(id),
           std::forward<Args>(args)...)) {

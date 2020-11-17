@@ -23,9 +23,28 @@ namespace tensorpipe {
 namespace transport {
 
 template <typename TCtx, typename TList, typename TConn>
+class ContextImplBoilerplate;
+
+template <typename TCtx, typename TList, typename TConn>
+class ListenerImplBoilerplate;
+
+template <typename TCtx, typename TList, typename TConn>
 class ConnectionImplBoilerplate : public std::enable_shared_from_this<TConn> {
  public:
-  ConnectionImplBoilerplate(std::shared_ptr<TCtx> context, std::string id);
+  class ConstructorToken {
+   public:
+    ConstructorToken(const ConstructorToken&) = default;
+
+   private:
+    explicit ConstructorToken() {}
+    friend ContextImplBoilerplate<TCtx, TList, TConn>;
+    friend ListenerImplBoilerplate<TCtx, TList, TConn>;
+  };
+
+  ConnectionImplBoilerplate(
+      ConstructorToken,
+      std::shared_ptr<TCtx> context,
+      std::string id);
 
   // Initialize member fields that need `shared_from_this`.
   void init();
@@ -103,6 +122,7 @@ class ConnectionImplBoilerplate : public std::enable_shared_from_this<TConn> {
 
 template <typename TCtx, typename TList, typename TConn>
 ConnectionImplBoilerplate<TCtx, TList, TConn>::ConnectionImplBoilerplate(
+    ConstructorToken /* unused */,
     std::shared_ptr<TCtx> context,
     std::string id)
     : context_(std::move(context)),

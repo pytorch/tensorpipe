@@ -78,7 +78,11 @@ std::shared_ptr<Connection> ContextImplBoilerplate<TCtx, TList, TConn>::connect(
   TP_VLOG(7) << "Transport context " << id_ << " is opening connection "
              << connectionId << " to address " << addr;
   return std::make_shared<ConnectionBoilerplate<TCtx, TList, TConn>>(
-      this->shared_from_this(), std::move(connectionId), std::move(addr));
+      typename ConnectionImplBoilerplate<TCtx, TList, TConn>::
+          ConstructorToken(),
+      this->shared_from_this(),
+      std::move(connectionId),
+      std::move(addr));
 }
 
 template <typename TCtx, typename TList, typename TConn>
@@ -88,7 +92,10 @@ std::shared_ptr<Listener> ContextImplBoilerplate<TCtx, TList, TConn>::listen(
   TP_VLOG(7) << "Transport context " << id_ << " is opening listener "
              << listenerId << " on address " << addr;
   return std::make_shared<ListenerBoilerplate<TCtx, TList, TConn>>(
-      this->shared_from_this(), std::move(listenerId), std::move(addr));
+      typename ListenerImplBoilerplate<TCtx, TList, TConn>::ConstructorToken(),
+      this->shared_from_this(),
+      std::move(listenerId),
+      std::move(addr));
 }
 
 template <typename TCtx, typename TList, typename TConn>
