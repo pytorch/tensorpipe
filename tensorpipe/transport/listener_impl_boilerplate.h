@@ -22,12 +22,10 @@
 namespace tensorpipe {
 namespace transport {
 
-template <typename TImpl, typename TContextImpl>
-class ListenerImplBoilerplate : public std::enable_shared_from_this<TImpl> {
+template <typename TCtx, typename TList, typename TConn>
+class ListenerImplBoilerplate : public std::enable_shared_from_this<TList> {
  public:
-  ListenerImplBoilerplate(
-      std::shared_ptr<TContextImpl> context,
-      std::string id);
+  ListenerImplBoilerplate(std::shared_ptr<TCtx> context, std::string id);
 
   // Initialize member fields that need `shared_from_this`.
   void init();
@@ -55,7 +53,7 @@ class ListenerImplBoilerplate : public std::enable_shared_from_this<TImpl> {
 
   void setError(Error error);
 
-  const std::shared_ptr<TContextImpl> context_;
+  const std::shared_ptr<TCtx> context_;
 
   Error error_{Error::kSuccess};
 
@@ -92,29 +90,29 @@ class ListenerImplBoilerplate : public std::enable_shared_from_this<TImpl> {
   uint64_t nextAcceptCallbackToCall_{0};
 };
 
-template <typename TImpl, typename TContextImpl>
-ListenerImplBoilerplate<TImpl, TContextImpl>::ListenerImplBoilerplate(
-    std::shared_ptr<TContextImpl> context,
+template <typename TCtx, typename TList, typename TConn>
+ListenerImplBoilerplate<TCtx, TList, TConn>::ListenerImplBoilerplate(
+    std::shared_ptr<TCtx> context,
     std::string id)
     : context_(std::move(context)),
       id_(std::move(id)),
       closingReceiver_(context_, context_->getClosingEmitter()) {}
 
-template <typename TImpl, typename TContextImpl>
-void ListenerImplBoilerplate<TImpl, TContextImpl>::init() {
+template <typename TCtx, typename TList, typename TConn>
+void ListenerImplBoilerplate<TCtx, TList, TConn>::init() {
   context_->deferToLoop(
       [impl{this->shared_from_this()}]() { impl->initFromLoop(); });
 }
 
-template <typename TImpl, typename TContextImpl>
-void ListenerImplBoilerplate<TImpl, TContextImpl>::initFromLoop() {
+template <typename TCtx, typename TList, typename TConn>
+void ListenerImplBoilerplate<TCtx, TList, TConn>::initFromLoop() {
   closingReceiver_.activate(*this);
 
   initImplFromLoop();
 }
 
-template <typename TImpl, typename TContextImpl>
-void ListenerImplBoilerplate<TImpl, TContextImpl>::accept(
+template <typename TCtx, typename TList, typename TConn>
+void ListenerImplBoilerplate<TCtx, TList, TConn>::accept(
     accept_callback_fn fn) {
   context_->deferToLoop(
       [impl{this->shared_from_this()}, fn{std::move(fn)}]() mutable {
@@ -122,8 +120,8 @@ void ListenerImplBoilerplate<TImpl, TContextImpl>::accept(
       });
 }
 
-template <typename TImpl, typename TContextImpl>
-void ListenerImplBoilerplate<TImpl, TContextImpl>::acceptFromLoop(
+template <typename TCtx, typename TList, typename TConn>
+void ListenerImplBoilerplate<TCtx, TList, TConn>::acceptFromLoop(
     accept_callback_fn fn) {
   TP_DCHECK(context_->inLoop());
 
@@ -149,51 +147,51 @@ void ListenerImplBoilerplate<TImpl, TContextImpl>::acceptFromLoop(
   acceptImplFromLoop(std::move(fn));
 }
 
-template <typename TImpl, typename TContextImpl>
-std::string ListenerImplBoilerplate<TImpl, TContextImpl>::addr() const {
+template <typename TCtx, typename TList, typename TConn>
+std::string ListenerImplBoilerplate<TCtx, TList, TConn>::addr() const {
   std::string addr;
   context_->runInLoop([this, &addr]() { addr = addrFromLoop(); });
   return addr;
 }
 
-template <typename TImpl, typename TContextImpl>
-std::string ListenerImplBoilerplate<TImpl, TContextImpl>::addrFromLoop() const {
+template <typename TCtx, typename TList, typename TConn>
+std::string ListenerImplBoilerplate<TCtx, TList, TConn>::addrFromLoop() const {
   TP_DCHECK(context_->inLoop());
 
   return addrImplFromLoop();
 }
 
-template <typename TImpl, typename TContextImpl>
-void ListenerImplBoilerplate<TImpl, TContextImpl>::setId(std::string id) {
+template <typename TCtx, typename TList, typename TConn>
+void ListenerImplBoilerplate<TCtx, TList, TConn>::setId(std::string id) {
   context_->deferToLoop(
       [impl{this->shared_from_this()}, id{std::move(id)}]() mutable {
         impl->setIdFromLoop(std::move(id));
       });
 }
 
-template <typename TImpl, typename TContextImpl>
-void ListenerImplBoilerplate<TImpl, TContextImpl>::setIdFromLoop(
+template <typename TCtx, typename TList, typename TConn>
+void ListenerImplBoilerplate<TCtx, TList, TConn>::setIdFromLoop(
     std::string id) {
   TP_DCHECK(context_->inLoop());
   TP_VLOG(7) << "Listener " << id_ << " was renamed to " << id;
   id_ = std::move(id);
 }
 
-template <typename TImpl, typename TContextImpl>
-void ListenerImplBoilerplate<TImpl, TContextImpl>::close() {
+template <typename TCtx, typename TList, typename TConn>
+void ListenerImplBoilerplate<TCtx, TList, TConn>::close() {
   context_->deferToLoop(
       [impl{this->shared_from_this()}]() { impl->closeFromLoop(); });
 }
 
-template <typename TImpl, typename TContextImpl>
-void ListenerImplBoilerplate<TImpl, TContextImpl>::closeFromLoop() {
+template <typename TCtx, typename TList, typename TConn>
+void ListenerImplBoilerplate<TCtx, TList, TConn>::closeFromLoop() {
   TP_DCHECK(context_->inLoop());
   TP_VLOG(7) << "Listener " << id_ << " is closing";
   setError(TP_CREATE_ERROR(ListenerClosedError));
 }
 
-template <typename TImpl, typename TContextImpl>
-void ListenerImplBoilerplate<TImpl, TContextImpl>::setError(Error error) {
+template <typename TCtx, typename TList, typename TConn>
+void ListenerImplBoilerplate<TCtx, TList, TConn>::setError(Error error) {
   // Don't overwrite an error that's already set.
   if (error_ || !error) {
     return;
@@ -204,8 +202,8 @@ void ListenerImplBoilerplate<TImpl, TContextImpl>::setError(Error error) {
   handleError();
 }
 
-template <typename TImpl, typename TContextImpl>
-void ListenerImplBoilerplate<TImpl, TContextImpl>::handleError() {
+template <typename TCtx, typename TList, typename TConn>
+void ListenerImplBoilerplate<TCtx, TList, TConn>::handleError() {
   TP_DCHECK(context_->inLoop());
   TP_VLOG(8) << "Listener " << id_ << " is handling error " << error_.what();
 

@@ -19,9 +19,11 @@ namespace transport {
 namespace uv {
 
 class ConnectionImpl;
+class ListenerImpl;
 class TCPHandle;
 
-class Connection : public ConnectionBoilerplate<ConnectionImpl, ContextImpl> {
+class Connection
+    : public ConnectionBoilerplate<ContextImpl, ListenerImpl, ConnectionImpl> {
  public:
   Connection(
       std::shared_ptr<ContextImpl> context,

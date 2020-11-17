@@ -23,7 +23,11 @@ namespace tensorpipe {
 namespace transport {
 namespace uv {
 
-class ContextImpl final : public ContextImplBoilerplate<ContextImpl> {
+class ConnectionImpl;
+class ListenerImpl;
+
+class ContextImpl final
+    : public ContextImplBoilerplate<ContextImpl, ListenerImpl, ConnectionImpl> {
  public:
   ContextImpl();
 

@@ -78,7 +78,8 @@ std::tuple<Error, std::string> Context::lookupAddrForHostname() {
 }
 
 ContextImpl::ContextImpl()
-    : ContextImplBoilerplate<ContextImpl>(generateDomainDescriptor()) {}
+    : ContextImplBoilerplate<ContextImpl, ListenerImpl, ConnectionImpl>(
+          generateDomainDescriptor()) {}
 
 void ContextImpl::closeImpl() {
   loop_.close();

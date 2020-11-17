@@ -19,10 +19,10 @@
 namespace tensorpipe {
 namespace transport {
 
-template <typename TImpl, typename TContextImpl>
+template <typename TCtx, typename TList, typename TConn>
 class ListenerBoilerplate : public Listener {
  public:
-  ListenerBoilerplate(std::shared_ptr<TImpl> impl);
+  ListenerBoilerplate(std::shared_ptr<TList> impl);
 
   // Queue a callback to be called when a connection comes in.
   void accept(accept_callback_fn fn) override;
@@ -41,42 +41,42 @@ class ListenerBoilerplate : public Listener {
  protected:
   // Using a shared_ptr allows us to detach the lifetime of the implementation
   // from the public object's one and perform the destruction asynchronously.
-  const std::shared_ptr<TImpl> impl_;
+  const std::shared_ptr<TList> impl_;
 };
 
-template <typename TImpl, typename TContextImpl>
-ListenerBoilerplate<TImpl, TContextImpl>::ListenerBoilerplate(
-    std::shared_ptr<TImpl> impl)
+template <typename TCtx, typename TList, typename TConn>
+ListenerBoilerplate<TCtx, TList, TConn>::ListenerBoilerplate(
+    std::shared_ptr<TList> impl)
     : impl_(std::move(impl)) {
   static_assert(
-      std::is_base_of<ListenerImplBoilerplate<TImpl, TContextImpl>, TImpl>::
+      std::is_base_of<ListenerImplBoilerplate<TCtx, TList, TConn>, TList>::
           value,
       "");
   impl_->init();
 }
 
-template <typename TImpl, typename TContextImpl>
-void ListenerBoilerplate<TImpl, TContextImpl>::accept(accept_callback_fn fn) {
+template <typename TCtx, typename TList, typename TConn>
+void ListenerBoilerplate<TCtx, TList, TConn>::accept(accept_callback_fn fn) {
   impl_->accept(std::move(fn));
 }
 
-template <typename TImpl, typename TContextImpl>
-std::string ListenerBoilerplate<TImpl, TContextImpl>::addr() const {
+template <typename TCtx, typename TList, typename TConn>
+std::string ListenerBoilerplate<TCtx, TList, TConn>::addr() const {
   return impl_->addr();
 }
 
-template <typename TImpl, typename TContextImpl>
-void ListenerBoilerplate<TImpl, TContextImpl>::setId(std::string id) {
+template <typename TCtx, typename TList, typename TConn>
+void ListenerBoilerplate<TCtx, TList, TConn>::setId(std::string id) {
   impl_->setId(std::move(id));
 }
 
-template <typename TImpl, typename TContextImpl>
-void ListenerBoilerplate<TImpl, TContextImpl>::close() {
+template <typename TCtx, typename TList, typename TConn>
+void ListenerBoilerplate<TCtx, TList, TConn>::close() {
   impl_->close();
 }
 
-template <typename TImpl, typename TContextImpl>
-ListenerBoilerplate<TImpl, TContextImpl>::~ListenerBoilerplate() {
+template <typename TCtx, typename TList, typename TConn>
+ListenerBoilerplate<TCtx, TList, TConn>::~ListenerBoilerplate() {
   close();
 }
 

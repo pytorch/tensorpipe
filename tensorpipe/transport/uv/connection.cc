@@ -31,7 +31,7 @@ Connection::Connection(
     std::shared_ptr<ContextImpl> context,
     std::shared_ptr<TCPHandle> handle,
     std::string id)
-    : ConnectionBoilerplate<ConnectionImpl, ContextImpl>(
+    : ConnectionBoilerplate<ContextImpl, ListenerImpl, ConnectionImpl>(
           std::make_shared<ConnectionImpl>(
               std::move(context),
               std::move(handle),
@@ -41,7 +41,7 @@ Connection::Connection(
     std::shared_ptr<ContextImpl> context,
     std::string addr,
     std::string id)
-    : ConnectionBoilerplate<ConnectionImpl, ContextImpl>(
+    : ConnectionBoilerplate<ContextImpl, ListenerImpl, ConnectionImpl>(
           std::make_shared<ConnectionImpl>(
               std::move(context),
               std::move(addr),
@@ -51,7 +51,7 @@ ConnectionImpl::ConnectionImpl(
     std::shared_ptr<ContextImpl> context,
     std::shared_ptr<TCPHandle> handle,
     std::string id)
-    : ConnectionImplBoilerplate<ConnectionImpl, ContextImpl>(
+    : ConnectionImplBoilerplate<ContextImpl, ListenerImpl, ConnectionImpl>(
           std::move(context),
           std::move(id)),
       handle_(std::move(handle)) {}
@@ -60,7 +60,7 @@ ConnectionImpl::ConnectionImpl(
     std::shared_ptr<ContextImpl> context,
     std::string addr,
     std::string id)
-    : ConnectionImplBoilerplate<ConnectionImpl, ContextImpl>(
+    : ConnectionImplBoilerplate<ContextImpl, ListenerImpl, ConnectionImpl>(
           std::move(context),
           std::move(id)),
       handle_(context_->createHandle()),

@@ -14,8 +14,6 @@
 
 #include <tensorpipe/common/callback.h>
 #include <tensorpipe/transport/listener_impl_boilerplate.h>
-#include <tensorpipe/transport/uv/connection.h>
-#include <tensorpipe/transport/uv/context_impl.h>
 #include <tensorpipe/transport/uv/sockaddr.h>
 #include <tensorpipe/transport/uv/uv.h>
 
@@ -23,8 +21,13 @@ namespace tensorpipe {
 namespace transport {
 namespace uv {
 
-class ListenerImpl final
-    : public ListenerImplBoilerplate<ListenerImpl, ContextImpl> {
+class ConnectionImpl;
+class ContextImpl;
+
+class ListenerImpl final : public ListenerImplBoilerplate<
+                               ContextImpl,
+                               ListenerImpl,
+                               ConnectionImpl> {
  public:
   // Create a listener that listens on the specified address.
   ListenerImpl(std::shared_ptr<ContextImpl>, std::string, std::string);
