@@ -34,7 +34,9 @@ class SendOperation {
   }
 
   void process(CudaBuffer dstBuffer) {
-    startEv_.wait(dstBuffer.stream);
+    int srcDevice = cudaDeviceForPointer(buffer_.ptr);
+    int dstDevice = cudaDeviceForPointer(dstBuffer.ptr);
+    startEv_.wait(dstBuffer.stream, dstDevice);
 
     TP_DCHECK_EQ(buffer_.length, dstBuffer.length);
     TP_CUDA_CHECK(cudaMemcpyAsync(
@@ -44,9 +46,9 @@ class SendOperation {
         cudaMemcpyDeviceToDevice,
         dstBuffer.stream));
 
-    CudaEvent stopEv(cudaDeviceForPointer(dstBuffer.ptr));
+    CudaEvent stopEv(dstDevice);
     stopEv.record(dstBuffer.stream);
-    stopEv.wait(buffer_.stream);
+    stopEv.wait(buffer_.stream, srcDevice);
   }
 
  private:
