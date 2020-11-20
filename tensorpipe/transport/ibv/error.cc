@@ -9,8 +9,6 @@
 #include <tensorpipe/transport/ibv/error.h>
 
 #include <netdb.h>
-#include <sys/socket.h>
-#include <sys/types.h>
 
 #include <sstream>
 

@@ -8,8 +8,6 @@
 
 #include <numeric>
 
-#include <cuda_runtime.h>
-
 #include <tensorpipe/channel/cuda_ipc/context.h>
 #include <tensorpipe/test/channel/channel_test.h>
 
