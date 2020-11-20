@@ -36,7 +36,8 @@ class CudaEvent {
     TP_CUDA_CHECK(cudaEventRecord(ev_, stream));
   }
 
-  void wait(cudaStream_t stream) {
+  void wait(cudaStream_t stream, int device) {
+    TP_CUDA_CHECK(cudaSetDevice(device));
     TP_CUDA_CHECK(cudaStreamWaitEvent(stream, ev_, 0));
   }
 
