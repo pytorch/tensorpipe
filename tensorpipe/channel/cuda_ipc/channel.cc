@@ -436,7 +436,6 @@ void Channel::Impl::onReply(const Reply& nopReply) {
   nopPacket.Become(nopPacket.index_of<Ack>());
 
   op.callback(error_);
-  sendOperations_.pop_front();
 
   connection_->write(
       *nopPacketHolder,
@@ -446,6 +445,8 @@ void Channel::Impl::onReply(const Reply& nopReply) {
                        << " done writing ACK notification (#" << sequenceNumber
                        << ")";
           }));
+
+  sendOperations_.pop_front();
 }
 
 void Channel::Impl::onAck() {
