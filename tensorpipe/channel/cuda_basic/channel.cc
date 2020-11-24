@@ -18,10 +18,10 @@
 #include <tensorpipe/channel/helpers.h>
 #include <tensorpipe/common/callback.h>
 #include <tensorpipe/common/cuda.h>
+#include <tensorpipe/common/cuda_loop.h>
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/error.h>
 #include <tensorpipe/common/error_macros.h>
-#include <tensorpipe/common/system.h>
 #include <tensorpipe/transport/connection.h>
 
 namespace tensorpipe {
@@ -45,6 +45,7 @@ class Channel::Impl : public std::enable_shared_from_this<Channel::Impl> {
   Impl(
       std::shared_ptr<Context::PrivateIface>,
       std::shared_ptr<CpuChannel>,
+      std::shared_ptr<CudaLoop>,
       std::string);
 
   // Called by the channel's constructor.
@@ -89,31 +90,9 @@ class Channel::Impl : public std::enable_shared_from_this<Channel::Impl> {
   // Shared between read and write callback entry points.
   void handleError();
 
-  // Proxy static method for cudaStreamAddCallback(), which does not accept
-  // lambdas.
-  static void CUDART_CB signalOperationReady_(cudaStream_t, cudaError_t, void*);
-  void processOperations();
-
-  std::thread opThread_;
-  std::mutex opMutex_;
-  std::condition_variable opCondVar_;
-
-  struct Operation {
-    std::function<void(cudaError_t)> process;
-    std::function<void(cudaError_t)> signalReady;
-    bool ready{false};
-    cudaError_t cudaError;
-  };
-
-  std::deque<Operation> sendOperations_;
-  std::deque<Operation> recvOperations_;
-
   std::shared_ptr<Context::PrivateIface> context_;
   std::shared_ptr<CpuChannel> cpuChannel_;
-  std::unordered_map<uint64_t, std::function<void(cudaError_t)>>
-      cudaSendCallbacks_;
-  std::unordered_map<uint64_t, std::function<void(cudaError_t)>>
-      cudaRecvCallbacks_;
+  std::shared_ptr<CudaLoop> cudaLoop_;
   Error error_{Error::kSuccess};
 
   ClosingReceiver closingReceiver_;
@@ -129,21 +108,23 @@ class Channel::Impl : public std::enable_shared_from_this<Channel::Impl> {
   // logging and debugging purposes.
   std::string id_;
 
-  LazyCallbackWrapper<Impl> lazyCallbackWrapper_{*this, this->loop_};
+  EagerCallbackWrapper<Impl> eagerCallbackWrapper_{*this, this->loop_};
 
   // For some odd reason it seems we need to use a qualified name here...
   template <typename T>
-  friend class tensorpipe::LazyCallbackWrapper;
+  friend class tensorpipe::EagerCallbackWrapper;
 };
 
 Channel::Channel(
     ConstructorToken /* unused */,
     std::shared_ptr<Context::PrivateIface> context,
     std::shared_ptr<CpuChannel> cpuChannel,
+    std::shared_ptr<CudaLoop> cudaLoop,
     std::string id)
     : impl_(std::make_shared<Impl>(
           std::move(context),
           std::move(cpuChannel),
+          std::move(cudaLoop),
           std::move(id))) {
   impl_->init();
 }
@@ -151,9 +132,11 @@ Channel::Channel(
 Channel::Impl::Impl(
     std::shared_ptr<Context::PrivateIface> context,
     std::shared_ptr<CpuChannel> cpuChannel,
+    std::shared_ptr<CudaLoop> cudaLoop,
     std::string id)
     : context_(std::move(context)),
       cpuChannel_(std::move(cpuChannel)),
+      cudaLoop_(std::move(cudaLoop)),
       closingReceiver_(context_, context_->getClosingEmitter()),
       id_(std::move(id)) {}
 
@@ -164,7 +147,6 @@ void Channel::Impl::init() {
 void Channel::Impl::initFromLoop() {
   TP_DCHECK(loop_.inLoop());
   closingReceiver_.activate(*this);
-  opThread_ = std::thread([this]() { processOperations(); });
 }
 
 void Channel::send(
@@ -184,41 +166,6 @@ void Channel::Impl::send(
                      callback{std::move(callback)}]() mutable {
     sendFromLoop(buffer, std::move(descriptorCallback), std::move(callback));
   });
-}
-
-void Channel::Impl::processOperations() {
-  setThreadName("TP_CUDA_BASIC_loop");
-  static int sendOpId = 0;
-  static int recvOpId = 0;
-
-  for (;;) {
-    std::unique_lock<std::mutex> lock(opMutex_);
-    opCondVar_.wait(lock);
-
-    while (!sendOperations_.empty()) {
-      auto& op = sendOperations_.front();
-      if (!op.ready) {
-        break;
-      }
-
-      op.process(op.cudaError);
-      sendOperations_.pop_front();
-    }
-
-    while (!recvOperations_.empty()) {
-      auto& op = recvOperations_.front();
-      if (!op.ready) {
-        break;
-      }
-      op.process(op.cudaError);
-      recvOperations_.pop_front();
-      recvOpId++;
-    }
-
-    if (error_ && sendOperations_.empty() && recvOperations_.empty()) {
-      break;
-    }
-  }
 }
 
 // Send memory region to peer.
@@ -248,41 +195,40 @@ void Channel::Impl::sendFromLoop(
       cudaMemcpyDeviceToHost,
       buffer.stream));
 
-  sendOperations_.emplace_back();
-  auto& op = sendOperations_.back();
-  op.process = [this,
-                sequenceNumber,
-                buffer,
-                tmpBuffer{std::move(tmpBuffer)},
-                descriptorCallback{std::move(descriptorCallback)},
-                callback{std::move(callback)}](cudaError_t cudaError) {
-    TP_VLOG(4) << "Channel " << id_
-               << " is done copying buffer from CUDA device to CPU";
-    TP_CUDA_CHECK(cudaError);
-    CpuBuffer cpuBuffer{tmpBuffer.get(), buffer.length};
-    cpuChannel_->send(
-        cpuBuffer,
-        std::move(descriptorCallback),
-        [tmpBuffer{std::move(tmpBuffer)}, callback{std::move(callback)}](
-            const Error& error) { callback(error); });
-  };
-  op.signalReady = [this, &op, sequenceNumber](cudaError_t cudaError) {
-    std::unique_lock<std::mutex> lock(opMutex_);
-    op.cudaError = cudaError;
-    op.ready = true;
-    opCondVar_.notify_all();
-  };
-  TP_CUDA_CHECK(cudaStreamAddCallback(
-      buffer.stream, signalOperationReady_, &op.signalReady, 0));
-}
+  auto cudaCallback =
+      [this,
+       buffer,
+       tmpBuffer{std::move(tmpBuffer)},
+       descriptorCallback{std::move(descriptorCallback)},
+       callback{std::move(callback)}](cudaError_t cudaError) mutable {
+        TP_VLOG(4) << "Channel " << id_
+                   << " is done copying buffer from CUDA device to CPU";
+        TP_CUDA_CHECK(cudaError);
 
-void Channel::Impl::signalOperationReady_(
-    cudaStream_t /* stream */,
-    cudaError_t status,
-    void* opReadyPtr) {
-  auto& opReady =
-      *reinterpret_cast<std::function<void(cudaError_t)>*>(opReadyPtr);
-  opReady(status);
+        // TODO: Use eagerCallbackWrapper to ensure channel remains alive until
+        // this callback fires?
+
+        loop_.deferToLoop([this,
+                           buffer,
+                           tmpBuffer{std::move(tmpBuffer)},
+                           descriptorCallback{std::move(descriptorCallback)},
+                           callback{std::move(callback)}]() mutable {
+          if (error_) {
+            descriptorCallback(error_, std::string());
+            callback(error_);
+            return;
+          }
+
+          CpuBuffer cpuBuffer{tmpBuffer.get(), buffer.length};
+          // Keep tmpBuffer alive until cpuChannel_ is done sending it over.
+          callback = eagerCallbackWrapper_(
+              [tmpBuffer{std::move(tmpBuffer)}, callback{std::move(callback)}](
+                  Impl& impl) { callback(impl.error_); });
+          cpuChannel_->send(
+              cpuBuffer, std::move(descriptorCallback), std::move(callback));
+        });
+      };
+  cudaLoop_->addCallback(buffer.stream, std::move(cudaCallback));
 }
 
 // Receive memory region from peer.
@@ -320,47 +266,39 @@ void Channel::Impl::recvFromLoop(
     return;
   }
 
+  TP_DCHECK_EQ(descriptor, std::string());
   auto tmpBuffer = makeCudaPinnedBuffer(buffer.length);
 
-  TP_DCHECK_EQ(descriptor, std::string());
-  std::unique_lock<std::mutex> lock(opMutex_);
-
-  recvOperations_.emplace_back();
-  auto& op = recvOperations_.back();
-
   CpuBuffer cpuBuffer{tmpBuffer.get(), buffer.length};
-  callback = [this,
-              &op,
-              sequenceNumber,
-              buffer,
-              tmpBuffer{std::move(tmpBuffer)},
-              callback{std::move(callback)}](const Error& error) {
-    TP_VLOG(4) << "Channel " << id_
-               << " is copying buffer from CPU to CUDA device";
-    TP_CUDA_CHECK(cudaMemcpyAsync(
-        buffer.ptr,
-        tmpBuffer.get(),
-        buffer.length,
-        cudaMemcpyHostToDevice,
-        buffer.stream));
+  callback = eagerCallbackWrapper_(
+      [buffer, tmpBuffer{std::move(tmpBuffer)}, callback{std::move(callback)}](
+          Impl& impl) mutable {
+        if (impl.error_) {
+          callback(impl.error_);
+          return;
+        }
 
-    callback(error_);
+        TP_VLOG(4) << "Channel " << impl.id_
+                   << " is copying buffer from CPU to CUDA device";
+        TP_CUDA_CHECK(cudaMemcpyAsync(
+            buffer.ptr,
+            tmpBuffer.get(),
+            buffer.length,
+            cudaMemcpyHostToDevice,
+            buffer.stream));
 
-    op.process = [this, sequenceNumber, tmpBuffer{std::move(tmpBuffer)}](
-                     cudaError_t cudaError) {
-      TP_VLOG(4) << "Channel " << id_
-                 << " is done copying buffer from CPU to CUDA device";
-      TP_CUDA_CHECK(cudaError);
-    };
-    op.signalReady = [this, &op, sequenceNumber](cudaError_t cudaError) {
-      std::unique_lock<std::mutex> lock(opMutex_);
-      op.cudaError = cudaError;
-      op.ready = true;
-      opCondVar_.notify_all();
-    };
-    TP_CUDA_CHECK(cudaStreamAddCallback(
-        buffer.stream, signalOperationReady_, &op.signalReady, 0));
-  };
+        callback(Error::kSuccess);
+
+        // Keep tmpBuffer alive until cudaMemcpyAsync is done.
+        impl.cudaLoop_->addCallback(
+            buffer.stream,
+            [channelId{impl.id_},
+             tmpBuffer{std::move(tmpBuffer)}](cudaError_t cudaError) {
+              TP_VLOG(4) << "Channel " << channelId
+                         << " is done copying buffer from CPU to CUDA device";
+              TP_CUDA_CHECK(cudaError);
+            });
+      });
 
   cpuChannel_->recv(std::move(descriptor), cpuBuffer, std::move(callback));
 }
@@ -413,11 +351,6 @@ void Channel::Impl::handleError() {
   TP_DCHECK(loop_.inLoop());
 
   cpuChannel_->close();
-  {
-    std::unique_lock<std::mutex> lock(opMutex_);
-    opCondVar_.notify_all();
-  }
-  opThread_.join();
 }
 
 } // namespace cuda_basic

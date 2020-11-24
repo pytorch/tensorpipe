@@ -16,6 +16,7 @@
 #include <tensorpipe/channel/error.h>
 #include <tensorpipe/channel/helpers.h>
 #include <tensorpipe/common/callback.h>
+#include <tensorpipe/common/cuda_loop.h>
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/error.h>
 #include <tensorpipe/common/error_macros.h>
@@ -52,6 +53,7 @@ class Context::Impl : public Context::PrivateIface,
   ClosingEmitter closingEmitter_;
 
   std::shared_ptr<CpuContext> cpuContext_;
+  std::shared_ptr<CudaLoop> cudaLoop_;
   // An identifier for the context, composed of the identifier for the context,
   // combined with the channel's name. It will only be used for logging and
   // debugging purposes.
@@ -67,7 +69,10 @@ Context::Context(std::shared_ptr<CpuContext> cpuContext)
     : impl_(std::make_shared<Impl>(std::move(cpuContext))) {}
 
 Context::Impl::Impl(std::shared_ptr<CpuContext> cpuContext)
-    : domainDescriptor_("any"), cpuContext_(std::move(cpuContext)) {}
+    : domainDescriptor_("any"),
+      cpuContext_(std::move(cpuContext)),
+      // TODO: Lazy initialization of cuda loop.
+      cudaLoop_(std::make_shared<CudaLoop>()) {}
 
 void Context::close() {
   impl_->close();
@@ -134,6 +139,7 @@ std::shared_ptr<channel::CudaChannel> Context::Impl::createChannel(
       Channel::ConstructorToken(),
       std::static_pointer_cast<PrivateIface>(shared_from_this()),
       std::move(cpuChannel),
+      cudaLoop_,
       std::move(channelId));
 }
 
