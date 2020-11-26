@@ -92,8 +92,7 @@ target_sources(tensorpipe PRIVATE
   transport/uv/error.cc
   transport/uv/listener_impl.cc
   transport/uv/loop.cc
-  transport/uv/sockaddr.cc
-  transport/uv/uv.cc)
+  transport/uv/sockaddr.cc)
 find_package(uv REQUIRED)
 target_link_libraries(tensorpipe PRIVATE uv::uv)
 

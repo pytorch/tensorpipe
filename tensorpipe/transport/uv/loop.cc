@@ -9,7 +9,6 @@
 #include <tensorpipe/transport/uv/loop.h>
 
 #include <tensorpipe/common/system.h>
-#include <tensorpipe/transport/uv/macros.h>
 #include <tensorpipe/transport/uv/uv.h>
 
 namespace tensorpipe {

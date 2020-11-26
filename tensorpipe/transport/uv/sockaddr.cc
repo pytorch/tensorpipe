@@ -16,7 +16,7 @@
 #include <uv.h>
 
 #include <tensorpipe/common/defs.h>
-#include <tensorpipe/transport/uv/macros.h>
+#include <tensorpipe/transport/uv/uv.h>
 
 namespace tensorpipe {
 namespace transport {
