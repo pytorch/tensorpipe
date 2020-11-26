@@ -38,7 +38,7 @@ class ContextImpl final
   bool inLoop() override;
   void deferToLoop(std::function<void()> fn) override;
 
-  std::shared_ptr<TCPHandle> createHandle();
+  std::unique_ptr<TCPHandle> createHandle();
 
  protected:
   // Implement the entry points called by ContextImplBoilerplate.

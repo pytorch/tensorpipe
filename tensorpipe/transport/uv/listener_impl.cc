@@ -35,8 +35,6 @@ ListenerImpl::ListenerImpl(
 
 void ListenerImpl::initImplFromLoop() {
   context_->enroll(*this);
-  // FIXME Remove this leak monstruosity, now that we can enroll in the context.
-  leak_ = shared_from_this();
 
   handle_->initFromLoop();
   auto rv = handle_->bindFromLoop(sockaddr_);
@@ -68,15 +66,13 @@ void ListenerImpl::connectionCallbackFromLoop(int status) {
 
   auto connection = context_->createHandle();
   connection->initFromLoop();
-  handle_->acceptFromLoop(connection);
+  handle_->acceptFromLoop(*connection);
   callback_.trigger(Error::kSuccess, createConnection(std::move(connection)));
 }
 
 void ListenerImpl::closeCallbackFromLoop() {
   TP_VLOG(9) << "Listener " << id_ << " has finished closing its handle";
   context_->unenroll(*this);
-  // FIXME Remove this leak monstruosity, now that we can enroll in the context.
-  leak_.reset();
 }
 
 void ListenerImpl::handleErrorImpl() {

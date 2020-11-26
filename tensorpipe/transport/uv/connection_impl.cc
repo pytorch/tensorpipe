@@ -30,7 +30,7 @@ ConnectionImpl::ConnectionImpl(
     ConstructorToken token,
     std::shared_ptr<ContextImpl> context,
     std::string id,
-    std::shared_ptr<TCPHandle> handle)
+    std::unique_ptr<TCPHandle> handle)
     : ConnectionImplBoilerplate<ContextImpl, ListenerImpl, ConnectionImpl>(
           token,
           std::move(context),
@@ -51,8 +51,6 @@ ConnectionImpl::ConnectionImpl(
 
 void ConnectionImpl::initImplFromLoop() {
   context_->enroll(*this);
-  // FIXME Remove this leak monstruosity, now that we can enroll in the context.
-  leak_ = shared_from_this();
 
   if (sockaddr_.has_value()) {
     handle_->initFromLoop();
@@ -173,8 +171,6 @@ void ConnectionImpl::closeCallbackFromLoop() {
   TP_VLOG(9) << "Connection " << id_ << " has finished closing its handle";
   TP_DCHECK(writeOperations_.empty());
   context_->unenroll(*this);
-  // FIXME Remove this leak monstruosity, now that we can enroll in the context.
-  leak_.reset();
 }
 
 void ConnectionImpl::handleErrorImpl() {

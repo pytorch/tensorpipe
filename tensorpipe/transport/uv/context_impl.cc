@@ -109,7 +109,12 @@ std::tuple<Error, std::string> ContextImpl::lookupAddrForHostnameFromLoop() {
 
     Sockaddr addr = Sockaddr(rp->ai_addr, rp->ai_addrlen);
 
-    std::shared_ptr<TCPHandle> handle = createHandle();
+    // We allocate a shared_ptr, rather than a unique_ptr, because we then copy
+    // this into the closure of the lambda we pass as close callback, to ensure
+    // the handle remains alive until it's closed.
+    // FIXME This is sloppy. https://github.com/pytorch/tensorpipe/issues/242
+    auto handle = std::make_shared<TCPHandle>(loop_);
+    handle->armCloseCallbackFromLoop([handle]() mutable { handle.reset(); });
     handle->initFromLoop();
     rv = handle->bindFromLoop(addr);
     handle->closeFromLoop();
@@ -141,8 +146,8 @@ void ContextImpl::deferToLoop(std::function<void()> fn) {
   loop_.deferToLoop(std::move(fn));
 };
 
-std::shared_ptr<TCPHandle> ContextImpl::createHandle() {
-  return TCPHandle::create(loop_);
+std::unique_ptr<TCPHandle> ContextImpl::createHandle() {
+  return std::make_unique<TCPHandle>(loop_);
 };
 
 } // namespace uv

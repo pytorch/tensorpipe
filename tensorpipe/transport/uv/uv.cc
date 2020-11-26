@@ -21,7 +21,6 @@ namespace uv {
 
 void TCPHandle::initFromLoop() {
   TP_DCHECK(this->loop_.inLoop());
-  leak();
   int rv;
   rv = uv_tcp_init(loop_.ptr(), this->ptr());
   TP_THROW_UV_IF(rv < 0, rv);

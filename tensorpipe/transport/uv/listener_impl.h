@@ -51,7 +51,7 @@ class ListenerImpl final : public ListenerImplBoilerplate<
   // Called when libuv has closed the handle.
   void closeCallbackFromLoop();
 
-  std::shared_ptr<TCPHandle> handle_;
+  const std::unique_ptr<TCPHandle> handle_;
   Sockaddr sockaddr_;
 
   // Once an accept callback fires, it becomes disarmed and must be rearmed.
@@ -62,11 +62,6 @@ class ListenerImpl final : public ListenerImplBoilerplate<
   // what to do with them and don't want them. Thus we must store them
   // somewhere. This is what RearmableCallback is for.
   RearmableCallback<const Error&, std::shared_ptr<Connection>> callback_;
-
-  // By having the instance store a shared_ptr to itself we create a reference
-  // cycle which will "leak" the instance. This allows us to detach its
-  // lifetime from the connection and sync it with the TCPHandle's life cycle.
-  std::shared_ptr<ListenerImpl> leak_;
 };
 
 } // namespace uv

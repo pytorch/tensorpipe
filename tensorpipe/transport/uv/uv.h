@@ -22,68 +22,27 @@ namespace tensorpipe {
 namespace transport {
 namespace uv {
 
-// Libuv resources can be either a long lived handle (e.g. a socket), or a short
-// lived request (e.g. connecting a socket, reading bytes off a socket, etc.).
-// In either case, these resources must keep the underlying loop alive, and they
-// themselves must be kept alive until completed. To do the latter all resources
-// store a shared_ptr to themselves which is reset when they their lifetime is
-// up and can be safely destructed (see `leak` and `unleak` functions). The loop
-// on the other hand can't be destroyed until it has been joined and it can't be
-// joined until all its handles or requests have been closed.
 template <typename T, typename U>
-class BaseResource : public std::enable_shared_from_this<T> {
- protected:
-  // Use the passkey idiom to allow make_shared to call what should be a private
-  // constructor. See https://abseil.io/tips/134 for more information.
-  struct ConstructorToken {};
-
- public:
-  template <typename... Args>
-  static std::shared_ptr<T> create(Args&&... args) {
-    auto resource =
-        std::make_shared<T>(ConstructorToken(), std::forward<Args>(args)...);
-    resource->leak();
-    return resource;
-  }
-
-  explicit BaseResource(ConstructorToken /* unused */) {}
-
- protected:
-  // Keep this instance alive by leaking it, until either:
-  // * the handle is closed, or...
-  // * the request has completed.
-  std::shared_ptr<T> leak_;
-
-  void leak() {
-    leak_ = this->shared_from_this();
-  }
-
-  void unleak() {
-    leak_.reset();
-  }
-};
-
-template <typename T, typename U>
-class BaseHandle : public BaseResource<T, U> {
+class BaseHandle {
   static void uv__close_cb(uv_handle_t* handle) {
     T& ref = *reinterpret_cast<T*>(handle->data);
     if (ref.closeCallback_ != nullptr) {
       ref.closeCallback_();
     }
-    ref.unleak();
   }
 
  public:
   using TCloseCallback = std::function<void()>;
 
-  explicit BaseHandle(
-      typename BaseResource<T, U>::ConstructorToken /* unused */,
-      Loop& loop)
-      : BaseResource<T, U>::BaseResource(
-            typename BaseResource<T, U>::ConstructorToken()),
-        loop_(loop) {
+  explicit BaseHandle(Loop& loop) : loop_(loop) {
     handle_.data = this;
   }
+
+  // Libuv's handles cannot be copied or moved.
+  BaseHandle(const BaseHandle&) = delete;
+  BaseHandle(BaseHandle&&) = delete;
+  BaseHandle& operator=(const BaseHandle&) = delete;
+  BaseHandle& operator=(BaseHandle&&) = delete;
 
   virtual ~BaseHandle() = default;
 
@@ -115,12 +74,22 @@ class BaseHandle : public BaseResource<T, U> {
 };
 
 template <typename T, typename U>
-class BaseRequest : public BaseResource<T, U> {
+class BaseRequest : public std::enable_shared_from_this<T> {
+ protected:
+  // Use the passkey idiom to allow make_shared to call what should be a private
+  // constructor. See https://abseil.io/tips/134 for more information.
+  struct ConstructorToken {};
+
  public:
-  explicit BaseRequest(
-      typename BaseResource<T, U>::ConstructorToken /* unused */)
-      : BaseResource<T, U>::BaseResource(
-            typename BaseResource<T, U>::ConstructorToken()) {
+  template <typename... Args>
+  static std::shared_ptr<T> create(Args&&... args) {
+    auto resource =
+        std::make_shared<T>(ConstructorToken(), std::forward<Args>(args)...);
+    resource->leak();
+    return resource;
+  }
+
+  explicit BaseRequest(ConstructorToken /* unused */) {
     request_.data = this;
   }
 
@@ -131,6 +100,17 @@ class BaseRequest : public BaseResource<T, U> {
  protected:
   // Underlying libuv request.
   U request_;
+
+  // Keep this instance alive by leaking it, until the request has completed.
+  std::shared_ptr<T> leak_;
+
+  void leak() {
+    leak_ = this->shared_from_this();
+  }
+
+  void unleak() {
+    leak_.reset();
+  }
 };
 
 class WriteRequest final : public BaseRequest<WriteRequest, uv_write_t> {
@@ -195,8 +175,6 @@ class StreamHandle : public BaseHandle<T, U> {
 
   using BaseHandle<T, U>::BaseHandle;
 
-  ~StreamHandle() override = default;
-
   // TODO Split this into a armConnectionCallback, a listenStart and a
   // listenStop method, to propagate the backpressure to the clients.
   void listenFromLoop(TConnectionCallback connectionCallback) {
@@ -211,11 +189,11 @@ class StreamHandle : public BaseHandle<T, U> {
   }
 
   template <typename V>
-  void acceptFromLoop(std::shared_ptr<V> other) {
+  void acceptFromLoop(V& other) {
     TP_DCHECK(this->loop_.inLoop());
     auto rv = uv_accept(
         reinterpret_cast<uv_stream_t*>(this->ptr()),
-        reinterpret_cast<uv_stream_t*>(other->ptr()));
+        reinterpret_cast<uv_stream_t*>(other.ptr()));
     TP_THROW_UV_IF(rv < 0, rv);
   }
 
@@ -278,10 +256,10 @@ class ConnectRequest : public BaseRequest<ConnectRequest, uv_connect_t> {
   using TConnectCallback = std::function<void(int status)>;
 
   ConnectRequest(
-      BaseResource<ConnectRequest, uv_connect_t>::ConstructorToken /* unused */,
+      BaseRequest<ConnectRequest, uv_connect_t>::ConstructorToken /* unused */,
       TConnectCallback fn)
       : BaseRequest<ConnectRequest, uv_connect_t>(
-            BaseResource<ConnectRequest, uv_connect_t>::ConstructorToken()),
+            BaseRequest<ConnectRequest, uv_connect_t>::ConstructorToken()),
         fn_(std::move(fn)) {}
 
   uv_connect_cb callback() {
