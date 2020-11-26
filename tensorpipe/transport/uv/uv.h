@@ -57,9 +57,8 @@ class BaseHandle {
   }
 
   void closeFromLoop() {
-    if (!uv_is_closing(reinterpret_cast<uv_handle_t*>(ptr()))) {
-      uv_close(reinterpret_cast<uv_handle_t*>(ptr()), uv__close_cb);
-    }
+    TP_DCHECK(!uv_is_closing(reinterpret_cast<uv_handle_t*>(ptr())));
+    uv_close(reinterpret_cast<uv_handle_t*>(ptr()), uv__close_cb);
   }
 
  protected:
