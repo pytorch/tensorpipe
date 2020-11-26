@@ -74,69 +74,52 @@ class BaseHandle {
 };
 
 template <typename T, typename U>
-class BaseRequest : public std::enable_shared_from_this<T> {
- protected:
-  // Use the passkey idiom to allow make_shared to call what should be a private
-  // constructor. See https://abseil.io/tips/134 for more information.
-  struct ConstructorToken {};
-
+class BaseRequest {
  public:
-  template <typename... Args>
-  static std::shared_ptr<T> create(Args&&... args) {
-    auto resource =
-        std::make_shared<T>(ConstructorToken(), std::forward<Args>(args)...);
-    resource->leak();
-    return resource;
-  }
-
-  explicit BaseRequest(ConstructorToken /* unused */) {
+  BaseRequest() {
     request_.data = this;
   }
+
+  // Libuv's requests cannot be copied or moved.
+  BaseRequest(const BaseRequest&) = delete;
+  BaseRequest(BaseRequest&&) = delete;
+  BaseRequest& operator=(const BaseRequest&) = delete;
+  BaseRequest& operator=(BaseRequest&&) = delete;
 
   U* ptr() {
     return &request_;
   }
 
- protected:
+ private:
   // Underlying libuv request.
   U request_;
-
-  // Keep this instance alive by leaking it, until the request has completed.
-  std::shared_ptr<T> leak_;
-
-  void leak() {
-    leak_ = this->shared_from_this();
-  }
-
-  void unleak() {
-    leak_.reset();
-  }
 };
 
 class WriteRequest final : public BaseRequest<WriteRequest, uv_write_t> {
   static void uv__write_cb(uv_write_t* req, int status) {
-    WriteRequest* request = reinterpret_cast<WriteRequest*>(req->data);
-    request->writeCallback(status);
-    request->unleak();
+    std::unique_ptr<WriteRequest> request(
+        reinterpret_cast<WriteRequest*>(req->data));
+    request->writeCallback_(status);
   }
 
  public:
   using TWriteCallback = std::function<void(int status)>;
 
-  WriteRequest(ConstructorToken /* unused */, TWriteCallback fn)
-      : BaseRequest<WriteRequest, uv_write_t>(ConstructorToken()),
-        fn_(std::move(fn)) {}
+  WriteRequest(TWriteCallback fn) : writeCallback_(std::move(fn)) {}
 
-  uv_write_cb callback() {
-    return uv__write_cb;
+  static int perform(
+      uv_stream_t* handle,
+      const uv_buf_t bufs[],
+      unsigned int nbufs,
+      TWriteCallback fn) {
+    auto request = std::make_unique<WriteRequest>(std::move(fn));
+    auto rv = uv_write(request->ptr(), handle, bufs, nbufs, uv__write_cb);
+    request.release();
+    return rv;
   }
 
-  void writeCallback(int status) {
-    fn_(status);
-  }
-
- protected:
-  TWriteCallback fn_;
+ private:
+  TWriteCallback writeCallback_;
 };
 
 template <typename T, typename U>
@@ -229,13 +212,11 @@ class StreamHandle : public BaseHandle<T, U> {
       unsigned int nbufs,
       WriteRequest::TWriteCallback fn) {
     TP_DCHECK(this->loop_.inLoop());
-    auto request = WriteRequest::create(std::move(fn));
-    auto rv = uv_write(
-        request->ptr(),
+    auto rv = WriteRequest::perform(
         reinterpret_cast<uv_stream_t*>(this->ptr()),
         bufs,
         nbufs,
-        request->callback());
+        std::move(fn));
     TP_THROW_UV_IF(rv < 0, rv);
   }
 
@@ -245,33 +226,30 @@ class StreamHandle : public BaseHandle<T, U> {
   TReadCallback readCallback_;
 };
 
-class ConnectRequest : public BaseRequest<ConnectRequest, uv_connect_t> {
+class ConnectRequest final : public BaseRequest<ConnectRequest, uv_connect_t> {
   static void uv__connect_cb(uv_connect_t* req, int status) {
-    ConnectRequest* request = reinterpret_cast<ConnectRequest*>(req->data);
-    request->connectCallback(status);
-    request->unleak();
+    std::unique_ptr<ConnectRequest> request(
+        reinterpret_cast<ConnectRequest*>(req->data));
+    request->connectCallback_(status);
   }
 
  public:
   using TConnectCallback = std::function<void(int status)>;
 
-  ConnectRequest(
-      BaseRequest<ConnectRequest, uv_connect_t>::ConstructorToken /* unused */,
-      TConnectCallback fn)
-      : BaseRequest<ConnectRequest, uv_connect_t>(
-            BaseRequest<ConnectRequest, uv_connect_t>::ConstructorToken()),
-        fn_(std::move(fn)) {}
+  ConnectRequest(TConnectCallback fn) : connectCallback_(std::move(fn)) {}
 
-  uv_connect_cb callback() {
-    return uv__connect_cb;
+  static int perform(
+      uv_tcp_t* handle,
+      const struct sockaddr* addr,
+      TConnectCallback fn) {
+    auto request = std::make_unique<ConnectRequest>(std::move(fn));
+    auto rv = uv_tcp_connect(request->ptr(), handle, addr, uv__connect_cb);
+    request.release();
+    return rv;
   }
 
-  void connectCallback(int status) {
-    fn_(status);
-  }
-
- protected:
-  TConnectCallback fn_;
+ private:
+  TConnectCallback connectCallback_;
 };
 
 class TCPHandle : public StreamHandle<TCPHandle, uv_tcp_t> {
