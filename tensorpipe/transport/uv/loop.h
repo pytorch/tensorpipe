@@ -29,7 +29,7 @@ class Loop final : public EventLoopDeferredExecutor {
   Loop();
 
   uv_loop_t* ptr() {
-    return loop_.get();
+    return &loop_;
   }
 
   void close();
@@ -46,8 +46,8 @@ class Loop final : public EventLoopDeferredExecutor {
   void wakeupEventLoopToDeferFunction() override;
 
  private:
-  std::unique_ptr<uv_loop_t> loop_;
-  std::unique_ptr<uv_async_t> async_;
+  uv_loop_t loop_;
+  uv_async_t async_;
   std::atomic<bool> closed_{false};
   std::atomic<bool> joined_{false};
 

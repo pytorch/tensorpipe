@@ -16,15 +16,13 @@ namespace tensorpipe {
 namespace transport {
 namespace uv {
 
-Loop::Loop()
-    : loop_(std::make_unique<uv_loop_t>()),
-      async_(std::make_unique<uv_async_t>()) {
+Loop::Loop() {
   int rv;
-  rv = uv_loop_init(loop_.get());
+  rv = uv_loop_init(&loop_);
   TP_THROW_UV_IF(rv < 0, rv);
-  rv = uv_async_init(loop_.get(), async_.get(), uv__async_cb);
+  rv = uv_async_init(&loop_, &async_, uv__async_cb);
   TP_THROW_UV_IF(rv < 0, rv);
-  async_->data = this;
+  async_.data = this;
 
   startThread("TP_UV_loop");
 }
@@ -34,7 +32,7 @@ void Loop::close() {
     // It's fine to capture this because the loop won't be destroyed until join
     // has completed, and join won't complete until this operation is performed.
     deferToLoop(
-        [this]() { uv_unref(reinterpret_cast<uv_handle_t*>(async_.get())); });
+        [this]() { uv_unref(reinterpret_cast<uv_handle_t*>(&async_)); });
   }
 }
 
@@ -51,26 +49,26 @@ Loop::~Loop() noexcept {
 }
 
 void Loop::wakeupEventLoopToDeferFunction() {
-  auto rv = uv_async_send(async_.get());
+  auto rv = uv_async_send(&async_);
   TP_THROW_UV_IF(rv < 0, rv);
 }
 
 void Loop::eventLoop() {
   int rv;
 
-  rv = uv_run(loop_.get(), UV_RUN_DEFAULT);
+  rv = uv_run(&loop_, UV_RUN_DEFAULT);
   TP_THROW_ASSERT_IF(rv > 0)
       << ": uv_run returned with active handles or requests";
 
-  uv_ref(reinterpret_cast<uv_handle_t*>(async_.get()));
-  uv_close(reinterpret_cast<uv_handle_t*>(async_.get()), nullptr);
+  uv_ref(reinterpret_cast<uv_handle_t*>(&async_));
+  uv_close(reinterpret_cast<uv_handle_t*>(&async_), nullptr);
 
-  rv = uv_run(loop_.get(), UV_RUN_NOWAIT);
+  rv = uv_run(&loop_, UV_RUN_NOWAIT);
   TP_THROW_ASSERT_IF(rv > 0)
       << ": uv_run returned with active handles or requests";
 
   // Release resources associated with loop.
-  rv = uv_loop_close(loop_.get());
+  rv = uv_loop_close(&loop_);
   TP_THROW_UV_IF(rv < 0, rv);
 }
 
