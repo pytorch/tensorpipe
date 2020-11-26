@@ -50,6 +50,8 @@ ConnectionImpl::ConnectionImpl(
       sockaddr_(Sockaddr::createInetSockAddr(addr)) {}
 
 void ConnectionImpl::initImplFromLoop() {
+  context_->enroll(*this);
+  // FIXME Remove this leak monstruosity, now that we can enroll in the context.
   leak_ = shared_from_this();
 
   if (sockaddr_.has_value()) {
@@ -170,6 +172,8 @@ void ConnectionImpl::closeCallbackFromLoop() {
   TP_DCHECK(context_->inLoop());
   TP_VLOG(9) << "Connection " << id_ << " has finished closing its handle";
   TP_DCHECK(writeOperations_.empty());
+  context_->unenroll(*this);
+  // FIXME Remove this leak monstruosity, now that we can enroll in the context.
   leak_.reset();
 }
 
@@ -182,6 +186,8 @@ void ConnectionImpl::handleErrorImpl() {
   // their corresponding UV write requests to complete (or else the user may
   // deallocate the buffers while the loop is still processing them).
   handle_->closeFromLoop();
+  // Do NOT unenroll here, as we must keep the UV handle alive until the close
+  // callback fires.
 }
 
 } // namespace uv

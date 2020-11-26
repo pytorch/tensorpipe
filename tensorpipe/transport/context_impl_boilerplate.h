@@ -11,6 +11,7 @@
 #include <atomic>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <utility>
 
 #include <tensorpipe/common/callback.h>
@@ -37,6 +38,18 @@ class ContextImplBoilerplate : public virtual DeferredExecutor,
   std::shared_ptr<Listener> listen(std::string addr);
 
   const std::string& domainDescriptor() const;
+
+  // Enrolling dependent objects (listeners and connections) causes them to be
+  // kept alive for as long as the context exists. These objects should enroll
+  // themselves as soon as they're created (in their initImplFromLoop method)
+  // and unenroll themselves after they've completed handling an error (either
+  // right in the handleErrorImpl method or in a subsequent callback). The
+  // context, on the other hand, should avoid terminating (i.e., complete
+  // joining) until all objects have unenrolled themselves.
+  void enroll(TList& listener);
+  void enroll(TConn& connection);
+  void unenroll(TList& listener);
+  void unenroll(TConn& connection);
 
   ClosingEmitter& getClosingEmitter();
 
@@ -69,6 +82,13 @@ class ContextImplBoilerplate : public virtual DeferredExecutor,
   // will only be used for logging and debugging.
   std::atomic<uint64_t> listenerCounter_{0};
   std::atomic<uint64_t> connectionCounter_{0};
+
+  // Store shared_ptrs to dependent objects that have enrolled themselves to
+  // keep them alive. We use a map, indexed by raw pointers, rather than a set
+  // of shared_ptrs so that we can erase objects without them having to create
+  // a fresh shared_ptr just for that.
+  std::unordered_map<TList*, std::shared_ptr<TList>> listeners_;
+  std::unordered_map<TConn*, std::shared_ptr<TConn>> connections_;
 };
 
 template <typename TCtx, typename TList, typename TConn>
@@ -110,6 +130,38 @@ const std::string& ContextImplBoilerplate<TCtx, TList, TConn>::
 }
 
 template <typename TCtx, typename TList, typename TConn>
+void ContextImplBoilerplate<TCtx, TList, TConn>::enroll(TList& listener) {
+  TP_DCHECK(inLoop());
+  bool wasInserted;
+  std::tie(std::ignore, wasInserted) =
+      listeners_.emplace(&listener, listener.shared_from_this());
+  TP_DCHECK(wasInserted);
+}
+
+template <typename TCtx, typename TList, typename TConn>
+void ContextImplBoilerplate<TCtx, TList, TConn>::enroll(TConn& connection) {
+  TP_DCHECK(inLoop());
+  bool wasInserted;
+  std::tie(std::ignore, wasInserted) =
+      connections_.emplace(&connection, connection.shared_from_this());
+  TP_DCHECK(wasInserted);
+}
+
+template <typename TCtx, typename TList, typename TConn>
+void ContextImplBoilerplate<TCtx, TList, TConn>::unenroll(TList& listener) {
+  TP_DCHECK(inLoop());
+  auto numRemoved = listeners_.erase(&listener);
+  TP_DCHECK_EQ(numRemoved, 1);
+}
+
+template <typename TCtx, typename TList, typename TConn>
+void ContextImplBoilerplate<TCtx, TList, TConn>::unenroll(TConn& connection) {
+  TP_DCHECK(inLoop());
+  auto numRemoved = connections_.erase(&connection);
+  TP_DCHECK_EQ(numRemoved, 1);
+}
+
+template <typename TCtx, typename TList, typename TConn>
 ClosingEmitter& ContextImplBoilerplate<TCtx, TList, TConn>::
     getClosingEmitter() {
   return closingEmitter_;
@@ -143,6 +195,9 @@ void ContextImplBoilerplate<TCtx, TList, TConn>::join() {
     joinImpl();
 
     TP_VLOG(7) << "Transport context " << id_ << " done joining";
+
+    TP_DCHECK(listeners_.empty());
+    TP_DCHECK(connections_.empty());
   }
 }
 

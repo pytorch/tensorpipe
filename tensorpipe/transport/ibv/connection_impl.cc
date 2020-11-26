@@ -78,6 +78,8 @@ ConnectionImpl::ConnectionImpl(
       sockaddr_(Sockaddr::createInetSockAddr(addr)) {}
 
 void ConnectionImpl::initImplFromLoop() {
+  context_->enroll(*this);
+
   Error error;
   // The connection either got a socket or an address, but not both.
   TP_DCHECK(socket_.hasValue() ^ sockaddr_.has_value());
@@ -512,6 +514,8 @@ void ConnectionImpl::handleErrorImpl() {
     }
     socket_.reset();
   }
+
+  context_->unenroll(*this);
 }
 
 void ConnectionImpl::tryCleanup() {

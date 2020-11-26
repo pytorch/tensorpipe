@@ -38,6 +38,8 @@ ListenerImpl::ListenerImpl(
       sockaddr_(Sockaddr::createAbstractUnixAddr(addr)) {}
 
 void ListenerImpl::initImplFromLoop() {
+  context_->enroll(*this);
+
   Error error;
   TP_DCHECK(!socket_.hasValue());
   std::tie(error, socket_) = Socket::createForFamily(AF_UNIX);
@@ -71,6 +73,8 @@ void ListenerImpl::handleErrorImpl() {
     fn(error_, std::shared_ptr<Connection>());
   }
   fns_.clear();
+
+  context_->unenroll(*this);
 }
 
 void ListenerImpl::acceptImplFromLoop(accept_callback_fn fn) {
