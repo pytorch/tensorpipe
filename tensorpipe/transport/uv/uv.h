@@ -14,7 +14,6 @@
 
 #include <tensorpipe/common/callback.h>
 #include <tensorpipe/common/defs.h>
-#include <tensorpipe/common/optional.h>
 #include <tensorpipe/transport/uv/loop.h>
 #include <tensorpipe/transport/uv/macros.h>
 #include <tensorpipe/transport/uv/sockaddr.h>
@@ -75,8 +74,8 @@ template <typename T, typename U>
 class BaseHandle : public BaseResource<T, U> {
   static void uv__close_cb(uv_handle_t* handle) {
     T& ref = *reinterpret_cast<T*>(handle->data);
-    if (ref.closeCallback_.has_value()) {
-      ref.closeCallback_.value()();
+    if (ref.closeCallback_ != nullptr) {
+      ref.closeCallback_();
     }
     ref.unleak();
   }
@@ -101,7 +100,7 @@ class BaseHandle : public BaseResource<T, U> {
 
   void armCloseCallbackFromLoop(TCloseCallback fn) {
     TP_DCHECK(this->loop_.inLoop());
-    TP_THROW_ASSERT_IF(closeCallback_.has_value());
+    TP_THROW_ASSERT_IF(closeCallback_ != nullptr);
     closeCallback_ = std::move(fn);
   }
 
@@ -115,7 +114,7 @@ class BaseHandle : public BaseResource<T, U> {
   // Underlying libuv handle.
   U handle_;
 
-  optional<TCloseCallback> closeCallback_;
+  TCloseCallback closeCallback_;
 };
 
 template <typename T, typename U>
@@ -169,8 +168,8 @@ template <typename T, typename U>
 class StreamHandle : public BaseHandle<T, U> {
   static void uv__connection_cb(uv_stream_t* server, int status) {
     T& ref = *reinterpret_cast<T*>(server->data);
-    TP_DCHECK(ref.connectionCallback_.has_value());
-    ref.connectionCallback_.value()(status);
+    TP_DCHECK(ref.connectionCallback_ != nullptr);
+    ref.connectionCallback_(status);
   }
 
   static void uv__alloc_cb(
@@ -178,8 +177,8 @@ class StreamHandle : public BaseHandle<T, U> {
       size_t /* unused */,
       uv_buf_t* buf) {
     T& ref = *reinterpret_cast<T*>(handle->data);
-    TP_DCHECK(ref.allocCallback_.has_value());
-    ref.allocCallback_.value()(buf);
+    TP_DCHECK(ref.allocCallback_ != nullptr);
+    ref.allocCallback_(buf);
   }
 
   static void uv__read_cb(
@@ -187,8 +186,8 @@ class StreamHandle : public BaseHandle<T, U> {
       ssize_t nread,
       const uv_buf_t* buf) {
     T& ref = *reinterpret_cast<T*>(server->data);
-    TP_DCHECK(ref.readCallback_.has_value());
-    ref.readCallback_.value()(nread, buf);
+    TP_DCHECK(ref.readCallback_ != nullptr);
+    ref.readCallback_(nread, buf);
   }
 
   static constexpr int kBacklog = 128;
@@ -207,7 +206,7 @@ class StreamHandle : public BaseHandle<T, U> {
   // listenStop method, to propagate the backpressure to the clients.
   void listenFromLoop(TConnectionCallback connectionCallback) {
     TP_DCHECK(this->loop_.inLoop());
-    TP_THROW_ASSERT_IF(connectionCallback_.has_value());
+    TP_THROW_ASSERT_IF(connectionCallback_ != nullptr);
     connectionCallback_ = std::move(connectionCallback);
     auto rv = uv_listen(
         reinterpret_cast<uv_stream_t*>(this->ptr()),
@@ -227,20 +226,20 @@ class StreamHandle : public BaseHandle<T, U> {
 
   void armAllocCallbackFromLoop(TAllocCallback fn) {
     TP_DCHECK(this->loop_.inLoop());
-    TP_THROW_ASSERT_IF(allocCallback_.has_value());
+    TP_THROW_ASSERT_IF(allocCallback_ != nullptr);
     allocCallback_ = std::move(fn);
   }
 
   void armReadCallbackFromLoop(TReadCallback fn) {
     TP_DCHECK(this->loop_.inLoop());
-    TP_THROW_ASSERT_IF(readCallback_.has_value());
+    TP_THROW_ASSERT_IF(readCallback_ != nullptr);
     readCallback_ = std::move(fn);
   }
 
   void readStartFromLoop() {
     TP_DCHECK(this->loop_.inLoop());
-    TP_THROW_ASSERT_IF(!allocCallback_.has_value());
-    TP_THROW_ASSERT_IF(!readCallback_.has_value());
+    TP_THROW_ASSERT_IF(allocCallback_ == nullptr);
+    TP_THROW_ASSERT_IF(readCallback_ == nullptr);
     auto rv = uv_read_start(
         reinterpret_cast<uv_stream_t*>(this->ptr()), uv__alloc_cb, uv__read_cb);
     TP_THROW_UV_IF(rv < 0, rv);
@@ -268,9 +267,9 @@ class StreamHandle : public BaseHandle<T, U> {
   }
 
  protected:
-  optional<TConnectionCallback> connectionCallback_;
-  optional<TAllocCallback> allocCallback_;
-  optional<TReadCallback> readCallback_;
+  TConnectionCallback connectionCallback_;
+  TAllocCallback allocCallback_;
+  TReadCallback readCallback_;
 };
 
 class ConnectRequest : public BaseRequest<ConnectRequest, uv_connect_t> {
