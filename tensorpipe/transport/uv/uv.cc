@@ -51,7 +51,7 @@ void TCPHandle::connectFromLoop(
     const Sockaddr& addr,
     ConnectRequest::TConnectCallback fn) {
   TP_DCHECK(this->loop_.inLoop());
-  auto request = ConnectRequest::create(loop_, std::move(fn));
+  auto request = ConnectRequest::create(std::move(fn));
   auto rv =
       uv_tcp_connect(request->ptr(), ptr(), addr.addr(), request->callback());
   TP_THROW_UV_IF(rv < 0, rv);

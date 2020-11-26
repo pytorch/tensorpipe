@@ -39,21 +39,16 @@ class BaseResource : public std::enable_shared_from_this<T> {
 
  public:
   template <typename... Args>
-  static std::shared_ptr<T> create(Loop& loop, Args&&... args) {
-    auto resource = std::make_shared<T>(
-        ConstructorToken(), loop, std::forward<Args>(args)...);
+  static std::shared_ptr<T> create(Args&&... args) {
+    auto resource =
+        std::make_shared<T>(ConstructorToken(), std::forward<Args>(args)...);
     resource->leak();
     return resource;
   }
 
-  explicit BaseResource(ConstructorToken /* unused */, Loop& loop)
-      : loop_(loop) {}
+  explicit BaseResource(ConstructorToken /* unused */) {}
 
  protected:
-  // As long as the libuv handle of this instance is open the loop won't be
-  // destroyed.
-  Loop& loop_;
-
   // Keep this instance alive by leaking it, until either:
   // * the handle is closed, or...
   // * the request has completed.
@@ -66,8 +61,6 @@ class BaseResource : public std::enable_shared_from_this<T> {
   void unleak() {
     leak_.reset();
   }
-
-  friend class Loop;
 };
 
 template <typename T, typename U>
@@ -87,8 +80,8 @@ class BaseHandle : public BaseResource<T, U> {
       typename BaseResource<T, U>::ConstructorToken /* unused */,
       Loop& loop)
       : BaseResource<T, U>::BaseResource(
-            typename BaseResource<T, U>::ConstructorToken(),
-            loop) {
+            typename BaseResource<T, U>::ConstructorToken()),
+        loop_(loop) {
     handle_.data = this;
   }
 
@@ -114,6 +107,10 @@ class BaseHandle : public BaseResource<T, U> {
   // Underlying libuv handle.
   U handle_;
 
+  // As long as the libuv handle of this instance is open the loop won't be
+  // destroyed.
+  Loop& loop_;
+
   TCloseCallback closeCallback_;
 };
 
@@ -121,11 +118,9 @@ template <typename T, typename U>
 class BaseRequest : public BaseResource<T, U> {
  public:
   explicit BaseRequest(
-      typename BaseResource<T, U>::ConstructorToken /* unused */,
-      Loop& loop)
+      typename BaseResource<T, U>::ConstructorToken /* unused */)
       : BaseResource<T, U>::BaseResource(
-            typename BaseResource<T, U>::ConstructorToken(),
-            loop) {
+            typename BaseResource<T, U>::ConstructorToken()) {
     request_.data = this;
   }
 
@@ -148,8 +143,8 @@ class WriteRequest final : public BaseRequest<WriteRequest, uv_write_t> {
  public:
   using TWriteCallback = std::function<void(int status)>;
 
-  WriteRequest(ConstructorToken /* unused */, Loop& loop, TWriteCallback fn)
-      : BaseRequest<WriteRequest, uv_write_t>(ConstructorToken(), loop),
+  WriteRequest(ConstructorToken /* unused */, TWriteCallback fn)
+      : BaseRequest<WriteRequest, uv_write_t>(ConstructorToken()),
         fn_(std::move(fn)) {}
 
   uv_write_cb callback() {
@@ -256,7 +251,7 @@ class StreamHandle : public BaseHandle<T, U> {
       unsigned int nbufs,
       WriteRequest::TWriteCallback fn) {
     TP_DCHECK(this->loop_.inLoop());
-    auto request = WriteRequest::create(this->loop_, std::move(fn));
+    auto request = WriteRequest::create(std::move(fn));
     auto rv = uv_write(
         request->ptr(),
         reinterpret_cast<uv_stream_t*>(this->ptr()),
@@ -284,11 +279,9 @@ class ConnectRequest : public BaseRequest<ConnectRequest, uv_connect_t> {
 
   ConnectRequest(
       BaseResource<ConnectRequest, uv_connect_t>::ConstructorToken /* unused */,
-      Loop& loop,
       TConnectCallback fn)
       : BaseRequest<ConnectRequest, uv_connect_t>(
-            BaseResource<ConnectRequest, uv_connect_t>::ConstructorToken(),
-            loop),
+            BaseResource<ConnectRequest, uv_connect_t>::ConstructorToken()),
         fn_(std::move(fn)) {}
 
   uv_connect_cb callback() {
