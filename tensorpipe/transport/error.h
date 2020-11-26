@@ -15,12 +15,6 @@
 namespace tensorpipe {
 namespace transport {
 
-// FIXME There used to be an EOFError specific to transports but it got merged
-// into the global one. We're keeping this alias because PyTorch is explcitly
-// using the one from the transport namespace. However, PyTorch should be fixed
-// and this alias should be removed.
-using EOFError = ::tensorpipe::EOFError;
-
 class ListenerClosedError final : public BaseError {
  public:
   ListenerClosedError() {}
