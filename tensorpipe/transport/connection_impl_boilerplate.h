@@ -42,7 +42,7 @@ class ConnectionImplBoilerplate : public std::enable_shared_from_this<TConn> {
   };
 
   ConnectionImplBoilerplate(
-      ConstructorToken,
+      ConstructorToken token,
       std::shared_ptr<TCtx> context,
       std::string id);
 

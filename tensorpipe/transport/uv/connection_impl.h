@@ -33,17 +33,17 @@ class ConnectionImpl final : public ConnectionImplBoilerplate<
  public:
   // Create a connection that is already connected (e.g. from a listener).
   ConnectionImpl(
-      ConstructorToken,
-      std::shared_ptr<ContextImpl>,
-      std::string,
-      std::shared_ptr<TCPHandle>);
+      ConstructorToken token,
+      std::shared_ptr<ContextImpl> context,
+      std::string id,
+      std::shared_ptr<TCPHandle> handle);
 
   // Create a connection that connects to the specified address.
   ConnectionImpl(
-      ConstructorToken,
-      std::shared_ptr<ContextImpl>,
-      std::string,
-      std::string);
+      ConstructorToken token,
+      std::shared_ptr<ContextImpl> context,
+      std::string id,
+      std::string addr);
 
  protected:
   // Implement the entry points called by ConnectionImplBoilerplate.

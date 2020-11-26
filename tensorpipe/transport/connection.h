@@ -21,7 +21,7 @@ namespace transport {
 class Connection {
  public:
   using read_callback_fn =
-      std::function<void(const Error& error, const void* ptr, size_t len)>;
+      std::function<void(const Error& error, const void* ptr, size_t length)>;
 
   virtual void read(read_callback_fn fn) = 0;
 

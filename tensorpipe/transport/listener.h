@@ -20,8 +20,8 @@ namespace transport {
 
 class Listener {
  public:
-  using accept_callback_fn =
-      std::function<void(const Error& error, std::shared_ptr<Connection>)>;
+  using accept_callback_fn = std::function<
+      void(const Error& error, std::shared_ptr<Connection> connection)>;
 
   virtual void accept(accept_callback_fn fn) = 0;
 

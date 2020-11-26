@@ -38,7 +38,7 @@ class ListenerImplBoilerplate : public std::enable_shared_from_this<TList> {
   };
 
   ListenerImplBoilerplate(
-      ConstructorToken,
+      ConstructorToken token,
       std::shared_ptr<TCtx> context,
       std::string id);
 

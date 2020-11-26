@@ -25,9 +25,10 @@ class ConnectionBoilerplate : public Connection {
  public:
   template <typename... Args>
   ConnectionBoilerplate(
-      typename ConnectionImplBoilerplate<TCtx, TList, TConn>::ConstructorToken,
-      std::shared_ptr<TCtx>,
-      std::string,
+      typename ConnectionImplBoilerplate<TCtx, TList, TConn>::ConstructorToken
+          token,
+      std::shared_ptr<TCtx> context,
+      std::string id,
       Args... args);
 
   ConnectionBoilerplate(const ConnectionBoilerplate&) = delete;

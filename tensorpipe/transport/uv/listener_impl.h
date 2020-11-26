@@ -30,10 +30,10 @@ class ListenerImpl final : public ListenerImplBoilerplate<
  public:
   // Create a listener that listens on the specified address.
   ListenerImpl(
-      ConstructorToken,
-      std::shared_ptr<ContextImpl>,
-      std::string,
-      std::string);
+      ConstructorToken token,
+      std::shared_ptr<ContextImpl> context,
+      std::string id,
+      std::string addr);
 
  protected:
   // Implement the entry points called by ListenerImplBoilerplate.

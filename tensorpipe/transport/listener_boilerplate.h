@@ -24,9 +24,10 @@ class ListenerBoilerplate : public Listener {
  public:
   template <typename... Args>
   ListenerBoilerplate(
-      typename ListenerImplBoilerplate<TCtx, TList, TConn>::ConstructorToken,
-      std::shared_ptr<TCtx>,
-      std::string,
+      typename ListenerImplBoilerplate<TCtx, TList, TConn>::ConstructorToken
+          token,
+      std::shared_ptr<TCtx> context,
+      std::string id,
       Args... args);
 
   ListenerBoilerplate(const ListenerBoilerplate&) = delete;
