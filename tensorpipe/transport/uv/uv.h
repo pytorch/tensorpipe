@@ -8,6 +8,7 @@
 
 #pragma once
 
+#include <array>
 #include <memory>
 
 #include <uv.h>
