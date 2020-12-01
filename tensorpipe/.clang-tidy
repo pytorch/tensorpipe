@@ -1,0 +1,8 @@
+---
+InheritParentConfig: true
+Checks: '
+readability-inconsistent-declaration-parameter-name,
+readability-named-parameter,
+'
+FormatStyle: file
+...
