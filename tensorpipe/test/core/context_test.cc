@@ -265,8 +265,7 @@ TEST(Context, ClientPingInline) {
       }
       serverPipe->read(
           std::move(message),
-          [&readCompletedProm, &buffers](
-              const Error& error, Message message) mutable {
+          [&readCompletedProm](const Error& error, Message message) mutable {
             if (error) {
               ADD_FAILURE() << error.what();
               readCompletedProm.set_value();
@@ -366,7 +365,7 @@ TEST(Context, ServerPingPongTwice) {
               }
               serverPipe->read(
                   std::move(message),
-                  [&pingCompletedProm, &buffers, &numPingsGoneThrough, i](
+                  [&pingCompletedProm, &numPingsGoneThrough, i](
                       const Error& error, Message message) {
                     if (error) {
                       ADD_FAILURE() << error.what();
@@ -388,52 +387,51 @@ TEST(Context, ServerPingPongTwice) {
   auto clientPipe = context->connect(listener->url("uv"));
   int numPongsGoneThrough = 0;
   for (int i = 0; i < 2; i++) {
-    clientPipe->readDescriptor([&clientPipe,
-                                &pongCompletedProm,
-                                &buffers,
-                                &numPongsGoneThrough,
-                                i](const Error& error, Message message) {
-      if (error) {
-        ADD_FAILURE() << error.what();
-        pongCompletedProm.set_value();
-        return;
-      }
-      for (auto& payload : message.payloads) {
-        auto payloadData = std::make_unique<uint8_t[]>(payload.length);
-        payload.data = payloadData.get();
-        buffers.push_back(std::move(payloadData));
-      }
-      for (auto& tensor : message.tensors) {
-        auto tensorData = std::make_unique<uint8_t[]>(tensor.buffer.cpu.length);
-        tensor.buffer.cpu.ptr = tensorData.get();
-        buffers.push_back(std::move(tensorData));
-      }
-      clientPipe->read(
-          std::move(message),
-          [&clientPipe, &pongCompletedProm, &buffers, &numPongsGoneThrough, i](
-              const Error& error, Message message) mutable {
-            if (error) {
-              ADD_FAILURE() << error.what();
-              pongCompletedProm.set_value();
-              return;
-            }
-            clientPipe->write(
-                std::move(message),
-                [&pongCompletedProm, &buffers, &numPongsGoneThrough, i](
-                    const Error& error, Message /* unused */) {
-                  if (error) {
-                    ADD_FAILURE() << error.what();
-                    pongCompletedProm.set_value();
-                    return;
-                  }
-                  EXPECT_EQ(numPongsGoneThrough, i);
-                  numPongsGoneThrough++;
-                  if (numPongsGoneThrough == 2) {
-                    pongCompletedProm.set_value();
-                  }
-                });
-          });
-    });
+    clientPipe->readDescriptor(
+        [&clientPipe, &pongCompletedProm, &buffers, &numPongsGoneThrough, i](
+            const Error& error, Message message) {
+          if (error) {
+            ADD_FAILURE() << error.what();
+            pongCompletedProm.set_value();
+            return;
+          }
+          for (auto& payload : message.payloads) {
+            auto payloadData = std::make_unique<uint8_t[]>(payload.length);
+            payload.data = payloadData.get();
+            buffers.push_back(std::move(payloadData));
+          }
+          for (auto& tensor : message.tensors) {
+            auto tensorData =
+                std::make_unique<uint8_t[]>(tensor.buffer.cpu.length);
+            tensor.buffer.cpu.ptr = tensorData.get();
+            buffers.push_back(std::move(tensorData));
+          }
+          clientPipe->read(
+              std::move(message),
+              [&clientPipe, &pongCompletedProm, &numPongsGoneThrough, i](
+                  const Error& error, Message message) mutable {
+                if (error) {
+                  ADD_FAILURE() << error.what();
+                  pongCompletedProm.set_value();
+                  return;
+                }
+                clientPipe->write(
+                    std::move(message),
+                    [&pongCompletedProm, &numPongsGoneThrough, i](
+                        const Error& error, Message /* unused */) {
+                      if (error) {
+                        ADD_FAILURE() << error.what();
+                        pongCompletedProm.set_value();
+                        return;
+                      }
+                      EXPECT_EQ(numPongsGoneThrough, i);
+                      numPongsGoneThrough++;
+                      if (numPongsGoneThrough == 2) {
+                        pongCompletedProm.set_value();
+                      }
+                    });
+              });
+        });
   }
 
   pingCompletedProm.get_future().get();

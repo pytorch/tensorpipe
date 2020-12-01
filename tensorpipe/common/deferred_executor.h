@@ -143,7 +143,7 @@ class EventLoopDeferredExecutor : public virtual DeferredExecutor {
     // Must call it without holding the lock, as it could cause a reentrant
     // call.
     onDemandLoop_.deferToLoop(std::move(fn));
-  };
+  }
 
   inline bool inLoop() override {
     {

@@ -23,7 +23,8 @@ class Producer {
  public:
   Producer() = delete;
 
-  Producer(RingBuffer& rb) : header_{rb.getHeader()}, data_{rb.getData()} {
+  explicit Producer(RingBuffer& rb)
+      : header_{rb.getHeader()}, data_{rb.getData()} {
     TP_THROW_IF_NULLPTR(data_);
   }
 

@@ -125,7 +125,7 @@ class LazyCallbackWrapper {
   LazyCallbackWrapper(
       std::enable_shared_from_this<TSubject>& subject,
       OnDemandDeferredExecutor& loop)
-      : subject_(subject), loop_(loop){};
+      : subject_(subject), loop_(loop) {}
 
   template <typename TBoundFn>
   auto operator()(TBoundFn&& fn) {
@@ -190,7 +190,7 @@ class EagerCallbackWrapper {
   EagerCallbackWrapper(
       std::enable_shared_from_this<TSubject>& subject,
       OnDemandDeferredExecutor& loop)
-      : subject_(subject), loop_(loop){};
+      : subject_(subject), loop_(loop) {}
 
   template <typename TBoundFn>
   auto operator()(TBoundFn&& fn) {

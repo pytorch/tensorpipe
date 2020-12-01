@@ -26,7 +26,7 @@ template <typename TCtx, typename TList, typename TConn>
 class ContextImplBoilerplate : public virtual DeferredExecutor,
                                public std::enable_shared_from_this<TCtx> {
  public:
-  ContextImplBoilerplate(std::string domainDescriptor);
+  explicit ContextImplBoilerplate(std::string domainDescriptor);
 
   ContextImplBoilerplate(const ContextImplBoilerplate&) = delete;
   ContextImplBoilerplate(ContextImplBoilerplate&&) = delete;

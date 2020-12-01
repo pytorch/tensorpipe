@@ -28,7 +28,7 @@ class IbvError final : public BaseError {
 
 class GetaddrinfoError final : public BaseError {
  public:
-  GetaddrinfoError(int error) : error_(error) {}
+  explicit GetaddrinfoError(int error) : error_(error) {}
 
   std::string what() const override;
 

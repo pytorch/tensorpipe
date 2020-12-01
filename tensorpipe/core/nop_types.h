@@ -78,7 +78,7 @@ struct MessageDescriptor {
     // This pointless constructor is needed to work around a bug in GCC 5.5 (and
     // possibly other versions). It appears to be needed in the nop types that
     // are used inside std::vectors.
-    PayloadDescriptor(){};
+    PayloadDescriptor() {}
 
     int64_t sizeInBytes;
     std::string metadata;
@@ -89,7 +89,7 @@ struct MessageDescriptor {
     // This pointless constructor is needed to work around a bug in GCC 5.5 (and
     // possibly other versions). It appears to be needed in the nop types that
     // are used inside std::vectors.
-    TensorDescriptor(){};
+    TensorDescriptor() {}
 
     int64_t sizeInBytes;
     std::string metadata;

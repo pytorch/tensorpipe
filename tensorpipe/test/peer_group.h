@@ -97,7 +97,7 @@ class ForkedThreadPeerGroup : public ThreadPeerGroup {
     TP_THROW_SYSTEM_IF(pid < 0, errno) << "Failed to fork";
     if (pid == 0) {
       ThreadPeerGroup::spawn(f1, f2);
-      std::exit(testing::Test::HasFailure());
+      std::exit(((testing::Test::HasFailure()) ? 1 : 0));
     }
 
     int status;
@@ -168,7 +168,7 @@ class ProcessPeerGroup : public PeerGroup {
 
         fns[peerId]();
 
-        std::exit(testing::Test::HasFailure());
+        std::exit(((testing::Test::HasFailure()) ? 1 : 0));
       }
     }
 

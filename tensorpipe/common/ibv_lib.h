@@ -611,7 +611,8 @@ class IbvLib {
   };
 
  private:
-  IbvLib(DynamicLibraryHandle dlhandle) : dlhandle_(std::move(dlhandle)) {}
+  explicit IbvLib(DynamicLibraryHandle dlhandle)
+      : dlhandle_(std::move(dlhandle)) {}
 
   DynamicLibraryHandle dlhandle_;
 

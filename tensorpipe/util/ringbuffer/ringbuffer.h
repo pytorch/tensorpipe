@@ -63,7 +63,7 @@ class RingBufferHeader {
   // Implementation uses power of 2 arithmetic to avoid costly modulo.
   // So build the largest RingBuffer with size of the smallest power of 2 >=
   // <byte_size>.
-  RingBufferHeader(uint64_t min_data_byte_size)
+  explicit RingBufferHeader(uint64_t min_data_byte_size)
       : kDataPoolByteSize{nextPow2(min_data_byte_size)},
         kDataModMask{kDataPoolByteSize - 1} {
     // Minimum size where implementation of bit shift arithmetic works.

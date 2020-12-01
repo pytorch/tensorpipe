@@ -39,12 +39,12 @@ class BusyPollingLoop : public EventLoopDeferredExecutor {
         std::this_thread::yield();
       }
     }
-  };
+  }
 
   void wakeupEventLoopToDeferFunction() override {
     ++deferredFunctionCount_;
     // No need to wake up the thread, since it is busy-waiting.
-  };
+  }
 
  private:
   std::atomic<bool> closed_{false};

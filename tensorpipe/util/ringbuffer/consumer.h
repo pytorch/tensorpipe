@@ -23,7 +23,8 @@ class Consumer {
  public:
   Consumer() = delete;
 
-  Consumer(RingBuffer& rb) : header_{rb.getHeader()}, data_{rb.getData()} {
+  explicit Consumer(RingBuffer& rb)
+      : header_{rb.getHeader()}, data_{rb.getData()} {
     TP_THROW_IF_NULLPTR(data_);
   }
 

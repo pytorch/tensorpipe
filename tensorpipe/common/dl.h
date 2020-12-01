@@ -21,7 +21,7 @@ namespace tensorpipe {
 
 class DlError final : public BaseError {
  public:
-  DlError(char* error) : error_(error) {}
+  explicit DlError(char* error) : error_(error) {}
 
   std::string what() const override {
     return error_;

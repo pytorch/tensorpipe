@@ -110,7 +110,7 @@ inline std::error_code toErrorCode(ssize_t e) {
 //
 class LogEntry final {
  public:
-  LogEntry(char type) {
+  explicit LogEntry(char type) {
     oss_ << type;
 
     // In C++17 use std::timespec.

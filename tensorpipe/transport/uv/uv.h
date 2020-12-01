@@ -109,7 +109,7 @@ class WriteRequest final : public BaseRequest<WriteRequest, uv_write_t> {
  public:
   using TWriteCallback = std::function<void(int status)>;
 
-  WriteRequest(TWriteCallback fn) : writeCallback_(std::move(fn)) {}
+  explicit WriteRequest(TWriteCallback fn) : writeCallback_(std::move(fn)) {}
 
   static int perform(
       uv_stream_t* handle,
@@ -240,7 +240,8 @@ class ConnectRequest final : public BaseRequest<ConnectRequest, uv_connect_t> {
  public:
   using TConnectCallback = std::function<void(int status)>;
 
-  ConnectRequest(TConnectCallback fn) : connectCallback_(std::move(fn)) {}
+  explicit ConnectRequest(TConnectCallback fn)
+      : connectCallback_(std::move(fn)) {}
 
   static int perform(
       uv_tcp_t* handle,
