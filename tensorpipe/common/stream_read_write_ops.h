@@ -43,7 +43,7 @@ class StreamReadOperation {
   inline StreamReadOperation(void* ptr, size_t length, read_callback_fn fn);
 
   // Called when a buffer is needed to read data from stream.
-  inline void allocFromLoop(char** buf, size_t* len);
+  inline void allocFromLoop(char** base, size_t* len);
 
   // Called when data has been read from stream.
   inline void readFromLoop(size_t nread);

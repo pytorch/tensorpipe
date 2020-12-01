@@ -35,7 +35,7 @@ void saveOneFdToArray(int& dst, const Fd& src) {
 template <size_t... Idxs, typename... Fds>
 void saveFdsToArray(
     int* array,
-    std::index_sequence<Idxs...>,
+    std::index_sequence<Idxs...> /*unused*/,
     const Fds&... fds) {
   // This is a trick to do pack expansion of the function call.
   auto dummy = {(saveOneFdToArray(array[Idxs], fds), 0)...};
@@ -50,7 +50,10 @@ void loadOneFdFromArray(int& src, Fd& dst) {
 }
 
 template <size_t... Idxs, typename... Fds>
-void loadFdsFromArray(int* array, std::index_sequence<Idxs...>, Fds&... fds) {
+void loadFdsFromArray(
+    int* array,
+    std::index_sequence<Idxs...> /*unused*/,
+    Fds&... fds) {
   // This is a trick to do pack expansion of the function call.
   auto dummy = {(loadOneFdFromArray(array[Idxs], fds), 0)...};
 }

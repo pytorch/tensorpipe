@@ -30,14 +30,14 @@ class Listener::Impl : public Listener::PrivateIface,
                        public std::enable_shared_from_this<Listener::Impl> {
  public:
   Impl(
-      std::shared_ptr<Context::PrivateIface>,
+      std::shared_ptr<Context::PrivateIface> context,
       std::string id,
       const std::vector<std::string>& urls);
 
   // Called by the listener's constructor.
   void init();
 
-  void accept(accept_callback_fn);
+  void accept(accept_callback_fn fn);
 
   const std::map<std::string, std::string>& addresses() const override;
 
@@ -47,8 +47,9 @@ class Listener::Impl : public Listener::PrivateIface,
 
   using PrivateIface::connection_request_callback_fn;
 
-  uint64_t registerConnectionRequest(connection_request_callback_fn) override;
-  void unregisterConnectionRequest(uint64_t) override;
+  uint64_t registerConnectionRequest(
+      connection_request_callback_fn fn) override;
+  void unregisterConnectionRequest(uint64_t registrationId) override;
 
   void close();
 
@@ -57,7 +58,7 @@ class Listener::Impl : public Listener::PrivateIface,
  private:
   OnDemandDeferredExecutor loop_;
 
-  void acceptFromLoop(accept_callback_fn);
+  void acceptFromLoop(accept_callback_fn fn);
 
   void closeFromLoop();
 
@@ -115,10 +116,10 @@ class Listener::Impl : public Listener::PrivateIface,
   //
 
   void registerConnectionRequestFromLoop(
-      uint64_t,
-      connection_request_callback_fn);
+      uint64_t registrationId,
+      connection_request_callback_fn fn);
 
-  void unregisterConnectionRequestFromLoop(uint64_t);
+  void unregisterConnectionRequestFromLoop(uint64_t registrationId);
 
   //
   // Helpers to prepare callbacks from transports
@@ -138,12 +139,14 @@ class Listener::Impl : public Listener::PrivateIface,
   // Everything else
   //
 
-  void armListener(std::string);
-  void onAccept(std::string, std::shared_ptr<transport::Connection>);
+  void armListener(std::string transport);
+  void onAccept(
+      std::string transport,
+      std::shared_ptr<transport::Connection> connection);
   void onConnectionHelloRead(
-      std::string,
-      std::shared_ptr<transport::Connection>,
-      const Packet&);
+      std::string transport,
+      std::shared_ptr<transport::Connection> connection,
+      const Packet& nopPacketIn);
 
   template <typename T>
   friend class LazyCallbackWrapper;

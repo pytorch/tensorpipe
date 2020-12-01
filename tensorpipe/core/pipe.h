@@ -45,14 +45,14 @@ class Pipe final {
   //
 
   Pipe(
-      ConstructorToken,
+      ConstructorToken token,
       std::shared_ptr<Context::PrivateIface> context,
       std::string id,
       std::string remoteName,
       const std::string& url);
 
   Pipe(
-      ConstructorToken,
+      ConstructorToken token,
       std::shared_ptr<Context::PrivateIface> context,
       std::shared_ptr<Listener::PrivateIface> listener,
       std::string id,
@@ -67,15 +67,15 @@ class Pipe final {
   using read_descriptor_callback_fn =
       std::function<void(const Error&, Message)>;
 
-  void readDescriptor(read_descriptor_callback_fn);
+  void readDescriptor(read_descriptor_callback_fn fn);
 
   using read_callback_fn = std::function<void(const Error&, Message)>;
 
-  void read(Message, read_callback_fn);
+  void read(Message message, read_callback_fn fn);
 
   using write_callback_fn = std::function<void(const Error&, Message)>;
 
-  void write(Message, write_callback_fn);
+  void write(Message message, write_callback_fn fn);
 
   // Retrieve the user-defined name that was given to the constructor of the
   // context on the remote side, if any (if not, this will be the empty string).

@@ -26,8 +26,8 @@ class Channel : public channel::CpuChannel {
 
  public:
   Channel(
-      ConstructorToken,
-      std::shared_ptr<Context::PrivateIface>,
+      ConstructorToken token,
+      std::shared_ptr<Context::PrivateIface> context,
       std::shared_ptr<transport::Connection> connection,
       std::string id);
 

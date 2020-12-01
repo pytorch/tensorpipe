@@ -22,14 +22,14 @@ namespace mpt {
 class Context : public channel::CpuContext {
  public:
   Context(
-      std::vector<std::shared_ptr<transport::Context>>,
-      std::vector<std::shared_ptr<transport::Listener>>);
+      std::vector<std::shared_ptr<transport::Context>> contexts,
+      std::vector<std::shared_ptr<transport::Listener>> listeners);
 
   const std::string& domainDescriptor() const override;
 
   std::shared_ptr<CpuChannel> createChannel(
-      std::shared_ptr<transport::Connection>,
-      Endpoint) override;
+      std::shared_ptr<transport::Connection> connection,
+      Endpoint endpoint) override;
 
   void setId(std::string id) override;
 

@@ -353,9 +353,9 @@ class Pipe::Impl : public std::enable_shared_from_this<Pipe::Impl> {
   // Called by the pipe's constructor.
   void init();
 
-  void readDescriptor(read_descriptor_callback_fn);
-  void read(Message, read_callback_fn);
-  void write(Message, write_callback_fn);
+  void readDescriptor(read_descriptor_callback_fn fn);
+  void read(Message message, read_callback_fn fn);
+  void write(Message message, write_callback_fn fn);
 
   const std::string& getRemoteName();
 
@@ -366,11 +366,11 @@ class Pipe::Impl : public std::enable_shared_from_this<Pipe::Impl> {
 
   void initFromLoop();
 
-  void readDescriptorFromLoop(read_descriptor_callback_fn);
+  void readDescriptorFromLoop(read_descriptor_callback_fn fn);
 
-  void readFromLoop(Message, read_callback_fn);
+  void readFromLoop(Message message, read_callback_fn fn);
 
-  void writeFromLoop(Message, write_callback_fn);
+  void writeFromLoop(Message message, write_callback_fn fn);
 
   void closeFromLoop();
 
@@ -486,26 +486,29 @@ class Pipe::Impl : public std::enable_shared_from_this<Pipe::Impl> {
   bool advanceOneReadOperation(ReadOperation& op);
   bool advanceOneWriteOperation(WriteOperation& op);
 
-  void readDescriptorOfMessage(ReadOperation&);
-  void readPayloadsAndReceiveTensorsOfMessage(ReadOperation&);
-  void sendTensorsOfMessage(WriteOperation&);
-  void writeDescriptorAndPayloadsOfMessage(WriteOperation&);
-  void onReadWhileServerWaitingForBrochure(const Packet&);
-  void onReadWhileClientWaitingForBrochureAnswer(const Packet&);
+  void readDescriptorOfMessage(ReadOperation& op);
+  void readPayloadsAndReceiveTensorsOfMessage(ReadOperation& op);
+  void sendTensorsOfMessage(WriteOperation& op);
+  void writeDescriptorAndPayloadsOfMessage(WriteOperation& op);
+  void onReadWhileServerWaitingForBrochure(const Packet& nopPacketIn);
+  void onReadWhileClientWaitingForBrochureAnswer(const Packet& nopPacketIn);
   void onAcceptWhileServerWaitingForConnection(
-      std::string,
-      std::shared_ptr<transport::Connection>);
+      std::string receivedTransport,
+      std::shared_ptr<transport::Connection> receivedConnection);
   template <typename TBuffer>
   void onAcceptWhileServerWaitingForChannel(
-      std::string,
-      std::string,
-      std::shared_ptr<transport::Connection>);
-  void onReadOfMessageDescriptor(ReadOperation&, const Packet&);
-  void onDescriptorOfTensor(WriteOperation&, int64_t, channel::TDescriptor);
-  void onReadOfPayload(ReadOperation&);
-  void onRecvOfTensor(ReadOperation&);
-  void onWriteOfPayload(WriteOperation&);
-  void onSendOfTensor(WriteOperation&);
+      std::string channelName,
+      std::string receivedTransport,
+      std::shared_ptr<transport::Connection> receivedConnection);
+  void onReadOfMessageDescriptor(ReadOperation& op, const Packet& nopPacketIn);
+  void onDescriptorOfTensor(
+      WriteOperation& op,
+      int64_t tensorIdx,
+      channel::TDescriptor descriptor);
+  void onReadOfPayload(ReadOperation& op);
+  void onRecvOfTensor(ReadOperation& op);
+  void onWriteOfPayload(WriteOperation& op);
+  void onSendOfTensor(WriteOperation& op);
 
   ReadOperation* findReadOperation(int64_t sequenceNumber);
   WriteOperation* findWriteOperation(int64_t sequenceNumber);

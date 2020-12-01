@@ -21,7 +21,7 @@ namespace ibv {
 
 class Sockaddr final : public tensorpipe::Sockaddr {
  public:
-  static Sockaddr createInetSockAddr(const std::string& name);
+  static Sockaddr createInetSockAddr(const std::string& str);
 
   Sockaddr(const struct sockaddr* addr, socklen_t addrlen) {
     TP_ARG_CHECK(addr != nullptr);

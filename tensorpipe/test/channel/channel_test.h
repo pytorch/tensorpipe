@@ -231,8 +231,10 @@ class ClientServerChannelTestCase : public ChannelTestCase<TBuffer> {
         });
   }
 
-  virtual void server(std::shared_ptr<tensorpipe::transport::Connection>) {}
-  virtual void client(std::shared_ptr<tensorpipe::transport::Connection>) {}
+  virtual void server(
+      std::shared_ptr<tensorpipe::transport::Connection> connection) {}
+  virtual void client(
+      std::shared_ptr<tensorpipe::transport::Connection> connection) {}
 
  protected:
   ChannelTestHelper<TBuffer>* helper_;

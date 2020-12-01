@@ -56,14 +56,14 @@ class Context final {
   explicit Context(ContextOptions opts = ContextOptions());
 
   void registerTransport(
-      int64_t,
-      std::string,
-      std::shared_ptr<transport::Context>);
+      int64_t priority,
+      std::string transport,
+      std::shared_ptr<transport::Context> context);
 
   void registerChannel(
-      int64_t,
-      std::string,
-      std::shared_ptr<channel::CpuContext>);
+      int64_t priority,
+      std::string channel,
+      std::shared_ptr<channel::CpuContext> context);
 
 #if TENSORPIPE_SUPPORTS_CUDA
   void registerChannel(
@@ -72,10 +72,10 @@ class Context final {
       std::shared_ptr<channel::CudaContext>);
 #endif // TENSORPIPE_SUPPORTS_CUDA
 
-  std::shared_ptr<Listener> listen(const std::vector<std::string>&);
+  std::shared_ptr<Listener> listen(const std::vector<std::string>& urls);
 
   std::shared_ptr<Pipe> connect(
-      const std::string&,
+      const std::string& url,
       PipeOptions opts = PipeOptions());
 
   // Put the context in a terminal state, in turn closing all of its pipes and

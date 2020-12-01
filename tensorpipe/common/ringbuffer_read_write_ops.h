@@ -49,7 +49,7 @@ class RingbufferReadOperation {
       read_callback_fn fn);
 
   // Processes a pending read.
-  inline size_t handleRead(util::ringbuffer::Consumer& consumer);
+  inline size_t handleRead(util::ringbuffer::Consumer& inbox);
 
   bool completed() const {
     return (mode_ == READ_PAYLOAD && bytesRead_ == len_);
@@ -70,7 +70,7 @@ class RingbufferReadOperation {
   // case we must check that the length matches the header we see on the wire.
   const bool ptrProvided_;
 
-  inline ssize_t readNopObject(util::ringbuffer::Consumer& consumer);
+  inline ssize_t readNopObject(util::ringbuffer::Consumer& inbox);
 };
 
 // Writes happen only if the user supplied a memory pointer, the
@@ -98,7 +98,7 @@ class RingbufferWriteOperation {
       const AbstractNopHolder* nopObject,
       write_callback_fn fn);
 
-  inline size_t handleWrite(util::ringbuffer::Producer& producer);
+  inline size_t handleWrite(util::ringbuffer::Producer& outbox);
 
   bool completed() const {
     return (mode_ == WRITE_PAYLOAD && bytesWritten_ == len_);
@@ -114,7 +114,7 @@ class RingbufferWriteOperation {
   size_t bytesWritten_{0};
   write_callback_fn fn_;
 
-  inline ssize_t writeNopObject(util::ringbuffer::Producer& producer);
+  inline ssize_t writeNopObject(util::ringbuffer::Producer& outbox);
 };
 
 RingbufferReadOperation::RingbufferReadOperation(

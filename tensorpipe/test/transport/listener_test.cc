@@ -56,18 +56,19 @@ TEST_P(TransportTest, Listener_AcceptCallbacksAreQueued) {
     int numAccepts = 0;
     std::promise<void> donePromise;
     for (int i = 0; i < 10; ++i) {
-      listener->accept([&, i](const Error& error, std::shared_ptr<Connection>) {
-        if (error) {
-          donePromise.set_exception(
-              std::make_exception_ptr(std::runtime_error(error.what())));
-        } else {
-          EXPECT_EQ(i, numAccepts);
-          numAccepts++;
-          if (numAccepts == 10) {
-            donePromise.set_value();
-          }
-        }
-      });
+      listener->accept(
+          [&, i](const Error& error, std::shared_ptr<Connection> /*unused*/) {
+            if (error) {
+              donePromise.set_exception(
+                  std::make_exception_ptr(std::runtime_error(error.what())));
+            } else {
+              EXPECT_EQ(i, numAccepts);
+              numAccepts++;
+              if (numAccepts == 10) {
+                donePromise.set_value();
+              }
+            }
+          });
     }
 
     // Avoid connections to be destroyed before being established.
@@ -97,18 +98,19 @@ TEST_P(TransportTest, Listener_IncomingConnectionsAreQueued) {
       conns.push_back(std::move(c));
     }
     for (int i = 0; i < 10; ++i) {
-      listener->accept([&, i](const Error& error, std::shared_ptr<Connection>) {
-        if (error) {
-          donePromise.set_exception(
-              std::make_exception_ptr(std::runtime_error(error.what())));
-        } else {
-          EXPECT_EQ(i, numAccepts);
-          numAccepts++;
-          if (numAccepts == 10) {
-            donePromise.set_value();
-          }
-        }
-      });
+      listener->accept(
+          [&, i](const Error& error, std::shared_ptr<Connection> /*unused*/) {
+            if (error) {
+              donePromise.set_exception(
+                  std::make_exception_ptr(std::runtime_error(error.what())));
+            } else {
+              EXPECT_EQ(i, numAccepts);
+              numAccepts++;
+              if (numAccepts == 10) {
+                donePromise.set_value();
+              }
+            }
+          });
     }
 
     donePromise.get_future().get();

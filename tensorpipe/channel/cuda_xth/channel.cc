@@ -66,9 +66,9 @@ struct Descriptor {
 class Channel::Impl : public std::enable_shared_from_this<Channel::Impl> {
  public:
   Impl(
-      std::shared_ptr<Context::PrivateIface>,
-      std::shared_ptr<transport::Connection>,
-      std::string);
+      std::shared_ptr<Context::PrivateIface> context,
+      std::shared_ptr<transport::Connection> connection,
+      std::string id);
 
   // Called by the channel's constructor.
   void init();

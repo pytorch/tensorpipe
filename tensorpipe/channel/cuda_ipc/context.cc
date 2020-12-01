@@ -51,8 +51,8 @@ class Context::Impl : public Context::PrivateIface,
   const std::string& domainDescriptor() const;
 
   std::shared_ptr<channel::CudaChannel> createChannel(
-      std::shared_ptr<transport::Connection>,
-      Endpoint);
+      std::shared_ptr<transport::Connection> connection,
+      Endpoint endpoint);
 
   void setId(std::string id);
 

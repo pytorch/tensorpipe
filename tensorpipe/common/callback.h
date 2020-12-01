@@ -54,7 +54,7 @@ namespace {
 
 // NOTE: This is an incomplete implementation of C++17's `std::apply`.
 template <typename F, typename T, size_t... I>
-auto cb_apply(F&& f, T&& t, std::index_sequence<I...>) {
+auto cb_apply(F&& f, T&& t, std::index_sequence<I...> /*unused*/) {
   return f(std::get<I>(std::forward<T>(t))...);
 }
 

@@ -27,8 +27,8 @@ class Context : public channel::CudaContext {
   const std::string& domainDescriptor() const override;
 
   std::shared_ptr<CudaChannel> createChannel(
-      std::shared_ptr<transport::Connection>,
-      Endpoint) override;
+      std::shared_ptr<transport::Connection> connection,
+      Endpoint endpoint) override;
 
   void setId(std::string id) override;
 

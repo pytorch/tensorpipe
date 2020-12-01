@@ -12,6 +12,6 @@
 
 namespace tensorpipe {
 
-std::tuple<std::string, std::string> splitSchemeOfURL(const std::string&);
+std::tuple<std::string, std::string> splitSchemeOfURL(const std::string& url);
 
 }

@@ -39,7 +39,7 @@ class Listener final {
 
  public:
   Listener(
-      ConstructorToken,
+      ConstructorToken token,
       std::shared_ptr<Context::PrivateIface> context,
       std::string id,
       const std::vector<std::string>& urls);
@@ -51,7 +51,7 @@ class Listener final {
   using accept_callback_fn =
       std::function<void(const Error&, std::shared_ptr<Pipe>)>;
 
-  void accept(accept_callback_fn);
+  void accept(accept_callback_fn fn);
 
   // Returns map with the materialized address of listeners by transport.
   //

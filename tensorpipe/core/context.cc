@@ -49,28 +49,29 @@ class Context::Impl : public Context::PrivateIface,
   explicit Impl(ContextOptions opts);
 
   void registerTransport(
-      int64_t,
-      std::string,
-      std::shared_ptr<transport::Context>);
+      int64_t priority,
+      std::string transport,
+      std::shared_ptr<transport::Context> context);
 
   template <typename TBuffer>
   void registerChannel(
-      int64_t,
-      std::string,
-      std::shared_ptr<channel::Context<TBuffer>>);
+      int64_t priority,
+      std::string channel,
+      std::shared_ptr<channel::Context<TBuffer>> context);
 
-  std::shared_ptr<Listener> listen(const std::vector<std::string>&);
+  std::shared_ptr<Listener> listen(const std::vector<std::string>& urls);
 
-  std::shared_ptr<Pipe> connect(const std::string&, PipeOptions opts);
+  std::shared_ptr<Pipe> connect(const std::string& url, PipeOptions opts);
 
   ClosingEmitter& getClosingEmitter() override;
 
-  std::shared_ptr<transport::Context> getTransport(const std::string&) override;
+  std::shared_ptr<transport::Context> getTransport(
+      const std::string& transport) override;
   std::shared_ptr<channel::CpuContext> getCpuChannel(
-      const std::string&) override;
+      const std::string& channel) override;
 #if TENSORPIPE_SUPPORTS_CUDA
   std::shared_ptr<channel::CudaContext> getCudaChannel(
-      const std::string&) override;
+      const std::string& channel) override;
 #endif // TENSORPIPE_SUPPORTS_CUDA
 
   using PrivateIface::TOrderedTransports;
@@ -130,7 +131,8 @@ class Context::Impl : public Context::PrivateIface,
   ClosingEmitter closingEmitter_;
 
   template <typename TBuffer>
-  std::shared_ptr<channel::Context<TBuffer>> getChannel(const std::string&);
+  std::shared_ptr<channel::Context<TBuffer>> getChannel(
+      const std::string& channel);
 };
 
 Context::Context(ContextOptions opts)

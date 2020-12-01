@@ -34,8 +34,8 @@ class Context::Impl : public Context::PrivateIface,
                       public std::enable_shared_from_this<Context::Impl> {
  public:
   Impl(
-      std::vector<std::shared_ptr<transport::Context>>,
-      std::vector<std::shared_ptr<transport::Listener>>);
+      std::vector<std::shared_ptr<transport::Context>> contexts,
+      std::vector<std::shared_ptr<transport::Listener>> listeners);
 
   // Called by the context's constructor.
   void init();
@@ -43,8 +43,8 @@ class Context::Impl : public Context::PrivateIface,
   const std::string& domainDescriptor() const;
 
   std::shared_ptr<channel::CpuChannel> createChannel(
-      std::shared_ptr<transport::Connection>,
-      Endpoint);
+      std::shared_ptr<transport::Connection> connection,
+      Endpoint endpoint);
 
   ClosingEmitter& getClosingEmitter() override;
 
@@ -52,9 +52,9 @@ class Context::Impl : public Context::PrivateIface,
 
   uint64_t registerConnectionRequest(
       uint64_t laneIdx,
-      connection_request_callback_fn) override;
+      connection_request_callback_fn fn) override;
 
-  void unregisterConnectionRequest(uint64_t) override;
+  void unregisterConnectionRequest(uint64_t registrationId) override;
 
   std::shared_ptr<transport::Connection> connect(
       uint64_t laneIdx,
@@ -78,15 +78,15 @@ class Context::Impl : public Context::PrivateIface,
   void registerConnectionRequestFromLoop(
       uint64_t laneIdx,
       uint64_t registrationId,
-      connection_request_callback_fn);
+      connection_request_callback_fn fn);
 
-  void unregisterConnectionRequestFromLoop(uint64_t);
+  void unregisterConnectionRequestFromLoop(uint64_t registrationId);
 
-  void acceptLane(uint64_t);
-  void onAcceptOfLane(std::shared_ptr<transport::Connection>);
+  void acceptLane(uint64_t laneIdx);
+  void onAcceptOfLane(std::shared_ptr<transport::Connection> connection);
   void onReadClientHelloOnLane(
-      std::shared_ptr<transport::Connection>,
-      const Packet&);
+      std::shared_ptr<transport::Connection> connection,
+      const Packet& nopPacketIn);
 
   void setError(Error error);
 
