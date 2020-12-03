@@ -47,13 +47,13 @@ class Context::Impl : public Context::PrivateIface,
   ~Impl() override = default;
 
  private:
-  std::string domainDescriptor_;
   std::atomic<bool> closed_{false};
   std::atomic<bool> joined_{false};
   ClosingEmitter closingEmitter_;
 
   std::shared_ptr<CpuContext> cpuContext_;
-  std::shared_ptr<CudaLoop> cudaLoop_;
+  // TODO: Lazy initialization of cuda loop.
+  CudaLoop cudaLoop_;
   // An identifier for the context, composed of the identifier for the context,
   // combined with the channel's name. It will only be used for logging and
   // debugging purposes.
@@ -69,10 +69,7 @@ Context::Context(std::shared_ptr<CpuContext> cpuContext)
     : impl_(std::make_shared<Impl>(std::move(cpuContext))) {}
 
 Context::Impl::Impl(std::shared_ptr<CpuContext> cpuContext)
-    : domainDescriptor_("any"),
-      cpuContext_(std::move(cpuContext)),
-      // TODO: Lazy initialization of cuda loop.
-      cudaLoop_(std::make_shared<CudaLoop>()) {}
+    : cpuContext_(std::move(cpuContext)) {}
 
 void Context::close() {
   impl_->close();
@@ -81,6 +78,8 @@ void Context::close() {
 void Context::Impl::close() {
   if (!closed_.exchange(true)) {
     closingEmitter_.close();
+    cpuContext_->close();
+    cudaLoop_.close();
   }
 }
 
@@ -93,6 +92,7 @@ void Context::Impl::join() {
 
   if (!joined_.exchange(true)) {
     cpuContext_->join();
+    cudaLoop_.join();
   }
 }
 
@@ -118,7 +118,7 @@ const std::string& Context::domainDescriptor() const {
 }
 
 const std::string& Context::Impl::domainDescriptor() const {
-  return domainDescriptor_;
+  return cpuContext_->domainDescriptor();
 }
 
 std::shared_ptr<channel::CudaChannel> Context::createChannel(

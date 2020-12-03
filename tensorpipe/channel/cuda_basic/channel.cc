@@ -28,24 +28,12 @@ namespace tensorpipe {
 namespace channel {
 namespace cuda_basic {
 
-namespace {
-
-std::shared_ptr<uint8_t> makeCudaPinnedBuffer(size_t length) {
-  void* ptr;
-  TP_CUDA_CHECK(cudaMallocHost(&ptr, length));
-  return std::shared_ptr<uint8_t>(
-      reinterpret_cast<uint8_t*>(ptr),
-      [](uint8_t* ptr) { TP_CUDA_CHECK(cudaFreeHost(ptr)); });
-}
-
-} // namespace
-
 class Channel::Impl : public std::enable_shared_from_this<Channel::Impl> {
  public:
   Impl(
       std::shared_ptr<Context::PrivateIface>,
       std::shared_ptr<CpuChannel>,
-      std::shared_ptr<CudaLoop>,
+      CudaLoop&,
       std::string);
 
   // Called by the channel's constructor.
@@ -74,10 +62,20 @@ class Channel::Impl : public std::enable_shared_from_this<Channel::Impl> {
       TDescriptorCallback descriptorCallback,
       TSendCallback callback);
 
+  void onTempBufferReadyForSend(
+      CudaBuffer buffer,
+      CudaPinnedBuffer tmpBuffer,
+      TDescriptorCallback descriptorCallback);
+
   // Receive memory region from peer.
   void recvFromLoop(
       TDescriptor descriptor,
       CudaBuffer buffer,
+      TRecvCallback callback);
+
+  void onCpuChannelRecv(
+      CudaBuffer buffer,
+      CudaPinnedBuffer tmpBuffer,
       TRecvCallback callback);
 
   void closeFromLoop();
@@ -92,7 +90,7 @@ class Channel::Impl : public std::enable_shared_from_this<Channel::Impl> {
 
   std::shared_ptr<Context::PrivateIface> context_;
   std::shared_ptr<CpuChannel> cpuChannel_;
-  std::shared_ptr<CudaLoop> cudaLoop_;
+  CudaLoop& cudaLoop_;
   Error error_{Error::kSuccess};
 
   ClosingReceiver closingReceiver_;
@@ -119,12 +117,12 @@ Channel::Channel(
     ConstructorToken /* unused */,
     std::shared_ptr<Context::PrivateIface> context,
     std::shared_ptr<CpuChannel> cpuChannel,
-    std::shared_ptr<CudaLoop> cudaLoop,
+    CudaLoop& cudaLoop,
     std::string id)
     : impl_(std::make_shared<Impl>(
           std::move(context),
           std::move(cpuChannel),
-          std::move(cudaLoop),
+          cudaLoop,
           std::move(id))) {
   impl_->init();
 }
@@ -132,11 +130,11 @@ Channel::Channel(
 Channel::Impl::Impl(
     std::shared_ptr<Context::PrivateIface> context,
     std::shared_ptr<CpuChannel> cpuChannel,
-    std::shared_ptr<CudaLoop> cudaLoop,
+    CudaLoop& cudaLoop,
     std::string id)
     : context_(std::move(context)),
       cpuChannel_(std::move(cpuChannel)),
-      cudaLoop_(std::move(cudaLoop)),
+      cudaLoop_(cudaLoop),
       closingReceiver_(context_, context_->getClosingEmitter()),
       id_(std::move(id)) {}
 
@@ -194,41 +192,39 @@ void Channel::Impl::sendFromLoop(
       buffer.length,
       cudaMemcpyDeviceToHost,
       buffer.stream));
+  callback(Error::kSuccess);
 
-  auto cudaCallback =
-      [this,
-       buffer,
-       tmpBuffer{std::move(tmpBuffer)},
-       descriptorCallback{std::move(descriptorCallback)},
-       callback{std::move(callback)}](cudaError_t cudaError) mutable {
-        TP_VLOG(4) << "Channel " << id_
-                   << " is done copying buffer from CUDA device to CPU";
-        TP_CUDA_CHECK(cudaError);
+  cudaLoop_.addCallback(
+      cudaDeviceForPointer(buffer.ptr),
+      buffer.stream,
+      eagerCallbackWrapper_(
+          [buffer,
+           tmpBuffer{std::move(tmpBuffer)},
+           descriptorCallback{std::move(descriptorCallback)}](Impl& impl) {
+            impl.onTempBufferReadyForSend(
+                buffer, std::move(tmpBuffer), std::move(descriptorCallback));
+          }));
+}
 
-        // TODO: Use eagerCallbackWrapper to ensure channel remains alive until
-        // this callback fires?
+void Channel::Impl::onTempBufferReadyForSend(
+    CudaBuffer buffer,
+    CudaPinnedBuffer tmpBuffer,
+    TDescriptorCallback descriptorCallback) {
+  if (error_) {
+    descriptorCallback(error_, std::string());
+    return;
+  }
 
-        loop_.deferToLoop([this,
-                           buffer,
-                           tmpBuffer{std::move(tmpBuffer)},
-                           descriptorCallback{std::move(descriptorCallback)},
-                           callback{std::move(callback)}]() mutable {
-          if (error_) {
-            descriptorCallback(error_, std::string());
-            callback(error_);
-            return;
-          }
+  TP_VLOG(4) << "Channel " << id_
+             << " is done copying buffer from CUDA device to CPU";
 
-          CpuBuffer cpuBuffer{tmpBuffer.get(), buffer.length};
-          // Keep tmpBuffer alive until cpuChannel_ is done sending it over.
-          callback = eagerCallbackWrapper_(
-              [tmpBuffer{std::move(tmpBuffer)}, callback{std::move(callback)}](
-                  Impl& impl) { callback(impl.error_); });
-          cpuChannel_->send(
-              cpuBuffer, std::move(descriptorCallback), std::move(callback));
-        });
-      };
-  cudaLoop_->addCallback(buffer.stream, std::move(cudaCallback));
+  CpuBuffer cpuBuffer{tmpBuffer.get(), buffer.length};
+  // Keep tmpBuffer alive until cpuChannel_ is done sending it over.
+  // TODO: This could be a lazy callback wrapper.
+  auto callback = eagerCallbackWrapper_(
+      [tmpBuffer{std::move(tmpBuffer)}](Impl& /* unused */) {});
+  cpuChannel_->send(
+      cpuBuffer, std::move(descriptorCallback), std::move(callback));
 }
 
 // Receive memory region from peer.
@@ -266,41 +262,50 @@ void Channel::Impl::recvFromLoop(
     return;
   }
 
-  TP_DCHECK_EQ(descriptor, std::string());
   auto tmpBuffer = makeCudaPinnedBuffer(buffer.length);
-
   CpuBuffer cpuBuffer{tmpBuffer.get(), buffer.length};
-  callback = eagerCallbackWrapper_(
-      [buffer, tmpBuffer{std::move(tmpBuffer)}, callback{std::move(callback)}](
-          Impl& impl) mutable {
-        if (impl.error_) {
-          callback(impl.error_);
-          return;
-        }
 
-        TP_VLOG(4) << "Channel " << impl.id_
-                   << " is copying buffer from CPU to CUDA device";
-        TP_CUDA_CHECK(cudaMemcpyAsync(
-            buffer.ptr,
-            tmpBuffer.get(),
-            buffer.length,
-            cudaMemcpyHostToDevice,
-            buffer.stream));
+  cpuChannel_->recv(
+      std::move(descriptor),
+      cpuBuffer,
+      eagerCallbackWrapper_(
+          [buffer,
+           tmpBuffer{std::move(tmpBuffer)},
+           callback{std::move(callback)}](Impl& impl) mutable {
+            impl.onCpuChannelRecv(
+                buffer, std::move(tmpBuffer), std::move(callback));
+          }));
+}
 
-        callback(Error::kSuccess);
+void Channel::Impl::onCpuChannelRecv(
+    CudaBuffer buffer,
+    CudaPinnedBuffer tmpBuffer,
+    TRecvCallback callback) {
+  if (error_) {
+    callback(error_);
+    return;
+  }
 
-        // Keep tmpBuffer alive until cudaMemcpyAsync is done.
-        impl.cudaLoop_->addCallback(
-            buffer.stream,
-            [channelId{impl.id_},
-             tmpBuffer{std::move(tmpBuffer)}](cudaError_t cudaError) {
-              TP_VLOG(4) << "Channel " << channelId
-                         << " is done copying buffer from CPU to CUDA device";
-              TP_CUDA_CHECK(cudaError);
-            });
-      });
+  TP_VLOG(4) << "Channel " << id_
+             << " is copying buffer from CPU to CUDA device";
+  TP_CUDA_CHECK(cudaMemcpyAsync(
+      buffer.ptr,
+      tmpBuffer.get(),
+      buffer.length,
+      cudaMemcpyHostToDevice,
+      buffer.stream));
 
-  cpuChannel_->recv(std::move(descriptor), cpuBuffer, std::move(callback));
+  callback(Error::kSuccess);
+
+  // Keep tmpBuffer alive until cudaMemcpyAsync is done.
+  cudaLoop_.addCallback(
+      cudaDeviceForPointer(buffer.ptr),
+      buffer.stream,
+      eagerCallbackWrapper_(
+          [tmpBuffer{std::move(tmpBuffer)}](Impl& impl) mutable {
+            TP_VLOG(4) << "Channel " << impl.id_
+                       << " is done copying buffer from CPU to CUDA device";
+          }));
 }
 
 void Channel::setId(std::string id) {

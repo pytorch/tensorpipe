@@ -8,6 +8,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <condition_variable>
 #include <deque>
 #include <functional>
@@ -17,14 +18,14 @@
 
 #include <cuda_runtime.h>
 
+#include <tensorpipe/common/error_macros.h>
+
 namespace tensorpipe {
 
 class CudaLoop {
-  using TCudaCallback = std::function<void(cudaError_t)>;
-
   struct Operation {
-    TCudaCallback callback;
-    cudaError_t error;
+    std::function<void(const Error&)> callback;
+    Error error;
   };
 
  public:
@@ -32,23 +33,31 @@ class CudaLoop {
 
   ~CudaLoop();
 
-  // TODO: device parameter?
-  void addCallback(cudaStream_t stream, TCudaCallback callback);
+  void join();
+  void close();
+
+  void addCallback(
+      int device,
+      cudaStream_t stream,
+      std::function<void(const Error&)> callback);
 
  private:
   std::thread thread_;
-  std::list<TCudaCallback> cudaCallbacks_;
   std::deque<Operation> operations_;
   std::mutex mutex_;
   std::condition_variable cv_;
-  uint64_t pendingOperations_ = 0;
-  bool joined_ = false;
+  uint64_t pendingOperations_{0};
+
+  bool closed_{false};
+  std::atomic<bool> joined_{false};
+
+  void processCallbacks();
 
   // Proxy static method for cudaStreamAddCallback(), which does not accept
   // lambdas.
   static void CUDART_CB runCudaCallback(
-      cudaStream_t /* unused */,
-      cudaError_t error,
+      cudaStream_t stream,
+      cudaError_t cudaError,
       void* callbackPtr);
 };
 

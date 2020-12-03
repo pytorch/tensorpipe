@@ -33,7 +33,7 @@ class Channel : public channel::CudaChannel {
       ConstructorToken,
       std::shared_ptr<Context::PrivateIface> context,
       std::shared_ptr<CpuChannel> cpuChannel,
-      std::shared_ptr<CudaLoop> cudaLoop,
+      CudaLoop& cudaLoop,
       std::string id);
 
   // Send memory region to peer.
