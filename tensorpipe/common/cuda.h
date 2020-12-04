@@ -8,14 +8,34 @@
 
 #pragma once
 
+#include <memory>
+
 #include <cuda_runtime.h>
 
 #include <tensorpipe/common/defs.h>
+#include <tensorpipe/common/error.h>
 
-#define TP_CUDA_CHECK(a)                                                      \
-  TP_THROW_ASSERT_IF(cudaSuccess != (a))                                      \
-      << __TP_EXPAND_OPD(a) << " " << cudaGetErrorName(cudaPeekAtLastError()) \
-      << " (" << cudaGetErrorString(cudaPeekAtLastError()) << ")"
+#define TP_CUDA_CHECK(a)                                                \
+  do {                                                                  \
+    cudaError_t error = (a);                                            \
+    TP_THROW_ASSERT_IF(cudaSuccess != error)                            \
+        << __TP_EXPAND_OPD(a) << " " << cudaGetErrorName(error) << " (" \
+        << cudaGetErrorString(error) << ")";                            \
+  } while (false)
+
+namespace tensorpipe {
+
+class CudaError final : public BaseError {
+ public:
+  explicit CudaError(cudaError_t error) : error_(error) {}
+
+  std::string what() const override {
+    return std::string(cudaGetErrorString(error_));
+  }
+
+ private:
+  cudaError_t error_;
+};
 
 class CudaEvent {
  public:
@@ -66,3 +86,15 @@ inline int cudaDeviceForPointer(const void* ptr) {
 #endif
   return attrs.device;
 }
+
+using CudaPinnedBuffer = std::shared_ptr<uint8_t>;
+
+inline CudaPinnedBuffer makeCudaPinnedBuffer(size_t length) {
+  void* ptr;
+  TP_CUDA_CHECK(cudaMallocHost(&ptr, length));
+  return CudaPinnedBuffer(reinterpret_cast<uint8_t*>(ptr), [](uint8_t* ptr) {
+    TP_CUDA_CHECK(cudaFreeHost(ptr));
+  });
+}
+
+} // namespace tensorpipe
