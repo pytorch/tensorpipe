@@ -27,6 +27,41 @@
 
 namespace tensorpipe {
 
+namespace {
+
+#ifdef __APPLE__
+optional<std::string> _getBootIDInternal() {
+  std::array<char, 128> buf;
+
+  // See https://developer.apple.com/documentation/iokit/iokitlib_h for IOKitLib
+  // API documentation.
+  io_registry_entry_t ioRegistryRoot =
+      IORegistryEntryFromPath(kIOMasterPortDefault, "IOService:/");
+  CFStringRef uuidCf = (CFStringRef)IORegistryEntryCreateCFProperty(
+      ioRegistryRoot, CFSTR(kIOPlatformUUIDKey), kCFAllocatorDefault, 0);
+  IOObjectRelease(ioRegistryRoot);
+  CFStringGetCString(uuidCf, buf.data(), buf.size(), kCFStringEncodingMacRoman);
+  CFRelease(uuidCf);
+
+  return std::string(buf.data());
+}
+
+#elif defined(__linux__)
+optional<std::string> getBootIDInternal() {
+  std::ifstream f{"/proc/sys/kernel/random/boot_id"};
+  if (!f.is_open()) {
+    return nullopt;
+  }
+  std::string v;
+  getline(f, v);
+  f.close();
+  return v;
+}
+
+#endif
+
+} // namespace
+
 std::string tstampToStr(TimeStamp ts) {
   if (ts == kInvalidTimeStamp) {
     return "NA";
@@ -39,9 +74,9 @@ std::string tstampToStr(TimeStamp ts) {
   return ss.str();
 }
 
-optional<std::string> getProcFsStr(const std::string& file_name, pid_t tid) {
+optional<std::string> getProcFsStr(const std::string& fileName, pid_t tid) {
   std::ostringstream oss;
-  oss << "/proc/" << tid << "/" << file_name;
+  oss << "/proc/" << tid << "/" << fileName;
   std::ifstream f{oss.str()};
   if (!f.is_open()) {
     return nullopt;
@@ -61,39 +96,8 @@ std::string removeBlankSpaces(std::string s) {
   return s;
 }
 
-#ifdef __APPLE__
-optional<std::string> _getBootID() {
-  std::array<char, 128> buf;
-
-  // See https://developer.apple.com/documentation/iokit/iokitlib_h for IOKitLib
-  // API documentation.
-  io_registry_entry_t ioRegistryRoot =
-      IORegistryEntryFromPath(kIOMasterPortDefault, "IOService:/");
-  CFStringRef uuidCf = (CFStringRef)IORegistryEntryCreateCFProperty(
-      ioRegistryRoot, CFSTR(kIOPlatformUUIDKey), kCFAllocatorDefault, 0);
-  IOObjectRelease(ioRegistryRoot);
-  CFStringGetCString(uuidCf, buf.data(), buf.size(), kCFStringEncodingMacRoman);
-  CFRelease(uuidCf);
-
-  return std::string(buf.data());
-}
-
-#elif defined(__linux__)
-optional<std::string> _getBootID() {
-  std::ifstream f{"/proc/sys/kernel/random/boot_id"};
-  if (!f.is_open()) {
-    return nullopt;
-  }
-  std::string v;
-  getline(f, v);
-  f.close();
-  return v;
-}
-
-#endif
-
 optional<std::string> getBootID() {
-  static optional<std::string> bootID = _getBootID();
+  static optional<std::string> bootID = getBootIDInternal();
   return bootID;
 }
 

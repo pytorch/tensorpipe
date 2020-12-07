@@ -30,7 +30,7 @@ CHANNEL_TEST_GENERIC(DomainDescriptor);
 template <typename TBuffer>
 class ClientToServerTest : public ClientServerChannelTestCase<TBuffer> {
  public:
-  static constexpr int dataSize = 256;
+  static constexpr int kDataSize = 256;
 
   void server(std::shared_ptr<transport::Connection> conn) override {
     std::shared_ptr<Context<TBuffer>> ctx =
@@ -38,7 +38,7 @@ class ClientToServerTest : public ClientServerChannelTestCase<TBuffer> {
     auto channel = ctx->createChannel(std::move(conn), Endpoint::kListen);
 
     // Initialize with sequential values.
-    std::vector<uint8_t> data(dataSize);
+    std::vector<uint8_t> data(kDataSize);
     std::iota(data.begin(), data.end(), 0);
     DataWrapper<TBuffer> wrappedData(data);
 
@@ -66,7 +66,7 @@ class ClientToServerTest : public ClientServerChannelTestCase<TBuffer> {
         this->helper_->makeContext("client");
     auto channel = ctx->createChannel(std::move(conn), Endpoint::kConnect);
 
-    DataWrapper<TBuffer> wrappedData(dataSize);
+    DataWrapper<TBuffer> wrappedData(kDataSize);
 
     // Perform recv and wait for completion.
     auto descriptor = this->peers_->recv(PeerGroup::kClient);
@@ -77,7 +77,7 @@ class ClientToServerTest : public ClientServerChannelTestCase<TBuffer> {
 
     // Validate contents of vector.
     auto unwrappedData = wrappedData.unwrap();
-    for (auto i = 0; i < dataSize; i++) {
+    for (auto i = 0; i < kDataSize; i++) {
       EXPECT_EQ(unwrappedData[i], i);
     }
 
@@ -92,7 +92,7 @@ CHANNEL_TEST_GENERIC(ClientToServer);
 
 template <typename TBuffer>
 class ServerToClientTest : public ClientServerChannelTestCase<TBuffer> {
-  static constexpr int dataSize = 256;
+  static constexpr int kDataSize = 256;
 
  public:
   void server(std::shared_ptr<transport::Connection> conn) override {
@@ -100,7 +100,7 @@ class ServerToClientTest : public ClientServerChannelTestCase<TBuffer> {
         this->helper_->makeContext("server");
     auto channel = ctx->createChannel(std::move(conn), Endpoint::kListen);
 
-    DataWrapper<TBuffer> wrappedData(dataSize);
+    DataWrapper<TBuffer> wrappedData(kDataSize);
 
     // Perform recv and wait for completion.
     auto descriptor = this->peers_->recv(PeerGroup::kServer);
@@ -111,7 +111,7 @@ class ServerToClientTest : public ClientServerChannelTestCase<TBuffer> {
 
     // Validate contents of vector.
     auto unwrappedData = wrappedData.unwrap();
-    for (auto i = 0; i < dataSize; i++) {
+    for (auto i = 0; i < kDataSize; i++) {
       EXPECT_EQ(unwrappedData[i], i);
     }
 
@@ -127,7 +127,7 @@ class ServerToClientTest : public ClientServerChannelTestCase<TBuffer> {
     auto channel = ctx->createChannel(std::move(conn), Endpoint::kConnect);
 
     // Initialize with sequential values.
-    std::vector<uint8_t> data(dataSize);
+    std::vector<uint8_t> data(kDataSize);
     std::iota(data.begin(), data.end(), 0);
     DataWrapper<TBuffer> wrappedData(data);
 
@@ -155,9 +155,8 @@ CHANNEL_TEST_GENERIC(ServerToClient);
 
 template <typename TBuffer>
 class SendMultipleTensorsTest : public ClientServerChannelTestCase<TBuffer> {
-  // TODO: Declaring this static constexpr causes a link error.
-  const int dataSize = 256 * 1024; // 256KB
-  static constexpr int numTensors = 100;
+  static constexpr int kDataSize = 256 * 1024; // 256KB
+  static constexpr int kNumTensors = 100;
 
  public:
   void server(std::shared_ptr<transport::Connection> conn) override {
@@ -166,7 +165,7 @@ class SendMultipleTensorsTest : public ClientServerChannelTestCase<TBuffer> {
     auto channel = ctx->createChannel(std::move(conn), Endpoint::kListen);
 
     // Initialize with sequential values.
-    std::vector<uint8_t> data(dataSize);
+    std::vector<uint8_t> data(kDataSize);
     std::iota(data.begin(), data.end(), 0);
     DataWrapper<TBuffer> wrappedData(data);
 
@@ -174,7 +173,7 @@ class SendMultipleTensorsTest : public ClientServerChannelTestCase<TBuffer> {
     std::vector<std::future<Error>> sendFutures;
 
     // Perform send and wait for completion.
-    for (int i = 0; i < numTensors; i++) {
+    for (int i = 0; i < kNumTensors; i++) {
       std::future<std::tuple<Error, TDescriptor>> descriptorFuture;
       std::future<Error> sendFuture;
       std::tie(descriptorFuture, sendFuture) =
@@ -203,8 +202,8 @@ class SendMultipleTensorsTest : public ClientServerChannelTestCase<TBuffer> {
     auto channel = ctx->createChannel(std::move(conn), Endpoint::kConnect);
 
     std::vector<DataWrapper<TBuffer>> wrappedDataVec;
-    for (int i = 0; i < numTensors; i++) {
-      wrappedDataVec.emplace_back(dataSize);
+    for (int i = 0; i < kNumTensors; i++) {
+      wrappedDataVec.emplace_back(kDataSize);
     }
 
     // Error futures
@@ -225,7 +224,7 @@ class SendMultipleTensorsTest : public ClientServerChannelTestCase<TBuffer> {
     // Validate contents of vector.
     for (auto& wrappedData : wrappedDataVec) {
       auto unwrappedData = wrappedData.unwrap();
-      for (int i = 0; i < dataSize; i++) {
+      for (int i = 0; i < kDataSize; i++) {
         EXPECT_EQ(unwrappedData[i], i % 256);
       }
     }
@@ -241,7 +240,7 @@ CHANNEL_TEST_GENERIC(SendMultipleTensors);
 
 template <typename TBuffer>
 class SendTensorsBothWaysTest : public ClientServerChannelTestCase<TBuffer> {
-  static constexpr int dataSize = 256;
+  static constexpr int kDataSize = 256;
 
   void server(std::shared_ptr<transport::Connection> conn) override {
     std::shared_ptr<Context<TBuffer>> ctx =
@@ -249,12 +248,12 @@ class SendTensorsBothWaysTest : public ClientServerChannelTestCase<TBuffer> {
     auto channel = ctx->createChannel(std::move(conn), Endpoint::kListen);
 
     // Initialize sendBuffer with sequential values.
-    std::vector<uint8_t> sendData(dataSize);
+    std::vector<uint8_t> sendData(kDataSize);
     std::iota(sendData.begin(), sendData.end(), 0);
     DataWrapper<TBuffer> wrappedSendData(sendData);
 
     // Recv buffer.
-    DataWrapper<TBuffer> wrappedRecvData(dataSize);
+    DataWrapper<TBuffer> wrappedRecvData(kDataSize);
 
     std::future<Error> sendFuture;
     std::future<Error> recvFuture;
@@ -286,7 +285,7 @@ class SendTensorsBothWaysTest : public ClientServerChannelTestCase<TBuffer> {
 
     // Verify recvd buffers.
     auto unwrappedData = wrappedRecvData.unwrap();
-    for (int i = 0; i < dataSize; i++) {
+    for (int i = 0; i < kDataSize; i++) {
       EXPECT_EQ(unwrappedData[i], i % 256);
     }
 
@@ -302,12 +301,12 @@ class SendTensorsBothWaysTest : public ClientServerChannelTestCase<TBuffer> {
     auto channel = ctx->createChannel(std::move(conn), Endpoint::kConnect);
 
     // Initialize sendBuffer with sequential values.
-    std::vector<uint8_t> sendData(dataSize);
+    std::vector<uint8_t> sendData(kDataSize);
     std::iota(sendData.begin(), sendData.end(), 0);
     DataWrapper<TBuffer> wrappedSendData(sendData);
 
     // Recv buffer.
-    DataWrapper<TBuffer> wrappedRecvData(dataSize);
+    DataWrapper<TBuffer> wrappedRecvData(kDataSize);
 
     std::future<Error> sendFuture;
     std::future<Error> recvFuture;
@@ -339,7 +338,7 @@ class SendTensorsBothWaysTest : public ClientServerChannelTestCase<TBuffer> {
 
     // Verify recvd buffers.
     auto unwrappedData = wrappedRecvData.unwrap();
-    for (int i = 0; i < dataSize; i++) {
+    for (int i = 0; i < kDataSize; i++) {
       EXPECT_EQ(unwrappedData[i], i % 256);
     }
 
@@ -354,7 +353,9 @@ CHANNEL_TEST_GENERIC(SendTensorsBothWays);
 
 template <typename TBuffer>
 class ContextIsNotJoinedTest : public ClientServerChannelTestCase<TBuffer> {
-  const std::string kReady = "ready";
+  // Because it's static we must define it out-of-line (until C++-17, where we
+  // can mark this inline).
+  static const std::string kReady;
 
  public:
   void server(std::shared_ptr<transport::Connection> conn) override {
@@ -371,5 +372,8 @@ class ContextIsNotJoinedTest : public ClientServerChannelTestCase<TBuffer> {
     context->createChannel(std::move(conn), Endpoint::kConnect);
   }
 };
+
+template <typename TBuffer>
+const std::string ContextIsNotJoinedTest<TBuffer>::kReady = "ready";
 
 CHANNEL_TEST_GENERIC(ContextIsNotJoined);

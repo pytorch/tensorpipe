@@ -108,11 +108,11 @@ Message makeMessage(int numPayloads, int numTensors) {
 }
 
 std::string createUniqueShmAddr() {
-  const ::testing::TestInfo* const test_info =
+  const ::testing::TestInfo* const testInfo =
       ::testing::UnitTest::GetInstance()->current_test_info();
   std::ostringstream ss;
   // Once we upgrade googletest, also use test_info->test_suite_name() here.
-  ss << "shm://tensorpipe_test_" << test_info->name() << "_" << getpid();
+  ss << "shm://tensorpipe_test_" << testInfo->name() << "_" << getpid();
   return ss.str();
 }
 

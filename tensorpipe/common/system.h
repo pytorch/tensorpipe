@@ -32,7 +32,7 @@ std::string tstampToStr(TimeStamp ts);
 
 // std::chronos::duration to TSC.
 template <class TDuration>
-TimeStamp DurationToTimeStamp(TDuration d) {
+TimeStamp durationToTimeStamp(TDuration d) {
   auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(d).count();
   if (ns < 0) {
     TP_THROW_EINVAL() << "Negative time durations are not valid";

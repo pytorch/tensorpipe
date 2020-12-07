@@ -33,11 +33,10 @@ TEST(Segment, SameProducerConsumer_Scalar) {
   {
     // Producer part.
     Segment segment;
-    int* my_int_ptr;
-    std::tie(segment, my_int_ptr) =
-        Segment::create<int>(true, PageType::Default);
-    int& my_int = *my_int_ptr;
-    my_int = 1000;
+    int* myIntPtr;
+    std::tie(segment, myIntPtr) = Segment::create<int>(true, PageType::Default);
+    int& myInt = *myIntPtr;
+    myInt = 1000;
 
     // Duplicate the file descriptor so that the shared memory remains alive
     // when the original fd is closed by the segment's destructor.
@@ -48,27 +47,27 @@ TEST(Segment, SameProducerConsumer_Scalar) {
     // Consumer part.
     // Map file again (to a different address) and consume it.
     Segment segment;
-    int* my_int_ptr;
-    std::tie(segment, my_int_ptr) =
+    int* myIntPtr;
+    std::tie(segment, myIntPtr) =
         Segment::load<int>(std::move(fd), true, PageType::Default);
     EXPECT_EQ(segment.getSize(), sizeof(int));
-    EXPECT_EQ(*my_int_ptr, 1000);
+    EXPECT_EQ(*myIntPtr, 1000);
   }
 };
 
 TEST(SegmentManager, SingleProducer_SingleConsumer_Array) {
-  size_t num_floats = 330000;
+  size_t numFloats = 330000;
 
-  int sock_fds[2];
+  int sockFds[2];
   {
-    int rv = socketpair(AF_UNIX, SOCK_STREAM, 0, sock_fds);
+    int rv = socketpair(AF_UNIX, SOCK_STREAM, 0, sockFds);
     if (rv != 0) {
       TP_THROW_SYSTEM(errno) << "Failed to create socket pair";
     }
   }
 
-  int event_fd = eventfd(0, 0);
-  if (event_fd < 0) {
+  int eventFd = eventfd(0, 0);
+  if (eventFd < 0) {
     TP_THROW_SYSTEM(errno) << "Failed to create event fd";
   }
 
@@ -84,23 +83,23 @@ TEST(SegmentManager, SingleProducer_SingleConsumer_Array) {
       // use huge pages in creation and not in loading. This should only affects
       // TLB overhead.
       Segment segment;
-      float* my_floats;
-      std::tie(segment, my_floats) =
-          Segment::create<float[]>(num_floats, true, PageType::HugeTLB_2MB);
+      float* myFloats;
+      std::tie(segment, myFloats) =
+          Segment::create<float[]>(numFloats, true, PageType::HugeTLB_2MB);
 
-      for (int i = 0; i < num_floats; ++i) {
-        my_floats[i] = i;
+      for (int i = 0; i < numFloats; ++i) {
+        myFloats[i] = i;
       }
 
       {
-        auto err = sendFdsToSocket(sock_fds[0], segment.getFd());
+        auto err = sendFdsToSocket(sockFds[0], segment.getFd());
         if (err) {
           TP_THROW_ASSERT() << err.what();
         }
       }
       {
         uint64_t c;
-        ::read(event_fd, &c, sizeof(uint64_t));
+        ::read(eventFd, &c, sizeof(uint64_t));
       }
     }
     // Child exits. Careful when calling exit() directly, because
@@ -110,28 +109,28 @@ TEST(SegmentManager, SingleProducer_SingleConsumer_Array) {
   }
 
   // parent, the consumer
-  Fd segment_fd;
+  Fd segmentFd;
   {
-    auto err = recvFdsFromSocket(sock_fds[1], segment_fd);
+    auto err = recvFdsFromSocket(sockFds[1], segmentFd);
     if (err) {
       TP_THROW_ASSERT() << err.what();
     }
   }
   Segment segment;
-  float* my_floats;
-  std::tie(segment, my_floats) =
-      Segment::load<float[]>(std::move(segment_fd), false, PageType::Default);
-  EXPECT_EQ(num_floats * sizeof(float), segment.getSize());
-  for (int i = 0; i < num_floats; ++i) {
-    EXPECT_EQ(my_floats[i], i);
+  float* myFloats;
+  std::tie(segment, myFloats) =
+      Segment::load<float[]>(std::move(segmentFd), false, PageType::Default);
+  EXPECT_EQ(numFloats * sizeof(float), segment.getSize());
+  for (int i = 0; i < numFloats; ++i) {
+    EXPECT_EQ(myFloats[i], i);
   }
   {
     uint64_t c = 1;
-    ::write(event_fd, &c, sizeof(uint64_t));
+    ::write(eventFd, &c, sizeof(uint64_t));
   }
-  ::close(event_fd);
-  ::close(sock_fds[0]);
-  ::close(sock_fds[1]);
+  ::close(eventFd);
+  ::close(sockFds[0]);
+  ::close(sockFds[1]);
   // Wait for child to make gtest happy.
   ::wait(nullptr);
 };

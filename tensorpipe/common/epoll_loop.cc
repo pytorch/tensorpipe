@@ -135,7 +135,7 @@ void EpollLoop::loop() {
   // handlers have been unregistered except for the wakeup eventfd one.
   while (!closed_ || hasRegisteredHandlers()) {
     // Use fixed epoll_event capacity for every call.
-    std::vector<struct epoll_event> epollEvents(kCapacity_);
+    std::vector<struct epoll_event> epollEvents(kCapacity);
 
     // Block waiting for something to happen...
     auto nfds =

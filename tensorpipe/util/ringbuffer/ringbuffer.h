@@ -63,8 +63,8 @@ class RingBufferHeader {
   // Implementation uses power of 2 arithmetic to avoid costly modulo.
   // So build the largest RingBuffer with size of the smallest power of 2 >=
   // <byte_size>.
-  explicit RingBufferHeader(uint64_t min_data_byte_size)
-      : kDataPoolByteSize{nextPow2(min_data_byte_size)},
+  explicit RingBufferHeader(uint64_t minDataByteSize)
+      : kDataPoolByteSize{nextPow2(minDataByteSize)},
         kDataModMask{kDataPoolByteSize - 1} {
     // Minimum size where implementation of bit shift arithmetic works.
     TP_DCHECK_GE(kDataPoolByteSize, 2)
@@ -92,19 +92,19 @@ class RingBufferHeader {
   // ending it (no earlier memory access can be moved after it).
 
   [[nodiscard]] bool beginReadTransaction() {
-    return in_read_tx.test_and_set(std::memory_order_acquire);
+    return inReadTx_.test_and_set(std::memory_order_acquire);
   }
 
   [[nodiscard]] bool beginWriteTransaction() {
-    return in_write_tx.test_and_set(std::memory_order_acquire);
+    return inWriteTx_.test_and_set(std::memory_order_acquire);
   }
 
   void endReadTransaction() {
-    in_read_tx.clear(std::memory_order_release);
+    inReadTx_.clear(std::memory_order_release);
   }
 
   void endWriteTransaction() {
-    in_write_tx.clear(std::memory_order_release);
+    inWriteTx_.clear(std::memory_order_release);
   }
 
   // Reading the head and tail is what gives a user of the ringbuffer (either a
@@ -134,9 +134,9 @@ class RingBufferHeader {
 
  protected:
   // Acquired by producers.
-  std::atomic_flag in_write_tx = ATOMIC_FLAG_INIT;
+  std::atomic_flag inWriteTx_ = ATOMIC_FLAG_INIT;
   // Acquired by consumers.
-  std::atomic_flag in_read_tx = ATOMIC_FLAG_INIT;
+  std::atomic_flag inReadTx_ = ATOMIC_FLAG_INIT;
 
   // Written by producers.
   std::atomic<uint64_t> atomicHead_{0};

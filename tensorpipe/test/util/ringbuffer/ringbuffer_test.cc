@@ -153,7 +153,7 @@ TEST(RingBuffer, ReadMultipleElems) {
     EXPECT_EQ(ret, 0);
 
     std::array<uint8_t, 3> r;
-    ret = c.readInTx</*allowPartial=*/false>(r.data(), sizeof(r));
+    ret = c.readInTx</*AllowPartial=*/false>(r.data(), sizeof(r));
     EXPECT_EQ(ret, 3);
     EXPECT_EQ(r[0], 0xAC);
     EXPECT_EQ(r[1], 0xAC);
@@ -169,7 +169,7 @@ TEST(RingBuffer, ReadMultipleElems) {
     EXPECT_EQ(ret, 0);
 
     std::array<uint8_t, 253> r;
-    ret = c.readInTx</*allowPartial=*/false>(r.data(), sizeof(r));
+    ret = c.readInTx</*AllowPartial=*/false>(r.data(), sizeof(r));
     EXPECT_EQ(ret, 253);
     for (int i = 0; i < 253; ++i) {
       EXPECT_EQ(r[i], 0xAC);
@@ -184,7 +184,7 @@ TEST(RingBuffer, ReadMultipleElems) {
     ret = c.startTx();
     EXPECT_EQ(ret, 0);
     uint8_t ch;
-    ret = c.readInTx</*allowPartial=*/false>(&ch, sizeof(ch));
+    ret = c.readInTx</*AllowPartial=*/false>(&ch, sizeof(ch));
     EXPECT_EQ(ret, -ENODATA);
     ret = c.cancelTx();
     EXPECT_EQ(ret, 0);
@@ -293,7 +293,7 @@ TEST(RingBuffer, ReadTxWrappingOneCons) {
     EXPECT_EQ(ret, 0);
 
     uint8_t rch;
-    ret = c1.readInTx</*allowPartial=*/false>(&rch, sizeof(rch));
+    ret = c1.readInTx</*AllowPartial=*/false>(&rch, sizeof(rch));
     EXPECT_EQ(ret, sizeof(uint8_t));
     EXPECT_EQ(rch, ch);
     EXPECT_EQ(rb.getHeader().readHead(), 1);
@@ -329,7 +329,7 @@ TEST(RingBuffer, ReadTxWrappingOneCons) {
     EXPECT_EQ(ret, 0);
 
     uint64_t rn;
-    ret = c1.readInTx</*allowPartial=*/false>(&rn, sizeof(rn));
+    ret = c1.readInTx</*AllowPartial=*/false>(&rn, sizeof(rn));
     EXPECT_EQ(ret, sizeof(uint64_t));
     EXPECT_EQ(rn, n);
     EXPECT_EQ(rb.getHeader().readHead(), 9);
@@ -358,7 +358,7 @@ TEST(RingBuffer, ReadTxWrappingOneCons) {
     EXPECT_EQ(ret, 0);
 
     uint64_t rn;
-    ret = c1.readInTx</*allowPartial=*/false>(&rn, sizeof(rn));
+    ret = c1.readInTx</*AllowPartial=*/false>(&rn, sizeof(rn));
     EXPECT_EQ(ret, sizeof(uint64_t));
     EXPECT_EQ(rn, n);
     EXPECT_EQ(rb.getHeader().readHead(), 17);
@@ -378,7 +378,7 @@ TEST(RingBuffer, ReadTxWrappingOneCons) {
     EXPECT_EQ(ret, 0);
 
     uint64_t rn;
-    ret = c1.readInTx</*allowPartial=*/false>(&rn, sizeof(rn));
+    ret = c1.readInTx</*AllowPartial=*/false>(&rn, sizeof(rn));
     EXPECT_EQ(ret, sizeof(uint64_t));
     EXPECT_EQ(rn, n);
     EXPECT_EQ(rb.getHeader().readHead(), 17);
@@ -441,7 +441,7 @@ TEST(RingBuffer, ReadTxWrapping) {
     EXPECT_EQ(ret, 0);
 
     uint8_t rch;
-    ret = c1.readInTx</*allowPartial=*/false>(&rch, sizeof(rch));
+    ret = c1.readInTx</*AllowPartial=*/false>(&rch, sizeof(rch));
     EXPECT_EQ(ret, sizeof(uint8_t));
     EXPECT_EQ(rch, ch);
     EXPECT_EQ(rb.getHeader().readHead(), 1);
@@ -477,7 +477,7 @@ TEST(RingBuffer, ReadTxWrapping) {
     EXPECT_EQ(ret, 0);
 
     uint64_t rn;
-    ret = c1.readInTx</*allowPartial=*/false>(&rn, sizeof(rn));
+    ret = c1.readInTx</*AllowPartial=*/false>(&rn, sizeof(rn));
     EXPECT_EQ(ret, sizeof(uint64_t));
     EXPECT_EQ(rn, n);
     EXPECT_EQ(rb.getHeader().readHead(), 9);
@@ -513,7 +513,7 @@ TEST(RingBuffer, ReadTxWrapping) {
     EXPECT_EQ(ret, 0);
 
     uint64_t rn;
-    ret = c2.readInTx</*allowPartial=*/false>(&rn, sizeof(rn));
+    ret = c2.readInTx</*AllowPartial=*/false>(&rn, sizeof(rn));
     EXPECT_EQ(ret, sizeof(uint64_t));
     EXPECT_EQ(rn, n);
     EXPECT_EQ(rb.getHeader().readHead(), 17);
@@ -533,7 +533,7 @@ TEST(RingBuffer, ReadTxWrapping) {
     EXPECT_EQ(ret, 0);
 
     uint64_t rn;
-    ret = c1.readInTx</*allowPartial=*/false>(&rn, sizeof(rn));
+    ret = c1.readInTx</*AllowPartial=*/false>(&rn, sizeof(rn));
     EXPECT_EQ(ret, sizeof(uint64_t));
     EXPECT_EQ(rn, n);
     EXPECT_EQ(rb.getHeader().readHead(), 17);
@@ -588,7 +588,7 @@ TEST(RingBuffer, accessContiguousInTx) {
     EXPECT_EQ(ret, 0);
 
     std::array<Consumer::Buffer, 2> buffers;
-    std::tie(ret, buffers) = c.accessContiguousInTx</*allowPartial=*/true>(128);
+    std::tie(ret, buffers) = c.accessContiguousInTx</*AllowPartial=*/true>(128);
     EXPECT_EQ(ret, 1);
     EXPECT_EQ(buffers[0].len, 128);
     for (int i = 0; i < 128; ++i) {
@@ -616,7 +616,7 @@ TEST(RingBuffer, accessContiguousInTx) {
     EXPECT_EQ(ret, 0);
 
     std::array<Consumer::Buffer, 2> buffers;
-    std::tie(ret, buffers) = c.accessContiguousInTx</*allowPartial=*/true>(256);
+    std::tie(ret, buffers) = c.accessContiguousInTx</*AllowPartial=*/true>(256);
     EXPECT_EQ(ret, 2);
     EXPECT_EQ(buffers[0].len, 128);
     for (int i = 0; i < 128; ++i) {
@@ -652,7 +652,7 @@ TEST(RingBuffer, accessContiguousInTx) {
     EXPECT_EQ(ret, 0);
 
     std::array<Consumer::Buffer, 2> buffers;
-    std::tie(ret, buffers) = c.accessContiguousInTx</*allowPartial=*/true>(128);
+    std::tie(ret, buffers) = c.accessContiguousInTx</*AllowPartial=*/true>(128);
     EXPECT_EQ(ret, 1);
     EXPECT_EQ(buffers[0].len, 128);
     for (int i = 0; i < 128; ++i) {
@@ -680,7 +680,7 @@ TEST(RingBuffer, accessContiguousInTx) {
     EXPECT_EQ(ret, 0);
 
     std::array<Consumer::Buffer, 2> buffers;
-    std::tie(ret, buffers) = c.accessContiguousInTx</*allowPartial=*/true>(256);
+    std::tie(ret, buffers) = c.accessContiguousInTx</*AllowPartial=*/true>(256);
     EXPECT_EQ(ret, 1);
     EXPECT_EQ(buffers[0].len, 256);
     for (int i = 0; i < 256; ++i) {
@@ -698,7 +698,7 @@ TEST(RingBuffer, accessContiguousInTx) {
     EXPECT_EQ(ret, 0);
 
     std::array<Consumer::Buffer, 2> buffers;
-    std::tie(ret, buffers) = c.accessContiguousInTx</*allowPartial=*/true>(200);
+    std::tie(ret, buffers) = c.accessContiguousInTx</*AllowPartial=*/true>(200);
     EXPECT_EQ(ret, 0);
     ret = c.commitTx();
     EXPECT_EQ(ret, 0);

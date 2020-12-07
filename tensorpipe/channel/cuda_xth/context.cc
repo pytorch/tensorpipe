@@ -81,7 +81,7 @@ class Context::Impl : public Context::PrivateIface,
   // used for logging and debugging.
   std::atomic<uint64_t> channelCounter_{0};
 
-  void handleCopyRequests_();
+  void handleCopyRequests();
 };
 
 Context::Context() : impl_(std::make_shared<Context::Impl>()) {}

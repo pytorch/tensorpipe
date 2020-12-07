@@ -53,7 +53,7 @@ class Loop final : public EventLoopDeferredExecutor {
 
   // This function is called by the event loop thread whenever
   // we have to run a number of deferred functions.
-  static void uv__async_cb(uv_async_t* handle);
+  static void uvAsyncCb(uv_async_t* handle);
 };
 
 } // namespace uv

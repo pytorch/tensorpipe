@@ -110,7 +110,7 @@ struct Options parseOptions(int argc, char** argv) {
     HELP,
   };
 
-  static struct option long_options[] = {
+  static struct option longOptions[] = {
       {"mode", required_argument, &flag, MODE},
       {"transport", required_argument, &flag, TRANSPORT},
       {"channel", required_argument, &flag, CHANNEL},
@@ -125,7 +125,7 @@ struct Options parseOptions(int argc, char** argv) {
       {nullptr, 0, nullptr, 0}};
 
   while (1) {
-    opt = getopt_long(argc, argv, "", long_options, nullptr);
+    opt = getopt_long(argc, argv, "", longOptions, nullptr);
     if (opt == -1) {
       break;
     }

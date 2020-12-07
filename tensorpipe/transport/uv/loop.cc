@@ -19,7 +19,7 @@ Loop::Loop() {
   int rv;
   rv = uv_loop_init(&loop_);
   TP_THROW_UV_IF(rv < 0, rv);
-  rv = uv_async_init(&loop_, &async_, uv__async_cb);
+  rv = uv_async_init(&loop_, &async_, uvAsyncCb);
   TP_THROW_UV_IF(rv < 0, rv);
   async_.data = this;
 
@@ -71,7 +71,7 @@ void Loop::eventLoop() {
   TP_THROW_UV_IF(rv < 0, rv);
 }
 
-void Loop::uv__async_cb(uv_async_t* handle) {
+void Loop::uvAsyncCb(uv_async_t* handle) {
   auto& loop = *reinterpret_cast<Loop*>(handle->data);
   loop.runDeferredFunctionsFromEventLoop();
 }

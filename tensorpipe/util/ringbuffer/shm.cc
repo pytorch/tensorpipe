@@ -14,53 +14,53 @@ namespace ringbuffer {
 namespace shm {
 
 std::tuple<util::shm::Segment, util::shm::Segment, RingBuffer> create(
-    size_t min_rb_byte_size,
-    optional<util::shm::PageType> data_page_type,
-    bool perm_write) {
-  util::shm::Segment header_segment;
+    size_t minRbByteSize,
+    optional<util::shm::PageType> dataPageType,
+    bool permWrite) {
+  util::shm::Segment headerSegment;
   RingBufferHeader* header;
-  std::tie(header_segment, header) =
+  std::tie(headerSegment, header) =
       util::shm::Segment::create<RingBufferHeader>(
-          perm_write, util::shm::PageType::Default, min_rb_byte_size);
+          permWrite, util::shm::PageType::Default, minRbByteSize);
 
-  util::shm::Segment data_segment;
+  util::shm::Segment dataSegment;
   uint8_t* data;
-  std::tie(data_segment, data) = util::shm::Segment::create<uint8_t[]>(
-      header->kDataPoolByteSize, perm_write, data_page_type);
+  std::tie(dataSegment, data) = util::shm::Segment::create<uint8_t[]>(
+      header->kDataPoolByteSize, permWrite, dataPageType);
 
   // Note: cannot use implicit construction from initializer list on GCC 5.5:
   // "converting to XYZ from initializer list would use explicit constructor".
   return std::make_tuple(
-      std::move(header_segment),
-      std::move(data_segment),
+      std::move(headerSegment),
+      std::move(dataSegment),
       RingBuffer(header, data));
 }
 
 std::tuple<util::shm::Segment, util::shm::Segment, RingBuffer> load(
-    Fd header_fd,
-    Fd data_fd,
-    optional<util::shm::PageType> data_page_type,
-    bool perm_write) {
-  util::shm::Segment header_segment;
+    Fd headerFd,
+    Fd dataFd,
+    optional<util::shm::PageType> dataPageType,
+    bool permWrite) {
+  util::shm::Segment headerSegment;
   RingBufferHeader* header;
-  std::tie(header_segment, header) = util::shm::Segment::load<RingBufferHeader>(
-      std::move(header_fd), perm_write, util::shm::PageType::Default);
+  std::tie(headerSegment, header) = util::shm::Segment::load<RingBufferHeader>(
+      std::move(headerFd), permWrite, util::shm::PageType::Default);
   constexpr auto kHeaderSize = sizeof(RingBufferHeader);
-  if (unlikely(kHeaderSize != header_segment.getSize())) {
+  if (unlikely(kHeaderSize != headerSegment.getSize())) {
     TP_THROW_SYSTEM(EPERM) << "Header segment of unexpected size";
   }
 
-  util::shm::Segment data_segment;
+  util::shm::Segment dataSegment;
   uint8_t* data;
-  std::tie(data_segment, data) = util::shm::Segment::load<uint8_t[]>(
-      std::move(data_fd), perm_write, data_page_type);
-  if (unlikely(header->kDataPoolByteSize != data_segment.getSize())) {
+  std::tie(dataSegment, data) = util::shm::Segment::load<uint8_t[]>(
+      std::move(dataFd), permWrite, dataPageType);
+  if (unlikely(header->kDataPoolByteSize != dataSegment.getSize())) {
     TP_THROW_SYSTEM(EPERM) << "Data segment of unexpected size";
   }
 
   return std::make_tuple(
-      std::move(header_segment),
-      std::move(data_segment),
+      std::move(headerSegment),
+      std::move(dataSegment),
       RingBuffer(header, data));
 }
 

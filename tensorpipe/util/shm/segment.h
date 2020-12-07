@@ -41,9 +41,9 @@ class Segment {
  public:
   Segment() = default;
 
-  Segment(size_t byte_size, bool perm_write, optional<PageType> page_type);
+  Segment(size_t byteSize, bool permWrite, optional<PageType> pageType);
 
-  Segment(Fd fd, bool perm_write, optional<PageType> page_type);
+  Segment(Fd fd, bool permWrite, optional<PageType> pageType);
 
   /// Allocate shared memory to contain an object of type T and construct it.
   ///
@@ -55,17 +55,17 @@ class Segment {
       typename... Args,
       std::enable_if_t<!std::is_array<T>::value, int> = 0>
   static std::pair<Segment, T*> create(
-      bool perm_write,
-      optional<PageType> page_type,
+      bool permWrite,
+      optional<PageType> pageType,
       Args&&... args) {
     static_assert(
         std::is_trivially_copyable<T>::value,
         "Shared memory segments are restricted to only store objects that "
         "are trivially copyable (i.e. no pointers and no heap allocation");
 
-    const auto byte_size = sizeof(T);
-    Segment segment(byte_size, perm_write, page_type);
-    TP_DCHECK_EQ(segment.getSize(), byte_size);
+    const auto byteSize = sizeof(T);
+    Segment segment(byteSize, permWrite, pageType);
+    TP_DCHECK_EQ(segment.getSize(), byteSize);
 
     // Initialize in place. Forward T's constructor arguments.
     T* ptr = new (segment.getPtr()) T(std::forward<Args>(args)...);
@@ -83,9 +83,9 @@ class Segment {
       std::enable_if_t<std::is_array<T>::value, int> = 0,
       typename TScalar = typename std::remove_all_extents<T>::type>
   static std::pair<Segment, TScalar*> create(
-      size_t num_elements,
-      bool perm_write,
-      optional<PageType> page_type) {
+      size_t numElements,
+      bool permWrite,
+      optional<PageType> pageType) {
     static_assert(
         std::is_same<TScalar[], T>::value,
         "Only one-dimensional unbounded arrays are supported");
@@ -94,12 +94,12 @@ class Segment {
         "Shared memory segments are restricted to only store objects that "
         "are trivially copyable (i.e. no pointers and no heap allocation");
 
-    size_t byte_size = sizeof(TScalar) * num_elements;
-    Segment segment(byte_size, perm_write, page_type);
-    TP_DCHECK_EQ(segment.getSize(), byte_size);
+    size_t byteSize = sizeof(TScalar) * numElements;
+    Segment segment(byteSize, permWrite, pageType);
+    TP_DCHECK_EQ(segment.getSize(), byteSize);
 
     // Initialize in place.
-    TScalar* ptr = new (segment.getPtr()) TScalar[num_elements]();
+    TScalar* ptr = new (segment.getPtr()) TScalar[numElements]();
     TP_THROW_SYSTEM_IF(ptr != segment.getPtr(), EPERM)
         << "new's address cannot be different from segment.getPtr() "
         << "address. Some aligment assumption was incorrect";
@@ -112,14 +112,14 @@ class Segment {
   template <typename T, std::enable_if_t<!std::is_array<T>::value, int> = 0>
   static std::pair<Segment, T*> load(
       Fd fd,
-      bool perm_write,
-      optional<PageType> page_type) {
+      bool permWrite,
+      optional<PageType> pageType) {
     static_assert(
         std::is_trivially_copyable<T>::value,
         "Shared memory segments are restricted to only store objects that "
         "are trivially copyable (i.e. no pointers and no heap allocation");
 
-    Segment segment(std::move(fd), perm_write, page_type);
+    Segment segment(std::move(fd), permWrite, pageType);
     const size_t size = segment.getSize();
     // XXX: Do some checking other than the size that we are loading
     // the right type.
@@ -141,8 +141,8 @@ class Segment {
       typename TScalar = typename std::remove_all_extents<T>::type>
   static std::pair<Segment, TScalar*> load(
       Fd fd,
-      bool perm_write,
-      optional<PageType> page_type) {
+      bool permWrite,
+      optional<PageType> pageType) {
     static_assert(
         std::is_same<TScalar[], T>::value,
         "Only one-dimensional unbounded arrays are supported");
@@ -151,7 +151,7 @@ class Segment {
         "Shared memory segments are restricted to only store objects that "
         "are trivially copyable (i.e. no pointers and no heap allocation");
 
-    Segment segment(std::move(fd), perm_write, page_type);
+    Segment segment(std::move(fd), permWrite, pageType);
     auto ptr = static_cast<TScalar*>(segment.getPtr());
 
     return {std::move(segment), ptr};

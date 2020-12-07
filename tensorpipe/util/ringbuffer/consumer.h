@@ -60,7 +60,7 @@ class Consumer {
       return -EAGAIN;
     }
     inTx_ = true;
-    TP_DCHECK_EQ(tx_size_, 0);
+    TP_DCHECK_EQ(txSize_, 0);
     return 0;
   }
 
@@ -68,8 +68,8 @@ class Consumer {
     if (unlikely(!inTx())) {
       return -EINVAL;
     }
-    header_.incTail(tx_size_);
-    tx_size_ = 0;
+    header_.incTail(txSize_);
+    txSize_ = 0;
     inTx_ = false;
     header_.endReadTransaction();
     return 0;
@@ -79,8 +79,8 @@ class Consumer {
     if (unlikely(!inTx())) {
       return -EINVAL;
     }
-    tx_size_ = 0;
-    // <in_read_tx> flags that we are in a transaction,
+    txSize_ = 0;
+    // <inReadTx_> flags that we are in a transaction,
     // so enforce no stores pass it.
     inTx_ = false;
     header_.endReadTransaction();
@@ -96,8 +96,8 @@ class Consumer {
   // elements of the array are valid (0, 1 or 2). The elements are ptr+len pairs
   // of contiguous areas of the ringbuffer that, chained together, represent a
   // slice of the requested size (or less if not enough data is available, and
-  // allowPartial is set to true).
-  template <bool allowPartial>
+  // AllowPartial is set to true).
+  template <bool AllowPartial>
   [[nodiscard]] std::pair<ssize_t, std::array<Buffer, 2>> accessContiguousInTx(
       size_t size) noexcept {
     std::array<Buffer, 2> result;
@@ -114,10 +114,10 @@ class Consumer {
     const uint64_t tail = header_.readTail();
     TP_DCHECK_LE(head - tail, header_.kDataPoolByteSize);
 
-    const size_t avail = head - tail - tx_size_;
+    const size_t avail = head - tail - txSize_;
     TP_DCHECK_GE(avail, 0);
 
-    if (!allowPartial && avail < size) {
+    if (!AllowPartial && avail < size) {
       return {-ENODATA, result};
     }
 
@@ -127,10 +127,10 @@ class Consumer {
 
     size = std::min(size, avail);
 
-    const uint64_t start = (tail + tx_size_) & header_.kDataModMask;
+    const uint64_t start = (tail + txSize_) & header_.kDataModMask;
     const uint64_t end = (start + size) & header_.kDataModMask;
 
-    tx_size_ += size;
+    txSize_ += size;
 
     // end == 0 is the same as end == bufferSize, in which case it doesn't wrap.
     const bool wrap = (start >= end && end > 0);
@@ -146,12 +146,12 @@ class Consumer {
   }
 
   // Copy data from the ringbuffer into the provided buffer, up to the given
-  // size (only copy less data if allowPartial is set to true).
-  template <bool allowPartial>
+  // size (only copy less data if AllowPartial is set to true).
+  template <bool AllowPartial>
   [[nodiscard]] ssize_t readInTx(void* buffer, const size_t size) noexcept {
     ssize_t numBuffers;
     std::array<Buffer, 2> buffers;
-    std::tie(numBuffers, buffers) = accessContiguousInTx<allowPartial>(size);
+    std::tie(numBuffers, buffers) = accessContiguousInTx<AllowPartial>(size);
 
     if (unlikely(numBuffers < 0)) {
       return numBuffers;
@@ -189,7 +189,7 @@ class Consumer {
       return ret;
     }
 
-    ret = readInTx</*allowPartial=*/false>(buffer, size);
+    ret = readInTx</*AllowPartial=*/false>(buffer, size);
     if (0 > ret) {
       auto r = cancelTx();
       TP_DCHECK_EQ(r, 0);
@@ -206,7 +206,7 @@ class Consumer {
  private:
   RingBufferHeader& header_;
   const uint8_t* const data_;
-  unsigned tx_size_ = 0;
+  unsigned txSize_ = 0;
   bool inTx_{false};
 };
 

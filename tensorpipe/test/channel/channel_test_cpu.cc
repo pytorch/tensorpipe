@@ -121,7 +121,7 @@ CHANNEL_TEST(CpuChannelTestSuite, EmptyTensor);
 // correlated one: that the recv callback isn't called inline from within the
 // recv method. We do so by having that behavior cause a deadlock.
 class CallbacksAreDeferredTest : public ClientServerChannelTestCase<CpuBuffer> {
-  static constexpr auto dataSize = 256;
+  static constexpr auto kDataSize = 256;
 
  public:
   void server(std::shared_ptr<transport::Connection> conn) override {
@@ -129,7 +129,7 @@ class CallbacksAreDeferredTest : public ClientServerChannelTestCase<CpuBuffer> {
     auto channel = ctx->createChannel(std::move(conn), Endpoint::kListen);
 
     // Initialize with sequential values.
-    std::vector<uint8_t> data(dataSize);
+    std::vector<uint8_t> data(kDataSize);
     std::iota(data.begin(), data.end(), 0);
 
     // Perform send and wait for completion.
@@ -138,7 +138,7 @@ class CallbacksAreDeferredTest : public ClientServerChannelTestCase<CpuBuffer> {
     std::mutex mutex;
     std::unique_lock<std::mutex> callerLock(mutex);
     channel->send(
-        CpuBuffer{data.data(), dataSize},
+        CpuBuffer{data.data(), kDataSize},
         [&descriptorPromise](const Error& error, TDescriptor descriptor) {
           descriptorPromise.set_value(
               std::make_tuple(error, std::move(descriptor)));
@@ -168,7 +168,7 @@ class CallbacksAreDeferredTest : public ClientServerChannelTestCase<CpuBuffer> {
     auto channel = ctx->createChannel(std::move(conn), Endpoint::kConnect);
 
     // Initialize with zeroes.
-    std::vector<uint8_t> data(dataSize);
+    std::vector<uint8_t> data(kDataSize);
     std::fill(data.begin(), data.end(), 0);
 
     // Perform recv and wait for completion.
@@ -178,7 +178,7 @@ class CallbacksAreDeferredTest : public ClientServerChannelTestCase<CpuBuffer> {
     auto descriptor = this->peers_->recv(PeerGroup::kClient);
     channel->recv(
         descriptor,
-        CpuBuffer{data.data(), dataSize},
+        CpuBuffer{data.data(), kDataSize},
         [&recvPromise, &mutex](const Error& error) {
           std::unique_lock<std::mutex> calleeLock(mutex);
           recvPromise.set_value(error);
@@ -188,7 +188,7 @@ class CallbacksAreDeferredTest : public ClientServerChannelTestCase<CpuBuffer> {
     EXPECT_FALSE(recvError) << recvError.what();
 
     // Validate contents of vector.
-    for (auto i = 0; i < dataSize; i++) {
+    for (auto i = 0; i < kDataSize; i++) {
       EXPECT_EQ(data[i], i);
     }
 

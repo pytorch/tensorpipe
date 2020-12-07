@@ -191,7 +191,7 @@ class Sockaddr {
 class Socket final : public Fd {
  public:
   [[nodiscard]] static std::tuple<Error, Socket> createForFamily(
-      sa_family_t ai_family);
+      sa_family_t aiFamily);
 
   Socket() = default;
 

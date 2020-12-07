@@ -29,7 +29,7 @@ namespace uv {
 
 template <typename T, typename U>
 class BaseHandle {
-  static void uv__close_cb(uv_handle_t* handle) {
+  static void uvCloseCb(uv_handle_t* handle) {
     T& ref = *reinterpret_cast<T*>(handle->data);
     if (ref.closeCallback_ != nullptr) {
       ref.closeCallback_();
@@ -63,7 +63,7 @@ class BaseHandle {
 
   void closeFromLoop() {
     TP_DCHECK(!uv_is_closing(reinterpret_cast<uv_handle_t*>(ptr())));
-    uv_close(reinterpret_cast<uv_handle_t*>(ptr()), uv__close_cb);
+    uv_close(reinterpret_cast<uv_handle_t*>(ptr()), uvCloseCb);
   }
 
  protected:
@@ -100,7 +100,7 @@ class BaseRequest {
 };
 
 class WriteRequest final : public BaseRequest<WriteRequest, uv_write_t> {
-  static void uv__write_cb(uv_write_t* req, int status) {
+  static void uvWriteCb(uv_write_t* req, int status) {
     std::unique_ptr<WriteRequest> request(
         reinterpret_cast<WriteRequest*>(req->data));
     request->writeCallback_(status);
@@ -117,7 +117,7 @@ class WriteRequest final : public BaseRequest<WriteRequest, uv_write_t> {
       unsigned int nbufs,
       TWriteCallback fn) {
     auto request = std::make_unique<WriteRequest>(std::move(fn));
-    auto rv = uv_write(request->ptr(), handle, bufs, nbufs, uv__write_cb);
+    auto rv = uv_write(request->ptr(), handle, bufs, nbufs, uvWriteCb);
     request.release();
     return rv;
   }
@@ -128,13 +128,13 @@ class WriteRequest final : public BaseRequest<WriteRequest, uv_write_t> {
 
 template <typename T, typename U>
 class StreamHandle : public BaseHandle<T, U> {
-  static void uv__connection_cb(uv_stream_t* server, int status) {
+  static void uvConnectionCb(uv_stream_t* server, int status) {
     T& ref = *reinterpret_cast<T*>(server->data);
     TP_DCHECK(ref.connectionCallback_ != nullptr);
     ref.connectionCallback_(status);
   }
 
-  static void uv__alloc_cb(
+  static void uvAllocCb(
       uv_handle_t* handle,
       size_t /* unused */,
       uv_buf_t* buf) {
@@ -143,7 +143,7 @@ class StreamHandle : public BaseHandle<T, U> {
     ref.allocCallback_(buf);
   }
 
-  static void uv__read_cb(
+  static void uvReadCb(
       uv_stream_t* server,
       ssize_t nread,
       const uv_buf_t* buf) {
@@ -169,9 +169,7 @@ class StreamHandle : public BaseHandle<T, U> {
     TP_THROW_ASSERT_IF(connectionCallback_ != nullptr);
     connectionCallback_ = std::move(connectionCallback);
     auto rv = uv_listen(
-        reinterpret_cast<uv_stream_t*>(this->ptr()),
-        kBacklog,
-        uv__connection_cb);
+        reinterpret_cast<uv_stream_t*>(this->ptr()), kBacklog, uvConnectionCb);
     TP_THROW_UV_IF(rv < 0, rv);
   }
 
@@ -201,7 +199,7 @@ class StreamHandle : public BaseHandle<T, U> {
     TP_THROW_ASSERT_IF(allocCallback_ == nullptr);
     TP_THROW_ASSERT_IF(readCallback_ == nullptr);
     auto rv = uv_read_start(
-        reinterpret_cast<uv_stream_t*>(this->ptr()), uv__alloc_cb, uv__read_cb);
+        reinterpret_cast<uv_stream_t*>(this->ptr()), uvAllocCb, uvReadCb);
     TP_THROW_UV_IF(rv < 0, rv);
   }
 
@@ -231,7 +229,7 @@ class StreamHandle : public BaseHandle<T, U> {
 };
 
 class ConnectRequest final : public BaseRequest<ConnectRequest, uv_connect_t> {
-  static void uv__connect_cb(uv_connect_t* req, int status) {
+  static void uvConnectCb(uv_connect_t* req, int status) {
     std::unique_ptr<ConnectRequest> request(
         reinterpret_cast<ConnectRequest*>(req->data));
     request->connectCallback_(status);
@@ -248,7 +246,7 @@ class ConnectRequest final : public BaseRequest<ConnectRequest, uv_connect_t> {
       const struct sockaddr* addr,
       TConnectCallback fn) {
     auto request = std::make_unique<ConnectRequest>(std::move(fn));
-    auto rv = uv_tcp_connect(request->ptr(), handle, addr, uv__connect_cb);
+    auto rv = uv_tcp_connect(request->ptr(), handle, addr, uvConnectCb);
     request.release();
     return rv;
   }
@@ -333,8 +331,6 @@ inline std::tuple<int, Addrinfo> getAddrinfoFromLoop(
 }
 
 struct InterfaceAddressesDeleter {
-  int count_{-1};
-
   explicit InterfaceAddressesDeleter(int count) : count_(count) {}
 
   InterfaceAddressesDeleter() = default;
@@ -342,6 +338,9 @@ struct InterfaceAddressesDeleter {
   void operator()(uv_interface_address_t* ptr) const {
     uv_free_interface_addresses(ptr, count_);
   }
+
+ private:
+  int count_{-1};
 };
 
 using InterfaceAddresses =

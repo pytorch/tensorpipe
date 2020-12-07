@@ -143,7 +143,7 @@ size_t RingbufferReadOperation::handleRead(util::ringbuffer::Consumer& inbox) {
 
   if (mode_ == READ_LENGTH) {
     uint32_t length;
-    ret = inbox.readInTx</*allowPartial=*/false>(&length, sizeof(length));
+    ret = inbox.readInTx</*AllowPartial=*/false>(&length, sizeof(length));
     if (likely(ret >= 0)) {
       mode_ = READ_PAYLOAD;
       bytesReadNow += ret;
@@ -165,7 +165,7 @@ size_t RingbufferReadOperation::handleRead(util::ringbuffer::Consumer& inbox) {
     if (nopObject_ != nullptr) {
       ret = readNopObject(inbox);
     } else {
-      ret = inbox.readInTx</*allowPartial=*/true>(
+      ret = inbox.readInTx</*AllowPartial=*/true>(
           reinterpret_cast<uint8_t*>(ptr_) + bytesRead_, len_ - bytesRead_);
     }
     if (likely(ret >= 0)) {
@@ -193,7 +193,7 @@ ssize_t RingbufferReadOperation::readNopObject(
   ssize_t numBuffers;
   std::array<util::ringbuffer::Consumer::Buffer, 2> buffers;
   std::tie(numBuffers, buffers) =
-      inbox.accessContiguousInTx</*allowPartial=*/false>(len_);
+      inbox.accessContiguousInTx</*AllowPartial=*/false>(len_);
   if (unlikely(numBuffers < 0)) {
     return numBuffers;
   }
@@ -238,7 +238,7 @@ size_t RingbufferWriteOperation::handleWrite(
 
   if (mode_ == WRITE_LENGTH) {
     uint32_t length = len_;
-    ret = outbox.writeInTx</*allowPartial=*/false>(&length, sizeof(length));
+    ret = outbox.writeInTx</*AllowPartial=*/false>(&length, sizeof(length));
     if (likely(ret >= 0)) {
       mode_ = WRITE_PAYLOAD;
       bytesWrittenNow += ret;
@@ -251,7 +251,7 @@ size_t RingbufferWriteOperation::handleWrite(
     if (nopObject_ != nullptr) {
       ret = writeNopObject(outbox);
     } else {
-      ret = outbox.writeInTx</*allowPartial=*/true>(
+      ret = outbox.writeInTx</*AllowPartial=*/true>(
           reinterpret_cast<const uint8_t*>(ptr_) + bytesWritten_,
           len_ - bytesWritten_);
     }
@@ -280,7 +280,7 @@ ssize_t RingbufferWriteOperation::writeNopObject(
   ssize_t numBuffers;
   std::array<util::ringbuffer::Producer::Buffer, 2> buffers;
   std::tie(numBuffers, buffers) =
-      outbox.accessContiguousInTx</*allowPartial=*/false>(len_);
+      outbox.accessContiguousInTx</*AllowPartial=*/false>(len_);
   if (unlikely(numBuffers < 0)) {
     return numBuffers;
   }

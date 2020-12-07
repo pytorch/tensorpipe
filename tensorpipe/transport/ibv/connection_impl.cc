@@ -398,11 +398,11 @@ void ConnectionImpl::processWriteOperationsFromLoop() {
 
       // Skip over the data that was already sent but is still in flight.
       std::tie(numBuffers, buffers) =
-          outboxConsumer.accessContiguousInTx</*allowPartial=*/false>(
+          outboxConsumer.accessContiguousInTx</*AllowPartial=*/false>(
               numBytesInFlight_);
 
       std::tie(numBuffers, buffers) =
-          outboxConsumer.accessContiguousInTx</*allowPartial=*/false>(len);
+          outboxConsumer.accessContiguousInTx</*AllowPartial=*/false>(len);
       TP_THROW_SYSTEM_IF(numBuffers < 0, -numBuffers);
 
       for (int bufferIdx = 0; bufferIdx < numBuffers; bufferIdx++) {
@@ -483,13 +483,13 @@ void ConnectionImpl::onAckCompleted() {
   tryCleanup();
 }
 
-void ConnectionImpl::onError(IbvLib::wc_status status, uint64_t wr_id) {
+void ConnectionImpl::onError(IbvLib::wc_status status, uint64_t wrId) {
   TP_DCHECK(context_->inLoop());
   setError(TP_CREATE_ERROR(
       IbvError, context_->getReactor().getIbvLib().wc_status_str(status)));
-  if (wr_id == kWriteRequestId) {
+  if (wrId == kWriteRequestId) {
     onWriteCompleted();
-  } else if (wr_id == kAckRequestId) {
+  } else if (wrId == kAckRequestId) {
     onAckCompleted();
   }
 }

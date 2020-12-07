@@ -27,16 +27,16 @@ using namespace tensorpipe::util::shm;
 
 // Same process produces and consumes share memory through different mappings.
 TEST(ShmRingBuffer, SameProducerConsumer) {
-  Fd header_fd;
-  Fd data_fd;
+  Fd headerFd;
+  Fd dataFd;
   {
     // Producer part.
     // Buffer large enough to fit all data and persistent
     // (needs to be unlinked up manually).
-    Segment header_segment;
-    Segment data_segment;
+    Segment headerSegment;
+    Segment dataSegment;
     RingBuffer rb;
-    std::tie(header_segment, data_segment, rb) = shm::create(256 * 1024);
+    std::tie(headerSegment, dataSegment, rb) = shm::create(256 * 1024);
     Producer prod{rb};
 
     // Producer loop. It all fits in buffer.
@@ -49,18 +49,18 @@ TEST(ShmRingBuffer, SameProducerConsumer) {
 
     // Duplicate the file descriptors so that the shared memory remains alive
     // when the original fds are closed by the segments' destructors.
-    header_fd = Fd(::dup(header_segment.getFd()));
-    data_fd = Fd(::dup(data_segment.getFd()));
+    headerFd = Fd(::dup(headerSegment.getFd()));
+    dataFd = Fd(::dup(dataSegment.getFd()));
   }
 
   {
     // Consumer part.
     // Map file again (to a different address) and consume it.
-    Segment header_segment;
-    Segment data_segment;
+    Segment headerSegment;
+    Segment dataSegment;
     RingBuffer rb;
-    std::tie(header_segment, data_segment, rb) =
-        shm::load(std::move(header_fd), std::move(data_fd));
+    std::tie(headerSegment, dataSegment, rb) =
+        shm::load(std::move(headerFd), std::move(dataFd));
     Consumer cons{rb};
 
     int i = 0;
@@ -75,16 +75,16 @@ TEST(ShmRingBuffer, SameProducerConsumer) {
 };
 
 TEST(ShmRingBuffer, SingleProducer_SingleConsumer) {
-  int sock_fds[2];
+  int sockFds[2];
   {
-    int rv = socketpair(AF_UNIX, SOCK_STREAM, 0, sock_fds);
+    int rv = socketpair(AF_UNIX, SOCK_STREAM, 0, sockFds);
     if (rv != 0) {
       TP_THROW_SYSTEM(errno) << "Failed to create socket pair";
     }
   }
 
-  int event_fd = eventfd(0, 0);
-  if (event_fd < 0) {
+  int eventFd = eventfd(0, 0);
+  if (eventFd < 0) {
     TP_THROW_SYSTEM(errno) << "Failed to create event fd";
   }
 
@@ -97,15 +97,15 @@ TEST(ShmRingBuffer, SingleProducer_SingleConsumer) {
     // child, the producer
     // Make a scope so segments are destroyed even on exit(0).
     {
-      Segment header_segment;
-      Segment data_segment;
+      Segment headerSegment;
+      Segment dataSegment;
       RingBuffer rb;
-      std::tie(header_segment, data_segment, rb) = shm::create(1024);
+      std::tie(headerSegment, dataSegment, rb) = shm::create(1024);
       Producer prod{rb};
 
       {
         auto err = sendFdsToSocket(
-            sock_fds[0], header_segment.getFd(), data_segment.getFd());
+            sockFds[0], headerSegment.getFd(), dataSegment.getFd());
         if (err) {
           TP_THROW_ASSERT() << err.what();
         }
@@ -127,7 +127,7 @@ TEST(ShmRingBuffer, SingleProducer_SingleConsumer) {
 
       {
         uint64_t c;
-        ::read(event_fd, &c, sizeof(uint64_t));
+        ::read(eventFd, &c, sizeof(uint64_t));
       }
     }
     // Child exits. Careful when calling exit() directly, because
@@ -138,19 +138,19 @@ TEST(ShmRingBuffer, SingleProducer_SingleConsumer) {
   // parent, the consumer
 
   // Wait for other process to create buffer.
-  Fd header_fd;
-  Fd data_fd;
+  Fd headerFd;
+  Fd dataFd;
   {
-    auto err = recvFdsFromSocket(sock_fds[1], header_fd, data_fd);
+    auto err = recvFdsFromSocket(sockFds[1], headerFd, dataFd);
     if (err) {
       TP_THROW_ASSERT() << err.what();
     }
   }
-  Segment header_segment;
-  Segment data_segment;
+  Segment headerSegment;
+  Segment dataSegment;
   RingBuffer rb;
-  std::tie(header_segment, data_segment, rb) =
-      shm::load(std::move(header_fd), std::move(data_fd));
+  std::tie(headerSegment, dataSegment, rb) =
+      shm::load(std::move(headerFd), std::move(dataFd));
   Consumer cons{rb};
 
   int i = 0;
@@ -167,11 +167,11 @@ TEST(ShmRingBuffer, SingleProducer_SingleConsumer) {
   }
   {
     uint64_t c = 1;
-    ::write(event_fd, &c, sizeof(uint64_t));
+    ::write(eventFd, &c, sizeof(uint64_t));
   }
-  ::close(event_fd);
-  ::close(sock_fds[0]);
-  ::close(sock_fds[1]);
+  ::close(eventFd);
+  ::close(sockFds[0]);
+  ::close(sockFds[1]);
   // Wait for child to make gtest happy.
   ::wait(nullptr);
 };

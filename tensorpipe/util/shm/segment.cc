@@ -45,13 +45,13 @@ Fd createShmFd() {
 // XXX: Lots of memory could be wasted if size is slightly larger than
 // page size, handle that case.
 constexpr PageType getDefaultPageType(uint64_t size) {
-  constexpr uint64_t MB = 1024ull * 1024ull;
-  constexpr uint64_t GB = 1024ull * MB;
+  constexpr uint64_t mb = 1024ull * 1024ull;
+  constexpr uint64_t gb = 1024ull * mb;
 
-  if (size >= (15ul * GB) / 16ul) {
+  if (size >= (15ul * gb) / 16ul) {
     // At least 15/16 of a 1GB page (at most 64 MB wasted).
     return PageType::HugeTLB_1GB;
-  } else if (size >= ((2ul * MB) * 3ul) / 4ul) {
+  } else if (size >= ((2ul * mb) * 3ul) / 4ul) {
     // At least 3/4 of a 2MB page (at most 512 KB wasteds)
     return PageType::HugeTLB_2MB;
   } else {
@@ -62,9 +62,9 @@ constexpr PageType getDefaultPageType(uint64_t size) {
 
 MmappedPtr mmapShmFd(
     int fd,
-    size_t byte_size,
-    bool perm_write,
-    optional<PageType> page_type) {
+    size_t byteSize,
+    bool permWrite,
+    optional<PageType> pageType) {
 #ifdef MAP_SHARED_VALIDATE
   int flags = MAP_SHARED | MAP_SHARED_VALIDATE;
 #else
@@ -79,7 +79,7 @@ update to obtain the latest correctness checks."
   // point on allowing read protection to be specified.
   // Currently no handling PROT_EXEC because there is no use case for it.
   int prot = PROT_READ;
-  if (perm_write) {
+  if (permWrite) {
     prot |= PROT_WRITE;
   }
 
@@ -98,35 +98,32 @@ update to obtain the latest correctness checks."
   //     break;
   // }
 
-  return MmappedPtr(byte_size, prot, flags, fd);
+  return MmappedPtr(byteSize, prot, flags, fd);
 }
 
 } // namespace
 
-Segment::Segment(
-    size_t byte_size,
-    bool perm_write,
-    optional<PageType> page_type)
+Segment::Segment(size_t byteSize, bool permWrite, optional<PageType> pageType)
     : fd_(createShmFd()) {
   // grow size to contain byte_size bytes.
-  off_t len = static_cast<off_t>(byte_size);
+  off_t len = static_cast<off_t>(byteSize);
   int ret = ::fallocate(fd_.fd(), 0, 0, len);
   TP_THROW_SYSTEM_IF(ret == -1, errno)
-      << "Error while allocating " << byte_size << " bytes in shared memory";
+      << "Error while allocating " << byteSize << " bytes in shared memory";
 
-  ptr_ = mmapShmFd(fd_.fd(), byte_size, perm_write, page_type);
+  ptr_ = mmapShmFd(fd_.fd(), byteSize, permWrite, pageType);
 }
 
-Segment::Segment(Fd fd, bool perm_write, optional<PageType> page_type)
+Segment::Segment(Fd fd, bool permWrite, optional<PageType> pageType)
     : fd_(std::move(fd)) {
   // Load whole file. Use fstat to obtain size.
   struct stat sb;
   int ret = ::fstat(fd_.fd(), &sb);
   TP_THROW_SYSTEM_IF(ret == -1, errno)
       << "Error while fstat shared memory file";
-  size_t byte_size = static_cast<size_t>(sb.st_size);
+  size_t byteSize = static_cast<size_t>(sb.st_size);
 
-  ptr_ = mmapShmFd(fd_.fd(), byte_size, perm_write, page_type);
+  ptr_ = mmapShmFd(fd_.fd(), byteSize, permWrite, pageType);
 }
 
 } // namespace shm

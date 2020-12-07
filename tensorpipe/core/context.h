@@ -22,13 +22,12 @@
 
 namespace tensorpipe {
 
+class Context;
 class Listener;
 class Pipe;
 
 class ContextOptions {
  public:
-  std::string name_;
-
   // The name should be a semantically meaningful description of this context.
   // It will only be used for logging and debugging purposes, to identify the
   // endpoints of a pipe.
@@ -36,12 +35,17 @@ class ContextOptions {
     name_ = std::move(name);
     return std::move(*this);
   }
+
+ private:
+  std::string name_;
+
+  friend Context;
+  friend Listener;
+  friend Pipe;
 };
 
 class PipeOptions {
  public:
-  std::string remoteName_;
-
   // The name should be a semantically meaningful description of the context
   // that the pipe is connecting to. It will only be used for logging and
   // debugging purposes, to identify the endpoints of a pipe.
@@ -49,6 +53,13 @@ class PipeOptions {
     remoteName_ = std::move(remoteName);
     return std::move(*this);
   }
+
+ private:
+  std::string remoteName_;
+
+  friend Context;
+  friend Listener;
+  friend Pipe;
 };
 
 class Context final {

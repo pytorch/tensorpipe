@@ -31,15 +31,15 @@ namespace shm {
 /// of a RingBuffer (or each CPU's RingBuffer).
 ///
 std::tuple<util::shm::Segment, util::shm::Segment, RingBuffer> create(
-    size_t min_rb_byte_size,
-    optional<util::shm::PageType> data_page_type = nullopt,
-    bool perm_write = true);
+    size_t minRbByteSize,
+    optional<util::shm::PageType> dataPageType = nullopt,
+    bool permWrite = true);
 
 std::tuple<util::shm::Segment, util::shm::Segment, RingBuffer> load(
-    Fd header_fd,
-    Fd data_fd,
-    optional<util::shm::PageType> data_page_type = nullopt,
-    bool perm_write = true);
+    Fd headerFd,
+    Fd dataFd,
+    optional<util::shm::PageType> dataPageType = nullopt,
+    bool permWrite = true);
 
 } // namespace shm
 } // namespace ringbuffer

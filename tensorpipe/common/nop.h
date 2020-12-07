@@ -58,6 +58,7 @@ class NopReader final {
   NopReader(const uint8_t* ptr1, size_t len1, const uint8_t* ptr2, size_t len2)
       : ptr1_(ptr1), len1_(len1), ptr2_(ptr2), len2_(len2) {}
 
+  // NOLINTNEXTLINE(readability-identifier-naming)
   nop::Status<void> Ensure(size_t size) {
     if (likely(size <= len1_ + len2_)) {
       return nop::ErrorStatus::None;
@@ -66,6 +67,7 @@ class NopReader final {
     }
   }
 
+  // NOLINTNEXTLINE(readability-identifier-naming)
   nop::Status<void> Read(uint8_t* byte) {
     if (unlikely(len1_ == 0)) {
       ptr1_ = ptr2_;
@@ -80,6 +82,7 @@ class NopReader final {
     return nop::ErrorStatus::None;
   }
 
+  // NOLINTNEXTLINE(readability-identifier-naming)
   nop::Status<void> Read(void* begin, void* end) {
     size_t size =
         reinterpret_cast<uint8_t*>(end) - reinterpret_cast<uint8_t*>(begin);
@@ -100,17 +103,18 @@ class NopReader final {
     return nop::ErrorStatus::None;
   }
 
-  nop::Status<void> Skip(size_t padding_bytes) {
-    if (unlikely(len1_ < padding_bytes)) {
-      padding_bytes -= len1_;
+  // NOLINTNEXTLINE(readability-identifier-naming)
+  nop::Status<void> Skip(size_t paddingBytes) {
+    if (unlikely(len1_ < paddingBytes)) {
+      paddingBytes -= len1_;
       ptr1_ = ptr2_;
       len1_ = len2_;
       ptr2_ = nullptr;
       len2_ = 0;
     }
 
-    ptr1_ += padding_bytes;
-    len1_ -= padding_bytes;
+    ptr1_ += paddingBytes;
+    len1_ -= paddingBytes;
     return nop::ErrorStatus::None;
   }
 
@@ -127,6 +131,7 @@ class NopWriter final {
   NopWriter(uint8_t* ptr1, size_t len1, uint8_t* ptr2, size_t len2)
       : ptr1_(ptr1), len1_(len1), ptr2_(ptr2), len2_(len2) {}
 
+  // NOLINTNEXTLINE(readability-identifier-naming)
   nop::Status<void> Prepare(size_t size) {
     if (likely(size <= len1_ + len2_)) {
       return nop::ErrorStatus::None;
@@ -135,6 +140,7 @@ class NopWriter final {
     }
   }
 
+  // NOLINTNEXTLINE(readability-identifier-naming)
   nop::Status<void> Write(uint8_t byte) {
     if (unlikely(len1_ == 0)) {
       ptr1_ = ptr2_;
@@ -149,6 +155,7 @@ class NopWriter final {
     return nop::ErrorStatus::None;
   }
 
+  // NOLINTNEXTLINE(readability-identifier-naming)
   nop::Status<void> Write(const void* begin, const void* end) {
     size_t size = reinterpret_cast<const uint8_t*>(end) -
         reinterpret_cast<const uint8_t*>(begin);
@@ -169,19 +176,20 @@ class NopWriter final {
     return nop::ErrorStatus::None;
   }
 
-  nop::Status<void> Skip(size_t padding_bytes, uint8_t padding_value) {
-    if (unlikely(len1_ < padding_bytes)) {
-      std::memset(ptr1_, padding_value, padding_bytes);
-      padding_bytes -= len1_;
+  // NOLINTNEXTLINE(readability-identifier-naming)
+  nop::Status<void> Skip(size_t paddingBytes, uint8_t paddingValue) {
+    if (unlikely(len1_ < paddingBytes)) {
+      std::memset(ptr1_, paddingValue, paddingBytes);
+      paddingBytes -= len1_;
       ptr1_ = ptr2_;
       len1_ = len2_;
       ptr2_ = nullptr;
       len2_ = 0;
     }
 
-    std::memset(ptr1_, padding_value, padding_bytes);
-    ptr1_ += padding_bytes;
-    len1_ -= padding_bytes;
+    std::memset(ptr1_, paddingValue, paddingBytes);
+    ptr1_ += paddingBytes;
+    len1_ -= paddingBytes;
     return nop::ErrorStatus::None;
   }
 

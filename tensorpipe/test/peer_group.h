@@ -38,7 +38,7 @@ class PeerGroup {
 
   // Signal other peers that this peer is done.
   void done(int selfId) {
-    send(1 - selfId, kDone);
+    send(1 - selfId, doneString_);
     std::unique_lock<std::mutex> lock(m_);
     done_[selfId] = true;
     condVar_[selfId].notify_one();
@@ -46,14 +46,16 @@ class PeerGroup {
 
   // Wait for all peers (including this one) to be done.
   void join(int selfId) {
-    EXPECT_EQ(kDone, recv(selfId));
+    EXPECT_EQ(doneString_, recv(selfId));
 
     std::unique_lock<std::mutex> lock(m_);
     condVar_[selfId].wait(lock, [&] { return done_[selfId]; });
   }
 
  private:
-  const std::string kDone = "done";
+  // This should be static but then we need to define it out-of-line (or mark it
+  // as inline once we can use C++-17).
+  const std::string doneString_ = "done";
   std::mutex m_;
   std::array<bool, kNumPeers> done_{{false, false}};
   std::array<std::condition_variable, kNumPeers> condVar_;
@@ -108,8 +110,8 @@ class ForkedThreadPeerGroup : public ThreadPeerGroup {
       TP_LOG_WARNING() << "Test process terminated with signal "
                        << WTERMSIG(status);
     }
-    const int exit_status = WEXITSTATUS(status);
-    EXPECT_EQ(0, exit_status);
+    const int exitStatus = WEXITSTATUS(status);
+    EXPECT_EQ(0, exitStatus);
   }
 };
 
@@ -189,8 +191,8 @@ class ProcessPeerGroup : public PeerGroup {
         TP_LOG_WARNING() << "Peer process terminated with signal "
                          << WTERMSIG(status);
       }
-      const int exit_status = WEXITSTATUS(status);
-      EXPECT_EQ(0, exit_status);
+      const int exitStatus = WEXITSTATUS(status);
+      EXPECT_EQ(0, exitStatus);
     }
   }
 

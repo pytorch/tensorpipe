@@ -60,9 +60,9 @@ class Registry {
   void registerCreator(
       std::string key,
       Creator creator,
-      const std::string& help_msg) {
+      const std::string& helpMsg) {
     registerCreator(key, creator);
-    help_message_[key] = help_msg;
+    helpMessage_[key] = helpMsg;
   }
 
   // Returns whether a particular key exists in the given registry.
@@ -92,12 +92,12 @@ class Registry {
   // Returns the help_message for the key if one is provided.
   inline const std::unordered_map<std::string, std::string>& helpMessage()
       const {
-    return help_message_;
+    return helpMessage_;
   }
 
   const char* helpMessage(std::string key) const {
-    auto it = help_message_.find(key);
-    if (it == help_message_.end()) {
+    auto it = helpMessage_.find(key);
+    if (it == helpMessage_.end()) {
       return nullptr;
     }
     return it->second.c_str();
@@ -105,7 +105,7 @@ class Registry {
 
  private:
   std::unordered_map<std::string, Creator> registry_;
-  std::unordered_map<std::string, std::string> help_message_;
+  std::unordered_map<std::string, std::string> helpMessage_;
 };
 
 // Registerer is a class template that simplifies Register-ing keys for a given
@@ -117,8 +117,8 @@ class Registerer {
       std::string key,
       Registry<ObjectPtrType, Args...>& registry,
       typename Registry<ObjectPtrType, Args...>::Creator creator,
-      const std::string& help_msg = "") {
-    registry.registerCreator(key, creator, help_msg);
+      const std::string& helpMsg = "") {
+    registry.registerCreator(key, creator, helpMsg);
   }
 };
 

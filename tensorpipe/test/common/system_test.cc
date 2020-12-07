@@ -31,8 +31,8 @@ TEST(Pow2, isPow2) {
 TEST(Pow2, nextPow2) {
   for (uint64_t i = 0; i < 63; ++i) {
     uint64_t p2 = 1ull << i;
-    uint64_t next_p2 = 1ull << (i + 1);
+    uint64_t nextP2 = 1ull << (i + 1);
     EXPECT_EQ(nextPow2(p2), p2);
-    EXPECT_EQ(nextPow2(p2 + 1), next_p2);
+    EXPECT_EQ(nextPow2(p2 + 1), nextP2);
   }
 }

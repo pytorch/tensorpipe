@@ -54,13 +54,13 @@ namespace {
 
 // NOTE: This is an incomplete implementation of C++17's `std::apply`.
 template <typename F, typename T, size_t... I>
-auto cb_apply(F&& f, T&& t, std::index_sequence<I...> /*unused*/) {
+auto cbApply(F&& f, T&& t, std::index_sequence<I...> /*unused*/) {
   return f(std::get<I>(std::forward<T>(t))...);
 }
 
 template <typename F, typename T>
-auto cb_apply(F&& f, T&& t) {
-  return cb_apply(
+auto cbApply(F&& f, T&& t) {
+  return cbApply(
       std::move(f),
       std::forward<T>(t),
       std::make_index_sequence<std::tuple_size<T>::value>{});
@@ -81,7 +81,7 @@ class RearmableCallback {
     if (!args_.empty()) {
       TStoredArgs args{std::move(args_.front())};
       args_.pop_front();
-      cb_apply(std::move(fn), std::move(args));
+      cbApply(std::move(fn), std::move(args));
     } else {
       callbacks_.push_back(std::move(fn));
     }
@@ -91,7 +91,7 @@ class RearmableCallback {
     if (!callbacks_.empty()) {
       TFn fn{std::move(callbacks_.front())};
       callbacks_.pop_front();
-      cb_apply(std::move(fn), std::tuple<Args...>(std::forward<Args>(args)...));
+      cbApply(std::move(fn), std::tuple<Args...>(std::forward<Args>(args)...));
     } else {
       args_.emplace_back(std::forward<Args>(args)...);
     }
@@ -104,7 +104,7 @@ class RearmableCallback {
     while (!callbacks_.empty()) {
       TFn fn{std::move(callbacks_.front())};
       callbacks_.pop_front();
-      cb_apply(std::move(fn), generator());
+      cbApply(std::move(fn), generator());
     }
   }
 

@@ -74,7 +74,7 @@ class ConnectionImpl final : public ConnectionImplBoilerplate<
   void onRemoteConsumedData(uint32_t length) override;
   void onWriteCompleted() override;
   void onAckCompleted() override;
-  void onError(IbvLib::wc_status status, uint64_t wr_id) override;
+  void onError(IbvLib::wc_status status, uint64_t wrId) override;
 
  protected:
   // Implement the entry points called by ConnectionImplBoilerplate.

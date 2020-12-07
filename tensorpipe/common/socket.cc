@@ -22,8 +22,8 @@
 
 namespace tensorpipe {
 
-std::tuple<Error, Socket> Socket::createForFamily(sa_family_t ai_family) {
-  auto rv = socket(ai_family, SOCK_STREAM | SOCK_NONBLOCK, 0);
+std::tuple<Error, Socket> Socket::createForFamily(sa_family_t aiFamily) {
+  auto rv = socket(aiFamily, SOCK_STREAM | SOCK_NONBLOCK, 0);
   if (rv == -1) {
     return std::make_tuple(
         TP_CREATE_ERROR(SystemError, "socket", errno), Socket());

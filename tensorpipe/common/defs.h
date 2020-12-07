@@ -33,9 +33,9 @@ template <class TException>
 class ExceptionThrower final {
  public:
   template <class... TArgs>
-  ExceptionThrower(TArgs&&... non_what) {
-    ex_builder_ = [&](const std::string& what) {
-      return TException(std::move(non_what)..., what);
+  ExceptionThrower(TArgs&&... nonWhat) {
+    exBuilder_ = [&](const std::string& what) {
+      return TException(std::move(nonWhat)..., what);
     };
   }
 
@@ -43,7 +43,7 @@ class ExceptionThrower final {
   // and stream has been written. Use noexcept(false) to inform the compiler
   // that it's ok to throw in destructor.
   ~ExceptionThrower() noexcept(false) {
-    throw ex_builder_(oss_.str() + "\"");
+    throw exBuilder_(oss_.str() + "\"");
   }
 
   std::ostream& getStream() {
@@ -51,7 +51,7 @@ class ExceptionThrower final {
   }
 
  protected:
-  std::function<TException(const std::string&)> ex_builder_;
+  std::function<TException(const std::string&)> exBuilder_;
   std::ostringstream oss_;
 };
 
@@ -241,7 +241,7 @@ class LogEntry final {
 // - level 8 is for generic transports stuff
 // - level 9 is for how transports deal with system resources
 
-inline unsigned long GetTensorPipeVerbosityLevel() {
+inline unsigned long getVerbosityLevelInternal() {
   char* levelStr = std::getenv("TP_VERBOSE_LOGGING");
   if (levelStr == nullptr) {
     return 0;
@@ -249,12 +249,12 @@ inline unsigned long GetTensorPipeVerbosityLevel() {
   return std::strtoul(levelStr, /*str_end=*/nullptr, /*base=*/10);
 }
 
-inline unsigned long TensorPipeVerbosityLevel() {
-  static unsigned long level = GetTensorPipeVerbosityLevel();
+inline unsigned long getVerbosityLevel() {
+  static unsigned long level = getVerbosityLevelInternal();
   return level;
 }
 
-#define TP_VLOG(level) TP_LOG_DEBUG_IF(level <= TensorPipeVerbosityLevel())
+#define TP_VLOG(level) TP_LOG_DEBUG_IF(level <= getVerbosityLevel())
 
 //
 // Argument checks

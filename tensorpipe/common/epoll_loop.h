@@ -70,7 +70,7 @@ class EpollLoop final {
   static std::string formatEpollEvents(uint32_t events);
 
  private:
-  static constexpr auto kCapacity_ = 64;
+  static constexpr auto kCapacity = 64;
 
   // The reactor is used to process events for this loop.
   DeferredExecutor& deferredExecutor_;

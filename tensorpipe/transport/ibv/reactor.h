@@ -40,7 +40,7 @@ class IbvEventHandler {
 
   virtual void onAckCompleted() = 0;
 
-  virtual void onError(IbvLib::wc_status status, uint64_t wr_id) = 0;
+  virtual void onError(IbvLib::wc_status status, uint64_t wrId) = 0;
 
   virtual ~IbvEventHandler() = default;
 };
