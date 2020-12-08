@@ -109,9 +109,6 @@ class ListenerImplBoilerplate : public std::enable_shared_from_this<TList> {
   // A sequence number for the calls to accept.
   uint64_t nextConnectionBeingAccepted_{0};
 
-  // A sequence number for the invocations of the callbacks of accept.
-  uint64_t nextAcceptCallbackToCall_{0};
-
   // Sequence numbers for the connections created by this listener, used to
   // create their identifiers based off this listener's identifier. They will
   // only be used for logging and debugging.
@@ -160,7 +157,6 @@ void ListenerImplBoilerplate<TCtx, TList, TConn>::acceptFromLoop(
 
   fn = [this, sequenceNumber, fn{std::move(fn)}](
            const Error& error, std::shared_ptr<Connection> connection) {
-    TP_DCHECK_EQ(sequenceNumber, nextAcceptCallbackToCall_++);
     TP_VLOG(7) << "Listener " << id_ << " is calling an accept callback (#"
                << sequenceNumber << ")";
     fn(error, std::move(connection));

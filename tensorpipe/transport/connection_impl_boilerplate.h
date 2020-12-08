@@ -131,10 +131,6 @@ class ConnectionImplBoilerplate : public std::enable_shared_from_this<TConn> {
   // A sequence number for the calls to read and write.
   uint64_t nextBufferBeingRead_{0};
   uint64_t nextBufferBeingWritten_{0};
-
-  // A sequence number for the invocations of the callbacks of read and write.
-  uint64_t nextReadCallbackToCall_{0};
-  uint64_t nextWriteCallbackToCall_{0};
 };
 
 template <typename TCtx, typename TList, typename TConn>
@@ -178,7 +174,6 @@ void ConnectionImplBoilerplate<TCtx, TList, TConn>::readFromLoop(
 
   fn = [this, sequenceNumber, fn{std::move(fn)}](
            const Error& error, const void* ptr, size_t length) {
-    TP_DCHECK_EQ(sequenceNumber, nextReadCallbackToCall_++);
     TP_VLOG(7) << "Connection " << id_ << " is calling a read callback (#"
                << sequenceNumber << ")";
     fn(error, ptr, length);
@@ -215,7 +210,6 @@ void ConnectionImplBoilerplate<TCtx, TList, TConn>::readFromLoop(
              << sequenceNumber << ")";
 
   fn = [this, sequenceNumber, fn{std::move(fn)}](const Error& error) {
-    TP_DCHECK_EQ(sequenceNumber, nextReadCallbackToCall_++);
     TP_VLOG(7) << "Connection " << id_
                << " is calling a nop object read callback (#" << sequenceNumber
                << ")";
@@ -275,7 +269,6 @@ void ConnectionImplBoilerplate<TCtx, TList, TConn>::readFromLoop(
 
   fn = [this, sequenceNumber, fn{std::move(fn)}](
            const Error& error, const void* ptr, size_t length) {
-    TP_DCHECK_EQ(sequenceNumber, nextReadCallbackToCall_++);
     TP_VLOG(7) << "Connection " << id_ << " is calling a read callback (#"
                << sequenceNumber << ")";
     fn(error, ptr, length);
@@ -316,7 +309,6 @@ void ConnectionImplBoilerplate<TCtx, TList, TConn>::writeFromLoop(
              << sequenceNumber << ")";
 
   fn = [this, sequenceNumber, fn{std::move(fn)}](const Error& error) {
-    TP_DCHECK_EQ(sequenceNumber, nextWriteCallbackToCall_++);
     TP_VLOG(7) << "Connection " << id_ << " is calling a write callback (#"
                << sequenceNumber << ")";
     fn(error);
@@ -354,7 +346,6 @@ void ConnectionImplBoilerplate<TCtx, TList, TConn>::writeFromLoop(
              << ")";
 
   fn = [this, sequenceNumber, fn{std::move(fn)}](const Error& error) {
-    TP_DCHECK_EQ(sequenceNumber, nextWriteCallbackToCall_++);
     TP_VLOG(7) << "Connection " << id_
                << " is calling a nop object write callback (#" << sequenceNumber
                << ")";
