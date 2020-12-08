@@ -30,7 +30,7 @@ namespace tensorpipe {
 namespace {
 
 #ifdef __APPLE__
-optional<std::string> _getBootIDInternal() {
+optional<std::string> getBootIDInternal() {
   std::array<char, 128> buf;
 
   // See https://developer.apple.com/documentation/iokit/iokitlib_h for IOKitLib
