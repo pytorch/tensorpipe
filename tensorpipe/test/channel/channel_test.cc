@@ -155,7 +155,9 @@ CHANNEL_TEST_GENERIC(ServerToClient);
 
 template <typename TBuffer>
 class SendMultipleTensorsTest : public ClientServerChannelTestCase<TBuffer> {
-  static constexpr int kDataSize = 256 * 1024; // 256KB
+  // FIXME This is very puzzling, as in CircleCI making this field static (and
+  // possibly even constexpr) causes a undefined symbol link error.
+  const int dataSize_ = 256 * 1024; // 256KB
   static constexpr int kNumTensors = 100;
 
  public:
@@ -165,7 +167,7 @@ class SendMultipleTensorsTest : public ClientServerChannelTestCase<TBuffer> {
     auto channel = ctx->createChannel(std::move(conn), Endpoint::kListen);
 
     // Initialize with sequential values.
-    std::vector<uint8_t> data(kDataSize);
+    std::vector<uint8_t> data(dataSize_);
     std::iota(data.begin(), data.end(), 0);
     DataWrapper<TBuffer> wrappedData(data);
 
@@ -203,7 +205,7 @@ class SendMultipleTensorsTest : public ClientServerChannelTestCase<TBuffer> {
 
     std::vector<DataWrapper<TBuffer>> wrappedDataVec;
     for (int i = 0; i < kNumTensors; i++) {
-      wrappedDataVec.emplace_back(kDataSize);
+      wrappedDataVec.emplace_back(dataSize_);
     }
 
     // Error futures
@@ -224,7 +226,7 @@ class SendMultipleTensorsTest : public ClientServerChannelTestCase<TBuffer> {
     // Validate contents of vector.
     for (auto& wrappedData : wrappedDataVec) {
       auto unwrappedData = wrappedData.unwrap();
-      for (int i = 0; i < kDataSize; i++) {
+      for (int i = 0; i < dataSize_; i++) {
         EXPECT_EQ(unwrappedData[i], i % 256);
       }
     }
