@@ -39,6 +39,12 @@ class CudaError final : public BaseError {
 
 class CudaEvent {
  public:
+  CudaEvent() = delete;
+  CudaEvent(const CudaEvent&) = delete;
+  CudaEvent(CudaEvent&&) = delete;
+  CudaEvent& operator=(const CudaEvent&) = delete;
+  CudaEvent& operator=(CudaEvent&&) = delete;
+
   explicit CudaEvent(int device, bool interprocess = false) {
     TP_CUDA_CHECK(cudaSetDevice(device));
     int flags = cudaEventDisableTiming;
@@ -59,6 +65,15 @@ class CudaEvent {
   void wait(cudaStream_t stream, int device) {
     TP_CUDA_CHECK(cudaSetDevice(device));
     TP_CUDA_CHECK(cudaStreamWaitEvent(stream, ev_, 0));
+  }
+
+  bool query() const {
+    cudaError_t res = cudaEventQuery(ev_);
+    if (res == cudaErrorNotReady) {
+      return false;
+    }
+    TP_CUDA_CHECK(res);
+    return true;
   }
 
   std::string serializedHandle() {
