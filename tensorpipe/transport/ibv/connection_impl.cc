@@ -283,7 +283,7 @@ void ConnectionImpl::handleEventInFromLoop() {
         context_->getReactor().getIbvAddress(),
         ex.setupInfo);
     transitionIbvQueuePairToReadyToSend(
-        context_->getReactor().getIbvLib(), qp_, ibvSelfInfo_);
+        context_->getReactor().getIbvLib(), qp_);
 
     peerInboxKey_ = ex.memoryRegionKey;
     peerInboxPtr_ = ex.memoryRegionPtr;
@@ -313,9 +313,8 @@ void ConnectionImpl::handleEventOutFromLoop() {
   TP_DCHECK(context_->inLoop());
   if (state_ == SEND_ADDR) {
     Exchange ex;
-    ibvSelfInfo_ =
+    ex.setupInfo =
         makeIbvSetupInformation(context_->getReactor().getIbvAddress(), qp_);
-    ex.setupInfo = ibvSelfInfo_;
     ex.memoryRegionPtr = reinterpret_cast<uint64_t>(inboxBuf_.ptr());
     ex.memoryRegionKey = inboxMr_->rkey;
 

@@ -59,6 +59,9 @@ class IbvDeviceList {
     deviceList_.reset();
   }
 
+  // FIXME Can we support a "range" API (i.e., a begin() and end() method) so
+  // that this can be used in a for (auto& dev : deviceList) expression?
+
  private:
   struct Deleter {
     void operator()(IbvLib::device** ptr) {
@@ -212,29 +215,26 @@ struct IbvSetupInformation {
 
 struct IbvAddress makeIbvAddress(
     IbvLib& ibvLib,
-    IbvContext& context,
+    const IbvContext& context,
     uint8_t portNum,
     uint8_t globalIdentifierIndex);
 
 struct IbvSetupInformation makeIbvSetupInformation(
-    IbvAddress& addr,
-    IbvQueuePair& qp);
+    const IbvAddress& addr,
+    const IbvQueuePair& qp);
 
 void transitionIbvQueuePairToInit(
     IbvLib& ibvLib,
     IbvQueuePair& qp,
-    IbvAddress& selfAddr);
+    const IbvAddress& selfAddr);
 
 void transitionIbvQueuePairToReadyToReceive(
     IbvLib& ibvLib,
     IbvQueuePair& qp,
-    IbvAddress& selfAddr,
-    IbvSetupInformation& destinationInfo);
+    const IbvAddress& selfAddr,
+    const IbvSetupInformation& destinationInfo);
 
-void transitionIbvQueuePairToReadyToSend(
-    IbvLib& ibvLib,
-    IbvQueuePair& qp,
-    IbvSetupInformation& selfInfo);
+void transitionIbvQueuePairToReadyToSend(IbvLib& ibvLib, IbvQueuePair& qp);
 
 void transitionIbvQueuePairToError(IbvLib& ibvLib, IbvQueuePair& qp);
 

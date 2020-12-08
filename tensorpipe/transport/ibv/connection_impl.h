@@ -107,7 +107,6 @@ class ConnectionImpl final : public ConnectionImplBoilerplate<
   optional<Sockaddr> sockaddr_;
 
   IbvQueuePair qp_;
-  IbvSetupInformation ibvSelfInfo_;
 
   // Inbox.
   // Initialize header during construction because it isn't assignable.

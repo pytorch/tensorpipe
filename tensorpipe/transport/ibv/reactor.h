@@ -61,10 +61,6 @@ class Reactor final : public BusyPollingLoop {
     return ibvLib_;
   }
 
-  IbvContext& getIbvContext() {
-    return ctx_;
-  }
-
   IbvProtectionDomain& getIbvPd() {
     return pd_;
   }
@@ -77,7 +73,7 @@ class Reactor final : public BusyPollingLoop {
     return srq_;
   }
 
-  IbvAddress& getIbvAddress() {
+  const IbvAddress& getIbvAddress() {
     return addr_;
   }
 
