@@ -35,6 +35,7 @@ namespace tensorpipe {
   _(free_device_list, void, (IbvLib::device**))                       \
   _(get_async_event, int, (IbvLib::context*, IbvLib::async_event*))   \
   _(get_device_list, IbvLib::device**, (int*))                        \
+  _(get_device_name, const char*, (IbvLib::device*))                  \
   _(modify_qp, int, (IbvLib::qp*, IbvLib::qp_attr*, int))             \
   _(open_device, IbvLib::context*, (IbvLib::device*))                 \
   _(query_gid, int, (IbvLib::context*, uint8_t, int, IbvLib::gid*))   \
@@ -672,6 +673,10 @@ class IbvLib {
 
   int post_send(IbvLib::qp* qp, IbvLib::send_wr* wr, IbvLib::send_wr** bad_wr) {
     return qp->context->ops.post_send(qp, wr, bad_wr);
+  }
+
+  int post_recv(IbvLib::qp* qp, IbvLib::recv_wr* wr, IbvLib::recv_wr** bad_wr) {
+    return qp->context->ops.post_recv(qp, wr, bad_wr);
   }
 
   int post_srq_recv(
