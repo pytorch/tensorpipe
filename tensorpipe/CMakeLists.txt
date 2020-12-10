@@ -61,7 +61,8 @@ target_sources(tensorpipe PRIVATE
 
 if(TP_USE_CUDA)
   find_package(CUDA REQUIRED)
-  target_link_libraries(tensorpipe PUBLIC ${CUDA_LIBRARIES})
+  # CMake's find_CUDA does not expose a variable for the CUDA driver library.
+  target_link_libraries(tensorpipe PUBLIC ${CUDA_LIBRARIES} cuda)
   target_include_directories(tensorpipe PUBLIC ${CUDA_INCLUDE_DIRS})
   set(TENSORPIPE_SUPPORTS_CUDA 1)
 

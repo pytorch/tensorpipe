@@ -15,6 +15,7 @@
 #include <limits>
 #include <list>
 
+#include <cuda.h>
 #include <cuda_runtime.h>
 
 #include <nop/structure.h>
@@ -41,8 +42,9 @@ namespace {
 
 struct Descriptor {
   std::string handle;
+  size_t offset;
   std::string startEvHandle;
-  NOP_STRUCTURE(Descriptor, handle, startEvHandle);
+  NOP_STRUCTURE(Descriptor, handle, offset, startEvHandle);
 };
 
 struct Reply {
@@ -77,9 +79,14 @@ class SendOperation {
   Descriptor descriptor() {
     cudaIpcMemHandle_t handle;
     TP_CUDA_CHECK(cudaIpcGetMemHandle(&handle, const_cast<void*>(ptr_)));
-
+    CUdeviceptr basePtr;
+    TP_CUDA_DRIVER_CHECK(cuMemGetAddressRange(
+        &basePtr, nullptr, reinterpret_cast<CUdeviceptr>(ptr_)));
+    size_t offset = reinterpret_cast<const uint8_t*>(ptr_) -
+        reinterpret_cast<uint8_t*>(basePtr);
     return Descriptor{
         std::string(reinterpret_cast<const char*>(&handle), sizeof(handle)),
+        offset,
         startEv_.serializedHandle()};
   }
 
@@ -115,7 +122,8 @@ struct RecvOperation {
 
   void process(
       const cudaIpcEventHandle_t& startEvHandle,
-      const cudaIpcMemHandle_t& remoteHandle) {
+      const cudaIpcMemHandle_t& remoteHandle,
+      size_t offset) {
     CudaEvent startEv(startEvHandle);
     startEv.wait(stream_, cudaDeviceForPointer(ptr_));
 
@@ -123,7 +131,11 @@ struct RecvOperation {
     TP_CUDA_CHECK(cudaIpcOpenMemHandle(
         &remotePtr, remoteHandle, cudaIpcMemLazyEnablePeerAccess));
     TP_CUDA_CHECK(cudaMemcpyAsync(
-        ptr_, remotePtr, length_, cudaMemcpyDeviceToDevice, stream_));
+        ptr_,
+        static_cast<uint8_t*>(remotePtr) + offset,
+        length_,
+        cudaMemcpyDeviceToDevice,
+        stream_));
     TP_CUDA_CHECK(cudaIpcCloseMemHandle(remotePtr));
 
     stopEv_.record(stream_);
@@ -377,7 +389,7 @@ void Channel::Impl::recvFromLoop(
   TP_VLOG(6) << "Channel " << id_ << " is copying payload (#" << sequenceNumber
              << ")";
 
-  op.process(*startEvHandle, *remoteHandle);
+  op.process(*startEvHandle, *remoteHandle, nopDescriptor.offset);
 
   TP_VLOG(6) << "Channel " << id_ << " done copying payload (#"
              << op.sequenceNumber << ")";

@@ -235,3 +235,69 @@ class SendAcrossDevicesTest : public ClientServerChannelTestCase<CudaBuffer> {
 };
 
 CHANNEL_TEST(CudaChannelTestSuite, SendAcrossDevices);
+
+class SendOffsetAllocationTest
+    : public ClientServerChannelTestCase<CudaBuffer> {
+ public:
+  static constexpr int kDataSize = 256;
+  static constexpr int kOffset = 128;
+
+  void server(std::shared_ptr<transport::Connection> conn) override {
+    std::shared_ptr<CudaContext> ctx = this->helper_->makeContext("server");
+    auto channel = ctx->createChannel(std::move(conn), Endpoint::kListen);
+
+    // Initialize with sequential values.
+    void* ptr;
+    EXPECT_EQ(cudaSuccess, cudaMalloc(&ptr, kOffset + kDataSize));
+    // Set buffer to target value.
+    EXPECT_EQ(cudaSuccess, cudaMemset(ptr, 0xff, kOffset));
+    EXPECT_EQ(
+        cudaSuccess,
+        cudaMemset(static_cast<uint8_t*>(ptr) + kOffset, 0x42, kDataSize));
+
+    // Perform send and wait for completion.
+    std::future<std::tuple<Error, TDescriptor>> descriptorFuture;
+    std::future<Error> sendFuture;
+    std::tie(descriptorFuture, sendFuture) = sendWithFuture(
+        channel, CudaBuffer{static_cast<uint8_t*>(ptr) + kOffset, kDataSize});
+    Error descriptorError;
+    TDescriptor descriptor;
+    std::tie(descriptorError, descriptor) = descriptorFuture.get();
+    EXPECT_FALSE(descriptorError) << descriptorError.what();
+    this->peers_->send(PeerGroup::kClient, descriptor);
+    Error sendError = sendFuture.get();
+    EXPECT_FALSE(sendError) << sendError.what();
+
+    this->peers_->done(PeerGroup::kServer);
+    this->peers_->join(PeerGroup::kServer);
+
+    ctx->join();
+  }
+
+  void client(std::shared_ptr<transport::Connection> conn) override {
+    std::shared_ptr<CudaContext> ctx = this->helper_->makeContext("client");
+    auto channel = ctx->createChannel(std::move(conn), Endpoint::kConnect);
+
+    DataWrapper<CudaBuffer> wrappedData(kDataSize);
+
+    // Perform recv and wait for completion.
+    auto descriptor = this->peers_->recv(PeerGroup::kClient);
+    std::future<Error> recvFuture =
+        recvWithFuture(channel, descriptor, wrappedData.buffer());
+    Error recvError = recvFuture.get();
+    EXPECT_FALSE(recvError) << recvError.what();
+
+    // Validate contents of vector.
+    auto unwrappedData = wrappedData.unwrap();
+    for (auto i = 0; i < kDataSize; i++) {
+      EXPECT_EQ(unwrappedData[i], 0x42);
+    }
+
+    this->peers_->done(PeerGroup::kClient);
+    this->peers_->join(PeerGroup::kClient);
+
+    ctx->join();
+  }
+};
+
+CHANNEL_TEST(CudaChannelTestSuite, SendOffsetAllocation);
