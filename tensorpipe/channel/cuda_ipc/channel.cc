@@ -80,7 +80,6 @@ class SendOperation {
     cudaIpcMemHandle_t handle;
     TP_CUDA_CHECK(cudaIpcGetMemHandle(&handle, const_cast<void*>(ptr_)));
     CUdeviceptr basePtr;
-
     CUresult error = cuMemGetAddressRange(
         &basePtr, nullptr, reinterpret_cast<CUdeviceptr>(ptr_));
     if (error != CUDA_SUCCESS) {
