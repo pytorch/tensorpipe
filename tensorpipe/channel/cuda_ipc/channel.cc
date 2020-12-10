@@ -80,19 +80,8 @@ class SendOperation {
     cudaIpcMemHandle_t handle;
     TP_CUDA_CHECK(cudaIpcGetMemHandle(&handle, const_cast<void*>(ptr_)));
     CUdeviceptr basePtr;
-    CUresult error = cuMemGetAddressRange(
-        &basePtr, nullptr, reinterpret_cast<CUdeviceptr>(ptr_));
-    if (error != CUDA_SUCCESS) {
-      CUresult res;
-      const char* errorName;
-      const char* errorStr;
-      res = cuGetErrorName(error, &errorName);
-      TP_THROW_ASSERT_IF(res != CUDA_SUCCESS);
-      res = cuGetErrorString(error, &errorStr);
-      TP_THROW_ASSERT_IF(res != CUDA_SUCCESS);
-
-      TP_THROW_ASSERT() << "CUDA error (" << errorName << "): " << errorStr;
-    }
+    TP_CUDA_DRIVER_CHECK(cuMemGetAddressRange(
+        &basePtr, nullptr, reinterpret_cast<CUdeviceptr>(ptr_)));
     size_t offset = reinterpret_cast<const uint8_t*>(ptr_) -
         reinterpret_cast<uint8_t*>(basePtr);
     return Descriptor{

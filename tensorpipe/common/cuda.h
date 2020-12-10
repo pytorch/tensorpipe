@@ -10,6 +10,7 @@
 
 #include <memory>
 
+#include <cuda.h>
 #include <cuda_runtime.h>
 
 #include <tensorpipe/common/defs.h>
@@ -23,8 +24,23 @@
         << cudaGetErrorString(error) << ")";                            \
   } while (false)
 
-namespace tensorpipe {
+#define TP_CUDA_DRIVER_CHECK(a)                                           \
+  do {                                                                    \
+    CUresult error = (a);                                                 \
+    if (error != CUDA_SUCCESS) {                                          \
+      CUresult res;                                                       \
+      const char* errorName;                                              \
+      const char* errorStr;                                               \
+      res = cuGetErrorName(error, &errorName);                            \
+      TP_THROW_ASSERT_IF(res != CUDA_SUCCESS);                            \
+      res = cuGetErrorString(error, &errorStr);                           \
+      TP_THROW_ASSERT_IF(res != CUDA_SUCCESS);                            \
+      TP_THROW_ASSERT() << __TP_EXPAND_OPD(a) << " " << errorName << " (" \
+                        << errorStr << ")";                               \
+    }                                                                     \
+  } while (false)
 
+namespace tensorpipe {
 class CudaError final : public BaseError {
  public:
   explicit CudaError(cudaError_t error) : error_(error) {}
