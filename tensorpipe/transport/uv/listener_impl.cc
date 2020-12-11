@@ -34,7 +34,13 @@ ListenerImpl::ListenerImpl(
       sockaddr_(Sockaddr::createInetSockAddr(addr)) {}
 
 void ListenerImpl::initImplFromLoop() {
+  if (context_->closed()) {
+    error_ = TP_CREATE_ERROR(ListenerClosedError);
+    return;
+  }
   context_->enroll(*this);
+
+  TP_VLOG(9) << "Listener " << id_ << " is initializing in loop";
 
   handle_->initFromLoop();
   auto rv = handle_->bindFromLoop(sockaddr_);
@@ -67,7 +73,8 @@ void ListenerImpl::connectionCallbackFromLoop(int status) {
   auto connection = context_->createHandle();
   connection->initFromLoop();
   handle_->acceptFromLoop(*connection);
-  callback_.trigger(Error::kSuccess, createConnection(std::move(connection)));
+  callback_.trigger(
+      Error::kSuccess, createInitedConnection(std::move(connection)));
 }
 
 void ListenerImpl::closeCallbackFromLoop() {

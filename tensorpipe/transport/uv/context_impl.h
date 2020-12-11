@@ -38,6 +38,10 @@ class ContextImpl final
   bool inLoop() override;
   void deferToLoop(std::function<void()> fn) override;
 
+  bool closed() {
+    return loop_.closed();
+  }
+
   std::unique_ptr<TCPHandle> createHandle();
 
  protected:

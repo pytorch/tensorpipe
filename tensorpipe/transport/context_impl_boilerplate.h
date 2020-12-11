@@ -175,14 +175,16 @@ void ContextImplBoilerplate<TCtx, TList, TConn>::setId(std::string id) {
 
 template <typename TCtx, typename TList, typename TConn>
 void ContextImplBoilerplate<TCtx, TList, TConn>::close() {
-  if (!closed_.exchange(true)) {
-    TP_VLOG(7) << "Transport context " << id_ << " is closing";
+  deferToLoop([&]() {
+    if (!closed_.exchange(true)) {
+      TP_VLOG(7) << "Transport context " << id_ << " is closing";
 
-    closingEmitter_.close();
-    closeImpl();
+      closingEmitter_.close();
+      closeImpl();
 
-    TP_VLOG(7) << "Transport context " << id_ << " done closing";
-  }
+      TP_VLOG(7) << "Transport context " << id_ << " done closing";
+    }
+  });
 }
 
 template <typename TCtx, typename TList, typename TConn>

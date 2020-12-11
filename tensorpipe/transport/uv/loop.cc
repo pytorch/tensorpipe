@@ -45,6 +45,19 @@ void Loop::join() {
 
 Loop::~Loop() noexcept {
   join();
+
+  int rv;
+
+  uv_ref(reinterpret_cast<uv_handle_t*>(&async_));
+  uv_close(reinterpret_cast<uv_handle_t*>(&async_), nullptr);
+
+  rv = uv_run(&loop_, UV_RUN_DEFAULT);
+  TP_THROW_ASSERT_IF(rv > 0)
+      << ": uv_run returned with active handles or requests";
+
+  // Release resources associated with loop.
+  rv = uv_loop_close(&loop_);
+  TP_THROW_UV_IF(rv < 0, rv);
 }
 
 void Loop::wakeupEventLoopToDeferFunction() {
@@ -58,17 +71,6 @@ void Loop::eventLoop() {
   rv = uv_run(&loop_, UV_RUN_DEFAULT);
   TP_THROW_ASSERT_IF(rv > 0)
       << ": uv_run returned with active handles or requests";
-
-  uv_ref(reinterpret_cast<uv_handle_t*>(&async_));
-  uv_close(reinterpret_cast<uv_handle_t*>(&async_), nullptr);
-
-  rv = uv_run(&loop_, UV_RUN_NOWAIT);
-  TP_THROW_ASSERT_IF(rv > 0)
-      << ": uv_run returned with active handles or requests";
-
-  // Release resources associated with loop.
-  rv = uv_loop_close(&loop_);
-  TP_THROW_UV_IF(rv < 0, rv);
 }
 
 void Loop::uvAsyncCb(uv_async_t* handle) {

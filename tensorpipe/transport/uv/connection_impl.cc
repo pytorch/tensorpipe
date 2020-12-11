@@ -50,7 +50,13 @@ ConnectionImpl::ConnectionImpl(
       sockaddr_(Sockaddr::createInetSockAddr(addr)) {}
 
 void ConnectionImpl::initImplFromLoop() {
+  if (context_->closed()) {
+    error_ = TP_CREATE_ERROR(ConnectionClosedError);
+    return;
+  }
   context_->enroll(*this);
+
+  TP_VLOG(9) << "Connection " << id_ << " is initializing in loop";
 
   if (sockaddr_.has_value()) {
     handle_->initFromLoop();

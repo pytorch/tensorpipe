@@ -54,6 +54,8 @@ class ConnectionImplBoilerplate : public std::enable_shared_from_this<TConn> {
 
   // Initialize member fields that need `shared_from_this`.
   void init();
+  // Initialize member fields that need `shared_from_this`.
+  void initFromLoop();
 
   // Queue a read operation.
   using read_callback_fn = Connection::read_callback_fn;
@@ -106,9 +108,6 @@ class ConnectionImplBoilerplate : public std::enable_shared_from_this<TConn> {
   std::string id_;
 
  private:
-  // Initialize member fields that need `shared_from_this`.
-  void initFromLoop();
-
   // Queue a read operation.
   void readFromLoop(read_callback_fn fn);
   void readFromLoop(AbstractNopHolder& object, read_nop_callback_fn fn);

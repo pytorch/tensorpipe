@@ -261,6 +261,7 @@ class TCPHandle : public StreamHandle<TCPHandle, uv_tcp_t> {
 
   void initFromLoop() {
     TP_DCHECK(this->loop_.inLoop());
+    TP_THROW_ASSERT_IF(loop_.closed());
     int rv;
     rv = uv_tcp_init(loop_.ptr(), this->ptr());
     TP_THROW_UV_IF(rv < 0, rv);
