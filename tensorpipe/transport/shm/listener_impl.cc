@@ -136,7 +136,7 @@ void ListenerImpl::handleEventsFromLoop(int events) {
   if (fns_.empty()) {
     context_->unregisterDescriptor(socket_.fd());
   }
-  fn(Error::kSuccess, createConnection(std::move(socket)));
+  fn(Error::kSuccess, createAndInitConnection(std::move(socket)));
 }
 
 } // namespace shm

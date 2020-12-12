@@ -131,6 +131,13 @@ class ConnectionImplBoilerplate : public std::enable_shared_from_this<TConn> {
   // A sequence number for the calls to read and write.
   uint64_t nextBufferBeingRead_{0};
   uint64_t nextBufferBeingWritten_{0};
+
+  // Contexts and listeners do sometimes need to call directly into initFromLoop
+  // and closeForLoop, in order to make sure that some of their operations can
+  // happen "atomically" on the connection, without possibly other operations
+  // occurring in between (e.g., an error).
+  friend ContextImplBoilerplate<TCtx, TList, TConn>;
+  friend ListenerImplBoilerplate<TCtx, TList, TConn>;
 };
 
 template <typename TCtx, typename TList, typename TConn>

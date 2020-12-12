@@ -78,7 +78,7 @@ class ListenerImplBoilerplate : public std::enable_shared_from_this<TList> {
   Error error_{Error::kSuccess};
 
   template <typename... Args>
-  std::shared_ptr<Connection> createConnection(Args&&... args);
+  std::shared_ptr<Connection> createAndInitConnection(Args&&... args);
 
   // An identifier for the listener, composed of the identifier for the context,
   // combined with an increasing sequence number. It will be used as a prefix
@@ -189,15 +189,24 @@ std::string ListenerImplBoilerplate<TCtx, TList, TConn>::addrFromLoop() const {
 template <typename TCtx, typename TList, typename TConn>
 template <typename... Args>
 std::shared_ptr<Connection> ListenerImplBoilerplate<TCtx, TList, TConn>::
-    createConnection(Args&&... args) {
+    createAndInitConnection(Args&&... args) {
+  TP_DCHECK(context_->inLoop());
   std::string connectionId = id_ + ".c" + std::to_string(connectionCounter_++);
   TP_VLOG(7) << "Listener " << id_ << " is opening connection " << connectionId;
-  return std::make_shared<ConnectionBoilerplate<TCtx, TList, TConn>>(
+  auto connection = std::make_shared<TConn>(
       typename ConnectionImplBoilerplate<TCtx, TList, TConn>::
           ConstructorToken(),
       context_,
       std::move(connectionId),
       std::forward<Args>(args)...);
+  // We initialize the connection from the loop immediately, inline, because the
+  // initialization of a connection accepted by a listener typically happens
+  // partly in the listener (e.g., opening and accepting the socket) and partly
+  // in the connection's initFromLoop, and we need these two steps to happen
+  // "atomicically" to make it impossible for an error to occur in between.
+  connection->initFromLoop();
+  return std::make_shared<ConnectionBoilerplate<TCtx, TList, TConn>>(
+      std::move(connection));
 }
 
 template <typename TCtx, typename TList, typename TConn>
