@@ -9,12 +9,12 @@
 #pragma once
 
 #include <atomic>
+#include <future>
 #include <memory>
 #include <string>
 #include <unordered_map>
 #include <utility>
 
-#include <tensorpipe/common/callback.h>
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/transport/connection_boilerplate.h>
 #include <tensorpipe/transport/listener_boilerplate.h>
@@ -51,7 +51,9 @@ class ContextImplBoilerplate : public virtual DeferredExecutor,
   void unenroll(TList& listener);
   void unenroll(TConn& connection);
 
-  ClosingEmitter& getClosingEmitter();
+  // Return whether the context is in a closed state. To avoid race conditions,
+  // this must be called from within the loop.
+  bool closed();
 
   void setId(std::string id);
 
@@ -73,7 +75,6 @@ class ContextImplBoilerplate : public virtual DeferredExecutor,
  private:
   std::atomic<bool> closed_{false};
   std::atomic<bool> joined_{false};
-  ClosingEmitter closingEmitter_;
 
   const std::string domainDescriptor_;
 
@@ -162,9 +163,9 @@ void ContextImplBoilerplate<TCtx, TList, TConn>::unenroll(TConn& connection) {
 }
 
 template <typename TCtx, typename TList, typename TConn>
-ClosingEmitter& ContextImplBoilerplate<TCtx, TList, TConn>::
-    getClosingEmitter() {
-  return closingEmitter_;
+bool ContextImplBoilerplate<TCtx, TList, TConn>::closed() {
+  TP_DCHECK(inLoop());
+  return closed_;
 };
 
 template <typename TCtx, typename TList, typename TConn>
@@ -175,14 +176,32 @@ void ContextImplBoilerplate<TCtx, TList, TConn>::setId(std::string id) {
 
 template <typename TCtx, typename TList, typename TConn>
 void ContextImplBoilerplate<TCtx, TList, TConn>::close() {
-  if (!closed_.exchange(true)) {
-    TP_VLOG(7) << "Transport context " << id_ << " is closing";
+  // Defer this to the loop so that it won't race with other code accessing it
+  // (in other words: any code in the loop can assume that this won't change).
+  deferToLoop([this]() {
+    if (!closed_.exchange(true)) {
+      TP_VLOG(7) << "Transport context " << id_ << " is closing";
 
-    closingEmitter_.close();
-    closeImpl();
+      // Make a copy as they could unenroll themselves inline.
+      decltype(listeners_) listenersCopy = listeners_;
+      decltype(connections_) connectionsCopy = connections_;
+      // We call closeFromLoop, rather than just close, because we need these
+      // objects to transition _immediately_ to error, "atomically". If we just
+      // deferred closing to later, this could come after some already-enqueued
+      // operations that could try to access the context, which would be closed,
+      // and this could fail.
+      for (auto& iter : listenersCopy) {
+        iter.second->closeFromLoop();
+      }
+      for (auto& iter : connectionsCopy) {
+        iter.second->closeFromLoop();
+      }
 
-    TP_VLOG(7) << "Transport context " << id_ << " done closing";
-  }
+      closeImpl();
+
+      TP_VLOG(7) << "Transport context " << id_ << " done closing";
+    }
+  });
 }
 
 template <typename TCtx, typename TList, typename TConn>
@@ -191,6 +210,14 @@ void ContextImplBoilerplate<TCtx, TList, TConn>::join() {
 
   if (!joined_.exchange(true)) {
     TP_VLOG(7) << "Transport context " << id_ << " is joining";
+
+    // As closing is deferred to the loop, we must wait for closeImpl to be
+    // actually called before we call joinImpl, to avoid race conditions. For
+    // this, we defer another task to the loop, which we know will run after the
+    // closing, and then we wait for that task to be run.
+    std::promise<void> hasClosed;
+    deferToLoop([&]() { hasClosed.set_value(); });
+    hasClosed.get_future().wait();
 
     joinImpl();
 

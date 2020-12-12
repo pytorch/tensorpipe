@@ -32,6 +32,10 @@ class Loop final : public EventLoopDeferredExecutor {
     return &loop_;
   }
 
+  bool closed() {
+    return closed_;
+  }
+
   void close();
 
   void join();
@@ -41,6 +45,9 @@ class Loop final : public EventLoopDeferredExecutor {
  protected:
   // Event loop thread entry function.
   void eventLoop() override;
+
+  // Clean up after event loop transitioned to on-demand.
+  void cleanUpLoop() override;
 
   // Wake up the event loop.
   void wakeupEventLoopToDeferFunction() override;

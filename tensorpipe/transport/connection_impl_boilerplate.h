@@ -126,11 +126,16 @@ class ConnectionImplBoilerplate : public std::enable_shared_from_this<TConn> {
   // Deal with an error.
   void handleError();
 
-  ClosingReceiver closingReceiver_;
-
   // A sequence number for the calls to read and write.
   uint64_t nextBufferBeingRead_{0};
   uint64_t nextBufferBeingWritten_{0};
+
+  // Contexts and listeners do sometimes need to call directly into initFromLoop
+  // and closeForLoop, in order to make sure that some of their operations can
+  // happen "atomically" on the connection, without possibly other operations
+  // occurring in between (e.g., an error).
+  friend ContextImplBoilerplate<TCtx, TList, TConn>;
+  friend ListenerImplBoilerplate<TCtx, TList, TConn>;
 };
 
 template <typename TCtx, typename TList, typename TConn>
@@ -138,9 +143,7 @@ ConnectionImplBoilerplate<TCtx, TList, TConn>::ConnectionImplBoilerplate(
     ConstructorToken /* unused */,
     std::shared_ptr<TCtx> context,
     std::string id)
-    : context_(std::move(context)),
-      id_(std::move(id)),
-      closingReceiver_(context_, context_->getClosingEmitter()) {}
+    : context_(std::move(context)), id_(std::move(id)) {}
 
 template <typename TCtx, typename TList, typename TConn>
 void ConnectionImplBoilerplate<TCtx, TList, TConn>::init() {
@@ -150,7 +153,14 @@ void ConnectionImplBoilerplate<TCtx, TList, TConn>::init() {
 
 template <typename TCtx, typename TList, typename TConn>
 void ConnectionImplBoilerplate<TCtx, TList, TConn>::initFromLoop() {
-  closingReceiver_.activate(*this);
+  if (context_->closed()) {
+    // Set the error without calling setError because we do not want to invoke
+    // the subclass's handleErrorImpl as it would find itself in a weird state
+    // (since initFromLoop wouldn't have been called).
+    error_ = TP_CREATE_ERROR(ConnectionClosedError);
+    TP_VLOG(7) << "Connection " << id_ << " is closing (without initing)";
+    return;
+  }
 
   initImplFromLoop();
 }

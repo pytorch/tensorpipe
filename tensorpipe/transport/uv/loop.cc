@@ -58,6 +58,10 @@ void Loop::eventLoop() {
   rv = uv_run(&loop_, UV_RUN_DEFAULT);
   TP_THROW_ASSERT_IF(rv > 0)
       << ": uv_run returned with active handles or requests";
+}
+
+void Loop::cleanUpLoop() {
+  int rv;
 
   uv_ref(reinterpret_cast<uv_handle_t*>(&async_));
   uv_close(reinterpret_cast<uv_handle_t*>(&async_), nullptr);
