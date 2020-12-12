@@ -245,3 +245,39 @@ TEST_P(TransportTest, DISABLED_Connection_EmptyBuffer) {
         peers_->join(PeerGroup::kClient);
       });
 }
+
+TEST_P(TransportTest, Connection_SpamAtClosing) {
+  using namespace std::chrono_literals;
+
+  std::shared_ptr<Context> ctx = GetParam()->getContext();
+  ctx->setId("loopback");
+
+  std::string addr = GetParam()->defaultAddr();
+  std::shared_ptr<Listener> listener = ctx->listen(addr);
+
+  std::atomic<bool> stopSpamming{false};
+  std::function<void()> spam = [&]() {
+    if (stopSpamming) {
+      return;
+    }
+    std::shared_ptr<Connection> conn = ctx->connect(addr);
+    conn->read(
+        [&](const Error& error, const void* /* unused */, size_t /* unused */) {
+          EXPECT_TRUE(error);
+          spam();
+        });
+    conn->close();
+  };
+
+  spam();
+
+  std::this_thread::sleep_for(10ms);
+
+  ctx->close();
+
+  std::this_thread::sleep_for(10ms);
+
+  stopSpamming = true;
+
+  ctx->join();
+}
