@@ -126,8 +126,6 @@ class ConnectionImplBoilerplate : public std::enable_shared_from_this<TConn> {
   // Deal with an error.
   void handleError();
 
-  ClosingReceiver closingReceiver_;
-
   // A sequence number for the calls to read and write.
   uint64_t nextBufferBeingRead_{0};
   uint64_t nextBufferBeingWritten_{0};
@@ -145,9 +143,7 @@ ConnectionImplBoilerplate<TCtx, TList, TConn>::ConnectionImplBoilerplate(
     ConstructorToken /* unused */,
     std::shared_ptr<TCtx> context,
     std::string id)
-    : context_(std::move(context)),
-      id_(std::move(id)),
-      closingReceiver_(context_, context_->getClosingEmitter()) {}
+    : context_(std::move(context)), id_(std::move(id)) {}
 
 template <typename TCtx, typename TList, typename TConn>
 void ConnectionImplBoilerplate<TCtx, TList, TConn>::init() {
@@ -165,8 +161,6 @@ void ConnectionImplBoilerplate<TCtx, TList, TConn>::initFromLoop() {
     TP_VLOG(7) << "Connection " << id_ << " is closing (without initing)";
     return;
   }
-
-  closingReceiver_.activate(*this);
 
   initImplFromLoop();
 }

@@ -104,8 +104,6 @@ class ListenerImplBoilerplate : public std::enable_shared_from_this<TList> {
   // Deal with an error.
   void handleError();
 
-  ClosingReceiver closingReceiver_;
-
   // A sequence number for the calls to accept.
   uint64_t nextConnectionBeingAccepted_{0};
 
@@ -113,6 +111,12 @@ class ListenerImplBoilerplate : public std::enable_shared_from_this<TList> {
   // create their identifiers based off this listener's identifier. They will
   // only be used for logging and debugging.
   std::atomic<uint64_t> connectionCounter_{0};
+
+  // Contexts do sometimes need to call directly into closeForLoop, in order to
+  // make sure that some of their operations can happen "atomically" on the
+  // connection, without possibly other operations occurring in between (e.g.,
+  // an error).
+  friend ContextImplBoilerplate<TCtx, TList, TConn>;
 };
 
 template <typename TCtx, typename TList, typename TConn>
@@ -120,9 +124,7 @@ ListenerImplBoilerplate<TCtx, TList, TConn>::ListenerImplBoilerplate(
     ConstructorToken /* unused */,
     std::shared_ptr<TCtx> context,
     std::string id)
-    : context_(std::move(context)),
-      id_(std::move(id)),
-      closingReceiver_(context_, context_->getClosingEmitter()) {}
+    : context_(std::move(context)), id_(std::move(id)) {}
 
 template <typename TCtx, typename TList, typename TConn>
 void ListenerImplBoilerplate<TCtx, TList, TConn>::init() {
@@ -140,8 +142,6 @@ void ListenerImplBoilerplate<TCtx, TList, TConn>::initFromLoop() {
     TP_VLOG(7) << "Listener " << id_ << " is closing (without initing)";
     return;
   }
-
-  closingReceiver_.activate(*this);
 
   initImplFromLoop();
 }
