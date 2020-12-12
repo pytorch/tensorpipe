@@ -46,6 +46,9 @@ class Loop final : public EventLoopDeferredExecutor {
   // Event loop thread entry function.
   void eventLoop() override;
 
+  // Clean up after event loop transitioned to on-demand.
+  void cleanUpLoop() override;
+
   // Wake up the event loop.
   void wakeupEventLoopToDeferFunction() override;
 

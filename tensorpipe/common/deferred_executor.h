@@ -160,6 +160,12 @@ class EventLoopDeferredExecutor : public virtual DeferredExecutor {
   // subclasses and called inside the thread owned by this parent class.
   virtual void eventLoop() = 0;
 
+  // This is called after the event loop terminated, still within the thread
+  // that used to run that event loop. It will be called after this class has
+  // transitioned control to the on-demand deferred executor. It thus allows to
+  // clean up any resources without worrying about new work coming in.
+  virtual void cleanUpLoop() {}
+
   // This function is called by the parent class when a function is deferred to
   // it, and must be implemented by subclasses, which are required to have their
   // event loop call runDeferredFunctionsFromEventLoop as soon as possible. This
@@ -230,6 +236,8 @@ class EventLoopDeferredExecutor : public virtual DeferredExecutor {
         fn();
       }
     }
+
+    cleanUpLoop();
   }
 
   std::thread thread_;
