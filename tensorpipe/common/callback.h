@@ -124,7 +124,7 @@ class LazyCallbackWrapper {
  public:
   LazyCallbackWrapper(
       std::enable_shared_from_this<TSubject>& subject,
-      OnDemandDeferredExecutor& loop)
+      DeferredExecutor& loop)
       : subject_(subject), loop_(loop) {}
 
   template <typename TBoundFn>
@@ -143,7 +143,7 @@ class LazyCallbackWrapper {
 
  private:
   std::enable_shared_from_this<TSubject>& subject_;
-  OnDemandDeferredExecutor& loop_;
+  DeferredExecutor& loop_;
 
   template <typename TBoundFn, typename... Args>
   void entryPoint(
@@ -189,7 +189,7 @@ class EagerCallbackWrapper {
  public:
   EagerCallbackWrapper(
       std::enable_shared_from_this<TSubject>& subject,
-      OnDemandDeferredExecutor& loop)
+      DeferredExecutor& loop)
       : subject_(subject), loop_(loop) {}
 
   template <typename TBoundFn>
@@ -206,7 +206,7 @@ class EagerCallbackWrapper {
 
  private:
   std::enable_shared_from_this<TSubject>& subject_;
-  OnDemandDeferredExecutor& loop_;
+  DeferredExecutor& loop_;
 
   template <typename TBoundFn, typename... Args>
   void entryPoint(
