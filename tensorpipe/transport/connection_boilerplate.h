@@ -31,6 +31,8 @@ class ConnectionBoilerplate : public Connection {
       std::string id,
       Args... args);
 
+  explicit ConnectionBoilerplate(std::shared_ptr<TConn> connection);
+
   ConnectionBoilerplate(const ConnectionBoilerplate&) = delete;
   ConnectionBoilerplate(ConnectionBoilerplate&&) = delete;
   ConnectionBoilerplate& operator=(const ConnectionBoilerplate&) = delete;
@@ -77,6 +79,16 @@ ConnectionBoilerplate<TCtx, TList, TConn>::ConnectionBoilerplate(
           value,
       "");
   impl_->init();
+}
+
+template <typename TCtx, typename TList, typename TConn>
+ConnectionBoilerplate<TCtx, TList, TConn>::ConnectionBoilerplate(
+    std::shared_ptr<TConn> connection)
+    : impl_(std::move(connection)) {
+  static_assert(
+      std::is_base_of<ConnectionImplBoilerplate<TCtx, TList, TConn>, TConn>::
+          value,
+      "");
 }
 
 template <typename TCtx, typename TList, typename TConn>

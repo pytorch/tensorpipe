@@ -67,7 +67,8 @@ void ListenerImpl::connectionCallbackFromLoop(int status) {
   auto connection = context_->createHandle();
   connection->initFromLoop();
   handle_->acceptFromLoop(*connection);
-  callback_.trigger(Error::kSuccess, createConnection(std::move(connection)));
+  callback_.trigger(
+      Error::kSuccess, createAndInitConnection(std::move(connection)));
 }
 
 void ListenerImpl::closeCallbackFromLoop() {
