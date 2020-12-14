@@ -9,6 +9,7 @@
 #pragma once
 
 #include <atomic>
+#include <future>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -185,14 +186,18 @@ void ContextImplBoilerplate<TCtx, TList, TConn>::setId(std::string id) {
 
 template <typename TCtx, typename TList, typename TConn>
 void ContextImplBoilerplate<TCtx, TList, TConn>::close() {
-  if (!closed_.exchange(true)) {
-    TP_VLOG(7) << "Transport context " << id_ << " is closing";
+  // Defer this to the loop so that it won't race with other code accessing it
+  // (in other words: any code in the loop can assume that this won't change).
+  deferToLoop([this]() {
+    if (!closed_.exchange(true)) {
+      TP_VLOG(7) << "Transport context " << id_ << " is closing";
 
-    closingEmitter_.close();
-    closeImpl();
+      closingEmitter_.close();
+      closeImpl();
 
-    TP_VLOG(7) << "Transport context " << id_ << " done closing";
-  }
+      TP_VLOG(7) << "Transport context " << id_ << " done closing";
+    }
+  });
 }
 
 template <typename TCtx, typename TList, typename TConn>
@@ -201,6 +206,14 @@ void ContextImplBoilerplate<TCtx, TList, TConn>::join() {
 
   if (!joined_.exchange(true)) {
     TP_VLOG(7) << "Transport context " << id_ << " is joining";
+
+    // As closing is deferred to the loop, we must wait for closeImpl to be
+    // actually called before we call joinImpl, to avoid race conditions. For
+    // this, we defer another task to the loop, which we know will run after the
+    // closing, and then we wait for that task to be run.
+    std::promise<void> hasClosed;
+    deferToLoop([&]() { hasClosed.set_value(); });
+    hasClosed.get_future().wait();
 
     joinImpl();
 
