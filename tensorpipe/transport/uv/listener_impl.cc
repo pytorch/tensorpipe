@@ -36,6 +36,8 @@ ListenerImpl::ListenerImpl(
 void ListenerImpl::initImplFromLoop() {
   context_->enroll(*this);
 
+  TP_VLOG(9) << "Listener " << id_ << " is initializing in loop";
+
   handle_->initFromLoop();
   auto rv = handle_->bindFromLoop(sockaddr_);
   TP_THROW_UV_IF(rv < 0, rv);

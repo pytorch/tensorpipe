@@ -132,6 +132,15 @@ void ListenerImplBoilerplate<TCtx, TList, TConn>::init() {
 
 template <typename TCtx, typename TList, typename TConn>
 void ListenerImplBoilerplate<TCtx, TList, TConn>::initFromLoop() {
+  if (context_->closed()) {
+    // Set the error without calling setError because we do not want to invoke
+    // the subclass's handleErrorImpl as it would find itself in a weird state
+    // (since initFromLoop wouldn't have been called).
+    error_ = TP_CREATE_ERROR(ListenerClosedError);
+    TP_VLOG(7) << "Listener " << id_ << " is closing (without initing)";
+    return;
+  }
+
   closingReceiver_.activate(*this);
 
   initImplFromLoop();

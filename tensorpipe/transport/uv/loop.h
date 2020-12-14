@@ -32,6 +32,10 @@ class Loop final : public EventLoopDeferredExecutor {
     return &loop_;
   }
 
+  bool closed() {
+    return closed_;
+  }
+
   void close();
 
   void join();
