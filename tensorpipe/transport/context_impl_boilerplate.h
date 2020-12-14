@@ -15,7 +15,6 @@
 #include <unordered_map>
 #include <utility>
 
-#include <tensorpipe/common/callback.h>
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/transport/connection_boilerplate.h>
 #include <tensorpipe/transport/listener_boilerplate.h>
@@ -56,8 +55,6 @@ class ContextImplBoilerplate : public virtual DeferredExecutor,
   // this must be called from within the loop.
   bool closed();
 
-  ClosingEmitter& getClosingEmitter();
-
   void setId(std::string id);
 
   void close();
@@ -78,7 +75,6 @@ class ContextImplBoilerplate : public virtual DeferredExecutor,
  private:
   std::atomic<bool> closed_{false};
   std::atomic<bool> joined_{false};
-  ClosingEmitter closingEmitter_;
 
   const std::string domainDescriptor_;
 
@@ -173,12 +169,6 @@ bool ContextImplBoilerplate<TCtx, TList, TConn>::closed() {
 };
 
 template <typename TCtx, typename TList, typename TConn>
-ClosingEmitter& ContextImplBoilerplate<TCtx, TList, TConn>::
-    getClosingEmitter() {
-  return closingEmitter_;
-};
-
-template <typename TCtx, typename TList, typename TConn>
 void ContextImplBoilerplate<TCtx, TList, TConn>::setId(std::string id) {
   TP_VLOG(7) << "Transport context " << id_ << " was renamed to " << id;
   id_ = std::move(id);
@@ -192,7 +182,21 @@ void ContextImplBoilerplate<TCtx, TList, TConn>::close() {
     if (!closed_.exchange(true)) {
       TP_VLOG(7) << "Transport context " << id_ << " is closing";
 
-      closingEmitter_.close();
+      // Make a copy as they could unenroll themselves inline.
+      auto listenersCopy = listeners_;
+      auto connectionsCopy = connections_;
+      // We call closeFromLoop, rather than just close, because we need these
+      // objects to transition _immediately_ to error, "atomically". If we just
+      // deferred closing to later, this could come after some already-enqueued
+      // operations that could try to access the context, which would be closed,
+      // and this could fail.
+      for (auto& iter : listenersCopy) {
+        iter.second->closeFromLoop();
+      }
+      for (auto& iter : connectionsCopy) {
+        iter.second->closeFromLoop();
+      }
+
       closeImpl();
 
       TP_VLOG(7) << "Transport context " << id_ << " done closing";
