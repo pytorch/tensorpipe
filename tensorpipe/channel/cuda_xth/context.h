@@ -13,10 +13,12 @@
 #include <string>
 
 #include <tensorpipe/channel/cuda_context.h>
-#include <tensorpipe/common/callback.h>
 #include <tensorpipe/common/error.h>
 
 namespace tensorpipe {
+
+class ClosingEmitter;
+
 namespace channel {
 namespace cuda_xth {
 

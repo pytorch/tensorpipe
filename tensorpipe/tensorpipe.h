@@ -53,6 +53,11 @@
 #include <tensorpipe/channel/cma/context.h>
 #endif // TENSORPIPE_HAS_CMA_CHANNEL
 
+#if TENSORPIPE_SUPPORTS_CUDA
+#include <tensorpipe/channel/cuda_basic/context.h>
+#include <tensorpipe/channel/cuda_xth/context.h>
+
 #if TENSORPIPE_HAS_CUDA_IPC_CHANNEL
 #include <tensorpipe/channel/cuda_ipc/context.h>
 #endif // TENSORPIPE_HAS_CUDA_IPC_CHANNEL
+#endif // TENSORPIPE_SUPPORTS_CUDA
