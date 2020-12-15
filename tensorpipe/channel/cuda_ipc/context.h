@@ -12,20 +12,28 @@
 #include <string>
 
 #include <tensorpipe/channel/cuda_context.h>
+#include <tensorpipe/transport/context.h>
 
 namespace tensorpipe {
 namespace channel {
 namespace cuda_ipc {
 
-class Context : public channel::CudaContext {
+class ContextImpl;
+
+class Context : public CudaContext {
  public:
   Context();
 
-  const std::string& domainDescriptor() const override;
+  Context(const Context&) = delete;
+  Context(Context&&) = delete;
+  Context& operator=(const Context&) = delete;
+  Context& operator=(Context&&) = delete;
 
   std::shared_ptr<CudaChannel> createChannel(
       std::shared_ptr<transport::Connection> connection,
       Endpoint endpoint) override;
+
+  const std::string& domainDescriptor() const override;
 
   void setId(std::string id) override;
 
@@ -36,18 +44,11 @@ class Context : public channel::CudaContext {
   ~Context() override;
 
  private:
-  class PrivateIface;
-
-  class Impl;
-
   // The implementation is managed by a shared_ptr because each child object
-  // will also hold a shared_ptr to it (downcast as a shared_ptr to the private
-  // interface). However, its lifetime is tied to the one of this public object,
-  // since when the latter is destroyed the implementation is closed and joined.
-  std::shared_ptr<Impl> impl_;
-
-  // Allow channel to see the private interface.
-  friend class Channel;
+  // will also hold a shared_ptr to it. However, its lifetime is tied to the one
+  // of this public object since when the latter is destroyed the implementation
+  // is closed and joined.
+  const std::shared_ptr<ContextImpl> impl_;
 };
 
 } // namespace cuda_ipc

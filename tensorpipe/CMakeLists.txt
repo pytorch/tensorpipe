@@ -88,8 +88,9 @@ if(TP_USE_CUDA)
 
   if(TP_ENABLE_CUDA_IPC)
     target_sources(tensorpipe PRIVATE
-      channel/cuda_ipc/channel.cc
-      channel/cuda_ipc/context.cc)
+      channel/cuda_ipc/channel_impl.cc
+      channel/cuda_ipc/context.cc
+      channel/cuda_ipc/context_impl.cc)
     set(TENSORPIPE_HAS_CUDA_IPC_CHANNEL 1)
   endif()
 endif()
