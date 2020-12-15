@@ -31,8 +31,9 @@ target_include_directories(tensorpipe PUBLIC $<BUILD_INTERFACE:${PROJECT_BINARY_
 ### basic
 
 target_sources(tensorpipe PRIVATE
-  channel/basic/channel.cc
-  channel/basic/context.cc)
+  channel/basic/channel_impl.cc
+  channel/basic/context.cc
+  channel/basic/context_impl.cc)
 
 ### xth
 

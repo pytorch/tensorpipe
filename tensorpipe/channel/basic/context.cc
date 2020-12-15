@@ -8,136 +8,46 @@
 
 #include <tensorpipe/channel/basic/context.h>
 
-#include <algorithm>
-#include <list>
+#include <memory>
+#include <string>
+#include <utility>
 
-#include <tensorpipe/channel/basic/channel.h>
 #include <tensorpipe/channel/basic/context_impl.h>
-#include <tensorpipe/channel/error.h>
-#include <tensorpipe/channel/helpers.h>
-#include <tensorpipe/common/callback.h>
-#include <tensorpipe/common/defs.h>
-#include <tensorpipe/common/error.h>
-#include <tensorpipe/common/error_macros.h>
 
 namespace tensorpipe {
 namespace channel {
 namespace basic {
 
-class Context::Impl : public Context::PrivateIface,
-                      public std::enable_shared_from_this<Context::Impl> {
- public:
-  Impl();
+Context::Context() : impl_(std::make_shared<ContextImpl>()) {}
 
-  const std::string& domainDescriptor() const;
+// Explicitly define all methods of the context, which just forward to the impl.
+// We cannot use an intermediate ContextBoilerplate class without forcing a
+// recursive include of private headers into the public ones.
 
-  std::shared_ptr<channel::CpuChannel> createChannel(
-      std::shared_ptr<transport::Connection> connection,
-      Endpoint endpoint);
-
-  void setId(std::string id);
-
-  ClosingEmitter& getClosingEmitter() override;
-
-  void close();
-
-  void join();
-
-  ~Impl() override = default;
-
- private:
-  std::string domainDescriptor_;
-  std::atomic<bool> closed_{false};
-  std::atomic<bool> joined_{false};
-  ClosingEmitter closingEmitter_;
-
-  // An identifier for the context, composed of the identifier for the context,
-  // combined with the channel's name. It will only be used for logging and
-  // debugging purposes.
-  std::string id_{"N/A"};
-
-  // Sequence numbers for the channels created by this context, used to create
-  // their identifiers based off this context's identifier. They will only be
-  // used for logging and debugging.
-  std::atomic<uint64_t> channelCounter_{0};
-};
-
-Context::Context() : impl_(std::make_shared<Impl>()) {}
-
-Context::Impl::Impl() : domainDescriptor_("any") {}
-
-ClosingEmitter& Context::Impl::getClosingEmitter() {
-  return closingEmitter_;
+std::shared_ptr<CpuChannel> Context::createChannel(
+    std::shared_ptr<transport::Connection> connection,
+    Endpoint endpoint) {
+  return impl_->createChannel(std::move(connection), endpoint);
 }
 
 const std::string& Context::domainDescriptor() const {
   return impl_->domainDescriptor();
 }
 
-const std::string& Context::Impl::domainDescriptor() const {
-  return domainDescriptor_;
-}
-
-std::shared_ptr<channel::CpuChannel> Context::createChannel(
-    std::shared_ptr<transport::Connection> connection,
-    Endpoint endpoint) {
-  return impl_->createChannel(std::move(connection), endpoint);
-}
-
-std::shared_ptr<channel::CpuChannel> Context::Impl::createChannel(
-    std::shared_ptr<transport::Connection> connection,
-    Endpoint /* unused */) {
-  std::string channelId = id_ + ".c" + std::to_string(channelCounter_++);
-  TP_VLOG(4) << "Channel context " << id_ << " is opening channel "
-             << channelId;
-  return std::make_shared<Channel>(
-      Channel::ConstructorToken(),
-      std::static_pointer_cast<PrivateIface>(shared_from_this()),
-      std::move(connection),
-      std::move(channelId));
+void Context::setId(std::string id) {
+  impl_->setId(std::move(id));
 }
 
 void Context::close() {
   impl_->close();
 }
 
-void Context::Impl::close() {
-  if (!closed_.exchange(true)) {
-    TP_VLOG(4) << "Channel context " << id_ << " is closing";
-
-    closingEmitter_.close();
-
-    TP_VLOG(4) << "Channel context " << id_ << " done closing";
-  }
-}
-
 void Context::join() {
   impl_->join();
 }
 
-void Context::Impl::join() {
-  close();
-
-  if (!joined_.exchange(true)) {
-    TP_VLOG(4) << "Channel context " << id_ << " is joining";
-
-    // Nothing to do?
-
-    TP_VLOG(4) << "Channel context " << id_ << " done joining";
-  }
-}
-
 Context::~Context() {
   join();
-}
-
-void Context::setId(std::string id) {
-  impl_->setId(std::move(id));
-}
-
-void Context::Impl::setId(std::string id) {
-  TP_VLOG(4) << "Channel context " << id_ << " was renamed to " << id;
-  id_ = std::move(id);
 }
 
 } // namespace basic
