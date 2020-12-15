@@ -38,8 +38,9 @@ target_sources(tensorpipe PRIVATE
 ### xth
 
 target_sources(tensorpipe PRIVATE
-  channel/xth/channel.cc
-  channel/xth/context.cc)
+  channel/xth/channel_impl.cc
+  channel/xth/context.cc
+  channel/xth/context_impl.cc)
 
 ### cma
 
