@@ -8,30 +8,69 @@
 
 #pragma once
 
+#include <atomic>
 #include <functional>
+#include <thread>
 
-#include <tensorpipe/channel/cma/context.h>
-#include <tensorpipe/common/callback.h>
+#include <tensorpipe/channel/context_impl_boilerplate.h>
+#include <tensorpipe/channel/cpu_context.h>
+#include <tensorpipe/common/cpu_buffer.h>
+#include <tensorpipe/common/deferred_executor.h>
 #include <tensorpipe/common/error.h>
+#include <tensorpipe/common/optional.h>
+#include <tensorpipe/common/queue.h>
 
 namespace tensorpipe {
 namespace channel {
 namespace cma {
 
-class Context::PrivateIface {
+class ChannelImpl;
+
+class ContextImpl final
+    : public ContextImplBoilerplate<CpuBuffer, ContextImpl, ChannelImpl> {
  public:
-  virtual ClosingEmitter& getClosingEmitter() = 0;
+  ContextImpl();
+
+  std::shared_ptr<CpuChannel> createChannel(
+      std::shared_ptr<transport::Connection> connection,
+      Endpoint endpoint);
+
+  // Implement the DeferredExecutor interface.
+  bool inLoop() override;
+  void deferToLoop(std::function<void()> fn) override;
 
   using copy_request_callback_fn = std::function<void(const Error&)>;
 
-  virtual void requestCopy(
+  void requestCopy(
       pid_t remotePid,
       void* remotePtr,
       void* localPtr,
       size_t length,
-      copy_request_callback_fn fn) = 0;
+      copy_request_callback_fn fn);
 
-  virtual ~PrivateIface() = default;
+ protected:
+  // Implement the entry points called by ContextImplBoilerplate.
+  void closeImpl() override;
+  void joinImpl() override;
+
+ private:
+  OnDemandDeferredExecutor loop_;
+
+  struct CopyRequest {
+    pid_t remotePid;
+    void* remotePtr;
+    void* localPtr;
+    size_t length;
+    copy_request_callback_fn callback;
+  };
+
+  std::thread thread_;
+  Queue<optional<CopyRequest>> requests_;
+
+  // This is atomic because it may be accessed from outside the loop.
+  std::atomic<uint64_t> nextRequestId_{0};
+
+  void handleCopyRequests();
 };
 
 } // namespace cma

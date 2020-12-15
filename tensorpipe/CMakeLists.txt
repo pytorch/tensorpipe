@@ -46,8 +46,9 @@ target_sources(tensorpipe PRIVATE
 
 if(TP_ENABLE_CMA)
   target_sources(tensorpipe PRIVATE
-    channel/cma/channel.cc
-    channel/cma/context.cc)
+    channel/cma/channel_impl.cc
+    channel/cma/context.cc
+    channel/cma/context_impl.cc)
   set(TENSORPIPE_HAS_CMA_CHANNEL 1)
 else()
   set(TENSORPIPE_HAS_CMA_CHANNEL 0)
