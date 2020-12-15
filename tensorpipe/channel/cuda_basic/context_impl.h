@@ -8,18 +8,44 @@
 
 #pragma once
 
-#include <tensorpipe/channel/cuda_basic/context.h>
-#include <tensorpipe/common/callback.h>
+#include <tensorpipe/channel/context_impl_boilerplate.h>
+#include <tensorpipe/channel/cpu_context.h>
+#include <tensorpipe/channel/cuda_context.h>
+#include <tensorpipe/common/cuda_buffer.h>
+#include <tensorpipe/common/cuda_loop.h>
+#include <tensorpipe/common/deferred_executor.h>
 
 namespace tensorpipe {
 namespace channel {
 namespace cuda_basic {
 
-class Context::PrivateIface {
- public:
-  virtual ClosingEmitter& getClosingEmitter() = 0;
+class ChannelImpl;
 
-  virtual ~PrivateIface() = default;
+class ContextImpl final
+    : public ContextImplBoilerplate<CudaBuffer, ContextImpl, ChannelImpl> {
+ public:
+  explicit ContextImpl(std::shared_ptr<CpuContext> cpuContext);
+
+  std::shared_ptr<CudaChannel> createChannel(
+      std::shared_ptr<transport::Connection> connection,
+      Endpoint endpoint);
+
+  // Implement the DeferredExecutor interface.
+  bool inLoop() override;
+  void deferToLoop(std::function<void()> fn) override;
+
+ protected:
+  // Implement the entry points called by ContextImplBoilerplate.
+  void closeImpl() override;
+  void joinImpl() override;
+  void setIdImpl() override;
+
+ private:
+  OnDemandDeferredExecutor loop_;
+
+  const std::shared_ptr<CpuContext> cpuContext_;
+  // TODO: Lazy initialization of cuda loop.
+  CudaLoop cudaLoop_;
 };
 
 } // namespace cuda_basic

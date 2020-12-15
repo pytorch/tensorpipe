@@ -80,8 +80,9 @@ if(TP_USE_CUDA)
   ### cuda_basic
 
   target_sources(tensorpipe PRIVATE
-    channel/cuda_basic/channel.cc
+    channel/cuda_basic/channel_impl.cc
     channel/cuda_basic/context.cc
+    channel/cuda_basic/context_impl.cc
     common/cuda_loop.cc)
 
   ### cuda_ipc
