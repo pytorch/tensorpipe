@@ -54,7 +54,9 @@ class CudaEvent {
     TP_CUDA_CHECK(cudaEventCreateWithFlags(&ev_, flags));
   }
 
-  explicit CudaEvent(cudaIpcEventHandle_t handle) {
+  explicit CudaEvent(int device, cudaIpcEventHandle_t handle) {
+    // It could crash if we don't set device when creating events from handles
+    TP_CUDA_CHECK(cudaSetDevice(device));
     TP_CUDA_CHECK(cudaIpcOpenEventHandle(&ev_, handle));
   }
 
