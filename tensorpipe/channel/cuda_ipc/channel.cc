@@ -15,7 +15,6 @@
 #include <limits>
 #include <list>
 
-#include <cuda.h>
 #include <cuda_runtime.h>
 
 #include <nop/structure.h>
@@ -76,12 +75,14 @@ class SendOperation {
     startEv_.record(stream_);
   }
 
-  Descriptor descriptor() {
+  Descriptor descriptor(CudaLib& cudaLib) {
     cudaIpcMemHandle_t handle;
     TP_CUDA_CHECK(cudaIpcGetMemHandle(&handle, const_cast<void*>(ptr_)));
     CUdeviceptr basePtr;
-    TP_CUDA_DRIVER_CHECK(cuMemGetAddressRange(
-        &basePtr, nullptr, reinterpret_cast<CUdeviceptr>(ptr_)));
+    TP_CUDA_DRIVER_CHECK(
+        cudaLib,
+        cudaLib.memGetAddressRange(
+            &basePtr, nullptr, reinterpret_cast<CUdeviceptr>(ptr_)));
     size_t offset = reinterpret_cast<const uint8_t*>(ptr_) -
         reinterpret_cast<uint8_t*>(basePtr);
     return Descriptor{
@@ -325,7 +326,7 @@ void Channel::Impl::sendFromLoop(
   auto& op = sendOperations_.back();
 
   NopHolder<Descriptor> nopHolder;
-  nopHolder.getObject() = op.descriptor();
+  nopHolder.getObject() = op.descriptor(context_->getCudaLib());
   descriptorCallback(Error::kSuccess, saveDescriptor(nopHolder));
 }
 

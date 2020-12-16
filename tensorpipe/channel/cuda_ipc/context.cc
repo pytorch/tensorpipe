@@ -48,6 +48,8 @@ class Context::Impl : public Context::PrivateIface,
  public:
   Impl();
 
+  bool isViable() const;
+
   const std::string& domainDescriptor() const;
 
   std::shared_ptr<channel::CudaChannel> createChannel(
@@ -66,6 +68,8 @@ class Context::Impl : public Context::PrivateIface,
 
   ~Impl() override = default;
 
+  CudaLib& getCudaLib() override;
+
  private:
   std::string domainDescriptor_;
   std::atomic<bool> closed_{false};
@@ -81,11 +85,31 @@ class Context::Impl : public Context::PrivateIface,
   // their identifiers based off this context's identifier. They will only be
   // used for logging and debugging.
   std::atomic<uint64_t> channelCounter_{0};
+
+  bool foundCudaLib_{false};
+  CudaLib cudaLib_;
 };
 
 Context::Context() : impl_(std::make_shared<Context::Impl>()) {}
 
-Context::Impl::Impl() : domainDescriptor_(generateDomainDescriptor()) {}
+Context::Impl::Impl() : domainDescriptor_(generateDomainDescriptor()) {
+  Error error;
+  std::tie(error, cudaLib_) = CudaLib::create();
+  if (error) {
+    TP_VLOG(4) << "Channel context " << id_
+               << " is not viable because libcuda could not be loaded";
+  } else {
+    foundCudaLib_ = true;
+  }
+}
+
+bool Context::isViable() const {
+  return impl_->isViable();
+}
+
+bool Context::Impl::isViable() const {
+  return foundCudaLib_;
+}
 
 void Context::close() {
   impl_->close();
@@ -129,6 +153,10 @@ const std::string& Context::domainDescriptor() const {
 
 const std::string& Context::Impl::domainDescriptor() const {
   return domainDescriptor_;
+}
+
+CudaLib& Context::Impl::getCudaLib() {
+  return cudaLib_;
 }
 
 std::shared_ptr<channel::CudaChannel> Context::createChannel(

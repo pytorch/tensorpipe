@@ -21,6 +21,8 @@ class Context : public channel::CudaContext {
  public:
   Context();
 
+  bool isViable() const override;
+
   const std::string& domainDescriptor() const override;
 
   std::shared_ptr<CudaChannel> createChannel(
