@@ -10,6 +10,7 @@
 
 #include <tensorpipe/channel/cuda_ipc/context.h>
 #include <tensorpipe/common/callback.h>
+#include <tensorpipe/common/cuda_lib.h>
 
 namespace tensorpipe {
 namespace channel {
@@ -20,6 +21,8 @@ class Context::PrivateIface {
   virtual ClosingEmitter& getClosingEmitter() = 0;
 
   virtual ~PrivateIface() = default;
+
+  virtual CudaLib& getCudaLib() = 0;
 };
 
 } // namespace cuda_ipc
