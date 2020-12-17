@@ -98,7 +98,7 @@ void CudaLoop::addCallback(
 
   auto cudaCallback =
       std::make_unique<CudaCallback>(*this, std::move(callback));
-  TP_CUDA_CHECK(cudaSetDevice(device));
+  CudaDeviceGuard guard(device);
   TP_CUDA_CHECK(cudaStreamAddCallback(
       stream, runCudaCallback, cudaCallback.release(), 0));
 }
