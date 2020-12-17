@@ -77,7 +77,7 @@ Descriptor SendOperation::descriptor(CudaLib& cudaLib) {
 }
 
 void SendOperation::process(const cudaIpcEventHandle_t& stopEvHandle) {
-  CudaEvent stopEv(stopEvHandle);
+  CudaEvent stopEv(cudaDeviceForPointer(ptr_), stopEvHandle);
   stopEv.wait(stream_, cudaDeviceForPointer(ptr_));
 }
 
@@ -100,7 +100,7 @@ void RecvOperation::process(
     const cudaIpcEventHandle_t& startEvHandle,
     const cudaIpcMemHandle_t& remoteHandle,
     size_t offset) {
-  CudaEvent startEv(startEvHandle);
+  CudaEvent startEv(cudaDeviceForPointer(ptr_), startEvHandle);
   startEv.wait(stream_, cudaDeviceForPointer(ptr_));
 
   void* remotePtr;
