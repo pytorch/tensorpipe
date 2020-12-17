@@ -8,18 +8,39 @@
 
 #pragma once
 
-#include <tensorpipe/channel/basic/context.h>
-#include <tensorpipe/common/callback.h>
+#include <functional>
+
+#include <tensorpipe/channel/context_impl_boilerplate.h>
+#include <tensorpipe/channel/cpu_context.h>
+#include <tensorpipe/common/cpu_buffer.h>
+#include <tensorpipe/common/deferred_executor.h>
 
 namespace tensorpipe {
 namespace channel {
 namespace basic {
 
-class Context::PrivateIface {
- public:
-  virtual ClosingEmitter& getClosingEmitter() = 0;
+class ChannelImpl;
 
-  virtual ~PrivateIface() = default;
+class ContextImpl final
+    : public ContextImplBoilerplate<CpuBuffer, ContextImpl, ChannelImpl> {
+ public:
+  ContextImpl();
+
+  std::shared_ptr<CpuChannel> createChannel(
+      std::shared_ptr<transport::Connection> connection,
+      Endpoint endpoint);
+
+  // Implement the DeferredExecutor interface.
+  bool inLoop() override;
+  void deferToLoop(std::function<void()> fn) override;
+
+ protected:
+  // Implement the entry points called by ContextImplBoilerplate.
+  void closeImpl() override;
+  void joinImpl() override;
+
+ private:
+  OnDemandDeferredExecutor loop_;
 };
 
 } // namespace basic
