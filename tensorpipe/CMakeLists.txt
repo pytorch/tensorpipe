@@ -57,8 +57,9 @@ endif()
 ### mpt
 
 target_sources(tensorpipe PRIVATE
-  channel/mpt/channel.cc
-  channel/mpt/context.cc)
+  channel/mpt/channel_impl.cc
+  channel/mpt/context.cc
+  channel/mpt/context_impl.cc)
 
 ## CUDA channels
 
