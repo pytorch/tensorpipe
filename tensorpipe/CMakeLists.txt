@@ -72,8 +72,9 @@ if(TP_USE_CUDA)
   ### cuda_xth
 
   target_sources(tensorpipe PRIVATE
-    channel/cuda_xth/channel.cc
-    channel/cuda_xth/context.cc)
+    channel/cuda_xth/channel_impl.cc
+    channel/cuda_xth/context.cc
+    channel/cuda_xth/context_impl.cc)
 
   ### cuda_basic
 
