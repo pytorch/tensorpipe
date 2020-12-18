@@ -76,6 +76,10 @@ if(TP_USE_CUDA)
       channel/cuda_ipc/cuda_ipc_test.cc
       )
   endif()
+
+  target_sources(tensorpipe_test PRIVATE
+    channel/cuda_gdr/cuda_gdr_test.cc
+    )
 endif()
 
 

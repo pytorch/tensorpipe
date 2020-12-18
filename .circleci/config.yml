@@ -96,7 +96,7 @@ jobs:
           name: Test
           command: |
             cd build
-            ./tensorpipe/test/tensorpipe_test
+            ./tensorpipe/test/tensorpipe_test --gtest_filter=-*CudaGdr*
       - run:
           name: Install
           command: |
