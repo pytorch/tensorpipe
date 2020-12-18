@@ -93,6 +93,12 @@ if(TP_USE_CUDA)
       channel/cuda_ipc/context_impl.cc)
     set(TENSORPIPE_HAS_CUDA_IPC_CHANNEL 1)
   endif()
+
+  target_sources(tensorpipe PRIVATE
+    common/ibv.cc
+    channel/cuda_gdr/channel.cc
+    channel/cuda_gdr/context.cc)
+  set(TENSORPIPE_HAS_CUDA_GDR_CHANNEL 1)
 endif()
 
 ## Transports
