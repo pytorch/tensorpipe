@@ -54,11 +54,13 @@ class ChannelImpl final
   CudaLoop& cudaLoop_;
 
   void onTempBufferReadyForSend(
+      uint64_t sequenceNumber,
       CudaBuffer buffer,
       CudaPinnedBuffer tmpBuffer,
       TDescriptorCallback descriptorCallback);
 
   void onCpuChannelRecv(
+      uint64_t sequenceNumber,
       CudaBuffer buffer,
       CudaPinnedBuffer tmpBuffer,
       TRecvCallback callback);

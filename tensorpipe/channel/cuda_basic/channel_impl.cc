@@ -46,8 +46,8 @@ void ChannelImpl::sendImplFromLoop(
     CudaBuffer buffer,
     TDescriptorCallback descriptorCallback,
     TSendCallback callback) {
-  TP_VLOG(5) << "Channel " << id_
-             << " is copying buffer from CUDA device to CPU";
+  TP_VLOG(5) << "Channel " << id_ << " is copying buffer #" << sequenceNumber
+             << " from CUDA device to CPU";
   auto tmpBuffer = makeCudaPinnedBuffer(buffer.length);
   TP_CUDA_CHECK(cudaMemcpyAsync(
       tmpBuffer.get(),
@@ -59,18 +59,25 @@ void ChannelImpl::sendImplFromLoop(
   cudaLoop_.addCallback(
       cudaDeviceForPointer(buffer.ptr),
       buffer.stream,
-      eagerCallbackWrapper_([buffer,
+      eagerCallbackWrapper_([sequenceNumber,
+                             buffer,
                              tmpBuffer{std::move(tmpBuffer)},
                              descriptorCallback{std::move(descriptorCallback)}](
                                 ChannelImpl& impl) mutable {
+        TP_VLOG(5) << "Channel " << impl.id_ << " is done copying buffer #"
+                   << sequenceNumber << " from CUDA device to CPU";
         impl.onTempBufferReadyForSend(
-            buffer, std::move(tmpBuffer), std::move(descriptorCallback));
+            sequenceNumber,
+            buffer,
+            std::move(tmpBuffer),
+            std::move(descriptorCallback));
       }));
 
   callback(Error::kSuccess);
 }
 
 void ChannelImpl::onTempBufferReadyForSend(
+    uint64_t sequenceNumber,
     CudaBuffer buffer,
     CudaPinnedBuffer tmpBuffer,
     TDescriptorCallback descriptorCallback) {
@@ -79,18 +86,16 @@ void ChannelImpl::onTempBufferReadyForSend(
     return;
   }
 
-  TP_VLOG(5) << "Channel " << id_
-             << " is done copying buffer from CUDA device to CPU";
-
   CpuBuffer cpuBuffer{tmpBuffer.get(), buffer.length};
   // Keep tmpBuffer alive until cpuChannel_ is done sending it over.
   // TODO: This could be a lazy callback wrapper.
   auto callback = eagerCallbackWrapper_(
-      [tmpBuffer{std::move(tmpBuffer)}](ChannelImpl& impl) {
-        TP_VLOG(5) << "Channel " << impl.id_
-                   << " is done sending buffer through CPU channel";
+      [sequenceNumber, tmpBuffer{std::move(tmpBuffer)}](ChannelImpl& impl) {
+        TP_VLOG(5) << "Channel " << impl.id_ << " is done sending buffer #"
+                   << sequenceNumber << " through CPU channel";
       });
-  TP_VLOG(6) << "Channel " << id_ << " is sending buffer through CPU channel";
+  TP_VLOG(6) << "Channel " << id_ << " is sending buffer #" << sequenceNumber
+             << " through CPU channel";
   cpuChannel_->send(
       cpuBuffer, std::move(descriptorCallback), std::move(callback));
 }
@@ -103,19 +108,25 @@ void ChannelImpl::recvImplFromLoop(
   auto tmpBuffer = makeCudaPinnedBuffer(buffer.length);
   CpuBuffer cpuBuffer{tmpBuffer.get(), buffer.length};
 
+  TP_VLOG(6) << "Channel " << id_ << " is receiving buffer #" << sequenceNumber
+             << " through CPU channel";
   cpuChannel_->recv(
       std::move(descriptor),
       cpuBuffer,
-      eagerCallbackWrapper_(
-          [buffer,
-           tmpBuffer{std::move(tmpBuffer)},
-           callback{std::move(callback)}](ChannelImpl& impl) mutable {
-            impl.onCpuChannelRecv(
-                buffer, std::move(tmpBuffer), std::move(callback));
-          }));
+      eagerCallbackWrapper_([sequenceNumber,
+                             buffer,
+                             tmpBuffer{std::move(tmpBuffer)},
+                             callback{std::move(callback)}](
+                                ChannelImpl& impl) mutable {
+        TP_VLOG(5) << "Channel " << impl.id_ << " is done receiving buffer #"
+                   << sequenceNumber << " through CPU channel";
+        impl.onCpuChannelRecv(
+            sequenceNumber, buffer, std::move(tmpBuffer), std::move(callback));
+      }));
 }
 
 void ChannelImpl::onCpuChannelRecv(
+    uint64_t sequenceNumber,
     CudaBuffer buffer,
     CudaPinnedBuffer tmpBuffer,
     TRecvCallback callback) {
@@ -124,8 +135,8 @@ void ChannelImpl::onCpuChannelRecv(
     return;
   }
 
-  TP_VLOG(5) << "Channel " << id_
-             << " is copying buffer from CPU to CUDA device";
+  TP_VLOG(5) << "Channel " << id_ << " is copying buffer #" << sequenceNumber
+             << " from CPU to CUDA device";
   TP_CUDA_CHECK(cudaMemcpyAsync(
       buffer.ptr,
       tmpBuffer.get(),
@@ -137,11 +148,11 @@ void ChannelImpl::onCpuChannelRecv(
   cudaLoop_.addCallback(
       cudaDeviceForPointer(buffer.ptr),
       buffer.stream,
-      eagerCallbackWrapper_(
-          [tmpBuffer{std::move(tmpBuffer)}](ChannelImpl& impl) mutable {
-            TP_VLOG(5) << "Channel " << impl.id_
-                       << " is done copying buffer from CPU to CUDA device";
-          }));
+      eagerCallbackWrapper_([sequenceNumber, tmpBuffer{std::move(tmpBuffer)}](
+                                ChannelImpl& impl) mutable {
+        TP_VLOG(5) << "Channel " << impl.id_ << " is done copying buffer #"
+                   << sequenceNumber << " from CPU to CUDA device";
+      }));
 
   callback(Error::kSuccess);
 }
