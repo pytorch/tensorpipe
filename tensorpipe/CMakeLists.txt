@@ -96,8 +96,9 @@ if(TP_USE_CUDA)
 
   target_sources(tensorpipe PRIVATE
     common/ibv.cc
-    channel/cuda_gdr/channel.cc
-    channel/cuda_gdr/context.cc)
+    channel/cuda_gdr/channel_impl.cc
+    channel/cuda_gdr/context.cc
+    channel/cuda_gdr/context_impl.cc)
   set(TENSORPIPE_HAS_CUDA_GDR_CHANNEL 1)
 endif()
 
