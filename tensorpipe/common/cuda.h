@@ -37,6 +37,27 @@ class CudaError final : public BaseError {
   cudaError_t error_;
 };
 
+class CudaDeviceGuard {
+ public:
+  CudaDeviceGuard() = delete;
+  CudaDeviceGuard(const CudaDeviceGuard&) = delete;
+  CudaDeviceGuard(CudaDeviceGuard&&) = delete;
+  CudaDeviceGuard& operator=(const CudaDeviceGuard&) = delete;
+  CudaDeviceGuard& operator=(CudaDeviceGuard&&) = delete;
+
+  explicit CudaDeviceGuard(int device) {
+    TP_CUDA_CHECK(cudaGetDevice(&device_));
+    TP_CUDA_CHECK(cudaSetDevice(device));
+  }
+
+  ~CudaDeviceGuard() {
+    TP_CUDA_CHECK(cudaSetDevice(device_));
+  }
+
+ private:
+  int device_;
+};
+
 class CudaEvent {
  public:
   CudaEvent() = delete;
@@ -46,7 +67,7 @@ class CudaEvent {
   CudaEvent& operator=(CudaEvent&&) = delete;
 
   explicit CudaEvent(int device, bool interprocess = false) {
-    TP_CUDA_CHECK(cudaSetDevice(device));
+    CudaDeviceGuard guard(device);
     int flags = cudaEventDisableTiming;
     if (interprocess) {
       flags |= cudaEventInterprocess;
@@ -56,7 +77,7 @@ class CudaEvent {
 
   explicit CudaEvent(int device, cudaIpcEventHandle_t handle) {
     // It could crash if we don't set device when creating events from handles
-    TP_CUDA_CHECK(cudaSetDevice(device));
+    CudaDeviceGuard guard(device);
     TP_CUDA_CHECK(cudaIpcOpenEventHandle(&ev_, handle));
   }
 
@@ -65,7 +86,7 @@ class CudaEvent {
   }
 
   void wait(cudaStream_t stream, int device) {
-    TP_CUDA_CHECK(cudaSetDevice(device));
+    CudaDeviceGuard guard(device);
     TP_CUDA_CHECK(cudaStreamWaitEvent(stream, ev_, 0));
   }
 
