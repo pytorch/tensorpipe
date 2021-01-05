@@ -18,6 +18,8 @@
 #include <utility>
 #include <vector>
 
+#include <cuda.h>
+
 #include <tensorpipe/channel/cuda_gdr/channel_impl.h>
 #include <tensorpipe/channel/cuda_gdr/error.h>
 #include <tensorpipe/common/defs.h>
@@ -56,8 +58,12 @@ IbvNic::IbvNic(
     std::string id,
     std::string name,
     IbvLib::device& device,
-    IbvLib& ibvLib)
-    : id_(std::move(id)), name_(std::move(name)), ibvLib_(ibvLib) {
+    IbvLib& ibvLib,
+    CudaLib& cudaLib)
+    : id_(std::move(id)),
+      name_(std::move(name)),
+      cudaLib_(cudaLib),
+      ibvLib_(ibvLib) {
   ctx_ = createIbvContext(ibvLib_, device);
   pd_ = createIbvProtectionDomain(ibvLib_, ctx_);
   cq_ = createIbvCompletionQueue(
@@ -179,14 +185,32 @@ IbvMemoryRegion& IbvNic::registerMemory(CudaBuffer buffer) {
   auto key = std::make_tuple(
       reinterpret_cast<uintptr_t>(buffer.ptr),
       static_cast<size_t>(buffer.length));
-  auto iter = memoryRegions_.find(key);
+
+  CUdeviceptr basePtr;
+  size_t allocSize;
+  TP_CUDA_DRIVER_CHECK(
+      cudaLib_,
+      cudaLib_.memGetAddressRange(
+          &basePtr, &allocSize, reinterpret_cast<CUdeviceptr>(buffer.ptr)));
+
+  unsigned long long bufferId;
+  TP_CUDA_DRIVER_CHECK(
+      cudaLib_,
+      cudaLib_.pointerGetAttribute(
+          &bufferId, CU_POINTER_ATTRIBUTE_BUFFER_ID, basePtr));
+
+  auto iter = memoryRegions_.find(bufferId);
   if (iter != memoryRegions_.end()) {
     return iter->second;
   }
   std::tie(iter, std::ignore) = memoryRegions_.emplace(
-      key,
+      bufferId,
       createIbvMemoryRegion(
-          ibvLib_, pd_, buffer.ptr, buffer.length, IbvLib::ACCESS_LOCAL_WRITE));
+          ibvLib_,
+          pd_,
+          reinterpret_cast<void*>(basePtr),
+          allocSize,
+          IbvLib::ACCESS_LOCAL_WRITE));
   return iter->second;
 }
 
@@ -201,6 +225,17 @@ void IbvNic::setId(std::string id) {
 ContextImpl::ContextImpl(std::vector<std::string> gpuIdxToNicName)
     : ContextImplBoilerplate<CudaBuffer, ContextImpl, ChannelImpl>("*") {
   Error error;
+
+  std::tie(error, cudaLib_) = CudaLib::create();
+  // FIXME Instead of throwing away the error and setting a bool, we should have
+  // a way to set the reactor in an error state, and use that for viability.
+  if (error) {
+    TP_VLOG(6) << "Channel context " << id_
+               << " is not viable because libcuda could not be loaded";
+    return;
+  }
+  foundCudaLib_ = true;
+
   std::tie(error, ibvLib_) = IbvLib::create();
   // FIXME Instead of throwing away the error and setting a bool, we should have
   // a way to set the reactor in an error state, and use that for viability.
@@ -231,7 +266,7 @@ ContextImpl::ContextImpl(std::vector<std::string> gpuIdxToNicName)
     if (iter != nicNames.end()) {
       TP_VLOG(5) << "Channel context " << id_ << " is using InfiniBand NIC "
                  << deviceName << " as device #" << nicIdx;
-      ibvNics_.emplace_back(id_, *iter, device, ibvLib_);
+      ibvNics_.emplace_back(id_, *iter, device, ibvLib_, cudaLib_);
       nicNameToNicIdx[*iter] = nicIdx;
       nicIdx++;
       nicNames.erase(iter);

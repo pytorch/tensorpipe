@@ -40,7 +40,10 @@ namespace tensorpipe {
   _(getErrorString, cuGetErrorString, (CUresult, const char**)) \
   _(memGetAddressRange_v2,                                      \
     cuMemGetAddressRange_v2,                                    \
-    (CUdeviceptr*, size_t*, CUdeviceptr))
+    (CUdeviceptr*, size_t*, CUdeviceptr))                       \
+  _(pointerGetAttribute,                                        \
+    cuPointerGetAttribute,                                      \
+    (void*, CUpointer_attribute, CUdeviceptr))
 
 // Wrapper for libcuda.
 
