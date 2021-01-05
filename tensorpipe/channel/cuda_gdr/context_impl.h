@@ -8,19 +8,31 @@
 
 #pragma once
 
+#include <deque>
+#include <functional>
 #include <list>
 #include <map>
+#include <memory>
+#include <string>
+#include <tuple>
+#include <unordered_map>
+#include <vector>
 
+#include <tensorpipe/channel/context_impl_boilerplate.h>
+#include <tensorpipe/channel/cuda_context.h>
 #include <tensorpipe/channel/cuda_gdr/constants.h>
-#include <tensorpipe/channel/cuda_gdr/context.h>
 #include <tensorpipe/common/busy_polling_loop.h>
-#include <tensorpipe/common/callback.h>
 #include <tensorpipe/common/cuda.h>
+#include <tensorpipe/common/cuda_buffer.h>
+#include <tensorpipe/common/error.h>
 #include <tensorpipe/common/ibv.h>
+#include <tensorpipe/transport/context.h>
 
 namespace tensorpipe {
 namespace channel {
 namespace cuda_gdr {
+
+class ChannelImpl;
 
 class IbvNic {
  public:
@@ -98,20 +110,15 @@ class IbvNic {
   std::map<std::tuple<uintptr_t, size_t>, IbvMemoryRegion> memoryRegions_;
 };
 
-class Context::Impl : public BusyPollingLoop,
-                      public std::enable_shared_from_this<Context::Impl> {
+class ContextImpl final
+    : public BusyPollingLoop,
+      public ContextImplBoilerplate<CudaBuffer, ContextImpl, ChannelImpl> {
  public:
-  explicit Impl(std::vector<std::string> gpuIdxToNicName);
+  explicit ContextImpl(std::vector<std::string> gpuIdxToNicName);
 
-  const std::string& domainDescriptor() const;
-
-  std::shared_ptr<channel::CudaChannel> createChannel(
+  std::shared_ptr<CudaChannel> createChannel(
       std::shared_ptr<transport::Connection> connection,
       Endpoint endpoint);
-
-  void setId(std::string id);
-
-  ClosingEmitter& getClosingEmitter();
 
   const std::vector<size_t>& getGpuToNicMapping();
 
@@ -123,32 +130,17 @@ class Context::Impl : public BusyPollingLoop,
       const CudaEvent& event,
       std::function<void(const Error&)> cb);
 
-  void close();
-
-  void join();
-
  protected:
   // Implement BusyPollingLoop hooks.
   bool pollOnce() override;
   bool readyToClose() override;
 
+  // Implement the entry points called by ContextImplBoilerplate.
+  void closeImpl() override;
+  void joinImpl() override;
+  void setIdImpl() override;
+
  private:
-  std::string domainDescriptor_;
-  std::atomic<bool> closed_{false};
-  std::atomic<bool> joined_{false};
-  ClosingEmitter closingEmitter_;
-
-  // An identifier for the context, composed of the identifier for the context,
-  // combined with the channel's name. It will only be used for logging and
-  // debugging purposes.
-  std::string id_{"N/A"};
-
-  // Sequence numbers for the channels created by this context, used to create
-  // their identifiers based off this context's identifier. They will only be
-  // used for logging and debugging.
-  std::atomic<uint64_t> channelCounter_{0};
-
-  // InfiniBand stuff
   bool foundIbvLib_{false};
   IbvLib ibvLib_;
   std::vector<IbvNic> ibvNics_;
