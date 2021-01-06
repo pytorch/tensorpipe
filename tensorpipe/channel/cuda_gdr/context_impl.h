@@ -24,6 +24,7 @@
 #include <tensorpipe/common/busy_polling_loop.h>
 #include <tensorpipe/common/cuda.h>
 #include <tensorpipe/common/cuda_buffer.h>
+#include <tensorpipe/common/cuda_lib.h>
 #include <tensorpipe/common/error.h>
 #include <tensorpipe/common/ibv.h>
 #include <tensorpipe/transport/context.h>
@@ -40,7 +41,8 @@ class IbvNic {
       std::string id,
       std::string name,
       IbvLib::device& device,
-      IbvLib& ibvLib);
+      IbvLib& ibvLib,
+      CudaLib& cudaLib);
 
   IbvProtectionDomain& getIbvPd() {
     return pd_;
@@ -78,6 +80,8 @@ class IbvNic {
   // The name of the InfiniBand device.
   std::string name_;
 
+  CudaLib& cudaLib_;
+
   IbvLib& ibvLib_;
   IbvContext ctx_;
   IbvProtectionDomain pd_;
@@ -107,7 +111,12 @@ class IbvNic {
       requestsInFlight_;
   uint64_t nextRequestId_ = 0;
 
-  std::map<std::tuple<uintptr_t, size_t>, IbvMemoryRegion> memoryRegions_;
+  // The ibverbs memory regions are indexed by the CUDA driver's buffer ID for
+  // the GPU allocation, which is unique (within the process) and never reused.
+  // This will prevent us from re-using the memory region if a buffer gets
+  // deallocated and reallocated (although we will not clean up the old memory
+  // region until we close the context).
+  std::map<unsigned long long, IbvMemoryRegion> memoryRegions_;
 };
 
 class ContextImpl final
@@ -141,6 +150,8 @@ class ContextImpl final
   void setIdImpl() override;
 
  private:
+  bool foundCudaLib_{false};
+  CudaLib cudaLib_;
   bool foundIbvLib_{false};
   IbvLib ibvLib_;
   std::vector<IbvNic> ibvNics_;
