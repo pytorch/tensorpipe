@@ -45,6 +45,10 @@ class ContextImplBoilerplate : public virtual DeferredExecutor,
   void enroll(TChan& channel);
   void unenroll(TChan& channel);
 
+  // Return whether the context is in a closed state. To avoid race conditions,
+  // this must be called from within the loop.
+  bool closed();
+
   ClosingEmitter& getClosingEmitter();
 
   void setId(std::string id);
@@ -127,6 +131,12 @@ void ContextImplBoilerplate<TBuffer, TCtx, TChan>::unenroll(TChan& channel) {
   auto numRemoved = channels_.erase(&channel);
   TP_DCHECK_EQ(numRemoved, 1);
 }
+
+template <typename TBuffer, typename TCtx, typename TChan>
+bool ContextImplBoilerplate<TBuffer, TCtx, TChan>::closed() {
+  TP_DCHECK(inLoop());
+  return closed_;
+};
 
 template <typename TBuffer, typename TCtx, typename TChan>
 ClosingEmitter& ContextImplBoilerplate<TBuffer, TCtx, TChan>::
