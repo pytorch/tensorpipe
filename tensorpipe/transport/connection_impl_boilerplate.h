@@ -131,7 +131,7 @@ class ConnectionImplBoilerplate : public std::enable_shared_from_this<TConn> {
   uint64_t nextBufferBeingWritten_{0};
 
   // Contexts and listeners do sometimes need to call directly into initFromLoop
-  // and closeForLoop, in order to make sure that some of their operations can
+  // and closeFromLoop, in order to make sure that some of their operations can
   // happen "atomically" on the connection, without possibly other operations
   // occurring in between (e.g., an error).
   friend ContextImplBoilerplate<TCtx, TList, TConn>;

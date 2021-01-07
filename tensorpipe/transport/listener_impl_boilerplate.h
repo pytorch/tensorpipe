@@ -112,7 +112,7 @@ class ListenerImplBoilerplate : public std::enable_shared_from_this<TList> {
   // only be used for logging and debugging.
   std::atomic<uint64_t> connectionCounter_{0};
 
-  // Contexts do sometimes need to call directly into closeForLoop, in order to
+  // Contexts do sometimes need to call directly into closeFromLoop, in order to
   // make sure that some of their operations can happen "atomically" on the
   // connection, without possibly other operations occurring in between (e.g.,
   // an error).

@@ -16,7 +16,6 @@
 #include <utility>
 
 #include <tensorpipe/channel/channel_boilerplate.h>
-#include <tensorpipe/common/callback.h>
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/transport/context.h>
 
@@ -50,8 +49,6 @@ class ContextImplBoilerplate : public virtual DeferredExecutor,
   // this must be called from within the loop.
   bool closed();
 
-  ClosingEmitter& getClosingEmitter();
-
   void setId(std::string id);
 
   void close();
@@ -76,7 +73,6 @@ class ContextImplBoilerplate : public virtual DeferredExecutor,
  private:
   std::atomic<bool> closed_{false};
   std::atomic<bool> joined_{false};
-  ClosingEmitter closingEmitter_;
 
   const std::string domainDescriptor_;
 
@@ -140,12 +136,6 @@ bool ContextImplBoilerplate<TBuffer, TCtx, TChan>::closed() {
 };
 
 template <typename TBuffer, typename TCtx, typename TChan>
-ClosingEmitter& ContextImplBoilerplate<TBuffer, TCtx, TChan>::
-    getClosingEmitter() {
-  return closingEmitter_;
-};
-
-template <typename TBuffer, typename TCtx, typename TChan>
 void ContextImplBoilerplate<TBuffer, TCtx, TChan>::setId(std::string id) {
   TP_VLOG(4) << "Channel context " << id_ << " was renamed to " << id;
   id_ = std::move(id);
@@ -160,7 +150,17 @@ void ContextImplBoilerplate<TBuffer, TCtx, TChan>::close() {
     if (!closed_.exchange(true)) {
       TP_VLOG(4) << "Channel context " << id_ << " is closing";
 
-      closingEmitter_.close();
+      // Make a copy as they could unenroll themselves inline.
+      auto channelsCopy = channels_;
+      // We call closeFromLoop, rather than just close, because we need these
+      // objects to transition _immediately_ to error, "atomically". If we just
+      // deferred closing to later, this could come after some already-enqueued
+      // operations that could try to access the context, which would be closed,
+      // and this could fail.
+      for (auto& iter : channelsCopy) {
+        iter.second->closeFromLoop();
+      }
+
       closeImpl();
 
       TP_VLOG(4) << "Channel context " << id_ << " done closing";

@@ -12,6 +12,7 @@
 #include <string>
 #include <utility>
 
+#include <tensorpipe/channel/cma/channel_impl.h>
 #include <tensorpipe/channel/cma/context_impl.h>
 
 namespace tensorpipe {

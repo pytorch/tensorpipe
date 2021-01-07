@@ -120,8 +120,6 @@ class ChannelImplBoilerplate : public std::enable_shared_from_this<TChan> {
   // Deal with an error.
   void handleError();
 
-  ClosingReceiver closingReceiver_;
-
   // A sequence number for the calls to send and recv.
   uint64_t nextTensorBeingSent_{0};
   uint64_t nextTensorBeingReceived_{0};
@@ -131,6 +129,12 @@ class ChannelImplBoilerplate : public std::enable_shared_from_this<TChan> {
   friend class tensorpipe::LazyCallbackWrapper;
   template <typename T>
   friend class tensorpipe::EagerCallbackWrapper;
+
+  // Contexts do sometimes need to call directly into closeFromLoop, in order to
+  // make sure that some of their operations can happen "atomically" on the
+  // connection, without possibly other operations occurring in between (e.g.,
+  // an error).
+  friend ContextImplBoilerplate<TBuffer, TCtx, TChan>;
 };
 
 template <typename TBuffer, typename TCtx, typename TChan>
@@ -138,9 +142,7 @@ ChannelImplBoilerplate<TBuffer, TCtx, TChan>::ChannelImplBoilerplate(
     ConstructorToken /* unused */,
     std::shared_ptr<TCtx> context,
     std::string id)
-    : context_(std::move(context)),
-      id_(std::move(id)),
-      closingReceiver_(context_, context_->getClosingEmitter()) {}
+    : context_(std::move(context)), id_(std::move(id)) {}
 
 template <typename TBuffer, typename TCtx, typename TChan>
 void ChannelImplBoilerplate<TBuffer, TCtx, TChan>::init() {
@@ -158,8 +160,6 @@ void ChannelImplBoilerplate<TBuffer, TCtx, TChan>::initFromLoop() {
     TP_VLOG(4) << "Channel " << id_ << " is closing (without initing)";
     return;
   }
-
-  closingReceiver_.activate(*this);
 
   initImplFromLoop();
 }

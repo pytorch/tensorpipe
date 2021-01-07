@@ -12,6 +12,7 @@
 #include <string>
 #include <utility>
 
+#include <tensorpipe/channel/basic/channel_impl.h>
 #include <tensorpipe/channel/basic/context_impl.h>
 
 namespace tensorpipe {

@@ -13,6 +13,7 @@
 #include <utility>
 #include <vector>
 
+#include <tensorpipe/channel/mpt/channel_impl.h>
 #include <tensorpipe/channel/mpt/context_impl.h>
 
 namespace tensorpipe {

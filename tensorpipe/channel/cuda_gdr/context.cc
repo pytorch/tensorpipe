@@ -13,6 +13,7 @@
 #include <utility>
 #include <vector>
 
+#include <tensorpipe/channel/cuda_gdr/channel_impl.h>
 #include <tensorpipe/channel/cuda_gdr/context_impl.h>
 
 namespace tensorpipe {

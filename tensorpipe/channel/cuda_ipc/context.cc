@@ -12,6 +12,7 @@
 #include <string>
 #include <utility>
 
+#include <tensorpipe/channel/cuda_ipc/channel_impl.h>
 #include <tensorpipe/channel/cuda_ipc/context_impl.h>
 
 namespace tensorpipe {
