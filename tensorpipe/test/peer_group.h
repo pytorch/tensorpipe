@@ -161,15 +161,22 @@ class ProcessPeerGroup : public PeerGroup {
       pids[peerId] = fork();
       TP_THROW_SYSTEM_IF(pids[peerId] < 0, errno) << "Failed to fork";
       if (pids[peerId] == 0) {
-        // Close writing end of our pipe.
-        TP_THROW_SYSTEM_IF(close(pipefd_[peerId][kWriteEnd]) < 0, errno)
-            << "Failed to close fd";
-        // Close reading end of other pipe.
-        TP_THROW_SYSTEM_IF(close(pipefd_[1 - peerId][kReadEnd]) < 0, errno)
-            << "Failed to close fd";
+        try {
+          // Close writing end of our pipe.
+          TP_THROW_SYSTEM_IF(close(pipefd_[peerId][kWriteEnd]) < 0, errno)
+              << "Failed to close fd";
+          // Close reading end of other pipe.
+          TP_THROW_SYSTEM_IF(close(pipefd_[1 - peerId][kReadEnd]) < 0, errno)
+              << "Failed to close fd";
 
-        fns[peerId]();
-
+          fns[peerId]();
+        } catch (const std::exception& e) {
+          TP_LOG_ERROR() << "Child #" << peerId << " (PID " << getpid()
+                         << ") encountered exception " << e.what();
+          std::exit(2);
+        } catch (...) {
+          std::exit(3);
+        }
         std::exit(((testing::Test::HasFailure()) ? 1 : 0));
       }
     }
