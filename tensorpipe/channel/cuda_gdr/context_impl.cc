@@ -182,9 +182,7 @@ void IbvNic::postRecv(
 }
 
 IbvMemoryRegion& IbvNic::registerMemory(CudaBuffer buffer) {
-  auto key = std::make_tuple(
-      reinterpret_cast<uintptr_t>(buffer.ptr),
-      static_cast<size_t>(buffer.length));
+  CudaDeviceGuard guard(cudaDeviceForPointer(buffer.ptr));
 
   CUdeviceptr basePtr;
   size_t allocSize;

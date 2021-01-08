@@ -61,6 +61,7 @@ SendOperation::SendOperation(
 }
 
 Descriptor SendOperation::descriptor(CudaLib& cudaLib) {
+  CudaDeviceGuard guard(cudaDeviceForPointer(ptr_));
   cudaIpcMemHandle_t handle;
   TP_CUDA_CHECK(cudaIpcGetMemHandle(&handle, const_cast<void*>(ptr_)));
   CUdeviceptr basePtr;
