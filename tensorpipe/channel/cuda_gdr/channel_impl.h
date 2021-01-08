@@ -193,8 +193,8 @@ class ChannelImpl final
       const HandshakeSetupInfo& nopHandshakeSetupInfo);
 
   std::vector<size_t> localGpuToNic_;
-  size_t numLocalNics_;
-  size_t numRemoteNics_;
+  size_t numLocalNics_{0};
+  size_t numRemoteNics_{0};
 
   std::vector<std::vector<IbvQueuePair>> queuePairs_;
 
