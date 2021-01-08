@@ -27,6 +27,7 @@
 #include <tensorpipe/common/cuda_lib.h>
 #include <tensorpipe/common/error.h>
 #include <tensorpipe/common/ibv.h>
+#include <tensorpipe/common/optional.h>
 #include <tensorpipe/transport/context.h>
 
 namespace tensorpipe {
@@ -123,7 +124,8 @@ class ContextImpl final
     : public BusyPollingLoop,
       public ContextImplBoilerplate<CudaBuffer, ContextImpl, ChannelImpl> {
  public:
-  explicit ContextImpl(std::vector<std::string> gpuIdxToNicName);
+  explicit ContextImpl(
+      optional<std::vector<std::string>> gpuIdxToNicName = nullopt);
 
   std::shared_ptr<CudaChannel> createChannel(
       std::shared_ptr<transport::Connection> connection,

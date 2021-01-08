@@ -20,7 +20,7 @@ namespace tensorpipe {
 namespace channel {
 namespace cuda_gdr {
 
-Context::Context(std::vector<std::string> gpuIdxToNicName)
+Context::Context(optional<std::vector<std::string>> gpuIdxToNicName)
     : impl_(std::make_shared<ContextImpl>(std::move(gpuIdxToNicName))) {}
 
 // Explicitly define all methods of the context, which just forward to the impl.

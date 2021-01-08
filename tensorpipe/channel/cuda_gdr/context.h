@@ -13,6 +13,7 @@
 #include <vector>
 
 #include <tensorpipe/channel/cuda_context.h>
+#include <tensorpipe/common/optional.h>
 #include <tensorpipe/transport/context.h>
 
 namespace tensorpipe {
@@ -23,7 +24,8 @@ class ContextImpl;
 
 class Context : public CudaContext {
  public:
-  explicit Context(std::vector<std::string> gpuIdxToNicName);
+  explicit Context(
+      optional<std::vector<std::string>> gpuIdxToNicName = nullopt);
 
   Context(const Context&) = delete;
   Context(Context&&) = delete;
