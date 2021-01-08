@@ -228,21 +228,23 @@ ContextImpl::ContextImpl(std::vector<std::string> gpuIdxToNicName)
   // FIXME Instead of throwing away the error and setting a bool, we should have
   // a way to set the context in an error state, and use that for viability.
   if (error) {
-    TP_VLOG(6) << "Channel context " << id_
-               << " is not viable because libcuda could not be loaded";
+    TP_VLOG(5) << "Channel context " << id_
+               << " is not viable because libcuda could not be loaded: "
+               << error.what();
+    viable_ = false;
     return;
   }
-  foundCudaLib_ = true;
 
   std::tie(error, ibvLib_) = IbvLib::create();
   // FIXME Instead of throwing away the error and setting a bool, we should have
-  // a way to set the reactor in an error state, and use that for viability.
+  // a way to set the context in an error state, and use that for viability.
   if (error) {
-    TP_VLOG(6) << "Channel context " << id_
-               << " couldn't open libibverbs: " << error.what();
+    TP_VLOG(5) << "Channel context " << id_
+               << " is not viable because libibverbs could not be loaded: "
+               << error.what();
+    viable_ = false;
     return;
   }
-  foundIbvLib_ = true;
 
   // TODO Check whether the NVIDIA memory peering kernel module is available.
   // And maybe even allocate and register some CUDA memory to ensure it works.
@@ -365,6 +367,10 @@ std::shared_ptr<CudaChannel> ContextImpl::createChannel(
     std::shared_ptr<transport::Connection> connection,
     Endpoint /* unused */) {
   return createChannelInternal(std::move(connection));
+}
+
+bool ContextImpl::isViable() const {
+  return viable_;
 }
 
 } // namespace cuda_gdr
