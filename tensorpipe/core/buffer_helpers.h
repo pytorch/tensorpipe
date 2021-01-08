@@ -54,6 +54,8 @@ constexpr auto switchOnDeviceType(DeviceType dt, TVisitor visitor) {
     default:
       TP_THROW_ASSERT() << "Unknown device type.";
   };
+  // Dummy return to make compiler happy.
+  return visitor(CpuBuffer{});
 }
 
 template <typename TVisitor>
