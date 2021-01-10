@@ -94,9 +94,10 @@ static void serverPongPingNonBlock(
 static void runServer(const Options& options) {
   std::string addr = options.address;
   int numRoundTrips = options.numRoundTrips;
-  Data data = {createData(options.payloadSize),
-               std::make_unique<uint8_t[]>(options.payloadSize),
-               options.payloadSize};
+  Data data = {
+      createData(options.payloadSize),
+      std::make_unique<uint8_t[]>(options.payloadSize),
+      options.payloadSize};
   Measurements measurements;
   measurements.reserve(options.numRoundTrips);
 
@@ -157,9 +158,10 @@ static void clientPingPongNonBlock(
 static void runClient(const Options& options) {
   std::string addr = options.address;
   int numRoundTrips = options.numRoundTrips;
-  Data data = {createData(options.payloadSize),
-               std::make_unique<uint8_t[]>(options.payloadSize),
-               options.payloadSize};
+  Data data = {
+      createData(options.payloadSize),
+      std::make_unique<uint8_t[]>(options.payloadSize),
+      options.payloadSize};
   Measurements measurements;
   measurements.reserve(options.numRoundTrips);
 

@@ -72,8 +72,8 @@ class ThreadPeerGroup : public PeerGroup {
   }
 
   void spawn(std::function<void()> f1, std::function<void()> f2) override {
-    std::array<std::function<void()>, kNumPeers> fns = {std::move(f1),
-                                                        std::move(f2)};
+    std::array<std::function<void()>, kNumPeers> fns = {
+        std::move(f1), std::move(f2)};
     std::array<std::thread, kNumPeers> ts;
 
     for (int peerId = 0; peerId < kNumPeers; ++peerId) {
@@ -148,8 +148,8 @@ class ProcessPeerGroup : public PeerGroup {
   }
 
   void spawn(std::function<void()> f1, std::function<void()> f2) override {
-    std::array<std::function<void()>, kNumPeers> fns = {std::move(f1),
-                                                        std::move(f2)};
+    std::array<std::function<void()>, kNumPeers> fns = {
+        std::move(f1), std::move(f2)};
     std::array<pid_t, kNumPeers> pids = {-1, -1};
 
     for (int peerId = 0; peerId < kNumPeers; ++peerId) {

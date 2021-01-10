@@ -138,8 +138,8 @@ class Consumer {
       result[0] = {.ptr = data_ + start, .len = size};
       return {1, result};
     } else {
-      result[0] = {.ptr = data_ + start,
-                   .len = header_.kDataPoolByteSize - start};
+      result[0] = {
+          .ptr = data_ + start, .len = header_.kDataPoolByteSize - start};
       result[1] = {.ptr = data_, .len = end};
       return {2, result};
     }
