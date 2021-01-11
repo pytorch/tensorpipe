@@ -62,46 +62,39 @@ jobs:
             cd build
             make install
   build_gpu:
+    parameters:
+      cuda_version:
+        type: string
     machine:
       resource_class: gpu.nvidia.small
       image: ubuntu-1604-cuda-10.1:201909-23
+      docker_layer_caching: true
     steps:
       - checkout
-      - run:
-          name: Install apt packages
-          command: |
-            sudo apt-get update
-            sudo apt-get install -y git-core build-essential cmake
       - run:
           name: Initialize submodules
           command: |
             git submodule init
             git submodule update
       - run:
-          name: Build
+          name: Build/test
           command: |
-            mkdir build
-            cd build
-            cmake ../ \
-              -DCMAKE_C_FLAGS="-Werror -Wno-deprecated-declarations" \
-              -DCMAKE_CXX_FLAGS="-Werror -Wno-deprecated-declarations" \
-              -DTP_ENABLE_SHM=OFF \
-              -DTP_ENABLE_CMA=OFF \
-              -DTP_USE_CUDA=ON \
-              -DTP_ENABLE_CUDA_IPC=ON \
-              -DTP_ENABLE_IBV=OFF \
-              -DTP_BUILD_TESTING=ON
-            make -j20
-      - run:
-          name: Test
-          command: |
-            cd build
-            ./tensorpipe/test/tensorpipe_test --gtest_filter=-*CudaGdr*
-      - run:
-          name: Install
-          command: |
-            cd build
-            sudo make install
+              docker build -t tensorpipe -f .circleci/Dockerfile.cuda<< parameters.cuda_version >> .
+              docker run --gpus all tensorpipe sh -c "
+                mkdir build && cd build &&
+                cmake ../ \
+                  -DCMAKE_C_FLAGS=\"-Werror -Wno-deprecated-declarations\" \
+                  -DCMAKE_CXX_FLAGS=\"-Werror -Wno-deprecated-declarations\" \
+                  -DCUDA_NVCC_FLAGS=\"-gencode arch=compute_61,code=sm_61\" \
+                  -DTP_ENABLE_SHM=OFF \
+                  -DTP_ENABLE_CMA=OFF \
+                  -DTP_USE_CUDA=ON \
+                  -DTP_ENABLE_CUDA_IPC=ON \
+                  -DTP_ENABLE_IBV=OFF \
+                  -DTP_BUILD_TESTING=ON &&
+                make -j20 &&
+                ./tensorpipe/test/tensorpipe_test --gtest_filter=-*CudaGdr* &&
+                make install"
   bare_metal:
     parameters:
       image:
@@ -300,7 +293,14 @@ workflows:
           c_compiler: gcc-7
           cxx_compiler: g++-7
       - build_gpu:
-          name: GPU
+          name: GPU (CUDA 10.1)
+          cuda_version: "10.1"
+      - build_gpu:
+          name: GPU (CUDA 10.2)
+          cuda_version: "10.2"
+      - build_gpu:
+          name: GPU (CUDA 11.1)
+          cuda_version: "11.1"
       - build_osx:
           name: OSX
       - python:
