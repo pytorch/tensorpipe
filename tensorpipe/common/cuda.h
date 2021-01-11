@@ -146,7 +146,6 @@ class CudaPinnedBufferAllocator {
       std::unique_lock<std::mutex> lock(mutex_);
       size_t requestedChunks = (size + kChunkSize_ - 1) / kChunkSize_;
       size_t startChunk = 0;
-      size_t curChunk = 0;
 
       // Linear check for available contiguous chunks.
       for (size_t curChunk = 0; curChunk < kNumChunks_; ++curChunk) {
