@@ -142,29 +142,35 @@ class CudaPinnedBufferAllocator {
         basePtr_(allocPinnedBuffer(numChunks * chunkSize)) {}
 
   std::shared_ptr<uint8_t> getBuffer(size_t size) {
-    // Requested size larger than pre-allocated chunks, falling back to
-    // allocating a temporary buffer.
-    if (size > kChunkSize_) {
-      return allocPinnedBuffer(size);
-    }
-
     {
       std::unique_lock<std::mutex> lock(mutex_);
-      for (int i = 0; i < kNumChunks_; ++i) {
-        if (chunkAvailable_[i]) {
-          chunkAvailable_[i] = false;
+      size_t requestedChunks = (size + kChunkSize_ - 1) / kChunkSize_;
+      size_t startChunk = 0;
+      size_t curChunk = 0;
+
+      // Linear check for available contiguous chunks.
+      for (size_t curChunk = 0; curChunk < kNumChunks_; ++curChunk) {
+        if (!chunkAvailable_[curChunk]) {
+          startChunk = curChunk + 1;
+        } else if (curChunk - startChunk + 1 == requestedChunks) {
+          for (size_t i = startChunk; i <= curChunk; ++i) {
+            chunkAvailable_[i] = false;
+          }
+
           return std::shared_ptr<uint8_t>(
-              basePtr_.get() + i * kChunkSize_, [this](uint8_t* ptr) {
-                size_t chunkId = (ptr - basePtr_.get()) / kChunkSize_;
-                // There is a harmless race condition here.
-                chunkAvailable_[chunkId] = true;
+              basePtr_.get() + startChunk * kChunkSize_,
+              [this, startChunk, curChunk](uint8_t* /* unused */) {
+                for (size_t i = startChunk; i <= curChunk; ++i) {
+                  // There is a harmless race condition here.
+                  chunkAvailable_[i] = true;
+                }
               });
         }
       }
     }
 
-    // No pre-allocated chunk available, falling back to allocating a temporary
-    // buffer.
+    // No contiguous pre-allocated chunks available, falling back to allocating
+    // a temporary buffer.
     return allocPinnedBuffer(size);
   }
 
