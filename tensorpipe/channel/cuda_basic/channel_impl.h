@@ -31,7 +31,8 @@ class ChannelImpl final
       std::shared_ptr<ContextImpl> context,
       std::string id,
       std::shared_ptr<CpuChannel> cpuChannel,
-      CudaLoop& cudaLoop);
+      CudaLoop& cudaLoop,
+      CudaPinnedBufferAllocator& cudaPinnedBufferAllocator);
 
  protected:
   // Implement the entry points called by ChannelImplBoilerplate.
@@ -52,17 +53,18 @@ class ChannelImpl final
  private:
   const std::shared_ptr<CpuChannel> cpuChannel_;
   CudaLoop& cudaLoop_;
+  CudaPinnedBufferAllocator& cudaPinnedBufferAllocator_;
 
   void onTempBufferReadyForSend(
       uint64_t sequenceNumber,
       CudaBuffer buffer,
-      CudaPinnedBuffer tmpBuffer,
+      std::shared_ptr<uint8_t> tmpBuffer,
       TDescriptorCallback descriptorCallback);
 
   void onCpuChannelRecv(
       uint64_t sequenceNumber,
       CudaBuffer buffer,
-      CudaPinnedBuffer tmpBuffer,
+      std::shared_ptr<uint8_t> tmpBuffer,
       TRecvCallback callback);
 };
 

@@ -29,13 +29,15 @@ ChannelImpl::ChannelImpl(
     std::shared_ptr<ContextImpl> context,
     std::string id,
     std::shared_ptr<CpuChannel> cpuChannel,
-    CudaLoop& cudaLoop)
+    CudaLoop& cudaLoop,
+    CudaPinnedBufferAllocator& cudaPinnedBufferAllocator)
     : ChannelImplBoilerplate<CudaBuffer, ContextImpl, ChannelImpl>(
           token,
           std::move(context),
           std::move(id)),
       cpuChannel_(std::move(cpuChannel)),
-      cudaLoop_(cudaLoop) {}
+      cudaLoop_(cudaLoop),
+      cudaPinnedBufferAllocator_(cudaPinnedBufferAllocator) {}
 
 void ChannelImpl::initImplFromLoop() {
   context_->enroll(*this);
@@ -48,7 +50,8 @@ void ChannelImpl::sendImplFromLoop(
     TSendCallback callback) {
   TP_VLOG(5) << "Channel " << id_ << " is copying buffer #" << sequenceNumber
              << " from CUDA device to CPU";
-  auto tmpBuffer = makeCudaPinnedBuffer(buffer.length);
+  std::shared_ptr<uint8_t> tmpBuffer =
+      cudaPinnedBufferAllocator_.getBuffer(buffer.length);
   TP_CUDA_CHECK(cudaMemcpyAsync(
       tmpBuffer.get(),
       buffer.ptr,
@@ -79,7 +82,7 @@ void ChannelImpl::sendImplFromLoop(
 void ChannelImpl::onTempBufferReadyForSend(
     uint64_t sequenceNumber,
     CudaBuffer buffer,
-    CudaPinnedBuffer tmpBuffer,
+    std::shared_ptr<uint8_t> tmpBuffer,
     TDescriptorCallback descriptorCallback) {
   if (error_) {
     descriptorCallback(error_, std::string());
@@ -105,7 +108,8 @@ void ChannelImpl::recvImplFromLoop(
     TDescriptor descriptor,
     CudaBuffer buffer,
     TRecvCallback callback) {
-  auto tmpBuffer = makeCudaPinnedBuffer(buffer.length);
+  std::shared_ptr<uint8_t> tmpBuffer =
+      cudaPinnedBufferAllocator_.getBuffer(buffer.length);
   CpuBuffer cpuBuffer{tmpBuffer.get(), buffer.length};
 
   TP_VLOG(6) << "Channel " << id_ << " is receiving buffer #" << sequenceNumber
@@ -128,7 +132,7 @@ void ChannelImpl::recvImplFromLoop(
 void ChannelImpl::onCpuChannelRecv(
     uint64_t sequenceNumber,
     CudaBuffer buffer,
-    CudaPinnedBuffer tmpBuffer,
+    std::shared_ptr<uint8_t> tmpBuffer,
     TRecvCallback callback) {
   if (error_) {
     callback(error_);

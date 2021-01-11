@@ -9,6 +9,8 @@
 #pragma once
 
 #include <memory>
+#include <mutex>
+#include <vector>
 
 #include <cuda_runtime.h>
 
@@ -125,14 +127,61 @@ inline int cudaDeviceForPointer(const void* ptr) {
   return attrs.device;
 }
 
-using CudaPinnedBuffer = std::shared_ptr<uint8_t>;
+class CudaPinnedBufferAllocator {
+ public:
+  CudaPinnedBufferAllocator(const CudaPinnedBufferAllocator&) = delete;
+  CudaPinnedBufferAllocator(CudaPinnedBufferAllocator&&) = delete;
+  CudaPinnedBufferAllocator& operator=(const CudaPinnedBufferAllocator&) =
+      delete;
+  CudaPinnedBufferAllocator& operator=(CudaPinnedBufferAllocator&&) = delete;
 
-inline CudaPinnedBuffer makeCudaPinnedBuffer(size_t length) {
-  void* ptr;
-  TP_CUDA_CHECK(cudaMallocHost(&ptr, length));
-  return CudaPinnedBuffer(reinterpret_cast<uint8_t*>(ptr), [](uint8_t* ptr) {
-    TP_CUDA_CHECK(cudaFreeHost(ptr));
-  });
-}
+  CudaPinnedBufferAllocator(size_t numChunks = 1024, size_t chunkSize = 1024)
+      : kNumChunks_(numChunks),
+        kChunkSize_(chunkSize),
+        chunkAvailable_(numChunks, false),
+        basePtr_(allocPinnedBuffer(numChunks * chunkSize)) {}
+
+  std::shared_ptr<uint8_t> getBuffer(size_t size) {
+    // Requested size larger than pre-allocated chunks, falling back to
+    // allocating a temporary buffer.
+    if (size > kChunkSize_) {
+      return allocPinnedBuffer(size);
+    }
+
+    {
+      std::unique_lock<std::mutex> lock(mutex_);
+      for (int i = 0; i < kNumChunks_; ++i) {
+        if (chunkAvailable_[i]) {
+          chunkAvailable_[i] = false;
+          return std::shared_ptr<uint8_t>(
+              basePtr_.get() + i * kChunkSize_, [this](uint8_t* ptr) {
+                size_t chunkId = (ptr - basePtr_.get()) / kChunkSize_;
+                // There is a harmless race condition here.
+                chunkAvailable_[chunkId] = true;
+              });
+        }
+      }
+    }
+
+    // No pre-allocated chunk available, falling back to allocating a temporary
+    // buffer.
+    return allocPinnedBuffer(size);
+  }
+
+ private:
+  const size_t kNumChunks_;
+  const size_t kChunkSize_;
+  std::mutex mutex_;
+  std::vector<bool> chunkAvailable_;
+  std::shared_ptr<uint8_t> basePtr_;
+
+  std::shared_ptr<uint8_t> allocPinnedBuffer(size_t size) {
+    void* ptr;
+    TP_CUDA_CHECK(cudaMallocHost(&ptr, size));
+    return std::shared_ptr<uint8_t>(
+        reinterpret_cast<uint8_t*>(ptr),
+        [](uint8_t* ptr) { TP_CUDA_CHECK(cudaFreeHost(ptr)); });
+  }
+};
 
 } // namespace tensorpipe

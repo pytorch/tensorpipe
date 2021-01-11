@@ -27,7 +27,8 @@ std::shared_ptr<CudaChannel> ContextImpl::createChannel(
     std::shared_ptr<transport::Connection> connection,
     Endpoint endpoint) {
   auto cpuChannel = cpuContext_->createChannel(std::move(connection), endpoint);
-  return createChannelInternal(std::move(cpuChannel), cudaLoop_);
+  return createChannelInternal(
+      std::move(cpuChannel), cudaLoop_, cudaPinnedBufferAllocator_);
 }
 
 void ContextImpl::closeImpl() {
