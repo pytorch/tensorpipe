@@ -244,11 +244,11 @@ jobs:
           name: Install clang-format
           command: |
             apt-get update
-            apt-get install -y git-core clang-format-8
+            apt-get install -y git-core clang-format-10
       - run:
           name: Verify clang-format
           command: |
-             git ls-files | grep -E  '.[cc|h]$' | xargs clang-format-8 -i
+             git ls-files | grep -E  '.[cc|h]$' | xargs clang-format-10 -i
              if git diff --quiet; then
                echo "Formatting OK!"
              else
