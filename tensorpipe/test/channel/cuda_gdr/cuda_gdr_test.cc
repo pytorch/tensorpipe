@@ -18,9 +18,7 @@ class CudaGdrChannelTestHelper
  public:
   std::shared_ptr<tensorpipe::channel::CudaContext> makeContext(
       std::string id) override {
-    std::vector<std::string> gpuToNicName = {"mlx5_0", "mlx5_0"};
-    auto context =
-        std::make_shared<tensorpipe::channel::cuda_gdr::Context>(gpuToNicName);
+    auto context = std::make_shared<tensorpipe::channel::cuda_gdr::Context>();
     context->setId(std::move(id));
     return context;
   }

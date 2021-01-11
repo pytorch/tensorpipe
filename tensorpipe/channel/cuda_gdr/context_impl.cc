@@ -9,6 +9,8 @@
 #include <tensorpipe/channel/cuda_gdr/context_impl.h>
 
 #include <array>
+#include <climits>
+#include <cstdlib>
 #include <functional>
 #include <string>
 #include <tuple>
@@ -19,6 +21,7 @@
 #include <vector>
 
 #include <cuda.h>
+#include <cuda_runtime.h>
 
 #include <tensorpipe/channel/cuda_gdr/channel_impl.h>
 #include <tensorpipe/channel/cuda_gdr/error.h>
@@ -50,6 +53,117 @@ auto applyFunc(IbvNic& subject, TMethod&& method, TArgsTuple&& args) {
       std::forward<TArgsTuple>(args),
       std::make_index_sequence<
           std::tuple_size<std::remove_reference_t<TArgsTuple>>::value>{});
+}
+
+// The PCI topology is a tree, with the root being the host bridge, the leaves
+// being the devices, and the other nodes being switches. We want to match each
+// GPU to the InfiniBand NIC with which it shares the longest "prefix" in this
+// tree, as that will route the data transfer away from the most "central"
+// switches and from the host bridge. We extract the "path" of a device in the
+// PCI tree by obtaining its "canonical" path in Linux's sysfs, which contains
+// one component for each other device that is traversed. The format of such a
+// path is /sys/devices/pci0123:45(/0123:45:67.8)+");
+// See https://www.kernel.org/doc/ols/2005/ols2005v1-pages-321-334.pdf for more
+// info on sysfs.
+
+const std::string kPciPathPrefix = "/sys/devices/pci";
+
+std::string getPciPathForIbvNic(const std::string& nicName) {
+  std::array<char, PATH_MAX> pciPath;
+  char* rv = ::realpath(
+      ("/sys/class/infiniband/" + nicName + "/device").c_str(), pciPath.data());
+  TP_THROW_SYSTEM_IF(rv == nullptr, errno);
+  TP_DCHECK(rv == pciPath.data());
+
+  std::string res(pciPath.data());
+  TP_DCHECK(res.substr(0, kPciPathPrefix.size()) == kPciPathPrefix)
+      << "Bad PCI path for InfiniBand NIC " << nicName << ": " << res;
+  return res;
+}
+
+std::string getPciPathForGpu(int gpuIdx) {
+  // The CUDA documentation says the ID will consist of a domain (16 bits), a
+  // bus (8 bits), a device (5 bits) and a function (3 bits). When represented
+  // as hex, including the separators and the null terminator, this takes up 13
+  // bytes. However NCCL seems to suggests that sometimes the domain takes twice
+  // that size, and hence 17 bytes are necessary.
+  // https://github.com/NVIDIA/nccl/blob/c6dbdb00849027b4e2c277653cbef53729f7213d/src/misc/utils.cc#L49-L53
+  std::array<char, 17> pciDeviceId;
+  TP_CUDA_CHECK(
+      cudaDeviceGetPCIBusId(pciDeviceId.data(), pciDeviceId.size(), gpuIdx));
+
+  // Fun fact: CUDA seems to format hex letters as uppercase, but Linux's sysfs
+  // expects them as lowercase.
+  for (char& c : pciDeviceId) {
+    if ('A' <= c && c <= 'F') {
+      c = c - 'A' + 'a';
+    }
+  }
+
+  std::array<char, PATH_MAX> pciPath;
+  char* rv = ::realpath(
+      ("/sys/bus/pci/devices/" + std::string(pciDeviceId.data())).c_str(),
+      pciPath.data());
+  TP_THROW_SYSTEM_IF(rv == nullptr, errno);
+  TP_DCHECK(rv == pciPath.data());
+
+  std::string res(pciPath.data());
+  TP_DCHECK(res.substr(0, kPciPathPrefix.size()) == kPciPathPrefix)
+      << "Bad PCI path for GPU #" << gpuIdx << ": " << res;
+  return res;
+}
+
+size_t commonPrefixLength(const std::string& a, const std::string& b) {
+  // The length of the longest common prefix is the index of the first char on
+  // which the two strings differ.
+  size_t maxLength = std::min(a.size(), b.size());
+  for (size_t idx = 0; idx < maxLength; idx++) {
+    if (a[idx] != b[idx]) {
+      return idx;
+    }
+  }
+  return maxLength;
+}
+
+std::vector<std::string> matchGpusToIbvNics(
+    IbvLib& ibvLib,
+    IbvDeviceList& deviceList) {
+  struct NicInfo {
+    std::string name;
+    std::string pciPath;
+  };
+  std::vector<NicInfo> nicInfos;
+  for (size_t deviceIdx = 0; deviceIdx < deviceList.size(); deviceIdx++) {
+    IbvLib::device& device = deviceList[deviceIdx];
+    std::string deviceName(TP_CHECK_IBV_PTR(ibvLib.get_device_name(&device)));
+    std::string pciPath = getPciPathForIbvNic(deviceName);
+    TP_VLOG(5) << "Resolved InfiniBand NIC " << deviceName << " to PCI path "
+               << pciPath;
+    nicInfos.push_back(NicInfo{std::move(deviceName), std::move(pciPath)});
+  }
+
+  int numGpus;
+  TP_CUDA_CHECK(cudaGetDeviceCount(&numGpus));
+
+  std::vector<std::string> gpuIdxToIbvNicName;
+  for (int gpuIdx = 0; gpuIdx < numGpus; gpuIdx++) {
+    std::string gpuPciPath = getPciPathForGpu(gpuIdx);
+    TP_VLOG(5) << "Resolved GPU #" << gpuIdx << " to PCI path " << gpuPciPath;
+    ssize_t bestMatchLength = -1;
+    const std::string* bestMatchName = nullptr;
+    for (const auto& nicInfo : nicInfos) {
+      ssize_t matchLength = commonPrefixLength(gpuPciPath, nicInfo.pciPath);
+      if (matchLength > bestMatchLength) {
+        bestMatchLength = matchLength;
+        bestMatchName = &nicInfo.name;
+      }
+    }
+    TP_DCHECK_GE(bestMatchLength, 0);
+    TP_DCHECK(bestMatchName != nullptr);
+    gpuIdxToIbvNicName.push_back(*bestMatchName);
+  }
+
+  return gpuIdxToIbvNicName;
 }
 
 } // namespace
@@ -220,7 +334,7 @@ void IbvNic::setId(std::string id) {
   id_ = std::move(id);
 }
 
-ContextImpl::ContextImpl(std::vector<std::string> gpuIdxToNicName)
+ContextImpl::ContextImpl(optional<std::vector<std::string>> gpuIdxToNicName)
     : ContextImplBoilerplate<CudaBuffer, ContextImpl, ChannelImpl>("*") {
   Error error;
 
@@ -249,12 +363,38 @@ ContextImpl::ContextImpl(std::vector<std::string> gpuIdxToNicName)
   // TODO Check whether the NVIDIA memory peering kernel module is available.
   // And maybe even allocate and register some CUDA memory to ensure it works.
 
+  IbvDeviceList deviceList(getIbvLib());
+  if (deviceList.size() == 0) {
+    TP_VLOG(5) << "Channel context " << id_
+               << " is not viable because it couldn't find any InfiniBand NICs";
+    viable_ = false;
+    return;
+  }
+
+  std::vector<std::string> actualGpuIdxToNicName;
+  if (gpuIdxToNicName.has_value()) {
+    int numGpus;
+    TP_CUDA_CHECK(cudaGetDeviceCount(&numGpus));
+    TP_THROW_ASSERT_IF(numGpus != gpuIdxToNicName->size())
+        << "The mapping from GPUs to InfiniBand NICs contains an unexpected "
+        << "number of items: found " << gpuIdxToNicName->size() << ", expected "
+        << numGpus;
+
+    actualGpuIdxToNicName = std::move(gpuIdxToNicName.value());
+  } else {
+    actualGpuIdxToNicName = matchGpusToIbvNics(ibvLib_, deviceList);
+  }
+
+  for (int gpuIdx = 0; gpuIdx < actualGpuIdxToNicName.size(); gpuIdx++) {
+    TP_VLOG(5) << "Channel context " << id_ << " mapped GPU #" << gpuIdx
+               << " to InfiniBand NIC " << actualGpuIdxToNicName[gpuIdx];
+  }
+
   std::unordered_set<std::string> nicNames;
-  for (const auto& nicName : gpuIdxToNicName) {
+  for (const auto& nicName : actualGpuIdxToNicName) {
     nicNames.insert(nicName);
   }
 
-  IbvDeviceList deviceList(getIbvLib());
   std::unordered_map<std::string, size_t> nicNameToNicIdx;
   // The device index is among all available devices, the NIC index is among the
   // ones we will use.
@@ -275,8 +415,8 @@ ContextImpl::ContextImpl(std::vector<std::string> gpuIdxToNicName)
   TP_THROW_ASSERT_IF(!nicNames.empty())
       << "Couldn't find all the devices I was supposed to use";
 
-  for (size_t gpuIdx = 0; gpuIdx < gpuIdxToNicName.size(); gpuIdx++) {
-    gpuToNic_.push_back(nicNameToNicIdx[gpuIdxToNicName[gpuIdx]]);
+  for (size_t gpuIdx = 0; gpuIdx < actualGpuIdxToNicName.size(); gpuIdx++) {
+    gpuToNic_.push_back(nicNameToNicIdx[actualGpuIdxToNicName[gpuIdx]]);
   }
 
   startThread("TP_CUDA_GDR_loop");
