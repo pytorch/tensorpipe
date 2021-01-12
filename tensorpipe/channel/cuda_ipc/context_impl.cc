@@ -15,6 +15,7 @@
 #include <utility>
 
 #include <tensorpipe/channel/cuda_ipc/channel_impl.h>
+#include <tensorpipe/common/cuda.h>
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/optional.h>
 #include <tensorpipe/common/system.h>
@@ -45,6 +46,11 @@ ContextImpl::ContextImpl()
                << " is not viable because libcuda could not be loaded";
   } else {
     foundCudaLib_ = true;
+
+    // For some reason, cudaPointerGetAttributes fails when no CUDA context is
+    // initialized for the current device, so we force the creation of that
+    // context here.
+    TP_CUDA_CHECK(cudaFree(0));
   }
 }
 
