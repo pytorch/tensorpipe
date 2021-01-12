@@ -154,9 +154,9 @@ void ChannelImpl::recvImplFromLoop(
     TDescriptor descriptor,
     CudaBuffer buffer,
     TRecvCallback callback) {
-  // Need to guard otherwise some op on the receiver will crash. 
-  // TODO: figure out which CUDA op crashed and replace this with a 
-  // more precise fix. 
+  // Need to guard otherwise some op on the receiver will crash.
+  // TODO: figure out which CUDA op crashed and replace this with a
+  // more precise fix.
   CudaDeviceGuard guard(cudaDeviceForPointer(buffer.ptr));
   recvOperations_.emplace_back(
       sequenceNumber, buffer.ptr, buffer.stream, buffer.length);
