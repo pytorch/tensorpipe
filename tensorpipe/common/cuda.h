@@ -126,11 +126,12 @@ inline int cudaDeviceForPointer(const void* ptr) {
   return attrs.device;
 }
 
-inline int cudaFixedDeviceForPointer(CudaLib& cudaLib, const void* ptr) {
+inline int cudaFixedDeviceForPointer(const CudaLib& cudaLib, const void* ptr) {
   CUcontext ctx;
-  TP_CUDA_DRIVER_CHECK(cudaLib, cudaLib.ctxPopCurrent(&ctx));
+  TP_CUDA_DRIVER_CHECK(cudaLib, cudaLib.ctxGetCurrent(&ctx));
+  TP_CUDA_DRIVER_CHECK(cudaLib, cudaLib.ctxSetCurrent(nullptr));
   int deviceIdx = cudaDeviceForPointer(ptr);
-  TP_CUDA_DRIVER_CHECK(cudaLib, cudaLib.ctxPushCurrent(ctx));
+  TP_CUDA_DRIVER_CHECK(cudaLib, cudaLib.ctxSetCurrent(ctx));
   return deviceIdx;
 }
 
