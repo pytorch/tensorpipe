@@ -40,10 +40,7 @@ ContextImpl::ContextImpl()
           generateDomainDescriptor()) {
   Error error;
   std::tie(error, cudaLib_) = CudaLib::create();
-  if (error) {
-    TP_VLOG(4) << "Channel context " << id_
-               << " is not viable because libcuda could not be loaded";
-  } else {
+  if (!error) {
     foundCudaLib_ = true;
   }
 }
@@ -55,7 +52,45 @@ std::shared_ptr<CudaChannel> ContextImpl::createChannel(
 }
 
 bool ContextImpl::isViable() const {
-  return foundCudaLib_;
+  if (!foundCudaLib_) {
+    TP_VLOG(4) << "Channel context " << id_
+               << " is not viable because libcuda could not be loaded";
+    return false;
+  }
+
+  int deviceCount;
+  TP_CUDA_CHECK(cudaGetDeviceCount(&deviceCount));
+  for (int i = 0; i < deviceCount; ++i) {
+    cudaDeviceProp props;
+    TP_CUDA_CHECK(cudaGetDeviceProperties(&props, i));
+
+    if (!props.unifiedAddressing) {
+      TP_VLOG(4) << "Channel context " << id_
+                 << " is not viable because CUDA device " << i
+                 << " does not have unified addressing";
+      return false;
+    }
+
+    if (!props.computeMode != cudaComputeModeDefault) {
+      TP_VLOG(4) << "Channel context " << id_
+                 << " is not viable because CUDA device " << i
+                 << " is not in default compute mode";
+      return false;
+    }
+
+    for (int j = 0; j < deviceCount; ++j) {
+      int canAccessPeer;
+      TP_CUDA_CHECK(cudaDeviceCanAccessPeer(&canAccessPeer, i, j));
+      if (!canAccessPeer) {
+        TP_VLOG(4) << "Channel context " << id_
+                   << " is not viable because CUDA device " << i
+                   << " cannot access peer device " << j;
+        return false;
+      }
+    }
+  }
+
+  return true;
 }
 
 CudaLib& ContextImpl::getCudaLib() {
