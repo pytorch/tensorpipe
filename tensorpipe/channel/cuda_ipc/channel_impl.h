@@ -37,6 +37,7 @@ class SendOperation {
   SendOperation(
       uint64_t sequenceNumber,
       TSendCallback callback,
+      int deviceIdx,
       const void* ptr,
       cudaStream_t stream);
 
@@ -45,6 +46,7 @@ class SendOperation {
   void process(const cudaIpcEventHandle_t& stopEvHandle);
 
  private:
+  const int deviceIdx_;
   const void* ptr_;
   cudaStream_t stream_;
   CudaEvent startEv_;
@@ -56,6 +58,7 @@ struct RecvOperation {
 
   RecvOperation(
       uint64_t sequenceNumber,
+      int deviceIdx,
       void* ptr,
       cudaStream_t stream,
       size_t length);
@@ -68,6 +71,7 @@ struct RecvOperation {
       size_t offset);
 
  private:
+  const int deviceIdx_;
   void* ptr_;
   cudaStream_t stream_;
   size_t length_;

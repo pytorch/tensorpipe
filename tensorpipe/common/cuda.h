@@ -12,6 +12,7 @@
 
 #include <cuda_runtime.h>
 
+#include <tensorpipe/common/cuda_lib.h>
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/error.h>
 
@@ -123,6 +124,14 @@ inline int cudaDeviceForPointer(const void* ptr) {
   TP_DCHECK_EQ(cudaMemoryTypeDevice, attrs.memoryType);
 #endif
   return attrs.device;
+}
+
+inline int cudaFixedDeviceForPointer(CudaLib& cudaLib, const void* ptr) {
+  CUcontext ctx;
+  TP_CUDA_DRIVER_CHECK(cudaLib, cudaLib.ctxPopCurrent(&ctx));
+  int deviceIdx = cudaDeviceForPointer(ptr);
+  TP_CUDA_DRIVER_CHECK(cudaLib, cudaLib.ctxPushCurrent(ctx));
+  return deviceIdx;
 }
 
 using CudaPinnedBuffer = std::shared_ptr<uint8_t>;

@@ -36,6 +36,8 @@ namespace tensorpipe {
 // Master list of all symbols we care about from libcuda.
 
 #define TP_FORALL_CUDA_SYMBOLS(_)                               \
+  _(ctxPopCurrent, cuCtxPopCurrent, (CUcontext*))               \
+  _(ctxPushCurrent, cuCtxPushCurrent, (CUcontext))              \
   _(getErrorName, cuGetErrorName, (CUresult, const char**))     \
   _(getErrorString, cuGetErrorString, (CUresult, const char**)) \
   _(memGetAddressRange_v2,                                      \
