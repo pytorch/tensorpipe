@@ -40,10 +40,7 @@ ContextImpl::ContextImpl()
           generateDomainDescriptor()) {
   Error error;
   std::tie(error, cudaLib_) = CudaLib::create();
-  if (error) {
-    TP_VLOG(4) << "Channel context " << id_
-               << " is not viable because libcuda could not be loaded";
-  } else {
+  if (!error) {
     foundCudaLib_ = true;
   }
 }
@@ -55,7 +52,56 @@ std::shared_ptr<CudaChannel> ContextImpl::createChannel(
 }
 
 bool ContextImpl::isViable() const {
-  return foundCudaLib_;
+  if (!foundCudaLib_) {
+    TP_VLOG(4) << "Channel context " << id_
+               << " is not viable because libcuda could not be loaded";
+    return false;
+  }
+
+  // This part is largely inspired from
+  // https://github.com/NVIDIA/cuda-samples/blob/master/Samples/simpleIPC/simpleIPC.cu.
+  int deviceCount;
+  TP_CUDA_CHECK(cudaGetDeviceCount(&deviceCount));
+  for (int i = 0; i < deviceCount; ++i) {
+    cudaDeviceProp props;
+    TP_CUDA_CHECK(cudaGetDeviceProperties(&props, i));
+
+    // Unified addressing is required for IPC.
+    if (!props.unifiedAddressing) {
+      TP_VLOG(4) << "Channel context " << id_
+                 << " is not viable because CUDA device " << i
+                 << " does not have unified addressing";
+      return false;
+    }
+
+    // The other two compute modes are "exclusive" and "prohibited", both of
+    // which prevent access from an other process.
+    if (props.computeMode != cudaComputeModeDefault) {
+      TP_VLOG(4) << "Channel context " << id_
+                 << " is not viable because CUDA device " << i
+                 << " is not in default compute mode";
+      return false;
+    }
+
+    for (int j = 0; j < deviceCount; ++j) {
+      // cudaDeviceCanAccessPeer() returns false when the two devices are the
+      // same.
+      if (i == j) {
+        continue;
+      }
+
+      int canAccessPeer;
+      TP_CUDA_CHECK(cudaDeviceCanAccessPeer(&canAccessPeer, i, j));
+      if (!canAccessPeer) {
+        TP_VLOG(4) << "Channel context " << id_
+                   << " is not viable because CUDA device " << i
+                   << " cannot access peer device " << j;
+        return false;
+      }
+    }
+  }
+
+  return true;
 }
 
 CudaLib& ContextImpl::getCudaLib() {
