@@ -76,7 +76,7 @@ bool ContextImpl::isViable() const {
 
     // The other two compute modes are "exclusive" and "prohibited", both of
     // which prevent access from an other process.
-    if (!props.computeMode != cudaComputeModeDefault) {
+    if (props.computeMode != cudaComputeModeDefault) {
       TP_VLOG(4) << "Channel context " << id_
                  << " is not viable because CUDA device " << i
                  << " is not in default compute mode";
