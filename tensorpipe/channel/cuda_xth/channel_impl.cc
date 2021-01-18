@@ -31,15 +31,13 @@ namespace {
 
 class SendOperation {
  public:
-  explicit SendOperation(CudaBuffer buffer)
-      : buffer_(buffer), startEv_(cudaDeviceForPointer(buffer.ptr)) {
+  explicit SendOperation(int deviceIdx, CudaBuffer buffer)
+      : buffer_(buffer), deviceIdx_(deviceIdx), startEv_(deviceIdx) {
     startEv_.record(buffer_.stream);
   }
 
-  void process(CudaBuffer dstBuffer) {
-    int srcDevice = cudaDeviceForPointer(buffer_.ptr);
-    int dstDevice = cudaDeviceForPointer(dstBuffer.ptr);
-    startEv_.wait(dstBuffer.stream, dstDevice);
+  void process(int dstDeviceIdx, CudaBuffer dstBuffer) {
+    startEv_.wait(dstBuffer.stream, dstDeviceIdx);
 
     TP_DCHECK_EQ(buffer_.length, dstBuffer.length);
     TP_CUDA_CHECK(cudaMemcpyAsync(
@@ -49,13 +47,14 @@ class SendOperation {
         cudaMemcpyDeviceToDevice,
         dstBuffer.stream));
 
-    CudaEvent stopEv(dstDevice);
+    CudaEvent stopEv(dstDeviceIdx);
     stopEv.record(dstBuffer.stream);
-    stopEv.wait(buffer_.stream, srcDevice);
+    stopEv.wait(buffer_.stream, deviceIdx_);
   }
 
  private:
   const CudaBuffer buffer_;
+  const int deviceIdx_;
   CudaEvent startEv_;
 };
 
@@ -86,8 +85,10 @@ void ChannelImpl::sendImplFromLoop(
     CudaBuffer buffer,
     TDescriptorCallback descriptorCallback,
     TSendCallback callback) {
+  int deviceIdx = cudaDeviceForPointer(context_->getCudaLib(), buffer.ptr);
+
   // The op must be kept alive until the notification has been received.
-  auto op = std::make_shared<SendOperation>(buffer);
+  auto op = std::make_shared<SendOperation>(deviceIdx, buffer);
   NopHolder<Descriptor> nopHolder;
   Descriptor& nopDescriptor = nopHolder.getObject();
   nopDescriptor.opPtr = reinterpret_cast<uintptr_t>(op.get());
@@ -116,6 +117,8 @@ void ChannelImpl::recvImplFromLoop(
     TDescriptor descriptor,
     CudaBuffer buffer,
     TRecvCallback callback) {
+  int deviceIdx = cudaDeviceForPointer(context_->getCudaLib(), buffer.ptr);
+
   NopHolder<Descriptor> nopHolder;
   loadDescriptor(nopHolder, descriptor);
   Descriptor& nopDescriptor = nopHolder.getObject();
@@ -123,7 +126,7 @@ void ChannelImpl::recvImplFromLoop(
 
   TP_VLOG(6) << "Channel " << id_ << " is copying payload (#" << sequenceNumber
              << ")";
-  op->process(buffer);
+  op->process(deviceIdx, buffer);
   TP_VLOG(6) << "Channel " << id_ << " done copying payload (#"
              << sequenceNumber << ")";
 

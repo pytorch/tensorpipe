@@ -12,6 +12,7 @@
 
 #include <cuda_runtime.h>
 
+#include <tensorpipe/common/cuda_lib.h>
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/error.h>
 
@@ -114,7 +115,21 @@ class CudaEvent {
   cudaEvent_t ev_;
 };
 
-inline int cudaDeviceForPointer(const void* ptr) {
+inline int cudaDeviceForPointer(const CudaLib& cudaLib, const void* ptr) {
+  // When calling cudaSetDevice(0) when device 0 hasn't been initialized yet
+  // the CUDA runtime sets the current context of the CUDA driver to what's
+  // apparently an invalid non-null value. This causes cudaPointerGetAttributes
+  // to misbehave (possibly other functions too, but this is the only function
+  // that we call outside of a device guard). In fact, device guards are likely
+  // the reason we call cudaSetDevice(0) at all, because at destruction they
+  // reset the current device to the value it had before construction, and that
+  // will be zero if no other device guard was active at that point.
+  // The ugly workaround is to manually undo the runtime's errors, by clearing
+  // the driver's current context. In a sense, by creating a "reverse" guard.
+  CUcontext ctx;
+  TP_CUDA_DRIVER_CHECK(cudaLib, cudaLib.ctxGetCurrent(&ctx));
+  TP_CUDA_DRIVER_CHECK(cudaLib, cudaLib.ctxSetCurrent(nullptr));
+
   cudaPointerAttributes attrs;
   TP_CUDA_CHECK(cudaPointerGetAttributes(&attrs, ptr));
 #if (CUDART_VERSION >= 10000)
@@ -122,6 +137,8 @@ inline int cudaDeviceForPointer(const void* ptr) {
 #else
   TP_DCHECK_EQ(cudaMemoryTypeDevice, attrs.memoryType);
 #endif
+
+  TP_CUDA_DRIVER_CHECK(cudaLib, cudaLib.ctxSetCurrent(ctx));
   return attrs.device;
 }
 

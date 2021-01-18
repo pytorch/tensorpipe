@@ -61,6 +61,7 @@ if(TP_USE_CUDA)
 
   target_sources(tensorpipe_test PRIVATE
     channel/channel_test_cuda.cc
+    common/cuda_test.cc
     )
 
   cuda_add_library(tensorpipe_cuda_kernel channel/kernel.cu)

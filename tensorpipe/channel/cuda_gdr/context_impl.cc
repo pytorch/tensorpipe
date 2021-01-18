@@ -296,7 +296,8 @@ void IbvNic::postRecv(
 }
 
 IbvMemoryRegion& IbvNic::registerMemory(CudaBuffer buffer) {
-  CudaDeviceGuard guard(cudaDeviceForPointer(buffer.ptr));
+  // FIXME Instead of re-querying the device, have the caller provide it.
+  CudaDeviceGuard guard(cudaDeviceForPointer(cudaLib_, buffer.ptr));
 
   CUdeviceptr basePtr;
   size_t allocSize;

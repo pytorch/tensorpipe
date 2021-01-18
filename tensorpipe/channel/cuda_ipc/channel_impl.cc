@@ -50,18 +50,20 @@ using Packet = nop::Variant<Reply, Ack>;
 SendOperation::SendOperation(
     uint64_t sequenceNumber,
     TSendCallback callback,
+    int deviceIdx,
     const void* ptr,
     cudaStream_t stream)
     : sequenceNumber(sequenceNumber),
       callback(std::move(callback)),
+      deviceIdx_(deviceIdx),
       ptr_(ptr),
       stream_(stream),
-      startEv_(cudaDeviceForPointer(ptr), /* interprocess = */ true) {
+      startEv_(deviceIdx_, /* interprocess = */ true) {
   startEv_.record(stream_);
 }
 
 Descriptor SendOperation::descriptor(const CudaLib& cudaLib) {
-  CudaDeviceGuard guard(cudaDeviceForPointer(ptr_));
+  CudaDeviceGuard guard(deviceIdx_);
   cudaIpcMemHandle_t handle;
   TP_CUDA_CHECK(cudaIpcGetMemHandle(&handle, const_cast<void*>(ptr_)));
   CUdeviceptr basePtr;
@@ -78,20 +80,22 @@ Descriptor SendOperation::descriptor(const CudaLib& cudaLib) {
 }
 
 void SendOperation::process(const cudaIpcEventHandle_t& stopEvHandle) {
-  CudaEvent stopEv(cudaDeviceForPointer(ptr_), stopEvHandle);
-  stopEv.wait(stream_, cudaDeviceForPointer(ptr_));
+  CudaEvent stopEv(deviceIdx_, stopEvHandle);
+  stopEv.wait(stream_, deviceIdx_);
 }
 
 RecvOperation::RecvOperation(
     uint64_t sequenceNumber,
+    int deviceIdx,
     void* ptr,
     cudaStream_t stream,
     size_t length)
     : sequenceNumber(sequenceNumber),
+      deviceIdx_(deviceIdx),
       ptr_(ptr),
       stream_(stream),
       length_(length),
-      stopEv_(cudaDeviceForPointer(ptr), /* interprocess = */ true) {}
+      stopEv_(deviceIdx_, /* interprocess = */ true) {}
 
 Reply RecvOperation::reply() {
   return Reply{stopEv_.serializedHandle()};
@@ -101,8 +105,8 @@ void RecvOperation::process(
     const cudaIpcEventHandle_t& startEvHandle,
     const cudaIpcMemHandle_t& remoteHandle,
     size_t offset) {
-  CudaEvent startEv(cudaDeviceForPointer(ptr_), startEvHandle);
-  startEv.wait(stream_, cudaDeviceForPointer(ptr_));
+  CudaEvent startEv(deviceIdx_, startEvHandle);
+  startEv.wait(stream_, deviceIdx_);
 
   void* remotePtr;
   TP_CUDA_CHECK(cudaIpcOpenMemHandle(
@@ -140,8 +144,13 @@ void ChannelImpl::sendImplFromLoop(
     CudaBuffer buffer,
     TDescriptorCallback descriptorCallback,
     TSendCallback callback) {
+  int deviceIdx = cudaDeviceForPointer(context_->getCudaLib(), buffer.ptr);
   sendOperations_.emplace_back(
-      sequenceNumber, std::move(callback), buffer.ptr, buffer.stream);
+      sequenceNumber,
+      std::move(callback),
+      deviceIdx,
+      buffer.ptr,
+      buffer.stream);
   auto& op = sendOperations_.back();
 
   NopHolder<Descriptor> nopHolder;
@@ -154,12 +163,13 @@ void ChannelImpl::recvImplFromLoop(
     TDescriptor descriptor,
     CudaBuffer buffer,
     TRecvCallback callback) {
+  int deviceIdx = cudaDeviceForPointer(context_->getCudaLib(), buffer.ptr);
   // Need to guard otherwise some op on the receiver will crash.
   // TODO: figure out which CUDA op crashed and replace this with a
   // more precise fix.
-  CudaDeviceGuard guard(cudaDeviceForPointer(buffer.ptr));
+  CudaDeviceGuard guard(deviceIdx);
   recvOperations_.emplace_back(
-      sequenceNumber, buffer.ptr, buffer.stream, buffer.length);
+      sequenceNumber, deviceIdx, buffer.ptr, buffer.stream, buffer.length);
   auto& op = recvOperations_.back();
 
   NopHolder<Descriptor> nopHolder;

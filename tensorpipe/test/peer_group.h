@@ -90,6 +90,7 @@ class ThreadPeerGroup : public PeerGroup {
 };
 
 class ForkedThreadPeerGroup : public ThreadPeerGroup {
+ public:
   void spawn(std::function<void()> f1, std::function<void()> f2) override {
     // Some tests modify the global state of the process (such as initializing
     // the CUDA context), which would cause other tests running as sub-processes
