@@ -57,7 +57,7 @@ void ChannelImpl::sendImplFromLoop(
       buffer.stream));
 
   cudaLoop_.addCallback(
-      cudaDeviceForPointer(context_->getCudaLib(), buffer.ptr),
+      cudaDeviceForPointer(buffer.ptr),
       buffer.stream,
       eagerCallbackWrapper_([sequenceNumber,
                              buffer,
@@ -146,7 +146,7 @@ void ChannelImpl::onCpuChannelRecv(
 
   // Keep tmpBuffer alive until cudaMemcpyAsync is done.
   cudaLoop_.addCallback(
-      cudaDeviceForPointer(context_->getCudaLib(), buffer.ptr),
+      cudaDeviceForPointer(buffer.ptr),
       buffer.stream,
       eagerCallbackWrapper_([sequenceNumber, tmpBuffer{std::move(tmpBuffer)}](
                                 ChannelImpl& impl) mutable {

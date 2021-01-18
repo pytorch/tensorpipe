@@ -23,12 +23,11 @@ ContextImpl::ContextImpl(std::shared_ptr<CpuContext> cpuContext)
           cpuContext->domainDescriptor()),
       cpuContext_(std::move(cpuContext)) {
   Error error;
-  std::tie(error, cudaLib_) = CudaLib::create();
+  std::tie(error, cudaLibHandle_) = loadCuda();
   if (error) {
     TP_VLOG(5) << "Channel context " << id_
                << " is not viable because libcuda could not be loaded: "
                << error.what();
-    foundCudaLib_ = false;
     return;
   }
 }
@@ -41,11 +40,7 @@ std::shared_ptr<CudaChannel> ContextImpl::createChannel(
 }
 
 bool ContextImpl::isViable() const {
-  return foundCudaLib_;
-}
-
-const CudaLib& ContextImpl::getCudaLib() {
-  return cudaLib_;
+  return (cudaLibHandle_ != nullptr);
 }
 
 void ContextImpl::closeImpl() {

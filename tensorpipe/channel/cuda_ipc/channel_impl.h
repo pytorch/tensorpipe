@@ -17,7 +17,6 @@
 #include <tensorpipe/channel/channel_impl_boilerplate.h>
 #include <tensorpipe/common/cuda.h>
 #include <tensorpipe/common/cuda_buffer.h>
-#include <tensorpipe/common/cuda_lib.h>
 #include <tensorpipe/transport/context.h>
 
 namespace tensorpipe {
@@ -41,7 +40,7 @@ class SendOperation {
       const void* ptr,
       cudaStream_t stream);
 
-  Descriptor descriptor(const CudaLib& cudaLib);
+  Descriptor descriptor();
 
   void process(const cudaIpcEventHandle_t& stopEvHandle);
 

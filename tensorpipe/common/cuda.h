@@ -10,10 +10,11 @@
 
 #include <memory>
 
+#include <cuda.h>
 #include <cuda_runtime.h>
 
-#include <tensorpipe/common/cuda_lib.h>
 #include <tensorpipe/common/defs.h>
+#include <tensorpipe/common/dl.h>
 #include <tensorpipe/common/error.h>
 
 #define TP_CUDA_CHECK(a)                                                \
@@ -24,7 +25,40 @@
         << cudaGetErrorString(error) << ")";                            \
   } while (false)
 
+#define TP_CUDA_DRIVER_CHECK(a)                                           \
+  do {                                                                    \
+    CUresult error = (a);                                                 \
+    if (error != CUDA_SUCCESS) {                                          \
+      CUresult res;                                                       \
+      const char* errorName;                                              \
+      const char* errorStr;                                               \
+      res = cuGetErrorName(error, &errorName);                            \
+      TP_THROW_ASSERT_IF(res != CUDA_SUCCESS);                            \
+      res = cuGetErrorString(error, &errorStr);                           \
+      TP_THROW_ASSERT_IF(res != CUDA_SUCCESS);                            \
+      TP_THROW_ASSERT() << __TP_EXPAND_OPD(a) << " " << errorName << " (" \
+                        << errorStr << ")";                               \
+    }                                                                     \
+  } while (false)
+
+// FIXME: Is the annotation different for clang?
+#define WEAK_SYMBOL __attribute__((weak))
+
+CUresult WEAK_SYMBOL cuCtxGetCurrent(CUcontext*);
+CUresult WEAK_SYMBOL cuCtxSetCurrent(CUcontext);
+CUresult WEAK_SYMBOL cuGetErrorName(CUresult, const char**);
+CUresult WEAK_SYMBOL cuGetErrorString(CUresult, const char**);
+CUresult WEAK_SYMBOL cuMemGetAddressRange(CUdeviceptr*, size_t*, CUdeviceptr);
+CUresult WEAK_SYMBOL
+cuPointerGetAttribute(void*, CUpointer_attribute, CUdeviceptr);
+
+#undef WEAK_SYMBOL
+
 namespace tensorpipe {
+
+inline std::tuple<Error, DynamicLibraryHandle> loadCuda() {
+  return createDynamicLibraryHandle("libcuda.so", RTLD_GLOBAL | RTLD_LAZY);
+}
 
 class CudaError final : public BaseError {
  public:
@@ -115,7 +149,7 @@ class CudaEvent {
   cudaEvent_t ev_;
 };
 
-inline int cudaDeviceForPointer(const CudaLib& cudaLib, const void* ptr) {
+inline int cudaDeviceForPointer(const void* ptr) {
   // When calling cudaSetDevice(0) when device 0 hasn't been initialized yet
   // the CUDA runtime sets the current context of the CUDA driver to what's
   // apparently an invalid non-null value. This causes cudaPointerGetAttributes
@@ -127,8 +161,8 @@ inline int cudaDeviceForPointer(const CudaLib& cudaLib, const void* ptr) {
   // The ugly workaround is to manually undo the runtime's errors, by clearing
   // the driver's current context. In a sense, by creating a "reverse" guard.
   CUcontext ctx;
-  TP_CUDA_DRIVER_CHECK(cudaLib, cudaLib.ctxGetCurrent(&ctx));
-  TP_CUDA_DRIVER_CHECK(cudaLib, cudaLib.ctxSetCurrent(nullptr));
+  TP_CUDA_DRIVER_CHECK(cuCtxGetCurrent(&ctx));
+  TP_CUDA_DRIVER_CHECK(cuCtxSetCurrent(nullptr));
 
   cudaPointerAttributes attrs;
   TP_CUDA_CHECK(cudaPointerGetAttributes(&attrs, ptr));
@@ -138,7 +172,7 @@ inline int cudaDeviceForPointer(const CudaLib& cudaLib, const void* ptr) {
   TP_DCHECK_EQ(cudaMemoryTypeDevice, attrs.memoryType);
 #endif
 
-  TP_CUDA_DRIVER_CHECK(cudaLib, cudaLib.ctxSetCurrent(ctx));
+  TP_CUDA_DRIVER_CHECK(cuCtxSetCurrent(ctx));
   return attrs.device;
 }
 

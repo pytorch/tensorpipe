@@ -24,7 +24,6 @@
 #include <tensorpipe/common/busy_polling_loop.h>
 #include <tensorpipe/common/cuda.h>
 #include <tensorpipe/common/cuda_buffer.h>
-#include <tensorpipe/common/cuda_lib.h>
 #include <tensorpipe/common/error.h>
 #include <tensorpipe/common/ibv.h>
 #include <tensorpipe/common/optional.h>
@@ -42,8 +41,7 @@ class IbvNic {
       std::string id,
       std::string name,
       IbvLib::device& device,
-      IbvLib& ibvLib,
-      CudaLib& cudaLib);
+      IbvLib& ibvLib);
 
   IbvProtectionDomain& getIbvPd() {
     return pd_;
@@ -80,8 +78,6 @@ class IbvNic {
   std::string id_{"N/A"};
   // The name of the InfiniBand device.
   std::string name_;
-
-  CudaLib& cudaLib_;
 
   IbvLib& ibvLib_;
   IbvContext ctx_;
@@ -133,8 +129,6 @@ class ContextImpl final
 
   bool isViable() const;
 
-  const CudaLib& getCudaLib();
-
   const std::vector<size_t>& getGpuToNicMapping();
 
   IbvLib& getIbvLib();
@@ -157,7 +151,7 @@ class ContextImpl final
 
  private:
   bool viable_{true};
-  CudaLib cudaLib_;
+  DynamicLibraryHandle cudaLibHandle_;
   IbvLib ibvLib_;
   std::vector<IbvNic> ibvNics_;
 

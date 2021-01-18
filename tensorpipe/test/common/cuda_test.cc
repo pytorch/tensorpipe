@@ -9,7 +9,6 @@
 #include <cstring>
 
 #include <tensorpipe/common/cuda.h>
-#include <tensorpipe/common/cuda_lib.h>
 #include <tensorpipe/test/peer_group.h>
 #include <tensorpipe/test/test_environment.h>
 
@@ -17,12 +16,12 @@
 
 namespace {
 
-tensorpipe::CudaLib getCudaLib() {
+tensorpipe::DynamicLibraryHandle getCudaLibHandle() {
   tensorpipe::Error error;
-  tensorpipe::CudaLib cudaLib;
-  std::tie(error, cudaLib) = tensorpipe::CudaLib::create();
+  tensorpipe::DynamicLibraryHandle handle;
+  std::tie(error, handle) = tensorpipe::loadCuda();
   EXPECT_FALSE(error) << error.what();
-  return cudaLib;
+  return handle;
 }
 
 } // namespace
@@ -38,11 +37,12 @@ TEST(Cuda, DeviceForPointer) {
   ForkedThreadPeerGroup pg;
   pg.spawn(
       [&]() {
+        auto cudaLibHandle = getCudaLibHandle();
         TP_CUDA_CHECK(cudaSetDevice(1));
         void* ptr;
         TP_CUDA_CHECK(cudaMalloc(&ptr, 1024));
 
-        EXPECT_EQ(tensorpipe::cudaDeviceForPointer(getCudaLib(), ptr), 1);
+        EXPECT_EQ(tensorpipe::cudaDeviceForPointer(ptr), 1);
 
         std::string ptrStr(
             reinterpret_cast<char*>(&ptr),
@@ -50,10 +50,11 @@ TEST(Cuda, DeviceForPointer) {
         pg.send(PeerGroup::kClient, ptrStr);
       },
       [&]() {
+        auto cudaLibHandle = getCudaLibHandle();
         std::string ptrStr = pg.recv(PeerGroup::kClient);
         void* ptr = *reinterpret_cast<void**>(&ptrStr[0]);
 
-        EXPECT_EQ(tensorpipe::cudaDeviceForPointer(getCudaLib(), ptr), 1);
+        EXPECT_EQ(tensorpipe::cudaDeviceForPointer(ptr), 1);
       });
 }
 
@@ -69,13 +70,14 @@ TEST(Cuda, DeviceForPointerAfterReset) {
   ForkedThreadPeerGroup pg;
   pg.spawn(
       [&]() {
+        auto cudaLibHandle = getCudaLibHandle();
         TP_CUDA_CHECK(cudaSetDevice(1));
         void* ptr;
         TP_CUDA_CHECK(cudaMalloc(&ptr, 1024));
 
         TP_CUDA_CHECK(cudaSetDevice(0));
 
-        EXPECT_EQ(tensorpipe::cudaDeviceForPointer(getCudaLib(), ptr), 1);
+        EXPECT_EQ(tensorpipe::cudaDeviceForPointer(ptr), 1);
 
         std::string ptrStr(
             reinterpret_cast<char*>(&ptr),
@@ -83,11 +85,12 @@ TEST(Cuda, DeviceForPointerAfterReset) {
         pg.send(PeerGroup::kClient, ptrStr);
       },
       [&]() {
+        auto cudaLibHandle = getCudaLibHandle();
         std::string ptrStr = pg.recv(PeerGroup::kClient);
         void* ptr = *reinterpret_cast<void**>(&ptrStr[0]);
 
         TP_CUDA_CHECK(cudaSetDevice(0));
 
-        EXPECT_EQ(tensorpipe::cudaDeviceForPointer(getCudaLib(), ptr), 1);
+        EXPECT_EQ(tensorpipe::cudaDeviceForPointer(ptr), 1);
       });
 }

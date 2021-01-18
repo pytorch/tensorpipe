@@ -85,7 +85,7 @@ void ChannelImpl::sendImplFromLoop(
     CudaBuffer buffer,
     TDescriptorCallback descriptorCallback,
     TSendCallback callback) {
-  int deviceIdx = cudaDeviceForPointer(context_->getCudaLib(), buffer.ptr);
+  int deviceIdx = cudaDeviceForPointer(buffer.ptr);
 
   // The op must be kept alive until the notification has been received.
   auto op = std::make_shared<SendOperation>(deviceIdx, buffer);
@@ -117,7 +117,7 @@ void ChannelImpl::recvImplFromLoop(
     TDescriptor descriptor,
     CudaBuffer buffer,
     TRecvCallback callback) {
-  int deviceIdx = cudaDeviceForPointer(context_->getCudaLib(), buffer.ptr);
+  int deviceIdx = cudaDeviceForPointer(buffer.ptr);
 
   NopHolder<Descriptor> nopHolder;
   loadDescriptor(nopHolder, descriptor);

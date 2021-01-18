@@ -16,6 +16,7 @@
 #include <utility>
 
 #include <tensorpipe/channel/cuda_xth/channel_impl.h>
+#include <tensorpipe/common/cuda.h>
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/optional.h>
 #include <tensorpipe/common/system.h>
@@ -45,12 +46,11 @@ ContextImpl::ContextImpl()
     : ContextImplBoilerplate<CudaBuffer, ContextImpl, ChannelImpl>(
           generateDomainDescriptor()) {
   Error error;
-  std::tie(error, cudaLib_) = CudaLib::create();
+  std::tie(error, cudaLibHandle_) = loadCuda();
   if (error) {
     TP_VLOG(5) << "Channel context " << id_
                << " is not viable because libcuda could not be loaded: "
                << error.what();
-    foundCudaLib_ = false;
     return;
   }
 }
@@ -62,11 +62,7 @@ std::shared_ptr<CudaChannel> ContextImpl::createChannel(
 }
 
 bool ContextImpl::isViable() const {
-  return foundCudaLib_;
-}
-
-const CudaLib& ContextImpl::getCudaLib() {
-  return cudaLib_;
+  return (cudaLibHandle_ != nullptr);
 }
 
 void ContextImpl::closeImpl() {}

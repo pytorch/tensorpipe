@@ -20,9 +20,6 @@
 #include <utility>
 #include <vector>
 
-#include <cuda.h>
-#include <cuda_runtime.h>
-
 #include <tensorpipe/channel/cuda_gdr/channel_impl.h>
 #include <tensorpipe/channel/cuda_gdr/error.h>
 #include <tensorpipe/common/defs.h>
@@ -172,12 +169,8 @@ IbvNic::IbvNic(
     std::string id,
     std::string name,
     IbvLib::device& device,
-    IbvLib& ibvLib,
-    CudaLib& cudaLib)
-    : id_(std::move(id)),
-      name_(std::move(name)),
-      cudaLib_(cudaLib),
-      ibvLib_(ibvLib) {
+    IbvLib& ibvLib)
+    : id_(std::move(id)), name_(std::move(name)), ibvLib_(ibvLib) {
   ctx_ = createIbvContext(ibvLib_, device);
   pd_ = createIbvProtectionDomain(ibvLib_, ctx_);
   cq_ = createIbvCompletionQueue(
@@ -297,20 +290,16 @@ void IbvNic::postRecv(
 
 IbvMemoryRegion& IbvNic::registerMemory(CudaBuffer buffer) {
   // FIXME Instead of re-querying the device, have the caller provide it.
-  CudaDeviceGuard guard(cudaDeviceForPointer(cudaLib_, buffer.ptr));
+  CudaDeviceGuard guard(cudaDeviceForPointer(buffer.ptr));
 
   CUdeviceptr basePtr;
   size_t allocSize;
-  TP_CUDA_DRIVER_CHECK(
-      cudaLib_,
-      cudaLib_.memGetAddressRange(
-          &basePtr, &allocSize, reinterpret_cast<CUdeviceptr>(buffer.ptr)));
+  TP_CUDA_DRIVER_CHECK(cuMemGetAddressRange(
+      &basePtr, &allocSize, reinterpret_cast<CUdeviceptr>(buffer.ptr)));
 
   unsigned long long bufferId;
-  TP_CUDA_DRIVER_CHECK(
-      cudaLib_,
-      cudaLib_.pointerGetAttribute(
-          &bufferId, CU_POINTER_ATTRIBUTE_BUFFER_ID, basePtr));
+  TP_CUDA_DRIVER_CHECK(cuPointerGetAttribute(
+      &bufferId, CU_POINTER_ATTRIBUTE_BUFFER_ID, basePtr));
 
   auto iter = memoryRegions_.find(bufferId);
   if (iter != memoryRegions_.end()) {
@@ -339,7 +328,7 @@ ContextImpl::ContextImpl(optional<std::vector<std::string>> gpuIdxToNicName)
     : ContextImplBoilerplate<CudaBuffer, ContextImpl, ChannelImpl>("*") {
   Error error;
 
-  std::tie(error, cudaLib_) = CudaLib::create();
+  std::tie(error, cudaLibHandle_) = loadCuda();
   // FIXME Instead of throwing away the error and setting a bool, we should have
   // a way to set the context in an error state, and use that for viability.
   if (error) {
@@ -407,7 +396,7 @@ ContextImpl::ContextImpl(optional<std::vector<std::string>> gpuIdxToNicName)
     if (iter != nicNames.end()) {
       TP_VLOG(5) << "Channel context " << id_ << " is using InfiniBand NIC "
                  << deviceName << " as device #" << nicIdx;
-      ibvNics_.emplace_back(id_, *iter, device, ibvLib_, cudaLib_);
+      ibvNics_.emplace_back(id_, *iter, device, ibvLib_);
       nicNameToNicIdx[*iter] = nicIdx;
       nicIdx++;
       nicNames.erase(iter);
@@ -421,10 +410,6 @@ ContextImpl::ContextImpl(optional<std::vector<std::string>> gpuIdxToNicName)
   }
 
   startThread("TP_CUDA_GDR_loop");
-}
-
-const CudaLib& ContextImpl::getCudaLib() {
-  return cudaLib_;
 }
 
 const std::vector<size_t>& ContextImpl::getGpuToNicMapping() {

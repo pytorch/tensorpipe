@@ -11,8 +11,8 @@
 #include <tensorpipe/channel/context_impl_boilerplate.h>
 #include <tensorpipe/channel/cpu_context.h>
 #include <tensorpipe/channel/cuda_context.h>
+#include <tensorpipe/common/cuda.h>
 #include <tensorpipe/common/cuda_buffer.h>
-#include <tensorpipe/common/cuda_lib.h>
 #include <tensorpipe/common/cuda_loop.h>
 #include <tensorpipe/common/deferred_executor.h>
 
@@ -33,8 +33,6 @@ class ContextImpl final
 
   bool isViable() const;
 
-  const CudaLib& getCudaLib();
-
   // Implement the DeferredExecutor interface.
   bool inLoop() override;
   void deferToLoop(std::function<void()> fn) override;
@@ -48,8 +46,7 @@ class ContextImpl final
  private:
   OnDemandDeferredExecutor loop_;
 
-  bool foundCudaLib_{false};
-  CudaLib cudaLib_;
+  DynamicLibraryHandle cudaLibHandle_;
 
   const std::shared_ptr<CpuContext> cpuContext_;
   // TODO: Lazy initialization of cuda loop.

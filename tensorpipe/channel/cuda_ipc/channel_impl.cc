@@ -62,15 +62,13 @@ SendOperation::SendOperation(
   startEv_.record(stream_);
 }
 
-Descriptor SendOperation::descriptor(const CudaLib& cudaLib) {
+Descriptor SendOperation::descriptor() {
   CudaDeviceGuard guard(deviceIdx_);
   cudaIpcMemHandle_t handle;
   TP_CUDA_CHECK(cudaIpcGetMemHandle(&handle, const_cast<void*>(ptr_)));
   CUdeviceptr basePtr;
-  TP_CUDA_DRIVER_CHECK(
-      cudaLib,
-      cudaLib.memGetAddressRange(
-          &basePtr, nullptr, reinterpret_cast<CUdeviceptr>(ptr_)));
+  TP_CUDA_DRIVER_CHECK(cuMemGetAddressRange(
+      &basePtr, nullptr, reinterpret_cast<CUdeviceptr>(ptr_)));
   size_t offset = reinterpret_cast<const uint8_t*>(ptr_) -
       reinterpret_cast<uint8_t*>(basePtr);
   return Descriptor{
@@ -144,7 +142,7 @@ void ChannelImpl::sendImplFromLoop(
     CudaBuffer buffer,
     TDescriptorCallback descriptorCallback,
     TSendCallback callback) {
-  int deviceIdx = cudaDeviceForPointer(context_->getCudaLib(), buffer.ptr);
+  int deviceIdx = cudaDeviceForPointer(buffer.ptr);
   sendOperations_.emplace_back(
       sequenceNumber,
       std::move(callback),
@@ -154,7 +152,7 @@ void ChannelImpl::sendImplFromLoop(
   auto& op = sendOperations_.back();
 
   NopHolder<Descriptor> nopHolder;
-  nopHolder.getObject() = op.descriptor(context_->getCudaLib());
+  nopHolder.getObject() = op.descriptor();
   descriptorCallback(Error::kSuccess, saveDescriptor(nopHolder));
 }
 
@@ -163,7 +161,7 @@ void ChannelImpl::recvImplFromLoop(
     TDescriptor descriptor,
     CudaBuffer buffer,
     TRecvCallback callback) {
-  int deviceIdx = cudaDeviceForPointer(context_->getCudaLib(), buffer.ptr);
+  int deviceIdx = cudaDeviceForPointer(buffer.ptr);
   // Need to guard otherwise some op on the receiver will crash.
   // TODO: figure out which CUDA op crashed and replace this with a
   // more precise fix.

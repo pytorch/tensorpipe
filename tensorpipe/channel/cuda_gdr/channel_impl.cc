@@ -177,7 +177,7 @@ void ChannelImpl::sendImplFromLoop(
     CudaBuffer buffer,
     TDescriptorCallback descriptorCallback,
     TSendCallback callback) {
-  size_t localGpuIdx = cudaDeviceForPointer(context_->getCudaLib(), buffer.ptr);
+  size_t localGpuIdx = cudaDeviceForPointer(buffer.ptr);
   size_t localNicIdx = context_->getGpuToNicMapping()[localGpuIdx];
 
   sendOps_.emplace_back(
@@ -307,7 +307,7 @@ void ChannelImpl::recvImplFromLoop(
     TDescriptor descriptor,
     CudaBuffer buffer,
     TRecvCallback callback) {
-  size_t localGpuIdx = cudaDeviceForPointer(context_->getCudaLib(), buffer.ptr);
+  size_t localGpuIdx = cudaDeviceForPointer(buffer.ptr);
   size_t localNicIdx = context_->getGpuToNicMapping()[localGpuIdx];
 
   NopHolder<Descriptor> nopHolder;
