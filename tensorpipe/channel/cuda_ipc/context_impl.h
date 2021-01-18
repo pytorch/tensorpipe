@@ -31,7 +31,7 @@ class ContextImpl final
 
   bool isViable() const;
 
-  CudaLib& getCudaLib();
+  const CudaLib& getCudaLib();
 
   // Implement the DeferredExecutor interface.
   bool inLoop() override;

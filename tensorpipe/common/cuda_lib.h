@@ -102,7 +102,7 @@ class CudaLib {
   CUresult memGetAddressRange(
       CUdeviceptr* pbase,
       size_t* psize,
-      CUdeviceptr dptr) {
+      CUdeviceptr dptr) const {
     // NOTE: We are forwarding to cuMemGetAddressRange_v2() directly, because
     // the name cuMemGetAddressRange is #defined to its _v2 variant in cuda.h.
     // Calling the actual cuMemGetAddressRange() function here would lead to a

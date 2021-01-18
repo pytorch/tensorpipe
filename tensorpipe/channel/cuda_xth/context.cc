@@ -35,6 +35,10 @@ const std::string& Context::domainDescriptor() const {
   return impl_->domainDescriptor();
 }
 
+bool Context::isViable() const {
+  return impl_->isViable();
+}
+
 void Context::setId(std::string id) {
   impl_->setId(std::move(id));
 }

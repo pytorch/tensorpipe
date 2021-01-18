@@ -422,6 +422,10 @@ ContextImpl::ContextImpl(optional<std::vector<std::string>> gpuIdxToNicName)
   startThread("TP_CUDA_GDR_loop");
 }
 
+const CudaLib& ContextImpl::getCudaLib() {
+  return cudaLib_;
+}
+
 const std::vector<size_t>& ContextImpl::getGpuToNicMapping() {
   return gpuToNic_;
 }

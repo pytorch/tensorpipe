@@ -40,7 +40,7 @@ class SendOperation {
       const void* ptr,
       cudaStream_t stream);
 
-  Descriptor descriptor(CudaLib& cudaLib);
+  Descriptor descriptor(const CudaLib& cudaLib);
 
   void process(const cudaIpcEventHandle_t& stopEvHandle);
 

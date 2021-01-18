@@ -21,13 +21,31 @@ namespace cuda_basic {
 ContextImpl::ContextImpl(std::shared_ptr<CpuContext> cpuContext)
     : ContextImplBoilerplate<CudaBuffer, ContextImpl, ChannelImpl>(
           cpuContext->domainDescriptor()),
-      cpuContext_(std::move(cpuContext)) {}
+      cpuContext_(std::move(cpuContext)) {
+  Error error;
+  std::tie(error, cudaLib_) = CudaLib::create();
+  if (error) {
+    TP_VLOG(5) << "Channel context " << id_
+               << " is not viable because libcuda could not be loaded: "
+               << error.what();
+    foundCudaLib_ = false;
+    return;
+  }
+}
 
 std::shared_ptr<CudaChannel> ContextImpl::createChannel(
     std::shared_ptr<transport::Connection> connection,
     Endpoint endpoint) {
   auto cpuChannel = cpuContext_->createChannel(std::move(connection), endpoint);
   return createChannelInternal(std::move(cpuChannel), cudaLoop_);
+}
+
+bool ContextImpl::isViable() const {
+  return foundCudaLib_;
+}
+
+const CudaLib& ContextImpl::getCudaLib() {
+  return cudaLib_;
 }
 
 void ContextImpl::closeImpl() {

@@ -11,6 +11,7 @@
 #include <tensorpipe/channel/context_impl_boilerplate.h>
 #include <tensorpipe/channel/cuda_context.h>
 #include <tensorpipe/common/cuda_buffer.h>
+#include <tensorpipe/common/cuda_lib.h>
 #include <tensorpipe/common/deferred_executor.h>
 
 namespace tensorpipe {
@@ -28,6 +29,10 @@ class ContextImpl final
       std::shared_ptr<transport::Connection> connection,
       Endpoint endpoint);
 
+  bool isViable() const;
+
+  const CudaLib& getCudaLib();
+
   // Implement the DeferredExecutor interface.
   bool inLoop() override;
   void deferToLoop(std::function<void()> fn) override;
@@ -39,6 +44,9 @@ class ContextImpl final
 
  private:
   OnDemandDeferredExecutor loop_;
+
+  bool foundCudaLib_{false};
+  CudaLib cudaLib_;
 };
 
 } // namespace cuda_xth

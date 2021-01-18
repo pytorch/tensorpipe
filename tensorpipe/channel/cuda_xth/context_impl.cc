@@ -43,12 +43,30 @@ std::string generateDomainDescriptor() {
 
 ContextImpl::ContextImpl()
     : ContextImplBoilerplate<CudaBuffer, ContextImpl, ChannelImpl>(
-          generateDomainDescriptor()) {}
+          generateDomainDescriptor()) {
+  Error error;
+  std::tie(error, cudaLib_) = CudaLib::create();
+  if (error) {
+    TP_VLOG(5) << "Channel context " << id_
+               << " is not viable because libcuda could not be loaded: "
+               << error.what();
+    foundCudaLib_ = false;
+    return;
+  }
+}
 
 std::shared_ptr<CudaChannel> ContextImpl::createChannel(
     std::shared_ptr<transport::Connection> connection,
     Endpoint /* unused */) {
   return createChannelInternal(std::move(connection));
+}
+
+bool ContextImpl::isViable() const {
+  return foundCudaLib_;
+}
+
+const CudaLib& ContextImpl::getCudaLib() {
+  return cudaLib_;
 }
 
 void ContextImpl::closeImpl() {}

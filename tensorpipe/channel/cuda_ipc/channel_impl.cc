@@ -60,7 +60,7 @@ SendOperation::SendOperation(
   startEv_.record(stream_);
 }
 
-Descriptor SendOperation::descriptor(CudaLib& cudaLib) {
+Descriptor SendOperation::descriptor(const CudaLib& cudaLib) {
   CudaDeviceGuard guard(cudaDeviceForPointer(ptr_));
   cudaIpcMemHandle_t handle;
   TP_CUDA_CHECK(cudaIpcGetMemHandle(&handle, const_cast<void*>(ptr_)));

@@ -133,6 +133,8 @@ class ContextImpl final
 
   bool isViable() const;
 
+  const CudaLib& getCudaLib();
+
   const std::vector<size_t>& getGpuToNicMapping();
 
   IbvLib& getIbvLib();
