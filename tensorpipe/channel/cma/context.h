@@ -36,6 +36,8 @@ class Context : public CpuContext {
 
   const std::string& domainDescriptor() const override;
 
+  bool isViable() const override;
+
   void setId(std::string id) override;
 
   void close() override;

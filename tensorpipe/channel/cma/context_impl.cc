@@ -8,6 +8,8 @@
 
 #include <tensorpipe/channel/cma/context_impl.h>
 
+#include <linux/prctl.h>
+#include <sys/prctl.h>
 #include <sys/uio.h>
 #include <unistd.h>
 
@@ -28,36 +30,205 @@ namespace cma {
 
 namespace {
 
-std::string generateDomainDescriptor() {
+// Prepend descriptor with transport name so it's easy to
+// disambiguate descriptors when debugging.
+const std::string kDomainDescriptorPrefix{"cma:"};
+
+// Old versions of Docker use a default seccomp-bpf rule that blocks some
+// ptrace-related syscalls. To find this out, we attempt such a call against
+// ourselves, which is always allowed (it shortcuts all checks, including LSMs),
+// hence a failure can only come from a "filter" on the syscall.
+bool isProcessVmReadvSyscallAllowed() {
+  uint64_t someSourceValue = 0x0123456789abcdef;
+  uint64_t someTargetValue = 0;
+  struct iovec source {
+    .iov_base = &someSourceValue, .iov_len = sizeof(someSourceValue)
+  };
+  struct iovec target {
+    .iov_base = &someTargetValue, .iov_len = sizeof(someTargetValue)
+  };
+  ssize_t nread = ::process_vm_readv(::getpid(), &target, 1, &source, 1, 0);
+  return nread == sizeof(uint64_t) && someTargetValue == someSourceValue;
+}
+
+std::string joinStrs(const std::vector<std::string>& strs) {
+  if (strs.empty()) {
+    return "";
+  }
   std::ostringstream oss;
-  auto bootID = getBootID();
-  TP_THROW_ASSERT_IF(!bootID) << "Unable to read boot_id";
-
-  // According to the man page of process_vm_readv and process_vm_writev,
-  // permission to read from or write to another process is governed by a ptrace
-  // access mode PTRACE_MODE_ATTACH_REALCREDS check. This consists in a series
-  // of checks, some governed by the CAP_SYS_PTRACE capability, others by the
-  // Linux Security Modules (LSMs), but the primary constraint is that the real,
-  // effective, and saved-set user IDs of the target match the caller's real
-  // user ID, and the same for group IDs. Since channels are bidirectional, we
-  // end up needing these IDs to all be the same on both processes.
-
-  // Combine boot ID, effective UID, and effective GID.
-  oss << bootID.value();
-  // FIXME As domain descriptors are just compared for equality, we only include
-  // the effective IDs, but we should abide by the rules above and make sure
-  // that they match the real and saved-set ones too.
-  oss << "/" << geteuid();
-  oss << "/" << getegid();
+  oss << strs[0];
+  for (size_t idx = 1; idx < strs.size(); idx++) {
+    oss << ", " << strs[idx];
+  }
   return oss.str();
+}
+
+std::tuple<bool, std::string> determineViabilityAndGenerateDomainDescriptor() {
+  int rv;
+  std::ostringstream oss;
+  oss << kDomainDescriptorPrefix;
+
+  // This transport only works across processes on the same machine, and we
+  // detect that by computing the boot ID.
+  optional<std::string> bootID = getBootID();
+  TP_THROW_ASSERT_IF(!bootID.has_value()) << "Unable to read boot_id";
+  oss << bootID.value();
+
+  // An endpoint can see the other through its PID if the latter is in a child
+  // PID namespace of the former. Since the channel is bidirectional this must
+  // be symmetric and thus the PID namespaces must be the same.
+  optional<std::string> pidNsID = getLinuxNamespaceId(LinuxNamespace::kPid);
+  TP_THROW_ASSERT_IF(!pidNsID.has_value()) << "Unable to read pid namespace ID";
+  oss << '_' << pidNsID.value();
+
+  // The ability to call process_vm_readv on a target is controlled by the
+  // PTRACE_MODE_ATTACH_REALCREDS check (see process_vm_readv(2)). We'll go
+  // through its checklist, step by step (which is found in ptrace(2)). We will
+  // ignore the CAP_SYS_PTRACE conditions (i.e., we'll assume we don't have that
+  // capability) because they are hard to check, and typically not needed.
+
+  // We'll skip the check on whether the endpoints are two threads of the same
+  // process (in which case ptrace is always allowed) because it's hard to fit
+  // it in the descriptor and because we have some other more specialized
+  // channels for that case.
+
+  // The next step involves comparing user and group IDs. If the processes are
+  // in user namespaces the kernel first maps these IDs back to the top-level
+  // ("initial") ones and compares those. We can't do such mapping, thus we
+  // compare the IDs as integers as we see them and thus for this to work
+  // properly we require that the two endpoints are in the same user namespace.
+  // This does not in fact constitute an extra restriction since the later
+  // commoncap/capability LSM check will need to enforce this too.
+  optional<std::string> userNsID = getLinuxNamespaceId(LinuxNamespace::kUser);
+  TP_THROW_ASSERT_IF(!userNsID.has_value())
+      << "Unable to read user namespace ID";
+  oss << '_' << userNsID.value();
+
+  // It is required that our *real* user ID matches the real, effective and
+  // saved-set user IDs of the target. And the same must hold for group IDs.
+  // As the channel is bidirectional, the reverse must also hold, which means
+  // our real, effective and saved-set IDs must all be equal and must match the
+  // other endpoint's ones.
+  uid_t realUserId, effectiveUserId, savedSetUserId;
+  gid_t realGroupId, effectiveGroupId, savedSetGroupId;
+  rv = ::getresuid(&realUserId, &effectiveUserId, &savedSetUserId);
+  TP_THROW_SYSTEM_IF(rv < 0, errno);
+  rv = ::getresgid(&realGroupId, &effectiveGroupId, &savedSetGroupId);
+  TP_THROW_SYSTEM_IF(rv < 0, errno);
+  if (realUserId != effectiveUserId || realUserId != savedSetUserId ||
+      realGroupId != effectiveGroupId || realGroupId != savedSetGroupId) {
+    TP_VLOG(5) << "User IDs or group IDs aren't all equal. User IDs are "
+               << realUserId << " (real), " << effectiveUserId
+               << " (effective) and " << savedSetUserId
+               << " (saved-set). Group IDs are " << realGroupId << " (real), "
+               << effectiveGroupId << " (effective) and " << savedSetGroupId
+               << " (saved-set).";
+    return std::make_tuple(false, std::string());
+  }
+  oss << '_' << realUserId << '_' << realGroupId;
+
+  // The target must be dumpable. Which, due to symmetry, means we must be
+  // dumpable too.
+  rv = ::prctl(PR_GET_DUMPABLE, 0, 0, 0, 0);
+  TP_THROW_SYSTEM_IF(rv < 0, errno);
+  // SUID_DUMP_USER has a value of 1.
+  if (rv != 1) {
+    TP_VLOG(5) << "Process isn't dumpable";
+    return std::make_tuple(false, std::string());
+  }
+
+  // Next the Linux Security Modules (LSMs) kick in. Since users could register
+  // third-party LSMs we'll need to draw a line in what we support. We have two
+  // options with unsupported LSMs: play it safe and assume the LSM will reject
+  // the check, or "trust" the user and make them responsible to deal with the
+  // LSMs they added. We're leaning for the latter, as often some LSMs like
+  // AppArmor or SELinux are enabled without actually restricting anything. For
+  // now we'll support the LSMs that are found by default on common distros,
+  // but we can include support for more of them if that becomes necessary.
+  optional<std::vector<std::string>> lsms = getLinuxSecurityModules();
+  bool yamaOptional = false;
+  if (!lsms.has_value()) {
+    // This could happen if /sys/kernel/security/lsm cannot be opened. Although
+    // that file looks like it resides on sysfs, it's actually on the securityfs
+    // VFS, which is sometimes not bind-mounted inside containers. In such cases
+    // rather than failing hard we'll check a couple of reasonable LSMs.
+    TP_VLOG(5) << "Couldn't detect the active Linux Security Modules";
+    lsms.emplace();
+    *lsms = {"capability", "yama"};
+    // We don't know whether YAMA is really there, hence we'll remember to
+    // tolerate any failures later on.
+    yamaOptional = true;
+  } else {
+    TP_VLOG(5) << "Detected these Linux Security Modules: " << joinStrs(*lsms);
+  }
+  // FIXME Can we assume that the two endpoints will see the same list of LSMs,
+  // or should we incorporate that into the domain descriptor?
+  for (const std::string& lsm : lsms.value()) {
+    if (lsm == "capability") {
+      // We already checked that the endpoints are in the same user namespace.
+      // We must check they have the same permitted capabilities in it.
+      optional<std::string> caps = getPermittedCapabilitiesID();
+      TP_THROW_ASSERT_IF(!caps.has_value())
+          << "Unable to obtain permitted capabilities";
+      oss << '_' << caps.value();
+    } else if (lsm == "yama") {
+      optional<YamaPtraceScope> yamaScope = getYamaPtraceScope();
+      if (!yamaScope.has_value()) {
+        TP_THROW_ASSERT_IF(!yamaOptional)
+            << "Unable to retrieve YAMA ptrace scope";
+        continue;
+      }
+      switch (yamaScope.value()) {
+        case YamaPtraceScope::kClassicPtracePermissions:
+          TP_VLOG(5) << "YAMA ptrace scope set to classic ptrace persmissions";
+          break;
+        case YamaPtraceScope::kRestrictedPtrace:
+          TP_VLOG(5) << "YAMA ptrace scope set to restricted ptrace";
+          // FIXME It's not really great to change a global property of the
+          // process, especially a security-related one. An "excuse" for doing
+          // so is that UCT does the same:
+          // https://github.com/openucx/ucx/blob/4d9976b6b8f8faae609c078c72aad8e5b842c43f/src/uct/sm/scopy/cma/cma_md.c#L61
+          rv = ::prctl(PR_SET_PTRACER, PR_SET_PTRACER_ANY, 0, 0, 0);
+          TP_THROW_SYSTEM_IF(rv < 0, errno);
+          break;
+        case YamaPtraceScope::kAdminOnlyAttach:
+          TP_VLOG(5) << "YAMA ptrace scope set to admin-only attach";
+          return std::make_tuple(false, std::string());
+        case YamaPtraceScope::kNoAttach:
+          TP_VLOG(5) << "YAMA ptrace scope set to no attach";
+          return std::make_tuple(false, std::string());
+        default:
+          TP_THROW_ASSERT() << "Unknown YAMA ptrace scope";
+      }
+    }
+  }
+
+  // In addition to the ptrace check, in some cases (I'm looking at you Docker)
+  // the process_vm_readv syscall is outright blocked by seccomp-bpf.
+  if (!isProcessVmReadvSyscallAllowed()) {
+    TP_VLOG(5) << "The process_vm_readv syscall appears to be blocked";
+    return std::make_tuple(false, std::string());
+  }
+
+  std::string domainDescriptor = oss.str();
+  TP_VLOG(5) << "The domain descriptor for CMA is " << domainDescriptor;
+  return std::make_tuple(true, std::move(domainDescriptor));
 }
 
 } // namespace
 
-ContextImpl::ContextImpl()
+std::shared_ptr<ContextImpl> ContextImpl::create() {
+  bool isVIable;
+  std::string domainDescriptor;
+  std::tie(isVIable, domainDescriptor) =
+      determineViabilityAndGenerateDomainDescriptor();
+  return std::make_shared<ContextImpl>(isVIable, std::move(domainDescriptor));
+}
+
+ContextImpl::ContextImpl(bool isVIable, std::string domainDescriptor)
     : ContextImplBoilerplate<CpuBuffer, ContextImpl, ChannelImpl>(
-          generateDomainDescriptor()),
-      requests_(std::numeric_limits<int>::max()) {
+          std::move(domainDescriptor)),
+      isViable_(isVIable) {
   thread_ = std::thread(&ContextImpl::handleCopyRequests, this);
 }
 
@@ -65,6 +236,10 @@ std::shared_ptr<CpuChannel> ContextImpl::createChannel(
     std::shared_ptr<transport::Connection> connection,
     Endpoint /* unused */) {
   return createChannelInternal(std::move(connection));
+}
+
+bool ContextImpl::isViable() const {
+  return isViable_;
 }
 
 void ContextImpl::closeImpl() {

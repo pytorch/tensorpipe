@@ -29,11 +29,15 @@ class ChannelImpl;
 class ContextImpl final
     : public ContextImplBoilerplate<CpuBuffer, ContextImpl, ChannelImpl> {
  public:
-  ContextImpl();
+  static std::shared_ptr<ContextImpl> create();
+
+  ContextImpl(bool isViable, std::string domainDescriptor);
 
   std::shared_ptr<CpuChannel> createChannel(
       std::shared_ptr<transport::Connection> connection,
       Endpoint endpoint);
+
+  bool isViable() const;
 
   // Implement the DeferredExecutor interface.
   bool inLoop() override;
@@ -56,6 +60,8 @@ class ContextImpl final
  private:
   OnDemandDeferredExecutor loop_;
 
+  const bool isViable_;
+
   struct CopyRequest {
     pid_t remotePid;
     void* remotePtr;
@@ -65,7 +71,7 @@ class ContextImpl final
   };
 
   std::thread thread_;
-  Queue<optional<CopyRequest>> requests_;
+  Queue<optional<CopyRequest>> requests_{std::numeric_limits<int>::max()};
 
   // This is atomic because it may be accessed from outside the loop.
   std::atomic<uint64_t> nextRequestId_{0};

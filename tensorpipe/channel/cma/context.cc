@@ -19,7 +19,7 @@ namespace tensorpipe {
 namespace channel {
 namespace cma {
 
-Context::Context() : impl_(std::make_shared<ContextImpl>()) {}
+Context::Context() : impl_(ContextImpl::create()) {}
 
 // Explicitly define all methods of the context, which just forward to the impl.
 // We cannot use an intermediate ContextBoilerplate class without forcing a
@@ -33,6 +33,10 @@ std::shared_ptr<CpuChannel> Context::createChannel(
 
 const std::string& Context::domainDescriptor() const {
   return impl_->domainDescriptor();
+}
+
+bool Context::isViable() const {
+  return impl_->isViable();
 }
 
 void Context::setId(std::string id) {
