@@ -9,6 +9,7 @@
 #include <tensorpipe/common/system.h>
 
 #ifdef __linux__
+#include <linux/capability.h>
 #include <pthread.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -27,6 +28,23 @@
 #include <stdexcept>
 #include <system_error>
 #include <thread>
+
+#ifdef __linux__
+
+// This is a libc wrapper for the Linux syscall.
+// I'm not sure why we need to declare it ourselves, but that's what libcap
+// does too, and I couldn't find any libc header in which it's declared.
+// Direct use of the syscall is strongly discouraged, in favor of libcap (which
+// has a more friendly API and better backwards-compatibility). However we
+// really don't want to add a dependency, and moreover libcap introduces an
+// artificial limitation that only allows us to query the capabilities that were
+// defined by the kernel headers when libcap was built, meaning we might miss
+// some (new) capabilities if the kernel was updated in the meantime.
+extern "C" {
+extern int capget(cap_user_header_t header, const cap_user_data_t data);
+}
+
+#endif
 
 namespace tensorpipe {
 
@@ -198,6 +216,36 @@ optional<YamaPtraceScope> getYamaPtraceScope() {
       // Dummy return to make the compiler happy.
       return nullopt;
   }
+}
+
+optional<std::string> getPermittedCapabilitiesID() {
+  std::remove_pointer<cap_user_header_t>::type header;
+  std::array<std::remove_pointer<cap_user_data_t>::type, 2> data;
+
+  // At the time of writing there are three versions of the syscall supported
+  // by the kernel, and we're supposed to perform a "handshake" to agree on the
+  // latest version supported both by us and by the kernel. However, this is
+  // only needed if we want to support pre-2.6.26 kernels, which we don't. Hence
+  // we'll fail if the kernel doesn't support the latest version (v3). On the
+  // other hand there is no way to figure out if the kernel's version has
+  // advanced past the one we support. This will occur once there will be more
+  // than 64 capabilities, but given the current pace this shouldn't happen for
+  // quite a while. Such a limitation probably comes from the capability system
+  // being designed around querying for a specific capability (in which case a
+  // program only needs to support the syscall version where that capability was
+  // added); querying _all_ capabilities (as we do) is kinda out-of-scope.
+  header.version = 0x20080522;
+  header.pid = 0;
+
+  int rv = ::capget(&header, data.data());
+  TP_THROW_SYSTEM_IF(rv < 0, errno);
+
+  // We'll create a bitmask of the capabilities, and then return its hex.
+  uint64_t bitmask = static_cast<uint64_t>(data[0].permitted) |
+      (static_cast<uint64_t>(data[1].permitted) << 32);
+  std::ostringstream oss;
+  oss << std::hex << bitmask;
+  return oss.str();
 }
 
 #endif

@@ -119,6 +119,10 @@ enum class YamaPtraceScope {
 // stricter. This function returns precisely what level YAMA is operating at.
 optional<YamaPtraceScope> getYamaPtraceScope();
 
+// Return a representation of the set of permitted capabilities of the process.
+// We're talking about Linux kernel capabilities, see capabilities(7).
+optional<std::string> getPermittedCapabilitiesID();
+
 // Set the name of the current thread, if possible. Use only for debugging.
 void setThreadName(std::string name);
 
