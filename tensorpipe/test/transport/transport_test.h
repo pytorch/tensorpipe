@@ -20,7 +20,14 @@
 
 class TransportTestHelper {
  public:
-  virtual std::shared_ptr<tensorpipe::transport::Context> getContext() = 0;
+  std::shared_ptr<tensorpipe::transport::Context> getContext(
+      bool skipViabilityCheck = false) {
+    std::shared_ptr<tensorpipe::transport::Context> ctx = getContextInternal();
+    if (!skipViabilityCheck) {
+      EXPECT_TRUE(ctx->isViable());
+    }
+    return ctx;
+  }
 
   virtual std::string defaultAddr() = 0;
 
@@ -29,6 +36,10 @@ class TransportTestHelper {
   }
 
   virtual ~TransportTestHelper() = default;
+
+ protected:
+  virtual std::shared_ptr<tensorpipe::transport::Context>
+  getContextInternal() = 0;
 };
 
 class TransportTest : public ::testing::TestWithParam<TransportTestHelper*> {

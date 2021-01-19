@@ -15,14 +15,15 @@ namespace {
 
 class CudaXthChannelTestHelper
     : public ChannelTestHelper<tensorpipe::CudaBuffer> {
- public:
-  std::shared_ptr<tensorpipe::channel::CudaContext> makeContext(
+ protected:
+  std::shared_ptr<tensorpipe::channel::CudaContext> makeContextInternal(
       std::string id) override {
     auto context = std::make_shared<tensorpipe::channel::cuda_xth::Context>();
     context->setId(std::move(id));
     return context;
   }
 
+ public:
   std::shared_ptr<PeerGroup> makePeerGroup() override {
     return std::make_shared<ForkedThreadPeerGroup>();
   }

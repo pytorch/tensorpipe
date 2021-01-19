@@ -130,12 +130,24 @@ class ChannelTestHelper {
  public:
   virtual ~ChannelTestHelper() = default;
 
-  virtual std::shared_ptr<tensorpipe::channel::Context<TBuffer>> makeContext(
-      std::string id) = 0;
+  std::shared_ptr<tensorpipe::channel::Context<TBuffer>> makeContext(
+      std::string id,
+      bool skipViabilityCheck = false) {
+    std::shared_ptr<tensorpipe::channel::Context<TBuffer>> ctx =
+        makeContextInternal(std::move(id));
+    if (!skipViabilityCheck) {
+      EXPECT_TRUE(ctx->isViable());
+    }
+    return ctx;
+  }
 
   virtual std::shared_ptr<PeerGroup> makePeerGroup() {
     return std::make_shared<ThreadPeerGroup>();
   }
+
+ protected:
+  virtual std::shared_ptr<tensorpipe::channel::Context<TBuffer>>
+  makeContextInternal(std::string id) = 0;
 };
 
 template <typename TBuffer>

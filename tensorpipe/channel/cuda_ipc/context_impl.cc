@@ -44,9 +44,9 @@ ContextImpl::ContextImpl()
     TP_VLOG(5) << "Channel context " << id_
                << " is not viable because libcuda could not be loaded: "
                << error.what();
-    foundCudaLib_ = false;
     return;
   }
+  foundCudaLib_ = true;
 }
 
 std::shared_ptr<CudaChannel> ContextImpl::createChannel(

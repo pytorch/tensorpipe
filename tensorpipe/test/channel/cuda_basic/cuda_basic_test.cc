@@ -16,8 +16,8 @@ namespace {
 
 class CudaBasicChannelTestHelper
     : public ChannelTestHelper<tensorpipe::CudaBuffer> {
- public:
-  std::shared_ptr<tensorpipe::channel::CudaContext> makeContext(
+ protected:
+  std::shared_ptr<tensorpipe::channel::CudaContext> makeContextInternal(
       std::string id) override {
     auto cpuContext = std::make_shared<tensorpipe::channel::basic::Context>();
     auto context = std::make_shared<tensorpipe::channel::cuda_basic::Context>(
@@ -26,6 +26,7 @@ class CudaBasicChannelTestHelper
     return context;
   }
 
+ public:
   std::shared_ptr<PeerGroup> makePeerGroup() override {
     return std::make_shared<ProcessPeerGroup>();
   }

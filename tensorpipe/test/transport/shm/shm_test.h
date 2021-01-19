@@ -14,11 +14,13 @@
 #include <tensorpipe/transport/shm/context.h>
 
 class SHMTransportTestHelper : public TransportTestHelper {
- public:
-  std::shared_ptr<tensorpipe::transport::Context> getContext() override {
+ protected:
+  std::shared_ptr<tensorpipe::transport::Context> getContextInternal()
+      override {
     return std::make_shared<tensorpipe::transport::shm::Context>();
   }
 
+ public:
   std::string defaultAddr() override {
     const ::testing::TestInfo* const testInfo =
         ::testing::UnitTest::GetInstance()->current_test_info();
