@@ -172,6 +172,34 @@ optional<std::vector<std::string>> getLinuxSecurityModules() {
   return res;
 }
 
+// See ptrace(2) (the sections towards the end) and
+// https://www.kernel.org/doc/Documentation/security/Yama.txt
+optional<YamaPtraceScope> getYamaPtraceScope() {
+  std::ifstream f{"/proc/sys/kernel/yama/ptrace_scope"};
+  if (f.fail()) {
+    return nullopt;
+  }
+  int scope;
+  f >> scope;
+  TP_THROW_ASSERT_IF(f.fail());
+  f.close();
+  TP_THROW_ASSERT_IF(f.fail());
+  switch (scope) {
+    case 0:
+      return YamaPtraceScope::kClassicPtracePermissions;
+    case 1:
+      return YamaPtraceScope::kRestrictedPtrace;
+    case 2:
+      return YamaPtraceScope::kAdminOnlyAttach;
+    case 3:
+      return YamaPtraceScope::kNoAttach;
+    default:
+      TP_THROW_ASSERT() << "Unrecognized YAMA ptrace scope: " << scope;
+      // Dummy return to make the compiler happy.
+      return nullopt;
+  }
+}
+
 #endif
 
 void setThreadName(std::string name) {

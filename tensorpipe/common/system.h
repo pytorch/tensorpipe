@@ -106,6 +106,19 @@ optional<std::string> getLinuxNamespaceId(LinuxNamespace ns);
 // "yama", "lockdown", ...
 optional<std::vector<std::string>> getLinuxSecurityModules();
 
+enum class YamaPtraceScope {
+  kClassicPtracePermissions,
+  kRestrictedPtrace,
+  kAdminOnlyAttach,
+  kNoAttach,
+};
+
+// YAMA is a Linux Security Module that specifically targets ptrace by locking
+// down a process so it can only be targeted by its ancestors or by processes
+// that it specifically selects. However YAMA can be disabled, or made even
+// stricter. This function returns precisely what level YAMA is operating at.
+optional<YamaPtraceScope> getYamaPtraceScope();
+
 // Set the name of the current thread, if possible. Use only for debugging.
 void setThreadName(std::string name);
 
