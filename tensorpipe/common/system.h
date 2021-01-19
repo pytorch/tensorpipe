@@ -14,6 +14,7 @@
 #include <set>
 #include <sstream>
 #include <string>
+#include <vector>
 
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/optional.h>
@@ -98,6 +99,12 @@ enum class LinuxNamespace {
 // Returns a string that uniquely identifies a namespace of a certain type.
 // It is only valid within the same machine and for that fixed type.
 optional<std::string> getLinuxNamespaceId(LinuxNamespace ns);
+
+// Returns the names of the active Linux Security Modules, in the order in which
+// they are employed by the kernel. The names could be arbitrary (as third-party
+// LSMs could be in use) but contain values like "capability", "apparmor",
+// "yama", "lockdown", ...
+optional<std::vector<std::string>> getLinuxSecurityModules();
 
 // Set the name of the current thread, if possible. Use only for debugging.
 void setThreadName(std::string name);

@@ -150,6 +150,28 @@ optional<std::string> getLinuxNamespaceId(LinuxNamespace ns) {
   return oss.str();
 }
 
+// According to https://www.kernel.org/doc/Documentation/security/LSM.txt:
+// > A list of the active security modules can be found by reading
+// > /sys/kernel/security/lsm. This is a comma separated list [...].
+optional<std::vector<std::string>> getLinuxSecurityModules() {
+  std::ifstream f{"/sys/kernel/security/lsm"};
+  if (f.fail()) {
+    return nullopt;
+  }
+  // We shouldn't have to worry about an entirely empty file, as according to
+  // the doc "[this list] will always include the capability module".
+  std::vector<std::string> res;
+  while (!f.eof()) {
+    std::string lsm;
+    std::getline(f, lsm, ',');
+    TP_THROW_ASSERT_IF(f.fail());
+    res.push_back(std::move(lsm));
+  }
+  f.close();
+  TP_THROW_ASSERT_IF(f.fail());
+  return res;
+}
+
 #endif
 
 void setThreadName(std::string name) {
