@@ -56,48 +56,54 @@ void ChannelImpl::sendImplFromLoop(
       cudaMemcpyDeviceToHost,
       buffer.stream));
 
+  sendOperations_.emplace_back();
+  auto& op = sendOperations_.back();
+  op.sequenceNumber = sequenceNumber;
+  op.tmpBuffer = std::move(tmpBuffer);
+  op.length = buffer.length;
+  op.descriptorCallback = std::move(descriptorCallback);
+  op.ready = false;
+
   cudaLoop_.addCallback(
       cudaDeviceForPointer(context_->getCudaLib(), buffer.ptr),
       buffer.stream,
-      eagerCallbackWrapper_([sequenceNumber,
-                             buffer,
-                             tmpBuffer{std::move(tmpBuffer)},
-                             descriptorCallback{std::move(descriptorCallback)}](
-                                ChannelImpl& impl) mutable {
+      eagerCallbackWrapper_([&op](ChannelImpl& impl) {
         TP_VLOG(5) << "Channel " << impl.id_ << " is done copying buffer #"
-                   << sequenceNumber << " from CUDA device to CPU";
-        impl.onTempBufferReadyForSend(
-            sequenceNumber,
-            buffer,
-            std::move(tmpBuffer),
-            std::move(descriptorCallback));
+                   << op.sequenceNumber << " from CUDA device to CPU";
+        op.ready = true;
+        impl.onTempBufferReadyForSend();
       }));
 
   callback(Error::kSuccess);
 }
 
-void ChannelImpl::onTempBufferReadyForSend(
-    uint64_t sequenceNumber,
-    CudaBuffer buffer,
-    CudaPinnedBuffer tmpBuffer,
-    TDescriptorCallback descriptorCallback) {
-  if (error_) {
-    descriptorCallback(error_, std::string());
-    return;
-  }
+void ChannelImpl::onTempBufferReadyForSend() {
+  while (!sendOperations_.empty()) {
+    auto& op = sendOperations_.front();
+    if (!op.ready) {
+      break;
+    }
 
-  CpuBuffer cpuBuffer{tmpBuffer.get(), buffer.length};
-  // Keep tmpBuffer alive until cpuChannel_ is done sending it over.
-  // TODO: This could be a lazy callback wrapper.
-  auto callback = eagerCallbackWrapper_(
-      [sequenceNumber, tmpBuffer{std::move(tmpBuffer)}](ChannelImpl& impl) {
-        TP_VLOG(5) << "Channel " << impl.id_ << " is done sending buffer #"
-                   << sequenceNumber << " through CPU channel";
-      });
-  TP_VLOG(6) << "Channel " << id_ << " is sending buffer #" << sequenceNumber
-             << " through CPU channel";
-  cpuChannel_->send(
-      cpuBuffer, std::move(descriptorCallback), std::move(callback));
+    if (error_) {
+      op.descriptorCallback(error_, std::string());
+    } else {
+      CpuBuffer cpuBuffer{op.tmpBuffer.get(), op.length};
+      // Keep tmpBuffer alive until cpuChannel_ is done sending it over.
+      // TODO: This could be a lazy callback wrapper.
+      auto callback = eagerCallbackWrapper_(
+          [sequenceNumber{op.sequenceNumber},
+           tmpBuffer{std::move(op.tmpBuffer)}](ChannelImpl& impl) {
+            TP_VLOG(5) << "Channel " << impl.id_ << " is done sending buffer #"
+                       << sequenceNumber << " through CPU channel";
+          });
+      TP_VLOG(6) << "Channel " << id_ << " is sending buffer #"
+                 << op.sequenceNumber << " through CPU channel";
+      cpuChannel_->send(
+          cpuBuffer, std::move(op.descriptorCallback), std::move(callback));
+    }
+
+    sendOperations_.pop_front();
+  }
 }
 
 void ChannelImpl::recvImplFromLoop(

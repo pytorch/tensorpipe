@@ -8,6 +8,7 @@
 
 #pragma once
 
+#include <deque>
 #include <memory>
 #include <string>
 
@@ -22,6 +23,14 @@ namespace channel {
 namespace cuda_basic {
 
 class ContextImpl;
+
+struct SendOperation {
+  uint64_t sequenceNumber{0};
+  CudaPinnedBuffer tmpBuffer;
+  size_t length{0};
+  TDescriptorCallback descriptorCallback;
+  bool ready{false};
+};
 
 class ChannelImpl final
     : public ChannelImplBoilerplate<CudaBuffer, ContextImpl, ChannelImpl> {
@@ -52,12 +61,9 @@ class ChannelImpl final
  private:
   const std::shared_ptr<CpuChannel> cpuChannel_;
   CudaLoop& cudaLoop_;
+  std::deque<SendOperation> sendOperations_;
 
-  void onTempBufferReadyForSend(
-      uint64_t sequenceNumber,
-      CudaBuffer buffer,
-      CudaPinnedBuffer tmpBuffer,
-      TDescriptorCallback descriptorCallback);
+  void onTempBufferReadyForSend();
 
   void onCpuChannelRecv(
       uint64_t sequenceNumber,
