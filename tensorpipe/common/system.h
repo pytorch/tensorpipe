@@ -87,6 +87,18 @@ constexpr uint64_t maxPow2LessEqualThan(uint64_t n) noexcept {
 // Return contents of /proc/sys/kernel/random/boot_id.
 optional<std::string> getBootID();
 
+enum class LinuxNamespace {
+  kIpc,
+  kNet,
+  kPid,
+  kUser,
+  // Add more entries as needed.
+};
+
+// Returns a string that uniquely identifies a namespace of a certain type.
+// It is only valid within the same machine and for that fixed type.
+optional<std::string> getLinuxNamespaceId(LinuxNamespace ns);
+
 // Set the name of the current thread, if possible. Use only for debugging.
 void setThreadName(std::string name);
 

@@ -10,6 +10,9 @@
 
 #ifdef __linux__
 #include <pthread.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
 #endif
 
 #ifdef __APPLE__
@@ -58,6 +61,29 @@ optional<std::string> getBootIDInternal() {
   return v;
 }
 
+// See namespaces(7).
+std::string getPathForLinuxNamespace(LinuxNamespace ns) {
+  std::ostringstream oss;
+  oss << "/proc/self/ns/";
+  switch (ns) {
+    case LinuxNamespace::kIpc:
+      oss << "ipc";
+      break;
+    case LinuxNamespace::kNet:
+      oss << "net";
+      break;
+    case LinuxNamespace::kPid:
+      oss << "pid";
+      break;
+    case LinuxNamespace::kUser:
+      oss << "user";
+      break;
+    default:
+      TP_THROW_ASSERT() << "Unknown namespace";
+  }
+  return oss.str();
+}
+
 #endif
 
 } // namespace
@@ -100,6 +126,31 @@ optional<std::string> getBootID() {
   static optional<std::string> bootID = getBootIDInternal();
   return bootID;
 }
+
+#ifdef __linux__
+
+// According to namespaces(7):
+// > Each process has a /proc/[pid]/ns/ subdirectory containing one entry for
+// > each namespace [...]. If two processes are in the same namespace, then the
+// > device IDs and inode numbers of their /proc/[pid]/ns/xxx symbolic links
+// > will be the same; an application can check this using the stat.st_dev and
+// > stat.st_ino fields returned by stat(2).
+optional<std::string> getLinuxNamespaceId(LinuxNamespace ns) {
+  struct stat statInfo;
+  int rv = ::stat(getPathForLinuxNamespace(ns).c_str(), &statInfo);
+  TP_THROW_SYSTEM_IF(rv < 0, errno);
+
+  // These fields are of types dev_t and ino_t, which I couldn't find described
+  // anywhere. They appear to be unsigned longs, but all we care about is that
+  // they are integers, so let's check that.
+  static_assert(std::is_integral<decltype(statInfo.st_dev)>::value, "");
+  static_assert(std::is_integral<decltype(statInfo.st_ino)>::value, "");
+  std::ostringstream oss;
+  oss << std::hex << statInfo.st_dev << '_' << statInfo.st_ino;
+  return oss.str();
+}
+
+#endif
 
 void setThreadName(std::string name) {
 #ifdef __linux__
