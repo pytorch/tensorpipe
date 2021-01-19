@@ -13,18 +13,32 @@
 #include <memory>
 
 #include <tensorpipe/common/defs.h>
+#include <tensorpipe/common/error.h>
+#include <tensorpipe/common/error_macros.h>
 
 namespace tensorpipe {
 
 class MmappedPtr {
+  MmappedPtr(uint8_t* ptr, size_t length) {
+    ptr_ = decltype(ptr_)(ptr, Deleter{length});
+  }
+
  public:
   MmappedPtr() = default;
 
-  MmappedPtr(size_t length, int prot, int flags, int fd) {
+  static std::tuple<Error, MmappedPtr> create(
+      size_t length,
+      int prot,
+      int flags,
+      int fd) {
     void* ptr;
     ptr = ::mmap(nullptr, length, prot, flags, fd, 0);
-    TP_THROW_SYSTEM_IF(ptr == MAP_FAILED, errno);
-    ptr_ = decltype(ptr_)(reinterpret_cast<uint8_t*>(ptr), Deleter{length});
+    if (ptr == MAP_FAILED) {
+      return std::make_tuple(
+          TP_CREATE_ERROR(SystemError, "mmap", errno), MmappedPtr());
+    }
+    return std::make_tuple(
+        Error::kSuccess, MmappedPtr(reinterpret_cast<uint8_t*>(ptr), length));
   }
 
   uint8_t* ptr() {

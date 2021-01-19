@@ -38,12 +38,20 @@ namespace shm {
 enum class PageType { Default, HugeTLB_2MB, HugeTLB_1GB };
 
 class Segment {
+  Segment(Fd fd, MmappedPtr ptr);
+
  public:
   Segment() = default;
 
-  Segment(size_t byteSize, bool permWrite, optional<PageType> pageType);
+  static std::tuple<Error, Segment> alloc(
+      size_t byteSize,
+      bool permWrite,
+      optional<PageType> pageType);
 
-  Segment(Fd fd, bool permWrite, optional<PageType> pageType);
+  static std::tuple<Error, Segment> access(
+      Fd fd,
+      bool permWrite,
+      optional<PageType> pageType);
 
   /// Allocate shared memory to contain an object of type T and construct it.
   ///
@@ -54,7 +62,7 @@ class Segment {
       typename T,
       typename... Args,
       std::enable_if_t<!std::is_array<T>::value, int> = 0>
-  static std::pair<Segment, T*> create(
+  static std::tuple<Error, Segment, T*> create(
       bool permWrite,
       optional<PageType> pageType,
       Args&&... args) {
@@ -64,7 +72,12 @@ class Segment {
         "are trivially copyable (i.e. no pointers and no heap allocation");
 
     const auto byteSize = sizeof(T);
-    Segment segment(byteSize, permWrite, pageType);
+    Error error;
+    Segment segment;
+    std::tie(error, segment) = Segment::alloc(byteSize, permWrite, pageType);
+    if (error) {
+      return std::make_tuple(std::move(error), Segment(), nullptr);
+    }
     TP_DCHECK_EQ(segment.getSize(), byteSize);
 
     // Initialize in place. Forward T's constructor arguments.
@@ -73,7 +86,7 @@ class Segment {
         << "new's address cannot be different from segment.getPtr() "
         << "address. Some aligment assumption was incorrect";
 
-    return {std::move(segment), ptr};
+    return std::make_tuple(Error::kSuccess, std::move(segment), ptr);
   }
 
   /// One-dimensional array version of create<T, ...Args>.
@@ -82,7 +95,7 @@ class Segment {
       typename T,
       std::enable_if_t<std::is_array<T>::value, int> = 0,
       typename TScalar = typename std::remove_all_extents<T>::type>
-  static std::pair<Segment, TScalar*> create(
+  static std::tuple<Error, Segment, TScalar*> create(
       size_t numElements,
       bool permWrite,
       optional<PageType> pageType) {
@@ -95,7 +108,12 @@ class Segment {
         "are trivially copyable (i.e. no pointers and no heap allocation");
 
     size_t byteSize = sizeof(TScalar) * numElements;
-    Segment segment(byteSize, permWrite, pageType);
+    Error error;
+    Segment segment;
+    std::tie(error, segment) = Segment::alloc(byteSize, permWrite, pageType);
+    if (error) {
+      return std::make_tuple(std::move(error), Segment(), nullptr);
+    }
     TP_DCHECK_EQ(segment.getSize(), byteSize);
 
     // Initialize in place.
@@ -104,13 +122,13 @@ class Segment {
         << "new's address cannot be different from segment.getPtr() "
         << "address. Some aligment assumption was incorrect";
 
-    return {std::move(segment), ptr};
+    return std::make_tuple(Error::kSuccess, std::move(segment), ptr);
   }
 
   /// Load an existing shared memory region that already holds an object of type
   /// T, where T is NOT an array type.
   template <typename T, std::enable_if_t<!std::is_array<T>::value, int> = 0>
-  static std::pair<Segment, T*> load(
+  static std::tuple<Error, Segment, T*> load(
       Fd fd,
       bool permWrite,
       optional<PageType> pageType) {
@@ -119,7 +137,13 @@ class Segment {
         "Shared memory segments are restricted to only store objects that "
         "are trivially copyable (i.e. no pointers and no heap allocation");
 
-    Segment segment(std::move(fd), permWrite, pageType);
+    Error error;
+    Segment segment;
+    std::tie(error, segment) =
+        Segment::access(std::move(fd), permWrite, pageType);
+    if (error) {
+      return std::make_tuple(std::move(error), Segment(), nullptr);
+    }
     const size_t size = segment.getSize();
     // XXX: Do some checking other than the size that we are loading
     // the right type.
@@ -130,7 +154,7 @@ class Segment {
         << "consider linking segment after it has been fully initialized.";
     auto ptr = static_cast<T*>(segment.getPtr());
 
-    return {std::move(segment), ptr};
+    return std::make_tuple(Error::kSuccess, std::move(segment), ptr);
   }
 
   /// Load an existing shared memory region that already holds an object of type
@@ -139,7 +163,7 @@ class Segment {
       typename T,
       std::enable_if_t<std::is_array<T>::value, int> = 0,
       typename TScalar = typename std::remove_all_extents<T>::type>
-  static std::pair<Segment, TScalar*> load(
+  static std::tuple<Error, Segment, TScalar*> load(
       Fd fd,
       bool permWrite,
       optional<PageType> pageType) {
@@ -151,10 +175,16 @@ class Segment {
         "Shared memory segments are restricted to only store objects that "
         "are trivially copyable (i.e. no pointers and no heap allocation");
 
-    Segment segment(std::move(fd), permWrite, pageType);
+    Error error;
+    Segment segment;
+    std::tie(error, segment) =
+        Segment::access(std::move(fd), permWrite, pageType);
+    if (error) {
+      return std::make_tuple(std::move(error), Segment(), nullptr);
+    }
     auto ptr = static_cast<TScalar*>(segment.getPtr());
 
-    return {std::move(segment), ptr};
+    return std::make_tuple(Error::kSuccess, std::move(segment), ptr);
   }
 
   int getFd() const {

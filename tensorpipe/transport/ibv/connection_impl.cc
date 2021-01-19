@@ -110,8 +110,10 @@ void ConnectionImpl::initImplFromLoop() {
   }
 
   // Create ringbuffer for inbox.
-  inboxBuf_ = MmappedPtr(
+  std::tie(error, inboxBuf_) = MmappedPtr::create(
       kBufferSize, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1);
+  TP_THROW_ASSERT_IF(error)
+      << "Couldn't allocate ringbuffer for connection inbox: " << error.what();
   inboxRb_ = util::ringbuffer::RingBuffer(&inboxHeader_, inboxBuf_.ptr());
   inboxMr_ = createIbvMemoryRegion(
       context_->getReactor().getIbvLib(),
@@ -121,8 +123,10 @@ void ConnectionImpl::initImplFromLoop() {
       IbvLib::ACCESS_LOCAL_WRITE | IbvLib::ACCESS_REMOTE_WRITE);
 
   // Create ringbuffer for outbox.
-  outboxBuf_ = MmappedPtr(
+  std::tie(error, outboxBuf_) = MmappedPtr::create(
       kBufferSize, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1);
+  TP_THROW_ASSERT_IF(error)
+      << "Couldn't allocate ringbuffer for connection outbox: " << error.what();
   outboxRb_ = util::ringbuffer::RingBuffer(&outboxHeader_, outboxBuf_.ptr());
   outboxMr_ = createIbvMemoryRegion(
       context_->getReactor().getIbvLib(),

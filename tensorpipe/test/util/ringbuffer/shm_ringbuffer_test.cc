@@ -33,10 +33,12 @@ TEST(ShmRingBuffer, SameProducerConsumer) {
     // Producer part.
     // Buffer large enough to fit all data and persistent
     // (needs to be unlinked up manually).
+    Error error;
     Segment headerSegment;
     Segment dataSegment;
     RingBuffer rb;
-    std::tie(headerSegment, dataSegment, rb) = shm::create(256 * 1024);
+    std::tie(error, headerSegment, dataSegment, rb) = shm::create(256 * 1024);
+    ASSERT_FALSE(error) << error.what();
     Producer prod{rb};
 
     // Producer loop. It all fits in buffer.
@@ -56,11 +58,13 @@ TEST(ShmRingBuffer, SameProducerConsumer) {
   {
     // Consumer part.
     // Map file again (to a different address) and consume it.
+    Error error;
     Segment headerSegment;
     Segment dataSegment;
     RingBuffer rb;
-    std::tie(headerSegment, dataSegment, rb) =
+    std::tie(error, headerSegment, dataSegment, rb) =
         shm::load(std::move(headerFd), std::move(dataFd));
+    ASSERT_FALSE(error) << error.what();
     Consumer cons{rb};
 
     int i = 0;
@@ -97,10 +101,12 @@ TEST(ShmRingBuffer, SingleProducer_SingleConsumer) {
     // child, the producer
     // Make a scope so segments are destroyed even on exit(0).
     {
+      Error error;
       Segment headerSegment;
       Segment dataSegment;
       RingBuffer rb;
-      std::tie(headerSegment, dataSegment, rb) = shm::create(1024);
+      std::tie(error, headerSegment, dataSegment, rb) = shm::create(1024);
+      ASSERT_FALSE(error) << error.what();
       Producer prod{rb};
 
       {
@@ -146,11 +152,13 @@ TEST(ShmRingBuffer, SingleProducer_SingleConsumer) {
       TP_THROW_ASSERT() << err.what();
     }
   }
+  Error error;
   Segment headerSegment;
   Segment dataSegment;
   RingBuffer rb;
-  std::tie(headerSegment, dataSegment, rb) =
+  std::tie(error, headerSegment, dataSegment, rb) =
       shm::load(std::move(headerFd), std::move(dataFd));
+  ASSERT_FALSE(error) << error.what();
   Consumer cons{rb};
 
   int i = 0;

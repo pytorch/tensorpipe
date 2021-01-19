@@ -31,12 +31,14 @@ namespace {
 // Default base path for all segments created.
 constexpr const char* kBasePath = "/dev/shm";
 
-Fd createShmFd() {
+std::tuple<Error, Fd> createShmFd() {
   int flags = O_TMPFILE | O_EXCL | O_RDWR | O_CLOEXEC;
   int fd = ::open(kBasePath, flags, 0);
-  TP_THROW_SYSTEM_IF(fd == -1, errno)
-      << "Failed to open shared memory file descriptor at " << kBasePath;
-  return Fd(fd);
+  if (fd < 0) {
+    return std::make_tuple(TP_CREATE_ERROR(SystemError, "open", errno), Fd());
+  }
+
+  return std::make_tuple(Error::kSuccess, Fd(fd));
 }
 
 /// Choose a reasonable page size for a given size.
@@ -60,7 +62,7 @@ constexpr PageType getDefaultPageType(uint64_t size) {
   }
 }
 
-MmappedPtr mmapShmFd(
+std::tuple<Error, MmappedPtr> mmapShmFd(
     int fd,
     size_t byteSize,
     bool permWrite,
@@ -98,32 +100,65 @@ update to obtain the latest correctness checks."
   //     break;
   // }
 
-  return MmappedPtr(byteSize, prot, flags, fd);
+  return MmappedPtr::create(byteSize, prot, flags, fd);
 }
 
 } // namespace
 
-Segment::Segment(size_t byteSize, bool permWrite, optional<PageType> pageType)
-    : fd_(createShmFd()) {
+Segment::Segment(Fd fd, MmappedPtr ptr)
+    : fd_(std::move(fd)), ptr_(std::move(ptr)) {}
+
+std::tuple<Error, Segment> Segment::alloc(
+    size_t byteSize,
+    bool permWrite,
+    optional<PageType> pageType) {
+  Error error;
+  Fd fd;
+  std::tie(error, fd) = createShmFd();
+  if (error) {
+    return std::make_tuple(std::move(error), Segment());
+  }
+
   // grow size to contain byte_size bytes.
   off_t len = static_cast<off_t>(byteSize);
-  int ret = ::fallocate(fd_.fd(), 0, 0, len);
-  TP_THROW_SYSTEM_IF(ret == -1, errno)
-      << "Error while allocating " << byteSize << " bytes in shared memory";
+  int ret = ::fallocate(fd.fd(), 0, 0, len);
+  if (ret < 0) {
+    return std::make_tuple(
+        TP_CREATE_ERROR(SystemError, "fallocate", errno), Segment());
+  }
 
-  ptr_ = mmapShmFd(fd_.fd(), byteSize, permWrite, pageType);
+  MmappedPtr ptr;
+  std::tie(error, ptr) = mmapShmFd(fd.fd(), byteSize, permWrite, pageType);
+  if (error) {
+    return std::make_tuple(std::move(error), Segment());
+  }
+
+  return std::make_tuple(
+      Error::kSuccess, Segment(std::move(fd), std::move(ptr)));
 }
 
-Segment::Segment(Fd fd, bool permWrite, optional<PageType> pageType)
-    : fd_(std::move(fd)) {
+std::tuple<Error, Segment> Segment::access(
+    Fd fd,
+    bool permWrite,
+    optional<PageType> pageType) {
   // Load whole file. Use fstat to obtain size.
   struct stat sb;
-  int ret = ::fstat(fd_.fd(), &sb);
-  TP_THROW_SYSTEM_IF(ret == -1, errno)
-      << "Error while fstat shared memory file";
+  int ret = ::fstat(fd.fd(), &sb);
+  if (ret < 0) {
+    return std::make_tuple(
+        TP_CREATE_ERROR(SystemError, "fstat", errno), Segment());
+  }
   size_t byteSize = static_cast<size_t>(sb.st_size);
 
-  ptr_ = mmapShmFd(fd_.fd(), byteSize, permWrite, pageType);
+  Error error;
+  MmappedPtr ptr;
+  std::tie(error, ptr) = mmapShmFd(fd.fd(), byteSize, permWrite, pageType);
+  if (error) {
+    return std::make_tuple(std::move(error), Segment());
+  }
+
+  return std::make_tuple(
+      Error::kSuccess, Segment(std::move(fd), std::move(ptr)));
 }
 
 } // namespace shm

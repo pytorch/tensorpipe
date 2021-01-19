@@ -32,9 +32,12 @@ TEST(Segment, SameProducerConsumer_Scalar) {
   Fd fd;
   {
     // Producer part.
+    Error error;
     Segment segment;
     int* myIntPtr;
-    std::tie(segment, myIntPtr) = Segment::create<int>(true, PageType::Default);
+    std::tie(error, segment, myIntPtr) =
+        Segment::create<int>(true, PageType::Default);
+    ASSERT_FALSE(error) << error.what();
     int& myInt = *myIntPtr;
     myInt = 1000;
 
@@ -46,10 +49,12 @@ TEST(Segment, SameProducerConsumer_Scalar) {
   {
     // Consumer part.
     // Map file again (to a different address) and consume it.
+    Error error;
     Segment segment;
     int* myIntPtr;
-    std::tie(segment, myIntPtr) =
+    std::tie(error, segment, myIntPtr) =
         Segment::load<int>(std::move(fd), true, PageType::Default);
+    ASSERT_FALSE(error) << error.what();
     EXPECT_EQ(segment.getSize(), sizeof(int));
     EXPECT_EQ(*myIntPtr, 1000);
   }
@@ -82,10 +87,12 @@ TEST(SegmentManager, SingleProducer_SingleConsumer_Array) {
     {
       // use huge pages in creation and not in loading. This should only affects
       // TLB overhead.
+      Error error;
       Segment segment;
       float* myFloats;
-      std::tie(segment, myFloats) =
+      std::tie(error, segment, myFloats) =
           Segment::create<float[]>(numFloats, true, PageType::HugeTLB_2MB);
+      ASSERT_FALSE(error) << error.what();
 
       for (int i = 0; i < numFloats; ++i) {
         myFloats[i] = i;
@@ -116,10 +123,12 @@ TEST(SegmentManager, SingleProducer_SingleConsumer_Array) {
       TP_THROW_ASSERT() << err.what();
     }
   }
+  Error error;
   Segment segment;
   float* myFloats;
-  std::tie(segment, myFloats) =
+  std::tie(error, segment, myFloats) =
       Segment::load<float[]>(std::move(segmentFd), false, PageType::Default);
+  ASSERT_FALSE(error) << error.what();
   EXPECT_EQ(numFloats * sizeof(float), segment.getSize());
   for (int i = 0; i < numFloats; ++i) {
     EXPECT_EQ(myFloats[i], i);

@@ -79,8 +79,10 @@ void ConnectionImpl::initImplFromLoop() {
   }
 
   // Create ringbuffer for inbox.
-  std::tie(inboxHeaderSegment_, inboxDataSegment_, inboxRb_) =
+  std::tie(error, inboxHeaderSegment_, inboxDataSegment_, inboxRb_) =
       util::ringbuffer::shm::create(kBufferSize);
+  TP_THROW_ASSERT_IF(error)
+      << "Couldn't allocate ringbuffer for connection inbox: " << error.what();
 
   // Register method to be called when our peer writes to our inbox.
   inboxReactorToken_ =
@@ -230,9 +232,11 @@ void ConnectionImpl::handleEventInFromLoop() {
     }
 
     // Load ringbuffer for outbox.
-    std::tie(outboxHeaderSegment_, outboxDataSegment_, outboxRb_) =
+    std::tie(err, outboxHeaderSegment_, outboxDataSegment_, outboxRb_) =
         util::ringbuffer::shm::load(
             std::move(outboxHeaderFd), std::move(outboxDataFd));
+    TP_THROW_ASSERT_IF(err)
+        << "Couldn't access ringbuffer of connection outbox: " << err.what();
 
     // Initialize remote reactor trigger.
     peerReactorTrigger_.emplace(

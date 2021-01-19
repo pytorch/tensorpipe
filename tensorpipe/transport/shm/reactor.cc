@@ -43,8 +43,11 @@ void writeToken(util::ringbuffer::Producer& producer, Reactor::TToken token) {
 } // namespace
 
 Reactor::Reactor() {
-  std::tie(headerSegment_, dataSegment_, rb_) =
+  Error error;
+  std::tie(error, headerSegment_, dataSegment_, rb_) =
       util::ringbuffer::shm::create(kSize);
+  TP_THROW_ASSERT_IF(error)
+      << "Couldn't allocate ringbuffer for reactor: " << error.what();
 
   startThread("TP_SHM_reactor");
 }
@@ -138,8 +141,11 @@ bool Reactor::readyToClose() {
 Reactor::Trigger::Trigger(Fd headerFd, Fd dataFd) {
   // The header and data segment objects take over ownership
   // of file descriptors. Release them to avoid double close.
-  std::tie(headerSegment_, dataSegment_, rb_) =
+  Error error;
+  std::tie(error, headerSegment_, dataSegment_, rb_) =
       util::ringbuffer::shm::load(std::move(headerFd), std::move(dataFd));
+  TP_THROW_ASSERT_IF(error)
+      << "Couldn't access ringbuffer of remote reactor: " << error.what();
 }
 
 void Reactor::Trigger::run(TToken token) {

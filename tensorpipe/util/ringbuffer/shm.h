@@ -30,12 +30,12 @@ namespace shm {
 /// <min_rb_byte_size> is the minimum size of the data section
 /// of a RingBuffer (or each CPU's RingBuffer).
 ///
-std::tuple<util::shm::Segment, util::shm::Segment, RingBuffer> create(
+std::tuple<Error, util::shm::Segment, util::shm::Segment, RingBuffer> create(
     size_t minRbByteSize,
     optional<util::shm::PageType> dataPageType = nullopt,
     bool permWrite = true);
 
-std::tuple<util::shm::Segment, util::shm::Segment, RingBuffer> load(
+std::tuple<Error, util::shm::Segment, util::shm::Segment, RingBuffer> load(
     Fd headerFd,
     Fd dataFd,
     optional<util::shm::PageType> dataPageType = nullopt,
