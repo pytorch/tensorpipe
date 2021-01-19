@@ -20,7 +20,7 @@ namespace tensorpipe {
 namespace transport {
 namespace shm {
 
-Context::Context() : impl_(std::make_shared<ContextImpl>()) {}
+Context::Context() : impl_(ContextImpl::create()) {}
 
 // Explicitly define all methods of the context, which just forward to the impl.
 // We cannot use an intermediate ContextBoilerplate class without forcing a
@@ -32,6 +32,10 @@ std::shared_ptr<Connection> Context::connect(std::string addr) {
 
 std::shared_ptr<Listener> Context::listen(std::string addr) {
   return impl_->listen(std::move(addr));
+}
+
+bool Context::isViable() const {
+  return impl_->isViable();
 }
 
 const std::string& Context::domainDescriptor() const {

@@ -26,7 +26,11 @@ class ListenerImpl;
 class ContextImpl final
     : public ContextImplBoilerplate<ContextImpl, ListenerImpl, ConnectionImpl> {
  public:
-  ContextImpl();
+  static std::shared_ptr<ContextImpl> create();
+
+  ContextImpl(bool isViable, std::string domainDescriptor);
+
+  bool isViable() const;
 
   // Implement the DeferredExecutor interface.
   bool inLoop() override;
@@ -54,6 +58,8 @@ class ContextImpl final
   void joinImpl() override;
 
  private:
+  const bool isViable_;
+
   Reactor reactor_;
   EpollLoop loop_{this->reactor_};
 };

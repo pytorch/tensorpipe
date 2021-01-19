@@ -32,6 +32,8 @@ class Context : public transport::Context {
 
   std::shared_ptr<Listener> listen(std::string addr) override;
 
+  bool isViable() const override;
+
   const std::string& domainDescriptor() const override;
 
   void setId(std::string id) override;

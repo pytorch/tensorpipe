@@ -24,17 +24,64 @@ namespace {
 // disambiguate descriptors when debugging.
 const std::string kDomainDescriptorPrefix{"shm:"};
 
-std::string generateDomainDescriptor() {
+std::tuple<bool, std::string> determineViabilityAndGenerateDomainDescriptor() {
+  std::ostringstream oss;
+  oss << kDomainDescriptorPrefix;
+
+  // This transport only works across processes on the same machine, and we
+  // detect that by computing the boot ID.
   auto bootID = getBootID();
-  TP_THROW_ASSERT_IF(!bootID) << "Unable to read boot_id";
-  return kDomainDescriptorPrefix + bootID.value();
+  TP_THROW_ASSERT_IF(!bootID.has_value()) << "Unable to read boot_id";
+  oss << bootID.value();
+
+  // This transport bootstraps a connection by opening a UNIX domain socket, for
+  // which it uses an "abstract" address (i.e., just an identifier, which is not
+  // materialized to a filesystem path). In order for the two endpoints to
+  // access each other's address they must be in the same Linux kernel network
+  // namespace (see network_namespaces(7)).
+  auto nsID = getLinuxNamespaceId(LinuxNamespace::kNet);
+  TP_THROW_ASSERT_IF(!nsID.has_value()) << "Unable to read net namespace ID";
+  oss << '_' << nsID.value();
+
+  // Over that UNIX domain socket, the two endpoints exchange file descriptors
+  // to regions of shared memory. Some restrictions may be in place that prevent
+  // allocating such regions, hence let's allocate one here to see if it works.
+  Error error;
+  util::shm::Segment segment;
+  std::tie(error, segment) = util::shm::Segment::alloc(
+      1024 * 1024, /*permWrite=*/true, /*pageType=*/nullopt);
+  if (error) {
+    TP_VLOG(8) << "Couldn't allocate shared memory segment: " << error.what();
+    return std::make_tuple(false, std::string());
+  }
+
+  // A separate problem is that /dev/shm may be sized too small for all the
+  // memory we need to allocate. However, our memory usage is unbounded, as it
+  // grows as we open more connections, hence we cannot check it in advance.
+
+  std::string domainDescriptor = oss.str();
+  TP_VLOG(8) << "The domain descriptor for SHM is " << domainDescriptor;
+  return std::make_tuple(true, std::move(domainDescriptor));
 }
 
 } // namespace
 
-ContextImpl::ContextImpl()
+std::shared_ptr<ContextImpl> ContextImpl::create() {
+  bool isViable;
+  std::string domainDescriptor;
+  std::tie(isViable, domainDescriptor) =
+      determineViabilityAndGenerateDomainDescriptor();
+  return std::make_shared<ContextImpl>(isViable, std::move(domainDescriptor));
+}
+
+ContextImpl::ContextImpl(bool isViable, std::string domainDescriptor)
     : ContextImplBoilerplate<ContextImpl, ListenerImpl, ConnectionImpl>(
-          generateDomainDescriptor()) {}
+          std::move(domainDescriptor)),
+      isViable_(isViable) {}
+
+bool ContextImpl::isViable() const {
+  return isViable_;
+}
 
 void ContextImpl::closeImpl() {
   loop_.close();
