@@ -66,7 +66,8 @@ jobs:
       cuda_version:
         type: string
     machine:
-      resource_class: gpu.nvidia.small
+      # FIXME before merge.
+      resource_class: gpu.medium
       image: ubuntu-1604-cuda-10.1:201909-23
       docker_layer_caching: true
     steps:
