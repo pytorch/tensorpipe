@@ -57,6 +57,10 @@
 #include <tensorpipe/channel/cuda_basic/context.h>
 #include <tensorpipe/channel/cuda_xth/context.h>
 
+#if TENSORPIPE_HAS_CUDA_GDR_CHANNEL
+#include <tensorpipe/channel/cuda_gdr/context.h>
+#endif // TENSORPIPE_HAS_CUDA_GDR_CHANNEL
+
 #if TENSORPIPE_HAS_CUDA_IPC_CHANNEL
 #include <tensorpipe/channel/cuda_ipc/context.h>
 #endif // TENSORPIPE_HAS_CUDA_IPC_CHANNEL
