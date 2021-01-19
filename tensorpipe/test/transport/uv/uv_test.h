@@ -12,11 +12,13 @@
 #include <tensorpipe/transport/uv/context.h>
 
 class UVTransportTestHelper : public TransportTestHelper {
- public:
-  std::shared_ptr<tensorpipe::transport::Context> getContext() override {
+ protected:
+  std::shared_ptr<tensorpipe::transport::Context> getContextInternal()
+      override {
     return std::make_shared<tensorpipe::transport::uv::Context>();
   }
 
+ public:
   std::string defaultAddr() override {
     return "127.0.0.1";
   }

@@ -12,8 +12,8 @@
 namespace {
 
 class BasicChannelTestHelper : public ChannelTestHelper<tensorpipe::CpuBuffer> {
- public:
-  std::shared_ptr<tensorpipe::channel::CpuContext> makeContext(
+ protected:
+  std::shared_ptr<tensorpipe::channel::CpuContext> makeContextInternal(
       std::string id) override {
     auto context = std::make_shared<tensorpipe::channel::basic::Context>();
     context->setId(std::move(id));
