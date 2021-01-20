@@ -26,8 +26,21 @@ Reactor::Reactor() {
     return;
   }
   foundIbvLib_ = true;
-  IbvDeviceList deviceList(getIbvLib());
+  IbvDeviceList deviceList;
+  std::tie(error, deviceList) = IbvDeviceList::create(getIbvLib());
+  if (error && error.isOfType<SystemError>() &&
+      error.castToType<SystemError>()->errorCode() == ENOSYS) {
+    TP_VLOG(9)
+        << "Transport context " << id_
+        << " couldn't get list of InfiniBand devices because the kernel module isn't "
+        << "loaded";
+    return;
+  }
+  TP_THROW_ASSERT_IF(error)
+      << "Couldn't get list of InfiniBand devices: " << error.what();
   if (deviceList.size() == 0) {
+    TP_VLOG(9) << "Transport context " << id_
+               << " is not viable because it couldn't find any InfiniBand NICs";
     return;
   }
   ctx_ = createIbvContext(getIbvLib(), deviceList[0]);

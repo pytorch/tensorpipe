@@ -39,13 +39,23 @@ std::string ibvWorkCompletionOpcodeToStr(IbvLib::wc_opcode opcode);
 // RAII wrappers
 
 class IbvDeviceList {
+ private:
+  IbvDeviceList(IbvLib& ibvLib, IbvLib::device** ptr, int size)
+      : deviceList_(ptr, Deleter{&ibvLib}), size_(size) {}
+
  public:
   IbvDeviceList() = default;
 
-  explicit IbvDeviceList(IbvLib& ibvLib)
-      : deviceList_(
-            TP_CHECK_IBV_PTR(ibvLib.get_device_list(&size_)),
-            Deleter{&ibvLib}) {}
+  static std::tuple<Error, IbvDeviceList> create(IbvLib& ibvLib) {
+    int size;
+    IbvLib::device** ptr = ibvLib.get_device_list(&size);
+    if (ptr == nullptr) {
+      return std::make_tuple(
+          TP_CREATE_ERROR(SystemError, "ibv_get_device_list", errno),
+          IbvDeviceList());
+    }
+    return std::make_tuple(Error::kSuccess, IbvDeviceList(ibvLib, ptr, size));
+  }
 
   int size() {
     return size_;

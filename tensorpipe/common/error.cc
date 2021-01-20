@@ -28,6 +28,10 @@ std::string SystemError::what() const {
   return ss.str();
 }
 
+int SystemError::errorCode() const {
+  return error_;
+}
+
 std::string ShortReadError::what() const {
   std::ostringstream ss;
   ss << "short read: got " << actual_ << " bytes while expecting to read "

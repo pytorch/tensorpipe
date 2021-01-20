@@ -60,8 +60,13 @@ class Error final {
   }
 
   template <typename T>
+  std::shared_ptr<T> castToType() const {
+    return std::dynamic_pointer_cast<T>(error_);
+  }
+
+  template <typename T>
   bool isOfType() const {
-    return std::dynamic_pointer_cast<T>(error_) != nullptr;
+    return castToType<T>() != nullptr;
   }
 
   // Like `std::exception` but returns a `std::string`.
@@ -77,6 +82,8 @@ class SystemError final : public BaseError {
       : syscall_(syscall), error_(error) {}
 
   std::string what() const override;
+
+  int errorCode() const;
 
  private:
   const char* syscall_;
