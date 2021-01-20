@@ -198,7 +198,6 @@ class SendAcrossDevicesTest : public ClientServerChannelTestCase<CudaBuffer> {
     cudaStream_t recvStream;
     TP_CUDA_CHECK(
         cudaStreamCreateWithFlags(&recvStream, cudaStreamNonBlocking));
->>>>>>> b1aca06... Use non-blocking CUDA streams in tests.
     void* ptr;
     TP_CUDA_CHECK(cudaMalloc(&ptr, kSize));
 
