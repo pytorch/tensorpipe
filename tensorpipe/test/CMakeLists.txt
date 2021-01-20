@@ -52,6 +52,7 @@ if(TP_ENABLE_CMA)
   target_sources(tensorpipe_test PRIVATE
     channel/cma/cma_test.cc
     )
+  add_subdirectory(channel/cma)
 endif()
 
 if(TP_USE_CUDA)

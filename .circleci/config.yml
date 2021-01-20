@@ -139,7 +139,6 @@ jobs:
               -DCMAKE_CXX_FLAGS="-Werror -Wno-deprecated-declarations" \
               -DCMAKE_C_COMPILER=<< parameters.c_compiler >> \
               -DCMAKE_CXX_COMPILER=<< parameters.cxx_compiler >> \
-              -DTP_ENABLE_CMA=OFF \
               -DTP_ENABLE_CUDA_IPC=OFF \
               -DTP_ENABLE_IBV=ON \
               -DTP_BUILD_TESTING=ON \
@@ -156,6 +155,10 @@ jobs:
           command: |
             cd build
             ./tensorpipe/test/tensorpipe_test
+      - run:
+          name: Test CMA channel autodetection with Docker
+          command: |
+            bash -eo pipefail tensorpipe/test/channel/cma/docker_tests.sh
       - run:
           name: Install
           command: |
