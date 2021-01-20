@@ -15,6 +15,7 @@
 #include <utility>
 
 #include <tensorpipe/channel/cuda_ipc/channel_impl.h>
+#include <tensorpipe/common/cuda.h>
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/optional.h>
 #include <tensorpipe/common/system.h>
@@ -25,11 +26,46 @@ namespace cuda_ipc {
 
 namespace {
 
+std::string deviceUUID(int device) {
+  cudaDeviceProp props;
+  TP_CUDA_CHECK(cudaGetDeviceProperties(&props, device));
+
+  std::ostringstream uuid;
+  uuid << std::hex;
+
+#if CUDART_VERSION > 9020
+  uuid << std::setfill('0') << std::setw(2);
+  for (int j = 0; j < 16; ++j) {
+    uuid << (props.uuid.bytes[j] & 0xff);
+  }
+#else // CUDART_VERSION <= 9020
+  // CUDA <=9.2 does not have a uuid device property. Falling back to using PCI
+  // ids.
+  uuid << props.pciDomainID << "," << props.pciBusID << ","
+       << props.pciDeviceID;
+#endif
+
+  return uuid.str();
+}
+
 std::string generateDomainDescriptor() {
   std::ostringstream oss;
   auto bootID = getBootID();
   TP_THROW_ASSERT_IF(!bootID) << "Unable to read boot_id";
   oss << bootID.value();
+
+  int deviceCount;
+  TP_CUDA_CHECK(cudaGetDeviceCount(&deviceCount));
+  std::vector<std::string> uuids(deviceCount);
+  for (int i = 0; i < deviceCount; ++i) {
+    uuids[i] = deviceUUID(i);
+  }
+
+  std::sort(uuids.begin(), uuids.end());
+  for (const auto& uuid : uuids) {
+    oss << "-" << uuid;
+  }
+
   return oss.str();
 }
 
