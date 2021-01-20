@@ -241,7 +241,7 @@ jobs:
       - run:
           name: Verify clang-format
           command: |
-             git ls-files | grep -E  '.[cc|h]$' | xargs clang-format-10 -i
+             git ls-files | grep -E  '\.[cc|h]$' | xargs clang-format-10 -i
              if git diff --quiet; then
                echo "Formatting OK!"
              else
