@@ -41,7 +41,7 @@ std::shared_ptr<CudaChannel> ContextImpl::createChannel(
 }
 
 bool ContextImpl::isViable() const {
-  return foundCudaLib_;
+  return foundCudaLib_ && cpuContext_->isViable();
 }
 
 const CudaLib& ContextImpl::getCudaLib() {
