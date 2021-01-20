@@ -90,4 +90,5 @@ add_subdirectory(${PROJECT_SOURCE_DIR}/third_party/googletest
 target_link_libraries(tensorpipe_test PRIVATE
   tensorpipe
   uv::uv
+  gmock
   gtest_main)
