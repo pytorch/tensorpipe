@@ -36,6 +36,8 @@ std::string deviceUUID(int device) {
 #if CUDART_VERSION > 9020
   uuid << std::setfill('0') << std::setw(2);
   for (int j = 0; j < 16; ++j) {
+    // The bitmask is required otherwise a negative value will get promoted to
+    // (signed) int with sign extension if char is signed.
     uuid << (props.uuid.bytes[j] & 0xff);
   }
 #else // CUDART_VERSION <= 9020
