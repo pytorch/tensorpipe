@@ -7,6 +7,7 @@
  */
 
 #include <cuda_runtime.h>
+#include <gmock/gmock.h>
 
 #include <tensorpipe/channel/cuda_context.h>
 #include <tensorpipe/common/cuda.h>
@@ -107,10 +108,7 @@ class ReceiverWaitsForStartEventTest
 
     std::array<uint8_t, kSize> data;
     TP_CUDA_CHECK(cudaMemcpy(data.data(), ptr, kSize, cudaMemcpyDefault));
-    // Validate contents of vector.
-    for (auto i = 0; i < kSize; i++) {
-      EXPECT_EQ(data[i], 0x42);
-    }
+    EXPECT_THAT(data, ::testing::Each(0x42));
     TP_CUDA_CHECK(cudaFree(ptr));
 
     this->peers_->done(PeerGroup::kClient);
@@ -220,10 +218,7 @@ class SendAcrossDevicesTest : public ClientServerChannelTestCase<CudaBuffer> {
 
     std::array<uint8_t, kSize> data;
     TP_CUDA_CHECK(cudaMemcpy(data.data(), ptr, kSize, cudaMemcpyDefault));
-    // Validate contents of vector.
-    for (auto i = 0; i < kSize; i++) {
-      EXPECT_EQ(data[i], 0x42);
-    }
+    EXPECT_THAT(data, ::testing::Each(0x42));
     TP_CUDA_CHECK(cudaFree(ptr));
 
     this->peers_->done(PeerGroup::kClient);
@@ -334,10 +329,7 @@ class SendReverseAcrossDevicesTest
 
     std::array<uint8_t, kSize> data;
     TP_CUDA_CHECK(cudaMemcpy(data.data(), ptr, kSize, cudaMemcpyDefault));
-    // Validate contents of vector.
-    for (auto i = 0; i < kSize; i++) {
-      EXPECT_EQ(data[i], 0x42);
-    }
+    EXPECT_THAT(data, ::testing::Each(0x42));
     TP_CUDA_CHECK(cudaFree(ptr));
 
     this->peers_->done(PeerGroup::kClient);
@@ -448,10 +440,7 @@ class SendAcrossNonDefaultDevicesTest
 
     std::array<uint8_t, kSize> data;
     TP_CUDA_CHECK(cudaMemcpy(data.data(), ptr, kSize, cudaMemcpyDefault));
-    // Validate contents of vector.
-    for (auto i = 0; i < kSize; i++) {
-      EXPECT_EQ(data[i], 0x42);
-    }
+    EXPECT_THAT(data, ::testing::Each(0x42));
     TP_CUDA_CHECK(cudaFree(ptr));
 
     this->peers_->done(PeerGroup::kClient);
@@ -514,10 +503,7 @@ class SendOffsetAllocationTest
     EXPECT_FALSE(recvError) << recvError.what();
 
     // Validate contents of vector.
-    auto unwrappedData = wrappedData.unwrap();
-    for (auto i = 0; i < kDataSize; i++) {
-      EXPECT_EQ(unwrappedData[i], 0x42);
-    }
+    EXPECT_THAT(wrappedData.unwrap(), ::testing::Each(0x42));
 
     this->peers_->done(PeerGroup::kClient);
     this->peers_->join(PeerGroup::kClient);
