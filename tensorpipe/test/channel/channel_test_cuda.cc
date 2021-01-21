@@ -9,6 +9,7 @@
 #include <cuda_runtime.h>
 
 #include <tensorpipe/channel/cuda_context.h>
+#include <tensorpipe/common/cuda.h>
 #include <tensorpipe/test/channel/channel_test.h>
 #include <tensorpipe/test/test_environment.h>
 #include <tensorpipe/test/channel/kernel.cuh>
@@ -24,17 +25,17 @@ class ReceiverWaitsForStartEventTest
     std::shared_ptr<CudaContext> ctx = this->helper_->makeContext("server");
     auto channel = ctx->createChannel(std::move(conn), Endpoint::kListen);
 
-    EXPECT_EQ(cudaSuccess, cudaSetDevice(0));
+    TP_CUDA_CHECK(cudaSetDevice(0));
     cudaStream_t sendStream;
-    EXPECT_EQ(cudaSuccess, cudaStreamCreate(&sendStream));
+    TP_CUDA_CHECK(cudaStreamCreate(&sendStream));
     void* ptr;
-    EXPECT_EQ(cudaSuccess, cudaMalloc(&ptr, kSize));
+    TP_CUDA_CHECK(cudaMalloc(&ptr, kSize));
 
     // Delay sendStream with computations on buffer.
     slowKernel(ptr, kSize, sendStream);
 
     // Set buffer to target value.
-    EXPECT_EQ(cudaSuccess, cudaMemsetAsync(ptr, 0x42, kSize, sendStream));
+    TP_CUDA_CHECK(cudaMemsetAsync(ptr, 0x42, kSize, sendStream));
 
     // Perform send and wait for completion.
     auto descriptorPromise = std::make_shared<
@@ -66,7 +67,7 @@ class ReceiverWaitsForStartEventTest
     this->peers_->send(PeerGroup::kClient, descriptor);
     Error sendError = sendFuture.get();
     EXPECT_FALSE(sendError) << sendError.what();
-    EXPECT_EQ(cudaSuccess, cudaFree(ptr));
+    TP_CUDA_CHECK(cudaFree(ptr));
 
     this->peers_->done(PeerGroup::kServer);
     this->peers_->join(PeerGroup::kServer);
@@ -78,11 +79,11 @@ class ReceiverWaitsForStartEventTest
     std::shared_ptr<CudaContext> ctx = this->helper_->makeContext("client");
     auto channel = ctx->createChannel(std::move(conn), Endpoint::kConnect);
 
-    EXPECT_EQ(cudaSuccess, cudaSetDevice(0));
+    TP_CUDA_CHECK(cudaSetDevice(0));
     cudaStream_t recvStream;
-    EXPECT_EQ(cudaSuccess, cudaStreamCreate(&recvStream));
+    TP_CUDA_CHECK(cudaStreamCreate(&recvStream));
     void* ptr;
-    EXPECT_EQ(cudaSuccess, cudaMalloc(&ptr, kSize));
+    TP_CUDA_CHECK(cudaMalloc(&ptr, kSize));
 
     auto descriptor = this->peers_->recv(PeerGroup::kClient);
 
@@ -105,13 +106,12 @@ class ReceiverWaitsForStartEventTest
     EXPECT_FALSE(recvError) << recvError.what();
 
     std::array<uint8_t, kSize> data;
-    EXPECT_EQ(
-        cudaSuccess, cudaMemcpy(data.data(), ptr, kSize, cudaMemcpyDefault));
+    TP_CUDA_CHECK(cudaMemcpy(data.data(), ptr, kSize, cudaMemcpyDefault));
     // Validate contents of vector.
     for (auto i = 0; i < kSize; i++) {
       EXPECT_EQ(data[i], 0x42);
     }
-    EXPECT_EQ(cudaSuccess, cudaFree(ptr));
+    TP_CUDA_CHECK(cudaFree(ptr));
 
     this->peers_->done(PeerGroup::kClient);
     this->peers_->join(PeerGroup::kClient);
@@ -140,14 +140,14 @@ class SendAcrossDevicesTest : public ClientServerChannelTestCase<CudaBuffer> {
     auto channel = ctx->createChannel(std::move(conn), Endpoint::kListen);
 
     // Send happens from device #0.
-    EXPECT_EQ(cudaSuccess, cudaSetDevice(0));
+    TP_CUDA_CHECK(cudaSetDevice(0));
     cudaStream_t sendStream;
-    EXPECT_EQ(cudaSuccess, cudaStreamCreate(&sendStream));
+    TP_CUDA_CHECK(cudaStreamCreate(&sendStream));
     void* ptr;
-    EXPECT_EQ(cudaSuccess, cudaMalloc(&ptr, kSize));
+    TP_CUDA_CHECK(cudaMalloc(&ptr, kSize));
 
     // Set buffer to target value.
-    EXPECT_EQ(cudaSuccess, cudaMemsetAsync(ptr, 0x42, kSize, sendStream));
+    TP_CUDA_CHECK(cudaMemsetAsync(ptr, 0x42, kSize, sendStream));
 
     // Perform send and wait for completion.
     auto descriptorPromise = std::make_shared<
@@ -179,7 +179,7 @@ class SendAcrossDevicesTest : public ClientServerChannelTestCase<CudaBuffer> {
     this->peers_->send(PeerGroup::kClient, descriptor);
     Error sendError = sendFuture.get();
     EXPECT_FALSE(sendError) << sendError.what();
-    EXPECT_EQ(cudaSuccess, cudaFree(ptr));
+    TP_CUDA_CHECK(cudaFree(ptr));
 
     this->peers_->done(PeerGroup::kServer);
     this->peers_->join(PeerGroup::kServer);
@@ -192,11 +192,11 @@ class SendAcrossDevicesTest : public ClientServerChannelTestCase<CudaBuffer> {
     auto channel = ctx->createChannel(std::move(conn), Endpoint::kConnect);
 
     // Recv happens on device #1.
-    EXPECT_EQ(cudaSuccess, cudaSetDevice(1));
+    TP_CUDA_CHECK(cudaSetDevice(1));
     cudaStream_t recvStream;
-    EXPECT_EQ(cudaSuccess, cudaStreamCreate(&recvStream));
+    TP_CUDA_CHECK(cudaStreamCreate(&recvStream));
     void* ptr;
-    EXPECT_EQ(cudaSuccess, cudaMalloc(&ptr, kSize));
+    TP_CUDA_CHECK(cudaMalloc(&ptr, kSize));
 
     auto descriptor = this->peers_->recv(PeerGroup::kClient);
 
@@ -219,13 +219,12 @@ class SendAcrossDevicesTest : public ClientServerChannelTestCase<CudaBuffer> {
     EXPECT_FALSE(recvError) << recvError.what();
 
     std::array<uint8_t, kSize> data;
-    EXPECT_EQ(
-        cudaSuccess, cudaMemcpy(data.data(), ptr, kSize, cudaMemcpyDefault));
+    TP_CUDA_CHECK(cudaMemcpy(data.data(), ptr, kSize, cudaMemcpyDefault));
     // Validate contents of vector.
     for (auto i = 0; i < kSize; i++) {
       EXPECT_EQ(data[i], 0x42);
     }
-    EXPECT_EQ(cudaSuccess, cudaFree(ptr));
+    TP_CUDA_CHECK(cudaFree(ptr));
 
     this->peers_->done(PeerGroup::kClient);
     this->peers_->join(PeerGroup::kClient);
@@ -255,14 +254,14 @@ class SendReverseAcrossDevicesTest
     auto channel = ctx->createChannel(std::move(conn), Endpoint::kListen);
 
     // Send happens from device #1.
-    EXPECT_EQ(cudaSuccess, cudaSetDevice(1));
+    TP_CUDA_CHECK(cudaSetDevice(1));
     cudaStream_t sendStream;
-    EXPECT_EQ(cudaSuccess, cudaStreamCreate(&sendStream));
+    TP_CUDA_CHECK(cudaStreamCreate(&sendStream));
     void* ptr;
-    EXPECT_EQ(cudaSuccess, cudaMalloc(&ptr, kSize));
+    TP_CUDA_CHECK(cudaMalloc(&ptr, kSize));
 
     // Set buffer to target value.
-    EXPECT_EQ(cudaSuccess, cudaMemsetAsync(ptr, 0x42, kSize, sendStream));
+    TP_CUDA_CHECK(cudaMemsetAsync(ptr, 0x42, kSize, sendStream));
 
     // Perform send and wait for completion.
     auto descriptorPromise = std::make_shared<
@@ -294,7 +293,7 @@ class SendReverseAcrossDevicesTest
     this->peers_->send(PeerGroup::kClient, descriptor);
     Error sendError = sendFuture.get();
     EXPECT_FALSE(sendError) << sendError.what();
-    EXPECT_EQ(cudaSuccess, cudaFree(ptr));
+    TP_CUDA_CHECK(cudaFree(ptr));
 
     this->peers_->done(PeerGroup::kServer);
     this->peers_->join(PeerGroup::kServer);
@@ -307,11 +306,11 @@ class SendReverseAcrossDevicesTest
     auto channel = ctx->createChannel(std::move(conn), Endpoint::kConnect);
 
     // Recv happens on device #0.
-    EXPECT_EQ(cudaSuccess, cudaSetDevice(0));
+    TP_CUDA_CHECK(cudaSetDevice(0));
     cudaStream_t recvStream;
-    EXPECT_EQ(cudaSuccess, cudaStreamCreate(&recvStream));
+    TP_CUDA_CHECK(cudaStreamCreate(&recvStream));
     void* ptr;
-    EXPECT_EQ(cudaSuccess, cudaMalloc(&ptr, kSize));
+    TP_CUDA_CHECK(cudaMalloc(&ptr, kSize));
 
     auto descriptor = this->peers_->recv(PeerGroup::kClient);
 
@@ -334,13 +333,12 @@ class SendReverseAcrossDevicesTest
     EXPECT_FALSE(recvError) << recvError.what();
 
     std::array<uint8_t, kSize> data;
-    EXPECT_EQ(
-        cudaSuccess, cudaMemcpy(data.data(), ptr, kSize, cudaMemcpyDefault));
+    TP_CUDA_CHECK(cudaMemcpy(data.data(), ptr, kSize, cudaMemcpyDefault));
     // Validate contents of vector.
     for (auto i = 0; i < kSize; i++) {
       EXPECT_EQ(data[i], 0x42);
     }
-    EXPECT_EQ(cudaSuccess, cudaFree(ptr));
+    TP_CUDA_CHECK(cudaFree(ptr));
 
     this->peers_->done(PeerGroup::kClient);
     this->peers_->join(PeerGroup::kClient);
@@ -370,14 +368,14 @@ class SendAcrossNonDefaultDevicesTest
     auto channel = ctx->createChannel(std::move(conn), Endpoint::kListen);
 
     // Send happens from device #1.
-    EXPECT_EQ(cudaSuccess, cudaSetDevice(1));
+    TP_CUDA_CHECK(cudaSetDevice(1));
     cudaStream_t sendStream;
-    EXPECT_EQ(cudaSuccess, cudaStreamCreate(&sendStream));
+    TP_CUDA_CHECK(cudaStreamCreate(&sendStream));
     void* ptr;
-    EXPECT_EQ(cudaSuccess, cudaMalloc(&ptr, kSize));
+    TP_CUDA_CHECK(cudaMalloc(&ptr, kSize));
 
     // Set buffer to target value.
-    EXPECT_EQ(cudaSuccess, cudaMemsetAsync(ptr, 0x42, kSize, sendStream));
+    TP_CUDA_CHECK(cudaMemsetAsync(ptr, 0x42, kSize, sendStream));
 
     // Perform send and wait for completion.
     auto descriptorPromise = std::make_shared<
@@ -409,7 +407,7 @@ class SendAcrossNonDefaultDevicesTest
     this->peers_->send(PeerGroup::kClient, descriptor);
     Error sendError = sendFuture.get();
     EXPECT_FALSE(sendError) << sendError.what();
-    EXPECT_EQ(cudaSuccess, cudaFree(ptr));
+    TP_CUDA_CHECK(cudaFree(ptr));
 
     this->peers_->done(PeerGroup::kServer);
     this->peers_->join(PeerGroup::kServer);
@@ -422,11 +420,11 @@ class SendAcrossNonDefaultDevicesTest
     auto channel = ctx->createChannel(std::move(conn), Endpoint::kConnect);
 
     // Recv happens on device #1.
-    EXPECT_EQ(cudaSuccess, cudaSetDevice(1));
+    TP_CUDA_CHECK(cudaSetDevice(1));
     cudaStream_t recvStream;
-    EXPECT_EQ(cudaSuccess, cudaStreamCreate(&recvStream));
+    TP_CUDA_CHECK(cudaStreamCreate(&recvStream));
     void* ptr;
-    EXPECT_EQ(cudaSuccess, cudaMalloc(&ptr, kSize));
+    TP_CUDA_CHECK(cudaMalloc(&ptr, kSize));
 
     auto descriptor = this->peers_->recv(PeerGroup::kClient);
 
@@ -449,13 +447,12 @@ class SendAcrossNonDefaultDevicesTest
     EXPECT_FALSE(recvError) << recvError.what();
 
     std::array<uint8_t, kSize> data;
-    EXPECT_EQ(
-        cudaSuccess, cudaMemcpy(data.data(), ptr, kSize, cudaMemcpyDefault));
+    TP_CUDA_CHECK(cudaMemcpy(data.data(), ptr, kSize, cudaMemcpyDefault));
     // Validate contents of vector.
     for (auto i = 0; i < kSize; i++) {
       EXPECT_EQ(data[i], 0x42);
     }
-    EXPECT_EQ(cudaSuccess, cudaFree(ptr));
+    TP_CUDA_CHECK(cudaFree(ptr));
 
     this->peers_->done(PeerGroup::kClient);
     this->peers_->join(PeerGroup::kClient);
@@ -478,11 +475,10 @@ class SendOffsetAllocationTest
 
     // Initialize with sequential values.
     void* ptr;
-    EXPECT_EQ(cudaSuccess, cudaMalloc(&ptr, kOffset + kDataSize));
+    TP_CUDA_CHECK(cudaMalloc(&ptr, kOffset + kDataSize));
     // Set buffer to target value.
-    EXPECT_EQ(cudaSuccess, cudaMemset(ptr, 0xff, kOffset));
-    EXPECT_EQ(
-        cudaSuccess,
+    TP_CUDA_CHECK(cudaMemset(ptr, 0xff, kOffset));
+    TP_CUDA_CHECK(
         cudaMemset(static_cast<uint8_t*>(ptr) + kOffset, 0x42, kDataSize));
 
     // Perform send and wait for completion.

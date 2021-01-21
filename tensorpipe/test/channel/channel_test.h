@@ -27,6 +27,7 @@
 #include <tensorpipe/transport/uv/context.h>
 
 #if TENSORPIPE_SUPPORTS_CUDA
+#include <tensorpipe/common/cuda.h>
 #include <tensorpipe/common/cuda_buffer.h>
 #endif
 
@@ -64,17 +65,15 @@ class DataWrapper<tensorpipe::CudaBuffer> {
 
   explicit DataWrapper(size_t length) : length_(length) {
     if (length_ > 0) {
-      EXPECT_EQ(cudaSuccess, cudaSetDevice(0));
-      EXPECT_EQ(cudaSuccess, cudaStreamCreate(&stream_));
-      EXPECT_EQ(cudaSuccess, cudaMalloc(&cudaPtr_, length_));
+      TP_CUDA_CHECK(cudaSetDevice(0));
+      TP_CUDA_CHECK(cudaStreamCreate(&stream_));
+      TP_CUDA_CHECK(cudaMalloc(&cudaPtr_, length_));
     }
   }
 
   explicit DataWrapper(std::vector<uint8_t> v) : DataWrapper(v.size()) {
     if (length_ > 0) {
-      EXPECT_EQ(
-          cudaSuccess,
-          cudaMemcpy(cudaPtr_, v.data(), length_, cudaMemcpyDefault));
+      TP_CUDA_CHECK(cudaMemcpy(cudaPtr_, v.data(), length_, cudaMemcpyDefault));
     }
   }
 
@@ -102,9 +101,7 @@ class DataWrapper<tensorpipe::CudaBuffer> {
   std::vector<uint8_t> unwrap() {
     std::vector<uint8_t> v(length_);
     if (length_ > 0) {
-      EXPECT_EQ(
-          cudaSuccess,
-          cudaMemcpy(v.data(), cudaPtr_, length_, cudaMemcpyDefault));
+      TP_CUDA_CHECK(cudaMemcpy(v.data(), cudaPtr_, length_, cudaMemcpyDefault));
     }
 
     return v;
@@ -112,8 +109,8 @@ class DataWrapper<tensorpipe::CudaBuffer> {
 
   ~DataWrapper() {
     if (length_ > 0) {
-      EXPECT_EQ(cudaSuccess, cudaFree(cudaPtr_));
-      EXPECT_EQ(cudaSuccess, cudaStreamDestroy(stream_));
+      TP_CUDA_CHECK(cudaFree(cudaPtr_));
+      TP_CUDA_CHECK(cudaStreamDestroy(stream_));
     }
   }
 
