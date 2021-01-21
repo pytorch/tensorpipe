@@ -66,7 +66,7 @@ class DataWrapper<tensorpipe::CudaBuffer> {
   explicit DataWrapper(size_t length) : length_(length) {
     if (length_ > 0) {
       TP_CUDA_CHECK(cudaSetDevice(0));
-      TP_CUDA_CHECK(cudaStreamCreate(&stream_));
+      TP_CUDA_CHECK(cudaStreamCreateWithFlags(&stream_, cudaStreamNonBlocking));
       TP_CUDA_CHECK(cudaMalloc(&cudaPtr_, length_));
     }
   }
@@ -101,6 +101,7 @@ class DataWrapper<tensorpipe::CudaBuffer> {
   std::vector<uint8_t> unwrap() {
     std::vector<uint8_t> v(length_);
     if (length_ > 0) {
+      TP_CUDA_CHECK(cudaStreamSynchronize(stream_));
       TP_CUDA_CHECK(cudaMemcpy(v.data(), cudaPtr_, length_, cudaMemcpyDefault));
     }
 

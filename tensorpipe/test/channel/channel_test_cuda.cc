@@ -28,7 +28,8 @@ class ReceiverWaitsForStartEventTest
 
     TP_CUDA_CHECK(cudaSetDevice(0));
     cudaStream_t sendStream;
-    TP_CUDA_CHECK(cudaStreamCreate(&sendStream));
+    TP_CUDA_CHECK(
+        cudaStreamCreateWithFlags(&sendStream, cudaStreamNonBlocking));
     void* ptr;
     TP_CUDA_CHECK(cudaMalloc(&ptr, kSize));
 
@@ -82,7 +83,8 @@ class ReceiverWaitsForStartEventTest
 
     TP_CUDA_CHECK(cudaSetDevice(0));
     cudaStream_t recvStream;
-    TP_CUDA_CHECK(cudaStreamCreate(&recvStream));
+    TP_CUDA_CHECK(
+        cudaStreamCreateWithFlags(&recvStream, cudaStreamNonBlocking));
     void* ptr;
     TP_CUDA_CHECK(cudaMalloc(&ptr, kSize));
 
@@ -107,6 +109,7 @@ class ReceiverWaitsForStartEventTest
     EXPECT_FALSE(recvError) << recvError.what();
 
     std::array<uint8_t, kSize> data;
+    TP_CUDA_CHECK(cudaStreamSynchronize(recvStream));
     TP_CUDA_CHECK(cudaMemcpy(data.data(), ptr, kSize, cudaMemcpyDefault));
     EXPECT_THAT(data, ::testing::Each(0x42));
     TP_CUDA_CHECK(cudaFree(ptr));
@@ -140,7 +143,8 @@ class SendAcrossDevicesTest : public ClientServerChannelTestCase<CudaBuffer> {
     // Send happens from device #0.
     TP_CUDA_CHECK(cudaSetDevice(0));
     cudaStream_t sendStream;
-    TP_CUDA_CHECK(cudaStreamCreate(&sendStream));
+    TP_CUDA_CHECK(
+        cudaStreamCreateWithFlags(&sendStream, cudaStreamNonBlocking));
     void* ptr;
     TP_CUDA_CHECK(cudaMalloc(&ptr, kSize));
 
@@ -192,7 +196,8 @@ class SendAcrossDevicesTest : public ClientServerChannelTestCase<CudaBuffer> {
     // Recv happens on device #1.
     TP_CUDA_CHECK(cudaSetDevice(1));
     cudaStream_t recvStream;
-    TP_CUDA_CHECK(cudaStreamCreate(&recvStream));
+    TP_CUDA_CHECK(
+        cudaStreamCreateWithFlags(&recvStream, cudaStreamNonBlocking));
     void* ptr;
     TP_CUDA_CHECK(cudaMalloc(&ptr, kSize));
 
@@ -217,6 +222,7 @@ class SendAcrossDevicesTest : public ClientServerChannelTestCase<CudaBuffer> {
     EXPECT_FALSE(recvError) << recvError.what();
 
     std::array<uint8_t, kSize> data;
+    TP_CUDA_CHECK(cudaStreamSynchronize(recvStream));
     TP_CUDA_CHECK(cudaMemcpy(data.data(), ptr, kSize, cudaMemcpyDefault));
     EXPECT_THAT(data, ::testing::Each(0x42));
     TP_CUDA_CHECK(cudaFree(ptr));
@@ -251,7 +257,8 @@ class SendReverseAcrossDevicesTest
     // Send happens from device #1.
     TP_CUDA_CHECK(cudaSetDevice(1));
     cudaStream_t sendStream;
-    TP_CUDA_CHECK(cudaStreamCreate(&sendStream));
+    TP_CUDA_CHECK(
+        cudaStreamCreateWithFlags(&sendStream, cudaStreamNonBlocking));
     void* ptr;
     TP_CUDA_CHECK(cudaMalloc(&ptr, kSize));
 
@@ -303,7 +310,8 @@ class SendReverseAcrossDevicesTest
     // Recv happens on device #0.
     TP_CUDA_CHECK(cudaSetDevice(0));
     cudaStream_t recvStream;
-    TP_CUDA_CHECK(cudaStreamCreate(&recvStream));
+    TP_CUDA_CHECK(
+        cudaStreamCreateWithFlags(&recvStream, cudaStreamNonBlocking));
     void* ptr;
     TP_CUDA_CHECK(cudaMalloc(&ptr, kSize));
 
@@ -328,6 +336,7 @@ class SendReverseAcrossDevicesTest
     EXPECT_FALSE(recvError) << recvError.what();
 
     std::array<uint8_t, kSize> data;
+    TP_CUDA_CHECK(cudaStreamSynchronize(recvStream));
     TP_CUDA_CHECK(cudaMemcpy(data.data(), ptr, kSize, cudaMemcpyDefault));
     EXPECT_THAT(data, ::testing::Each(0x42));
     TP_CUDA_CHECK(cudaFree(ptr));
@@ -362,7 +371,8 @@ class SendAcrossNonDefaultDevicesTest
     // Send happens from device #1.
     TP_CUDA_CHECK(cudaSetDevice(1));
     cudaStream_t sendStream;
-    TP_CUDA_CHECK(cudaStreamCreate(&sendStream));
+    TP_CUDA_CHECK(
+        cudaStreamCreateWithFlags(&sendStream, cudaStreamNonBlocking));
     void* ptr;
     TP_CUDA_CHECK(cudaMalloc(&ptr, kSize));
 
@@ -414,7 +424,8 @@ class SendAcrossNonDefaultDevicesTest
     // Recv happens on device #1.
     TP_CUDA_CHECK(cudaSetDevice(1));
     cudaStream_t recvStream;
-    TP_CUDA_CHECK(cudaStreamCreate(&recvStream));
+    TP_CUDA_CHECK(
+        cudaStreamCreateWithFlags(&recvStream, cudaStreamNonBlocking));
     void* ptr;
     TP_CUDA_CHECK(cudaMalloc(&ptr, kSize));
 
@@ -439,6 +450,7 @@ class SendAcrossNonDefaultDevicesTest
     EXPECT_FALSE(recvError) << recvError.what();
 
     std::array<uint8_t, kSize> data;
+    TP_CUDA_CHECK(cudaStreamSynchronize(recvStream));
     TP_CUDA_CHECK(cudaMemcpy(data.data(), ptr, kSize, cudaMemcpyDefault));
     EXPECT_THAT(data, ::testing::Each(0x42));
     TP_CUDA_CHECK(cudaFree(ptr));
