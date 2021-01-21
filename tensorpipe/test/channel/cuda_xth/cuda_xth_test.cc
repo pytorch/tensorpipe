@@ -37,3 +37,8 @@ INSTANTIATE_TEST_CASE_P(
     CudaXth,
     CudaChannelTestSuite,
     ::testing::Values(&helper));
+
+INSTANTIATE_TEST_CASE_P(
+    CudaXth,
+    CudaMultiGPUChannelTestSuite,
+    ::testing::Values(&helper));
