@@ -16,6 +16,7 @@
 #include <utility>
 
 #include <tensorpipe/channel/cuda_xth/channel_impl.h>
+#include <tensorpipe/common/cuda.h>
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/optional.h>
 #include <tensorpipe/common/system.h>
@@ -62,7 +63,28 @@ std::shared_ptr<CudaChannel> ContextImpl::createChannel(
 }
 
 bool ContextImpl::isViable() const {
-  return foundCudaLib_;
+  if (!foundCudaLib_) {
+    return false;
+  }
+
+  int deviceCount;
+  TP_CUDA_CHECK(cudaGetDeviceCount(&deviceCount));
+  for (int i = 0; i < deviceCount; ++i) {
+    cudaDeviceProp props;
+    TP_CUDA_CHECK(cudaGetDeviceProperties(&props, i));
+
+    // Unified addressing is required for cross-device `cudaMemcpyAsync()`. We
+    // could lift this requirement by adding a fallback to
+    // `cudaMemcpyPeerAsync()`.
+    if (!props.unifiedAddressing) {
+      TP_VLOG(4) << "Channel context " << id_
+                 << " is not viable because CUDA device " << i
+                 << " does not have unified addressing";
+      return false;
+    }
+  }
+
+  return true;
 }
 
 const CudaLib& ContextImpl::getCudaLib() {
