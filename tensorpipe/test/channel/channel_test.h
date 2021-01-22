@@ -257,6 +257,9 @@ class CpuChannelTestSuite : public ::testing::TestWithParam<
 #if TENSORPIPE_SUPPORTS_CUDA
 class CudaChannelTestSuite : public ::testing::TestWithParam<
                                  ChannelTestHelper<tensorpipe::CudaBuffer>*> {};
+class CudaMultiGPUChannelTestSuite
+    : public ::testing::TestWithParam<
+          ChannelTestHelper<tensorpipe::CudaBuffer>*> {};
 #endif // TENSORPIPE_SUPPORTS_CUDA
 
 #define _CHANNEL_TEST(type, suite, name)    \
