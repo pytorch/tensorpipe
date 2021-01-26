@@ -114,6 +114,13 @@ class Reactor final : public BusyPollingLoop {
 
   std::atomic<bool> closed_{false};
   std::atomic<bool> joined_{false};
+
+  // This marks whether the event loop thread was started (it isn't in case the
+  // reactor isn't viable), in order to determine whether to join it at the end.
+  // It's a bad solution, a better one would be to not even create the reactor
+  // if it's not viable.
+  bool threadRunning_{false};
+
   // An identifier for the context, composed of the identifier for the context,
   // combined with the transport's name. It will only be used for logging and
   // debugging purposes.

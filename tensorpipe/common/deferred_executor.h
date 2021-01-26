@@ -179,6 +179,18 @@ class EventLoopDeferredExecutor : public virtual DeferredExecutor {
   // subclass's constructor (which is executed after the parent class's one).
   // Hence this method should be invoked at the end of the subclass constructor.
   void startThread(std::string threadName) {
+    // FIXME Once we've fixed the viability (by having a factory function return
+    // a nullptr, instead of having a method on the context), remove this, and
+    // instead add a safety check in deferToLoop that ensures that within the
+    // isThreadConsumingDeferredFunctions_ branch the thread is joinable, i.e.,
+    // up and still running.
+    {
+      std::unique_lock<std::mutex> lock(mutex_);
+      TP_DCHECK(!isThreadConsumingDeferredFunctions_);
+      TP_DCHECK(!thread_.joinable());
+      TP_DCHECK(fns_.empty());
+      isThreadConsumingDeferredFunctions_ = true;
+    }
     thread_ = std::thread(
         &EventLoopDeferredExecutor::loop, this, std::move(threadName));
   }
@@ -242,7 +254,7 @@ class EventLoopDeferredExecutor : public virtual DeferredExecutor {
 
   std::thread thread_;
 
-  // Whether the thread is still taking care of running the deferred functions
+  // Whether the thread is taking care of running the deferred functions
   //
   // This is part of what can only be described as a hack. Sometimes, even when
   // using the API as intended, objects try to defer tasks to the loop after
@@ -252,8 +264,10 @@ class EventLoopDeferredExecutor : public virtual DeferredExecutor {
   // when we can no longer defer tasks to the loop and in that case we just run
   // those tasks inline. In order to keep ensuring the single-threadedness
   // assumption of our model (which is what we rely on to be safe from race
-  // conditions) we use an on-demand loop.
-  bool isThreadConsumingDeferredFunctions_{true};
+  // conditions) we use an on-demand loop. This flag starts as false as in some
+  // cases (like non-viable transports) the thread may never be started and thus
+  // we want the on-demand loop to be engaged from the beginning.
+  bool isThreadConsumingDeferredFunctions_{false};
   OnDemandDeferredExecutor onDemandLoop_;
 
   // Mutex to guard the deferring and the running of functions.

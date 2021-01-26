@@ -63,6 +63,7 @@ Reactor::Reactor() {
   postRecvRequestsOnSRQ(kNumPendingRecvReqs);
 
   startThread("TP_IBV_reactor");
+  threadRunning_ = true;
 }
 
 bool Reactor::isViable() const {
@@ -98,7 +99,10 @@ void Reactor::join() {
   close();
 
   if (!joined_.exchange(true)) {
-    joinThread();
+    if (threadRunning_) {
+      joinThread();
+      threadRunning_ = false;
+    }
   }
 }
 
