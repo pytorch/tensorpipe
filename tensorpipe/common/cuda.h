@@ -44,6 +44,7 @@
 // FIXME: Is the annotation different for clang?
 #define WEAK_SYMBOL __attribute__((weak))
 
+extern "C" {
 CUresult WEAK_SYMBOL cuCtxGetCurrent(CUcontext*);
 CUresult WEAK_SYMBOL cuCtxSetCurrent(CUcontext);
 CUresult WEAK_SYMBOL cuGetErrorName(CUresult, const char**);
@@ -51,6 +52,7 @@ CUresult WEAK_SYMBOL cuGetErrorString(CUresult, const char**);
 CUresult WEAK_SYMBOL cuMemGetAddressRange(CUdeviceptr*, size_t*, CUdeviceptr);
 CUresult WEAK_SYMBOL
 cuPointerGetAttribute(void*, CUpointer_attribute, CUdeviceptr);
+}
 
 #undef WEAK_SYMBOL
 
