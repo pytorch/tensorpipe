@@ -38,6 +38,9 @@ namespace tensorpipe {
 #define TP_FORALL_CUDA_SYMBOLS(_)                               \
   _(ctxGetCurrent, cuCtxGetCurrent, (CUcontext*))               \
   _(ctxSetCurrent, cuCtxSetCurrent, (CUcontext))                \
+  _(deviceGet, cuDeviceGet, (CUdevice*, int))                   \
+  _(deviceGetCount, cuDeviceGetCount, (int*))                   \
+  _(deviceGetUuid, cuDeviceGetUuid, (CUuuid*, CUdevice))        \
   _(getErrorName, cuGetErrorName, (CUresult, const char**))     \
   _(getErrorString, cuGetErrorString, (CUresult, const char**)) \
   _(init, cuInit, (unsigned int))                               \

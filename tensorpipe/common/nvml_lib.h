@@ -29,9 +29,22 @@ namespace tensorpipe {
 
 // Master list of all symbols we care about from libnvidia-ml.
 
-#define TP_FORALL_NVML_SYMBOLS(_)                              \
-  _(errorString, nvmlErrorString, const char*, (nvmlReturn_t)) \
-  _(init_v2, nvmlInit_v2, nvmlReturn_t, ())                    \
+#define TP_FORALL_NVML_SYMBOLS(_)                                             \
+  _(deviceGetCount_v2, nvmlDeviceGetCount_v2, nvmlReturn_t, (unsigned int*))  \
+  _(deviceGetHandleByIndex_v2,                                                \
+    nvmlDeviceGetHandleByIndex_v2,                                            \
+    nvmlReturn_t,                                                             \
+    (unsigned int, nvmlDevice_t*))                                            \
+  _(deviceGetP2PStatus,                                                       \
+    nvmlDeviceGetP2PStatus,                                                   \
+    nvmlReturn_t,                                                             \
+    (nvmlDevice_t, nvmlDevice_t, nvmlGpuP2PCapsIndex_t, nvmlGpuP2PStatus_t*)) \
+  _(deviceGetUUID,                                                            \
+    nvmlDeviceGetUUID,                                                        \
+    nvmlReturn_t,                                                             \
+    (nvmlDevice_t, char*, unsigned int))                                      \
+  _(errorString, nvmlErrorString, const char*, (nvmlReturn_t))                \
+  _(init_v2, nvmlInit_v2, nvmlReturn_t, ())                                   \
   _(shutdown, nvmlShutdown, nvmlReturn_t, ())
 
 // Wrapper for libnvidia-ml.

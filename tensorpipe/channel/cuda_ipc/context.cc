@@ -19,7 +19,7 @@ namespace tensorpipe {
 namespace channel {
 namespace cuda_ipc {
 
-Context::Context() : impl_(std::make_shared<ContextImpl>()) {}
+Context::Context() : impl_(ContextImpl::create()) {}
 
 // Explicitly define all methods of the context, which just forward to the impl.
 // We cannot use an intermediate ContextBoilerplate class without forcing a
@@ -37,6 +37,11 @@ const std::string& Context::domainDescriptor() const {
 
 bool Context::isViable() const {
   return impl_->isViable();
+}
+
+bool Context::canCommunicateWithRemote(
+    const std::string& remoteDomainDescriptor) const {
+  return impl_->canCommunicateWithRemote(remoteDomainDescriptor);
 }
 
 void Context::setId(std::string id) {

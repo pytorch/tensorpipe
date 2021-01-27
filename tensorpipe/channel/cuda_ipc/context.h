@@ -37,6 +37,9 @@ class Context : public CudaContext {
 
   bool isViable() const override;
 
+  bool canCommunicateWithRemote(
+      const std::string& remoteDomainDescriptor) const override;
+
   void setId(std::string id) override;
 
   void close() override;
