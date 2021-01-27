@@ -40,6 +40,7 @@ namespace tensorpipe {
   _(ctxSetCurrent, cuCtxSetCurrent, (CUcontext))                \
   _(getErrorName, cuGetErrorName, (CUresult, const char**))     \
   _(getErrorString, cuGetErrorString, (CUresult, const char**)) \
+  _(init, cuInit, (unsigned int))                               \
   _(memGetAddressRange_v2,                                      \
     cuMemGetAddressRange_v2,                                    \
     (CUdeviceptr*, size_t*, CUdeviceptr))                       \
@@ -63,6 +64,14 @@ class CudaLib {
 
  public:
   CudaLib() = default;
+
+#define TP_FORWARD_CALL(method_name, function_name, args_types)  \
+  template <typename... Args>                                    \
+  auto method_name(Args&&... args) const {                       \
+    return (*function_name##_ptr_)(std::forward<Args>(args)...); \
+  }
+  TP_FORALL_CUDA_SYMBOLS(TP_FORWARD_CALL)
+#undef TP_FORWARD_CALL
 
   static std::tuple<Error, CudaLib> create() {
     Error error;
@@ -90,16 +99,9 @@ class CudaLib {
   }
     TP_FORALL_CUDA_SYMBOLS(TP_LOAD_SYMBOL)
 #undef TP_LOAD_SYMBOL
+    TP_CUDA_DRIVER_CHECK(lib, lib.init(0));
     return std::make_tuple(Error::kSuccess, std::move(lib));
   }
-
-#define TP_FORWARD_CALL(method_name, function_name, args_types)  \
-  template <typename... Args>                                    \
-  auto method_name(Args&&... args) const {                       \
-    return (*function_name##_ptr_)(std::forward<Args>(args)...); \
-  }
-  TP_FORALL_CUDA_SYMBOLS(TP_FORWARD_CALL)
-#undef TP_FORWARD_CALL
 
   CUresult memGetAddressRange(
       CUdeviceptr* pbase,

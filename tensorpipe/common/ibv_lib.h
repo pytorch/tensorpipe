@@ -625,6 +625,14 @@ class IbvLib {
  public:
   IbvLib() = default;
 
+#define TP_FORWARD_CALL(function_name, return_type, args_types)  \
+  template <typename... Args>                                    \
+  auto function_name(Args&&... args) const {                     \
+    return (*function_name##_ptr_)(std::forward<Args>(args)...); \
+  }
+  TP_FORALL_IBV_SYMBOLS(TP_FORWARD_CALL)
+#undef TP_FORWARD_CALL
+
   static std::tuple<Error, IbvLib> create() {
     Error error;
     DynamicLibraryHandle dlhandle;
@@ -652,14 +660,6 @@ class IbvLib {
 #undef TP_LOAD_SYMBOL
     return std::make_tuple(Error::kSuccess, std::move(lib));
   }
-
-#define TP_FORWARD_CALL(function_name, return_type, args_types)  \
-  template <typename... Args>                                    \
-  auto function_name(Args&&... args) const {                     \
-    return (*function_name##_ptr_)(std::forward<Args>(args)...); \
-  }
-  TP_FORALL_IBV_SYMBOLS(TP_FORWARD_CALL)
-#undef TP_FORWARD_CALL
 
   // These functions (which, it would seem, are the ones that are used in the
   // critical control path, and which thus must have the lowest latency and
