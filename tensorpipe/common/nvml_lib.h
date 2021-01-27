@@ -100,7 +100,7 @@ class NvmlLib {
     // through this handle and are not exposed (a.k.a., "leaked") to other
     // shared objects.
     std::tie(error, dlhandle) =
-        createDynamicLibraryHandle("libnvidia-ml.so", RTLD_LOCAL | RTLD_LAZY);
+        createDynamicLibraryHandle("libnvidia-ml.so.1", RTLD_LOCAL | RTLD_LAZY);
     if (error) {
       return std::make_tuple(std::move(error), NvmlLib());
     }
