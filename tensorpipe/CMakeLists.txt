@@ -14,9 +14,12 @@ add_library(tensorpipe
   common/socket.cc
   common/system.cc
   core/context.cc
+  core/context_impl.cc
   core/error.cc
   core/listener.cc
+  core/listener_impl.cc
   core/pipe.cc
+  core/pipe_impl.cc
   transport/error.cc)
 
 # Support `#include <tensorpipe/foo.h>`.
