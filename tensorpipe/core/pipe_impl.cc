@@ -1059,7 +1059,7 @@ void PipeImpl::onReadWhileServerWaitingForBrochure(const Packet& nopPacketIn) {
         nopTransportAdvertisementIter->second;
     const std::string& domainDescriptor =
         nopTransportAdvertisement.domainDescriptor;
-    if (domainDescriptor != transportContext.domainDescriptor()) {
+    if (!transportContext.canCommunicateWithRemote(domainDescriptor)) {
       continue;
     }
 
@@ -1109,7 +1109,7 @@ void PipeImpl::onReadWhileServerWaitingForBrochure(const Packet& nopPacketIn) {
           nopChannelAdvertisementIter->second;
       const std::string& domainDescriptor =
           nopChannelAdvertisement.domainDescriptor;
-      if (domainDescriptor != channelContext.domainDescriptor()) {
+      if (!channelContext.canCommunicateWithRemote(domainDescriptor)) {
         continue;
       }
 

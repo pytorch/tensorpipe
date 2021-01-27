@@ -43,10 +43,26 @@ class Context {
 
   // Return string to describe the domain for this channel.
   //
-  // Two processes with a channel context of the same type whose
-  // domain descriptors are identical can connect to each other.
+  // Two processes with a channel context of the same type can connect
+  // to each other if one side's domain descriptor is "accepted" by the
+  // other one, using the canCommunicateWithRemote method below. That
+  // method must be symmetric, and unless overridden defaults to string
+  // comparison.
   //
   virtual const std::string& domainDescriptor() const = 0;
+
+  // Compare local and remote domain descriptor for compatibility.
+  //
+  // Determine whether a channel can be opened between this context and
+  // a remote one that has the given domain descriptor. This function
+  // needs to be symmetric: if we called this method on the remote
+  // context with the local descriptor we should get the same answer.
+  // Unless overridden it defaults to string comparison.
+  //
+  virtual bool canCommunicateWithRemote(
+      const std::string& remoteDomainDescriptor) const {
+    return domainDescriptor() == remoteDomainDescriptor;
+  }
 
   // Return newly created channel using the specified connection.
   //
