@@ -13,12 +13,14 @@
 #include <string>
 
 #include <tensorpipe/common/error.h>
-#include <tensorpipe/core/context.h>
-#include <tensorpipe/core/listener.h>
 #include <tensorpipe/core/message.h>
 #include <tensorpipe/transport/context.h>
 
 namespace tensorpipe {
+
+class ContextImpl;
+class ListenerImpl;
+class PipeImpl;
 
 // The pipe.
 //
@@ -46,15 +48,15 @@ class Pipe final {
 
   Pipe(
       ConstructorToken token,
-      std::shared_ptr<Context::PrivateIface> context,
+      std::shared_ptr<ContextImpl> context,
       std::string id,
       std::string remoteName,
       const std::string& url);
 
   Pipe(
       ConstructorToken token,
-      std::shared_ptr<Context::PrivateIface> context,
-      std::shared_ptr<Listener::PrivateIface> listener,
+      std::shared_ptr<ContextImpl> context,
+      std::shared_ptr<ListenerImpl> listener,
       std::string id,
       std::string remoteName,
       std::string transport,
@@ -90,16 +92,14 @@ class Pipe final {
   ~Pipe();
 
  private:
-  class Impl;
-
   // Using a shared_ptr allows us to detach the lifetime of the implementation
   // from the public object's one and perform the destruction asynchronously.
-  std::shared_ptr<Impl> impl_;
+  const std::shared_ptr<PipeImpl> impl_;
 
   // Allow context to access constructor token.
-  friend class Context;
+  friend ContextImpl;
   // Allow listener to access constructor token.
-  friend class Listener;
+  friend ListenerImpl;
 };
 
 } // namespace tensorpipe
