@@ -1065,6 +1065,8 @@ void PipeImpl::onReadWhileServerWaitingForBrochure(const Packet& nopPacketIn) {
 
     nopBrochureAnswer.transport = transportName;
     nopBrochureAnswer.address = address;
+    nopBrochureAnswer.transportDomainDescriptor =
+        transportContext.domainDescriptor();
 
     if (transportName != transport_) {
       transport_ = transportName;
@@ -1083,7 +1085,7 @@ void PipeImpl::onReadWhileServerWaitingForBrochure(const Packet& nopPacketIn) {
               }));
       registrationId_.emplace(token);
       needToWaitForConnections = true;
-      nopBrochureAnswer.registrationId = token;
+      nopBrochureAnswer.transportRegistrationId = token;
     }
 
     foundATransport = true;
@@ -1134,6 +1136,7 @@ void PipeImpl::onReadWhileServerWaitingForBrochure(const Packet& nopPacketIn) {
       ChannelSelection& nopChannelSelection =
           nopChannelSelectionMap[channelName];
       nopChannelSelection.registrationId = token;
+      nopChannelSelection.domainDescriptor = channelContext.domainDescriptor();
     }
   });
 
@@ -1178,6 +1181,10 @@ void PipeImpl::onReadWhileClientWaitingForBrochureAnswer(
   std::string address = nopBrochureAnswer.address;
   std::shared_ptr<transport::Context> transportContext =
       context_->getTransport(transport);
+  TP_DCHECK(transportContext->canCommunicateWithRemote(
+      nopBrochureAnswer.transportDomainDescriptor))
+      << "The two endpoints disagree on whether transport " << transport
+      << " can be used to communicate";
 
   if (transport != transport_) {
     TP_VLOG(3) << "Pipe " << id_ << " is opening connection (as replacement)";
@@ -1189,7 +1196,7 @@ void PipeImpl::onReadWhileClientWaitingForBrochureAnswer(
     nopPacketOut.Become(nopPacketOut.index_of<RequestedConnection>());
     RequestedConnection& nopRequestedConnection =
         *nopPacketOut.get<RequestedConnection>();
-    uint64_t token = nopBrochureAnswer.registrationId;
+    uint64_t token = nopBrochureAnswer.transportRegistrationId;
     nopRequestedConnection.registrationId = token;
     TP_VLOG(3) << "Pipe " << id_
                << " is writing nop object (requested connection)";
@@ -1212,6 +1219,10 @@ void PipeImpl::onReadWhileClientWaitingForBrochureAnswer(
 
       std::shared_ptr<channel::Context<decltype(buffer)>> channelContext =
           this->getChannelContext<decltype(buffer)>(channelName);
+      TP_DCHECK(channelContext->canCommunicateWithRemote(
+          nopChannelSelection.domainDescriptor))
+          << "The two endpoints disagree on whether channel " << channelName
+          << " can be used to communicate";
 
       TP_VLOG(3) << "Pipe " << id_ << " is opening connection (for channel "
                  << channelName << ")";

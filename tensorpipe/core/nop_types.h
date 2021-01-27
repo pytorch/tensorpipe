@@ -55,20 +55,23 @@ struct Brochure {
 
 struct ChannelSelection {
   uint64_t registrationId;
-  NOP_STRUCTURE(ChannelSelection, registrationId);
+  std::string domainDescriptor;
+  NOP_STRUCTURE(ChannelSelection, registrationId, domainDescriptor);
 };
 
 struct BrochureAnswer {
   std::string transport;
   std::string address;
-  uint64_t registrationId;
+  uint64_t transportRegistrationId;
+  std::string transportDomainDescriptor;
   std::unordered_map<std::string, ChannelSelection> cpuChannelSelection;
   std::unordered_map<std::string, ChannelSelection> cudaChannelSelection;
   NOP_STRUCTURE(
       BrochureAnswer,
       transport,
       address,
-      registrationId,
+      transportRegistrationId,
+      transportDomainDescriptor,
       cpuChannelSelection,
       cudaChannelSelection);
 };
