@@ -43,7 +43,7 @@ class ContextImpl final
       std::vector<int> globalIdxOfVisibleDevices);
 
   std::shared_ptr<CudaChannel> createChannel(
-      std::shared_ptr<transport::Connection> connection,
+      std::vector<std::shared_ptr<transport::Connection>> connections,
       Endpoint endpoint);
 
   bool isViable() const;

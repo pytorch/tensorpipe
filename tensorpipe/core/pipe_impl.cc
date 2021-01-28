@@ -676,9 +676,12 @@ void PipeImpl::handleError() {
   }
   forEachDeviceType([&](auto buffer) {
     for (const auto& iter : channelRegistrationIds_.get<decltype(buffer)>()) {
-      listener_->unregisterConnectionRequest(iter.second);
+      for (const auto& token : iter.second) {
+        listener_->unregisterConnectionRequest(token);
+      }
     }
     channelRegistrationIds_.get<decltype(buffer)>().clear();
+    channelReceivedConnections_.get<decltype(buffer)>().clear();
   });
 
   if (!readOperations_.empty()) {
@@ -1115,27 +1118,41 @@ void PipeImpl::onReadWhileServerWaitingForBrochure(const Packet& nopPacketIn) {
         continue;
       }
 
-      TP_VLOG(3) << "Pipe " << id_ << " is requesting connection (for channel "
-                 << channelName << ")";
-      uint64_t token =
-          listener_->registerConnectionRequest(lazyCallbackWrapper_(
-              [channelName](
-                  PipeImpl& impl,
-                  std::string transport,
-                  std::shared_ptr<transport::Connection> connection) {
-                TP_VLOG(3) << "Pipe " << impl.id_
-                           << " done requesting connection (for channel "
-                           << channelName << ")";
-                impl.onAcceptWhileServerWaitingForChannel<decltype(buffer)>(
-                    channelName, std::move(transport), std::move(connection));
-              }));
-      channelRegistrationIds_.get<decltype(buffer)>()[channelName] = token;
-      needToWaitForConnections = true;
+      const size_t numConnectionsNeeded = channelContext.numConnectionsNeeded();
+      auto& channelRegistrationIds =
+          channelRegistrationIds_.get<decltype(buffer)>()[channelName];
+      channelRegistrationIds.resize(numConnectionsNeeded);
+      auto& channelReceivedConnections =
+          channelReceivedConnections_.get<decltype(buffer)>()[channelName];
+      channelReceivedConnections.resize(numConnectionsNeeded);
+      for (size_t connId = 0; connId < numConnectionsNeeded; ++connId) {
+        TP_VLOG(3) << "Pipe " << id_ << " is requesting connection " << connId
+                   << "/" << numConnectionsNeeded << " (for channel "
+                   << channelName << ")";
+        uint64_t token =
+            listener_->registerConnectionRequest(lazyCallbackWrapper_(
+                [channelName, connId, numConnectionsNeeded](
+                    PipeImpl& impl,
+                    std::string transport,
+                    std::shared_ptr<transport::Connection> connection) {
+                  TP_VLOG(3)
+                      << "Pipe " << impl.id_ << " done requesting connection "
+                      << connId << "/" << numConnectionsNeeded
+                      << " (for channel " << channelName << ")";
+                  impl.onAcceptWhileServerWaitingForChannel<decltype(buffer)>(
+                      channelName,
+                      connId,
+                      std::move(transport),
+                      std::move(connection));
+                }));
+        channelRegistrationIds[connId] = token;
+        needToWaitForConnections = true;
+      }
       auto& nopChannelSelectionMap =
           getChannelSelection<decltype(buffer)>(nopBrochureAnswer);
       ChannelSelection& nopChannelSelection =
           nopChannelSelectionMap[channelName];
-      nopChannelSelection.registrationId = token;
+      nopChannelSelection.registrationIds = channelRegistrationIds;
       nopChannelSelection.domainDescriptor = channelContext.domainDescriptor();
     }
   });
@@ -1224,30 +1241,41 @@ void PipeImpl::onReadWhileClientWaitingForBrochureAnswer(
           << "The two endpoints disagree on whether channel " << channelName
           << " can be used to communicate";
 
-      TP_VLOG(3) << "Pipe " << id_ << " is opening connection (for channel "
-                 << channelName << ")";
-      std::shared_ptr<transport::Connection> connection =
-          transportContext->connect(address);
-      connection->setId(id_ + ".ch_" + channelName);
+      const size_t numConnectionsNeeded =
+          channelContext->numConnectionsNeeded();
+      TP_DCHECK_EQ(
+          numConnectionsNeeded, nopChannelSelection.registrationIds.size());
+      std::vector<std::shared_ptr<transport::Connection>> connections(
+          numConnectionsNeeded);
+      for (size_t connId = 0; connId < numConnectionsNeeded; ++connId) {
+        TP_VLOG(3) << "Pipe " << id_ << " is opening connection " << connId
+                   << "/" << numConnectionsNeeded << " (for channel "
+                   << channelName << ")";
+        std::shared_ptr<transport::Connection> connection =
+            transportContext->connect(address);
+        connection->setId(
+            id_ + ".ch_" + channelName + "_" + std::to_string(connId));
 
-      auto nopHolderOut = std::make_shared<NopHolder<Packet>>();
-      Packet& nopPacketOut = nopHolderOut->getObject();
-      nopPacketOut.Become(nopPacketOut.index_of<RequestedConnection>());
-      RequestedConnection& nopRequestedConnection =
-          *nopPacketOut.get<RequestedConnection>();
-      uint64_t token = nopChannelSelection.registrationId;
-      nopRequestedConnection.registrationId = token;
-      TP_VLOG(3) << "Pipe " << id_
-                 << " is writing nop object (requested connection)";
-      connection->write(
-          *nopHolderOut, lazyCallbackWrapper_([nopHolderOut](PipeImpl& impl) {
-            TP_VLOG(3) << "Pipe " << impl.id_
-                       << " done writing nop object (requested connection)";
-          }));
+        auto nopHolderOut = std::make_shared<NopHolder<Packet>>();
+        Packet& nopPacketOut = nopHolderOut->getObject();
+        nopPacketOut.Become(nopPacketOut.index_of<RequestedConnection>());
+        RequestedConnection& nopRequestedConnection =
+            *nopPacketOut.get<RequestedConnection>();
+        uint64_t token = nopChannelSelection.registrationIds[connId];
+        nopRequestedConnection.registrationId = token;
+        TP_VLOG(3) << "Pipe " << id_
+                   << " is writing nop object (requested connection)";
+        connection->write(
+            *nopHolderOut, lazyCallbackWrapper_([nopHolderOut](PipeImpl& impl) {
+              TP_VLOG(3) << "Pipe " << impl.id_
+                         << " done writing nop object (requested connection)";
+            }));
+        connections[connId] = std::move(connection);
+      }
 
       std::shared_ptr<channel::Channel<decltype(buffer)>> channel =
           channelContext->createChannel(
-              std::move(connection), channel::Endpoint::kConnect);
+              std::move(connections), channel::Endpoint::kConnect);
       channel->setId(id_ + ".ch_" + channelName);
       channels_.get<decltype(buffer)>().emplace(
           channelName, std::move(channel));
@@ -1282,28 +1310,46 @@ void PipeImpl::onAcceptWhileServerWaitingForConnection(
 template <typename TBuffer>
 void PipeImpl::onAcceptWhileServerWaitingForChannel(
     std::string channelName,
+    size_t connId,
     std::string receivedTransport,
     std::shared_ptr<transport::Connection> receivedConnection) {
   TP_DCHECK(loop_.inLoop());
   TP_DCHECK_EQ(state_, SERVER_WAITING_FOR_CONNECTIONS);
-  auto& channelRegistrationIds = channelRegistrationIds_.get<TBuffer>();
-  auto channelRegistrationIdIter = channelRegistrationIds.find(channelName);
-  TP_DCHECK(channelRegistrationIdIter != channelRegistrationIds.end());
-  listener_->unregisterConnectionRequest(channelRegistrationIdIter->second);
-  channelRegistrationIds.erase(channelRegistrationIdIter);
-  receivedConnection->setId(id_ + ".ch_" + channelName);
-
   TP_DCHECK_EQ(transport_, receivedTransport);
-  auto& channels = channels_.get<TBuffer>();
-  TP_DCHECK(channels.find(channelName) == channels.end());
+  auto& channelRegistrationIds = channelRegistrationIds_.get<TBuffer>();
+  auto channelRegistrationIdsIter = channelRegistrationIds.find(channelName);
+  TP_DCHECK(channelRegistrationIdsIter != channelRegistrationIds.end());
+  listener_->unregisterConnectionRequest(
+      channelRegistrationIdsIter->second[connId]);
+  receivedConnection->setId(
+      id_ + ".ch_" + channelName + "_" + std::to_string(connId));
+
+  auto& channelReceivedConnections = channelReceivedConnections_.get<TBuffer>();
+
+  channelReceivedConnections[channelName][connId] =
+      std::move(receivedConnection);
+  // TODO: If we can guarantee the order in which the accept() calls happen,
+  // this check can be replaced with `if (connId == numConnectionsNeeded -
+  // 1)`.
+  for (const auto& conn : channelReceivedConnections[channelName]) {
+    if (conn == nullptr) {
+      return;
+    }
+  }
 
   std::shared_ptr<channel::Context<TBuffer>> channelContext =
       getChannelContext<TBuffer>(channelName);
 
   std::shared_ptr<channel::Channel<TBuffer>> channel =
       channelContext->createChannel(
-          std::move(receivedConnection), channel::Endpoint::kListen);
+          std::move(channelReceivedConnections[channelName]),
+          channel::Endpoint::kListen);
+  channelRegistrationIds.erase(channelRegistrationIdsIter);
+  channelReceivedConnections.erase(channelName);
   channel->setId(id_ + ".ch_" + channelName);
+
+  auto& channels = channels_.get<TBuffer>();
+  TP_DCHECK(channels.find(channelName) == channels.end());
   channels.emplace(channelName, std::move(channel));
 
   if (!pendingRegistrations()) {

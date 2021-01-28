@@ -33,8 +33,10 @@ class Context : public CpuContext {
   Context& operator=(Context&&) = delete;
 
   std::shared_ptr<CpuChannel> createChannel(
-      std::shared_ptr<transport::Connection> connection,
+      std::vector<std::shared_ptr<transport::Connection>> connections,
       Endpoint endpoint) override;
+
+  size_t numConnectionsNeeded() const override;
 
   const std::string& domainDescriptor() const override;
 

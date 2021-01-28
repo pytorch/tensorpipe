@@ -181,9 +181,16 @@ class PipeImpl final : public std::enable_shared_from_this<PipeImpl> {
   // different connection or to open some channels.
   optional<uint64_t> registrationId_;
 
-  using TChannelRegistrationMap = std::unordered_map<std::string, uint64_t>;
+  using TChannelRegistrationMap =
+      std::unordered_map<std::string, std::vector<uint64_t>>;
   TP_DEVICE_FIELD(TChannelRegistrationMap, TChannelRegistrationMap)
   channelRegistrationIds_;
+
+  using TChannelConnectionsMap = std::unordered_map<
+      std::string,
+      std::vector<std::shared_ptr<transport::Connection>>>;
+  TP_DEVICE_FIELD(TChannelConnectionsMap, TChannelConnectionsMap)
+  channelReceivedConnections_;
 
   ClosingReceiver closingReceiver_;
 
@@ -269,6 +276,7 @@ class PipeImpl final : public std::enable_shared_from_this<PipeImpl> {
   template <typename TBuffer>
   void onAcceptWhileServerWaitingForChannel(
       std::string channelName,
+      size_t connId,
       std::string receivedTransport,
       std::shared_ptr<transport::Connection> receivedConnection);
   void onReadOfMessageDescriptor(ReadOperation& op, const Packet& nopPacketIn);

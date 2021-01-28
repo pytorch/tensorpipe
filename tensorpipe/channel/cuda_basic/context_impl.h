@@ -28,7 +28,7 @@ class ContextImpl final
   explicit ContextImpl(std::shared_ptr<CpuContext> cpuContext);
 
   std::shared_ptr<CudaChannel> createChannel(
-      std::shared_ptr<transport::Connection> connection,
+      std::vector<std::shared_ptr<transport::Connection>> connections,
       Endpoint endpoint);
 
   bool isViable() const;

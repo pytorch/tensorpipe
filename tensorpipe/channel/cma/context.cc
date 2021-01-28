@@ -26,9 +26,13 @@ Context::Context() : impl_(ContextImpl::create()) {}
 // recursive include of private headers into the public ones.
 
 std::shared_ptr<CpuChannel> Context::createChannel(
-    std::shared_ptr<transport::Connection> connection,
+    std::vector<std::shared_ptr<transport::Connection>> connections,
     Endpoint endpoint) {
-  return impl_->createChannel(std::move(connection), endpoint);
+  return impl_->createChannel(std::move(connections), endpoint);
+}
+
+size_t Context::numConnectionsNeeded() const {
+  return impl_->numConnectionsNeeded();
 }
 
 const std::string& Context::domainDescriptor() const {

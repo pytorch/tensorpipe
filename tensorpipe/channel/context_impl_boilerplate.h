@@ -33,6 +33,8 @@ class ContextImplBoilerplate : public virtual DeferredExecutor,
   ContextImplBoilerplate& operator=(const ContextImplBoilerplate&) = delete;
   ContextImplBoilerplate& operator=(ContextImplBoilerplate&&) = delete;
 
+  virtual size_t numConnectionsNeeded() const;
+
   const std::string& domainDescriptor() const;
 
   // Enrolling dependent objects (channels) causes them to be kept alive for as
@@ -105,6 +107,12 @@ std::shared_ptr<Channel<TBuffer>> ContextImplBoilerplate<TBuffer, TCtx, TChan>::
       this->shared_from_this(),
       std::move(channelId),
       std::forward<Args>(args)...);
+}
+
+template <typename TBuffer, typename TCtx, typename TChan>
+size_t ContextImplBoilerplate<TBuffer, TCtx, TChan>::numConnectionsNeeded()
+    const {
+  return 1;
 }
 
 template <typename TBuffer, typename TCtx, typename TChan>

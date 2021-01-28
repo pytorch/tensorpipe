@@ -21,9 +21,10 @@ ContextImpl::ContextImpl()
     : ContextImplBoilerplate<CpuBuffer, ContextImpl, ChannelImpl>("any") {}
 
 std::shared_ptr<CpuChannel> ContextImpl::createChannel(
-    std::shared_ptr<transport::Connection> connection,
+    std::vector<std::shared_ptr<transport::Connection>> connections,
     Endpoint /* unused */) {
-  return createChannelInternal(std::move(connection));
+  TP_DCHECK_EQ(numConnectionsNeeded(), connections.size());
+  return createChannelInternal(std::move(connections[0]));
 }
 
 void ContextImpl::closeImpl() {}

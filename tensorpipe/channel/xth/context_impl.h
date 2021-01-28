@@ -32,7 +32,7 @@ class ContextImpl final
   ContextImpl();
 
   std::shared_ptr<CpuChannel> createChannel(
-      std::shared_ptr<transport::Connection> connection,
+      std::vector<std::shared_ptr<transport::Connection>> connections,
       Endpoint endpoint);
 
   // Implement the DeferredExecutor interface.
