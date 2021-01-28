@@ -31,6 +31,8 @@ class ContextImpl final
       std::vector<std::shared_ptr<transport::Connection>> connections,
       Endpoint endpoint);
 
+  size_t numConnectionsNeeded() const override;
+
   bool isViable() const;
 
   const CudaLib& getCudaLib();
