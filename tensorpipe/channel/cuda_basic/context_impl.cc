@@ -63,7 +63,7 @@ void ContextImpl::joinImpl() {
   cudaLoop_.join();
 }
 
-bool ContextImpl::inLoop() {
+bool ContextImpl::inLoop() const {
   return loop_.inLoop();
 };
 

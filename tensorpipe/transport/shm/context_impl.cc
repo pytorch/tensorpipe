@@ -93,7 +93,7 @@ void ContextImpl::joinImpl() {
   reactor_.join();
 }
 
-bool ContextImpl::inLoop() {
+bool ContextImpl::inLoop() const {
   return reactor_.inLoop();
 };
 

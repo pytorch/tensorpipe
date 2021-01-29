@@ -252,7 +252,7 @@ void ContextImpl::joinImpl() {
   // TP_DCHECK(requests_.empty());
 }
 
-bool ContextImpl::inLoop() {
+bool ContextImpl::inLoop() const {
   return loop_.inLoop();
 };
 

@@ -96,7 +96,7 @@ void ContextImpl::closeImpl() {}
 
 void ContextImpl::joinImpl() {}
 
-bool ContextImpl::inLoop() {
+bool ContextImpl::inLoop() const {
   return loop_.inLoop();
 };
 

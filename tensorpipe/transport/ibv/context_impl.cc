@@ -205,7 +205,7 @@ std::tuple<Error, std::string> ContextImpl::lookupAddrForHostname() {
   }
 }
 
-bool ContextImpl::inLoop() {
+bool ContextImpl::inLoop() const {
   return reactor_.inLoop();
 };
 

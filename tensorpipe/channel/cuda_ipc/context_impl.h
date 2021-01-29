@@ -54,7 +54,7 @@ class ContextImpl final
   const CudaLib& getCudaLib();
 
   // Implement the DeferredExecutor interface.
-  bool inLoop() override;
+  bool inLoop() const override;
   void deferToLoop(std::function<void()> fn) override;
 
  protected:

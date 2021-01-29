@@ -40,7 +40,7 @@ class ContextImpl final
   bool isViable() const;
 
   // Implement the DeferredExecutor interface.
-  bool inLoop() override;
+  bool inLoop() const override;
   void deferToLoop(std::function<void()> fn) override;
 
   using copy_request_callback_fn = std::function<void(const Error&)>;

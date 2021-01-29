@@ -36,7 +36,7 @@ class ContextImpl final
   std::tuple<Error, std::string> lookupAddrForHostname();
 
   // Implement the DeferredExecutor interface.
-  bool inLoop() override;
+  bool inLoop() const override;
   void deferToLoop(std::function<void()> fn) override;
 
   void registerDescriptor(

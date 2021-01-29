@@ -41,7 +41,7 @@ class DeferredExecutor {
 
   virtual void deferToLoop(TTask fn) = 0;
 
-  virtual bool inLoop() = 0;
+  virtual bool inLoop() const = 0;
 
   // Prefer using deferToLoop over runInLoop when you don't need to wait for the
   // result.
@@ -89,7 +89,7 @@ class DeferredExecutor {
 // FIXME Rename this to OnDemandDeferredExecutor?
 class OnDemandDeferredExecutor : public DeferredExecutor {
  public:
-  bool inLoop() override {
+  bool inLoop() const override {
     // If the current thread is already holding the lock (i.e., it's already in
     // this function somewhere higher up in the stack) then this check won't
     // race and we will detect it correctly. If this is not the case, then this
@@ -145,7 +145,7 @@ class EventLoopDeferredExecutor : public virtual DeferredExecutor {
     onDemandLoop_.deferToLoop(std::move(fn));
   }
 
-  inline bool inLoop() override {
+  inline bool inLoop() const override {
     {
       std::unique_lock<std::mutex> lock(mutex_);
       if (likely(isThreadConsumingDeferredFunctions_)) {
@@ -271,7 +271,7 @@ class EventLoopDeferredExecutor : public virtual DeferredExecutor {
   OnDemandDeferredExecutor onDemandLoop_;
 
   // Mutex to guard the deferring and the running of functions.
-  std::mutex mutex_;
+  mutable std::mutex mutex_;
 
   // List of deferred functions to run when the loop is ready.
   std::vector<std::function<void()>> fns_;
