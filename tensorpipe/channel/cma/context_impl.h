@@ -31,7 +31,9 @@ class ContextImpl final
  public:
   static std::shared_ptr<ContextImpl> create();
 
-  ContextImpl(bool isViable, std::string domainDescriptor);
+  ContextImpl();
+
+  explicit ContextImpl(std::string domainDescriptor);
 
   std::shared_ptr<CpuChannel> createChannel(
       std::vector<std::shared_ptr<transport::Connection>> connections,
