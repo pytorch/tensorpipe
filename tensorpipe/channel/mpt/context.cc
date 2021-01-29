@@ -23,9 +23,7 @@ namespace mpt {
 Context::Context(
     std::vector<std::shared_ptr<transport::Context>> contexts,
     std::vector<std::shared_ptr<transport::Listener>> listeners)
-    : impl_(std::make_shared<ContextImpl>(
-          std::move(contexts),
-          std::move(listeners))) {
+    : impl_(ContextImpl::create(std::move(contexts), std::move(listeners))) {
   impl_->init();
 }
 
