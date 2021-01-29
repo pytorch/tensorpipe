@@ -40,13 +40,13 @@ std::string ibvWorkCompletionOpcodeToStr(IbvLib::wc_opcode opcode);
 
 class IbvDeviceList {
  private:
-  IbvDeviceList(IbvLib& ibvLib, IbvLib::device** ptr, int size)
+  IbvDeviceList(const IbvLib& ibvLib, IbvLib::device** ptr, int size)
       : deviceList_(ptr, Deleter{&ibvLib}), size_(size) {}
 
  public:
   IbvDeviceList() = default;
 
-  static std::tuple<Error, IbvDeviceList> create(IbvLib& ibvLib) {
+  static std::tuple<Error, IbvDeviceList> create(const IbvLib& ibvLib) {
     int size;
     IbvLib::device** ptr = ibvLib.get_device_list(&size);
     if (ptr == nullptr) {
@@ -78,7 +78,7 @@ class IbvDeviceList {
       TP_CHECK_IBV_VOID(ibvLib->free_device_list(ptr));
     }
 
-    IbvLib* ibvLib;
+    const IbvLib* ibvLib;
   };
 
   std::unique_ptr<IbvLib::device*, Deleter> deviceList_;
@@ -90,12 +90,14 @@ struct IbvContextDeleter {
     TP_CHECK_IBV_INT(ibvLib->close_device(ptr));
   }
 
-  IbvLib* ibvLib;
+  const IbvLib* ibvLib;
 };
 
 using IbvContext = std::unique_ptr<IbvLib::context, IbvContextDeleter>;
 
-inline IbvContext createIbvContext(IbvLib& ibvLib, IbvLib::device& device) {
+inline IbvContext createIbvContext(
+    const IbvLib& ibvLib,
+    IbvLib::device& device) {
   return IbvContext(
       TP_CHECK_IBV_PTR(ibvLib.open_device(&device)),
       IbvContextDeleter{&ibvLib});
@@ -106,14 +108,14 @@ struct IbvProtectionDomainDeleter {
     TP_CHECK_IBV_INT(ibvLib->dealloc_pd(ptr));
   }
 
-  IbvLib* ibvLib;
+  const IbvLib* ibvLib;
 };
 
 using IbvProtectionDomain =
     std::unique_ptr<IbvLib::pd, IbvProtectionDomainDeleter>;
 
 inline IbvProtectionDomain createIbvProtectionDomain(
-    IbvLib& ibvLib,
+    const IbvLib& ibvLib,
     IbvContext& context) {
   return IbvProtectionDomain(
       TP_CHECK_IBV_PTR(ibvLib.alloc_pd(context.get())),
@@ -125,14 +127,14 @@ struct IbvCompletionQueueDeleter {
     TP_CHECK_IBV_INT(ibvLib->destroy_cq(ptr));
   }
 
-  IbvLib* ibvLib;
+  const IbvLib* ibvLib;
 };
 
 using IbvCompletionQueue =
     std::unique_ptr<IbvLib::cq, IbvCompletionQueueDeleter>;
 
 inline IbvCompletionQueue createIbvCompletionQueue(
-    IbvLib& ibvLib,
+    const IbvLib& ibvLib,
     IbvContext& context,
     int cqe,
     void* cq_context,
@@ -149,14 +151,14 @@ struct IbvSharedReceiveQueueDeleter {
     TP_CHECK_IBV_INT(ibvLib->destroy_srq(ptr));
   }
 
-  IbvLib* ibvLib;
+  const IbvLib* ibvLib;
 };
 
 using IbvSharedReceiveQueue =
     std::unique_ptr<IbvLib::srq, IbvSharedReceiveQueueDeleter>;
 
 inline IbvSharedReceiveQueue createIbvSharedReceiveQueue(
-    IbvLib& ibvLib,
+    const IbvLib& ibvLib,
     IbvProtectionDomain& pd,
     IbvLib::srq_init_attr& initAttr) {
   return IbvSharedReceiveQueue(
@@ -169,13 +171,13 @@ struct IbvMemoryRegionDeleter {
     TP_CHECK_IBV_INT(ibvLib->dereg_mr(ptr));
   }
 
-  IbvLib* ibvLib;
+  const IbvLib* ibvLib;
 };
 
 using IbvMemoryRegion = std::unique_ptr<IbvLib::mr, IbvMemoryRegionDeleter>;
 
 inline IbvMemoryRegion createIbvMemoryRegion(
-    IbvLib& ibvLib,
+    const IbvLib& ibvLib,
     IbvProtectionDomain& pd,
     void* addr,
     size_t length,
@@ -190,13 +192,13 @@ struct IbvQueuePairDeleter {
     TP_CHECK_IBV_INT(ibvLib->destroy_qp(ptr));
   }
 
-  IbvLib* ibvLib;
+  const IbvLib* ibvLib;
 };
 
 using IbvQueuePair = std::unique_ptr<IbvLib::qp, IbvQueuePairDeleter>;
 
 inline IbvQueuePair createIbvQueuePair(
-    IbvLib& ibvLib,
+    const IbvLib& ibvLib,
     IbvProtectionDomain& pd,
     IbvLib::qp_init_attr& initAttr) {
   return IbvQueuePair(
@@ -224,7 +226,7 @@ struct IbvSetupInformation {
 };
 
 struct IbvAddress makeIbvAddress(
-    IbvLib& ibvLib,
+    const IbvLib& ibvLib,
     const IbvContext& context,
     uint8_t portNum,
     uint8_t globalIdentifierIndex);
@@ -234,18 +236,20 @@ struct IbvSetupInformation makeIbvSetupInformation(
     const IbvQueuePair& qp);
 
 void transitionIbvQueuePairToInit(
-    IbvLib& ibvLib,
+    const IbvLib& ibvLib,
     IbvQueuePair& qp,
     const IbvAddress& selfAddr);
 
 void transitionIbvQueuePairToReadyToReceive(
-    IbvLib& ibvLib,
+    const IbvLib& ibvLib,
     IbvQueuePair& qp,
     const IbvAddress& selfAddr,
     const IbvSetupInformation& destinationInfo);
 
-void transitionIbvQueuePairToReadyToSend(IbvLib& ibvLib, IbvQueuePair& qp);
+void transitionIbvQueuePairToReadyToSend(
+    const IbvLib& ibvLib,
+    IbvQueuePair& qp);
 
-void transitionIbvQueuePairToError(IbvLib& ibvLib, IbvQueuePair& qp);
+void transitionIbvQueuePairToError(const IbvLib& ibvLib, IbvQueuePair& qp);
 
 } // namespace tensorpipe

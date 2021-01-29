@@ -667,22 +667,24 @@ class IbvLib {
   // libibverbs.so: they are defined inline in the header and, in fact, they
   // access a function pointer stored on the ibv_context and execute it.
 
-  int poll_cq(IbvLib::cq* cq, int num_entries, IbvLib::wc* wc) {
+  int poll_cq(IbvLib::cq* cq, int num_entries, IbvLib::wc* wc) const {
     return cq->context->ops.poll_cq(cq, num_entries, wc);
   }
 
-  int post_send(IbvLib::qp* qp, IbvLib::send_wr* wr, IbvLib::send_wr** bad_wr) {
+  int post_send(IbvLib::qp* qp, IbvLib::send_wr* wr, IbvLib::send_wr** bad_wr)
+      const {
     return qp->context->ops.post_send(qp, wr, bad_wr);
   }
 
-  int post_recv(IbvLib::qp* qp, IbvLib::recv_wr* wr, IbvLib::recv_wr** bad_wr) {
+  int post_recv(IbvLib::qp* qp, IbvLib::recv_wr* wr, IbvLib::recv_wr** bad_wr)
+      const {
     return qp->context->ops.post_recv(qp, wr, bad_wr);
   }
 
   int post_srq_recv(
       IbvLib::srq* srq,
       IbvLib::recv_wr* recv_wr,
-      IbvLib::recv_wr** bad_recv_wr) {
+      IbvLib::recv_wr** bad_recv_wr) const {
     return srq->context->ops.post_srq_recv(srq, recv_wr, bad_recv_wr);
   }
 };

@@ -37,7 +37,7 @@ std::string ibvWorkCompletionOpcodeToStr(IbvLib::wc_opcode opcode) {
 }
 
 struct IbvAddress makeIbvAddress(
-    IbvLib& ibvLib,
+    const IbvLib& ibvLib,
     const IbvContext& context,
     uint8_t portNum,
     uint8_t globalIdentifierIndex) {
@@ -74,7 +74,7 @@ struct IbvSetupInformation makeIbvSetupInformation(
 }
 
 void transitionIbvQueuePairToInit(
-    IbvLib& ibvLib,
+    const IbvLib& ibvLib,
     IbvQueuePair& qp,
     const IbvAddress& selfAddr) {
   IbvLib::qp_attr attr;
@@ -101,7 +101,7 @@ void transitionIbvQueuePairToInit(
 }
 
 void transitionIbvQueuePairToReadyToReceive(
-    IbvLib& ibvLib,
+    const IbvLib& ibvLib,
     IbvQueuePair& qp,
     const IbvAddress& selfAddr,
     const IbvSetupInformation& destinationInfo) {
@@ -147,7 +147,9 @@ void transitionIbvQueuePairToReadyToReceive(
   TP_CHECK_IBV_INT(ibvLib.modify_qp(qp.get(), &attr, attrMask));
 }
 
-void transitionIbvQueuePairToReadyToSend(IbvLib& ibvLib, IbvQueuePair& qp) {
+void transitionIbvQueuePairToReadyToSend(
+    const IbvLib& ibvLib,
+    IbvQueuePair& qp) {
   IbvLib::qp_attr attr;
   std::memset(&attr, 0, sizeof(attr));
   int attrMask = 0;
@@ -175,7 +177,7 @@ void transitionIbvQueuePairToReadyToSend(IbvLib& ibvLib, IbvQueuePair& qp) {
   TP_CHECK_IBV_INT(ibvLib.modify_qp(qp.get(), &attr, attrMask));
 }
 
-void transitionIbvQueuePairToError(IbvLib& ibvLib, IbvQueuePair& qp) {
+void transitionIbvQueuePairToError(const IbvLib& ibvLib, IbvQueuePair& qp) {
   IbvLib::qp_attr attr;
   std::memset(&attr, 0, sizeof(attr));
   int attrMask = 0;
