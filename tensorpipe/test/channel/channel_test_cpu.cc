@@ -18,7 +18,7 @@ using namespace tensorpipe::channel;
 class NullPointerTest : public ClientServerChannelTestCase<CpuBuffer> {
   void server(std::shared_ptr<transport::Connection> conn) override {
     std::shared_ptr<CpuContext> ctx = this->helper_->makeContext("server");
-    auto channel = ctx->createChannel(std::move(conn), Endpoint::kListen);
+    auto channel = ctx->createChannel({std::move(conn)}, Endpoint::kListen);
 
     // Perform send and wait for completion.
     std::future<std::tuple<Error, TDescriptor>> descriptorFuture;
@@ -41,7 +41,7 @@ class NullPointerTest : public ClientServerChannelTestCase<CpuBuffer> {
 
   void client(std::shared_ptr<transport::Connection> conn) override {
     std::shared_ptr<CpuContext> ctx = this->helper_->makeContext("client");
-    auto channel = ctx->createChannel(std::move(conn), Endpoint::kConnect);
+    auto channel = ctx->createChannel({std::move(conn)}, Endpoint::kConnect);
 
     // Perform recv and wait for completion.
     auto descriptor = this->peers_->recv(PeerGroup::kClient);
@@ -64,7 +64,7 @@ class EmptyTensorTest : public ClientServerChannelTestCase<CpuBuffer> {
   void server(std::shared_ptr<transport::Connection> conn) override {
     std::shared_ptr<Context<CpuBuffer>> ctx =
         this->helper_->makeContext("server");
-    auto channel = ctx->createChannel(std::move(conn), Endpoint::kListen);
+    auto channel = ctx->createChannel({std::move(conn)}, Endpoint::kListen);
 
     // Allocate a non-empty vector so that its .data() pointer is non-null.
     std::vector<uint8_t> data(1);
@@ -92,7 +92,7 @@ class EmptyTensorTest : public ClientServerChannelTestCase<CpuBuffer> {
 
   void client(std::shared_ptr<transport::Connection> conn) override {
     std::shared_ptr<CpuContext> ctx = this->helper_->makeContext("client");
-    auto channel = ctx->createChannel(std::move(conn), Endpoint::kConnect);
+    auto channel = ctx->createChannel({std::move(conn)}, Endpoint::kConnect);
 
     // Allocate a non-empty vector so that its .data() pointer is non-null.
     DataWrapper<CpuBuffer> wrappedData(1);
@@ -126,7 +126,7 @@ class CallbacksAreDeferredTest : public ClientServerChannelTestCase<CpuBuffer> {
  public:
   void server(std::shared_ptr<transport::Connection> conn) override {
     std::shared_ptr<CpuContext> ctx = this->helper_->makeContext("server");
-    auto channel = ctx->createChannel(std::move(conn), Endpoint::kListen);
+    auto channel = ctx->createChannel({std::move(conn)}, Endpoint::kListen);
 
     // Initialize with sequential values.
     std::vector<uint8_t> data(kDataSize);
@@ -165,7 +165,7 @@ class CallbacksAreDeferredTest : public ClientServerChannelTestCase<CpuBuffer> {
 
   void client(std::shared_ptr<transport::Connection> conn) override {
     std::shared_ptr<CpuContext> ctx = this->helper_->makeContext("client");
-    auto channel = ctx->createChannel(std::move(conn), Endpoint::kConnect);
+    auto channel = ctx->createChannel({std::move(conn)}, Endpoint::kConnect);
 
     // Initialize with zeroes.
     std::vector<uint8_t> data(kDataSize);

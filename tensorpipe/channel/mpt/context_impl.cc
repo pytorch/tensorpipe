@@ -71,9 +71,10 @@ void ContextImpl::initFromLoop() {
 }
 
 std::shared_ptr<CpuChannel> ContextImpl::createChannel(
-    std::shared_ptr<transport::Connection> connection,
+    std::vector<std::shared_ptr<transport::Connection>> connections,
     Endpoint endpoint) {
-  return createChannelInternal(std::move(connection), endpoint, numLanes_);
+  TP_DCHECK_EQ(numConnectionsNeeded(), connections.size());
+  return createChannelInternal(std::move(connections[0]), endpoint, numLanes_);
 }
 
 const std::vector<std::string>& ContextImpl::addresses() const {

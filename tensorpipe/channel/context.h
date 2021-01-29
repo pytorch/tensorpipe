@@ -10,6 +10,7 @@
 
 #include <memory>
 #include <string>
+#include <vector>
 
 #include <tensorpipe/transport/context.h>
 
@@ -41,6 +42,14 @@ class Context {
     return true;
   }
 
+  // Return the number of control connections needed to create an instance of
+  // this channel.
+  //
+  // Most channels require only one, but some require more (cuda_basic), and
+  // some might require none.
+  //
+  virtual size_t numConnectionsNeeded() const = 0;
+
   // Return string to describe the domain for this channel.
   //
   // Two processes with a channel context of the same type can connect
@@ -64,16 +73,16 @@ class Context {
     return domainDescriptor() == remoteDomainDescriptor;
   }
 
-  // Return newly created channel using the specified connection.
+  // Return newly created channel using the specified connections.
   //
-  // It is up to the channel to either use this connection for further
-  // initialization, or use it directly. Either way, the returned
+  // It is up to the channel to either use these connections for further
+  // initialization, or use them directly. Either way, the returned
   // channel should be immediately usable. If the channel isn't fully
   // initialized yet, take care to queue these operations to execute
   // as soon as initialization has completed.
   //
   virtual std::shared_ptr<Channel<TBuffer>> createChannel(
-      std::shared_ptr<transport::Connection>,
+      std::vector<std::shared_ptr<transport::Connection>>,
       Endpoint) = 0;
 
   // Tell the context what its identifier is.

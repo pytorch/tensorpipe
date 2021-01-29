@@ -24,7 +24,7 @@ class ReceiverWaitsForStartEventTest
 
   void server(std::shared_ptr<transport::Connection> conn) override {
     std::shared_ptr<CudaContext> ctx = this->helper_->makeContext("server");
-    auto channel = ctx->createChannel(std::move(conn), Endpoint::kListen);
+    auto channel = ctx->createChannel({std::move(conn)}, Endpoint::kListen);
 
     TP_CUDA_CHECK(cudaSetDevice(0));
     cudaStream_t sendStream;
@@ -79,7 +79,7 @@ class ReceiverWaitsForStartEventTest
 
   void client(std::shared_ptr<transport::Connection> conn) override {
     std::shared_ptr<CudaContext> ctx = this->helper_->makeContext("client");
-    auto channel = ctx->createChannel(std::move(conn), Endpoint::kConnect);
+    auto channel = ctx->createChannel({std::move(conn)}, Endpoint::kConnect);
 
     TP_CUDA_CHECK(cudaSetDevice(0));
     cudaStream_t recvStream;
@@ -131,7 +131,7 @@ class SendOffsetAllocationTest
 
   void server(std::shared_ptr<transport::Connection> conn) override {
     std::shared_ptr<CudaContext> ctx = this->helper_->makeContext("server");
-    auto channel = ctx->createChannel(std::move(conn), Endpoint::kListen);
+    auto channel = ctx->createChannel({std::move(conn)}, Endpoint::kListen);
 
     // Initialize with sequential values.
     void* ptr;
@@ -162,7 +162,7 @@ class SendOffsetAllocationTest
 
   void client(std::shared_ptr<transport::Connection> conn) override {
     std::shared_ptr<CudaContext> ctx = this->helper_->makeContext("client");
-    auto channel = ctx->createChannel(std::move(conn), Endpoint::kConnect);
+    auto channel = ctx->createChannel({std::move(conn)}, Endpoint::kConnect);
 
     DataWrapper<CudaBuffer> wrappedData(kDataSize);
 

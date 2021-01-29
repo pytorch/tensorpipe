@@ -32,7 +32,7 @@ class SendAcrossDevicesTest : public ClientServerChannelTestCase<CudaBuffer> {
  private:
   void server(std::shared_ptr<transport::Connection> conn) override {
     std::shared_ptr<CudaContext> ctx = this->helper_->makeContext("server");
-    auto channel = ctx->createChannel(std::move(conn), Endpoint::kListen);
+    auto channel = ctx->createChannel({std::move(conn)}, Endpoint::kListen);
 
     // Send happens from device #0.
     TP_CUDA_CHECK(cudaSetDevice(0));
@@ -85,7 +85,7 @@ class SendAcrossDevicesTest : public ClientServerChannelTestCase<CudaBuffer> {
 
   void client(std::shared_ptr<transport::Connection> conn) override {
     std::shared_ptr<CudaContext> ctx = this->helper_->makeContext("client");
-    auto channel = ctx->createChannel(std::move(conn), Endpoint::kConnect);
+    auto channel = ctx->createChannel({std::move(conn)}, Endpoint::kConnect);
 
     // Recv happens on device #1.
     TP_CUDA_CHECK(cudaSetDevice(1));
@@ -146,7 +146,7 @@ class SendReverseAcrossDevicesTest
  private:
   void server(std::shared_ptr<transport::Connection> conn) override {
     std::shared_ptr<CudaContext> ctx = this->helper_->makeContext("server");
-    auto channel = ctx->createChannel(std::move(conn), Endpoint::kListen);
+    auto channel = ctx->createChannel({std::move(conn)}, Endpoint::kListen);
 
     // Send happens from device #1.
     TP_CUDA_CHECK(cudaSetDevice(1));
@@ -199,7 +199,7 @@ class SendReverseAcrossDevicesTest
 
   void client(std::shared_ptr<transport::Connection> conn) override {
     std::shared_ptr<CudaContext> ctx = this->helper_->makeContext("client");
-    auto channel = ctx->createChannel(std::move(conn), Endpoint::kConnect);
+    auto channel = ctx->createChannel({std::move(conn)}, Endpoint::kConnect);
 
     // Recv happens on device #0.
     TP_CUDA_CHECK(cudaSetDevice(0));
@@ -260,7 +260,7 @@ class SendAcrossNonDefaultDevicesTest
  private:
   void server(std::shared_ptr<transport::Connection> conn) override {
     std::shared_ptr<CudaContext> ctx = this->helper_->makeContext("server");
-    auto channel = ctx->createChannel(std::move(conn), Endpoint::kListen);
+    auto channel = ctx->createChannel({std::move(conn)}, Endpoint::kListen);
 
     // Send happens from device #1.
     TP_CUDA_CHECK(cudaSetDevice(1));
@@ -313,7 +313,7 @@ class SendAcrossNonDefaultDevicesTest
 
   void client(std::shared_ptr<transport::Connection> conn) override {
     std::shared_ptr<CudaContext> ctx = this->helper_->makeContext("client");
-    auto channel = ctx->createChannel(std::move(conn), Endpoint::kConnect);
+    auto channel = ctx->createChannel({std::move(conn)}, Endpoint::kConnect);
 
     // Recv happens on device #1.
     TP_CUDA_CHECK(cudaSetDevice(1));

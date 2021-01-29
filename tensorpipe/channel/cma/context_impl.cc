@@ -233,9 +233,10 @@ ContextImpl::ContextImpl(bool isVIable, std::string domainDescriptor)
 }
 
 std::shared_ptr<CpuChannel> ContextImpl::createChannel(
-    std::shared_ptr<transport::Connection> connection,
+    std::vector<std::shared_ptr<transport::Connection>> connections,
     Endpoint /* unused */) {
-  return createChannelInternal(std::move(connection));
+  TP_DCHECK_EQ(numConnectionsNeeded(), connections.size());
+  return createChannelInternal(std::move(connections[0]));
 }
 
 bool ContextImpl::isViable() const {

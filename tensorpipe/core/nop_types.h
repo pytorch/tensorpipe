@@ -54,9 +54,9 @@ struct Brochure {
 };
 
 struct ChannelSelection {
-  uint64_t registrationId;
+  std::vector<uint64_t> registrationIds;
   std::string domainDescriptor;
-  NOP_STRUCTURE(ChannelSelection, registrationId, domainDescriptor);
+  NOP_STRUCTURE(ChannelSelection, registrationIds, domainDescriptor);
 };
 
 struct BrochureAnswer {
