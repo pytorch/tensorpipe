@@ -57,11 +57,11 @@ Context::~Context() {
 }
 
 std::tuple<Error, std::string> Context::lookupAddrForIface(std::string iface) {
-  return impl_->lookupAddrForIface(std::move(iface));
+  return ContextImpl::lookupAddrForIface(std::move(iface));
 }
 
 std::tuple<Error, std::string> Context::lookupAddrForHostname() {
-  return impl_->lookupAddrForHostname();
+  return ContextImpl::lookupAddrForHostname();
 }
 
 } // namespace uv

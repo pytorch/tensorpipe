@@ -30,9 +30,9 @@ class ContextImpl final
  public:
   ContextImpl();
 
-  std::tuple<Error, std::string> lookupAddrForIface(std::string iface);
+  static std::tuple<Error, std::string> lookupAddrForIface(std::string iface);
 
-  std::tuple<Error, std::string> lookupAddrForHostname();
+  static std::tuple<Error, std::string> lookupAddrForHostname();
 
   // Implement the DeferredExecutor interface.
   bool inLoop() const override;
@@ -47,8 +47,6 @@ class ContextImpl final
 
  private:
   Loop loop_;
-
-  std::tuple<Error, std::string> lookupAddrForHostnameFromLoop();
 };
 
 } // namespace uv

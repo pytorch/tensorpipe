@@ -79,15 +79,39 @@ std::tuple<Error, std::string> ContextImpl::lookupAddrForIface(
 }
 
 std::tuple<Error, std::string> ContextImpl::lookupAddrForHostname() {
-  Error error;
-  std::string addr;
-  runInLoop([this, &error, &addr]() {
-    std::tie(error, addr) = lookupAddrForHostnameFromLoop();
-  });
-  return std::make_tuple(std::move(error), std::move(addr));
-}
+  // For some operations we need a libuv event loop. We create a fresh one, just
+  // for this purpose, which we'll drive inline from this thread. This way we
+  // avoid misusing the main event loop in the context impl.
+  struct InlineLoop {
+    uv_loop_t loop;
 
-std::tuple<Error, std::string> ContextImpl::lookupAddrForHostnameFromLoop() {
+    InlineLoop() {
+      auto rv = uv_loop_init(&loop);
+      TP_THROW_UV_IF(rv < 0, rv);
+    }
+
+    ~InlineLoop() {
+      auto rv = uv_loop_close(&loop);
+      TP_THROW_UV_IF(rv < 0, rv);
+    }
+  };
+  InlineLoop loop;
+
+  struct InlineDeferredExecutor : public DeferredExecutor {
+    std::thread::id threadId = std::this_thread::get_id();
+
+    void deferToLoop(TTask fn) override {
+      TP_THROW_ASSERT()
+          << "How could this be called?! This class is supposed to be "
+          << "instantiated as const, and this method isn't const-qualified";
+    }
+
+    bool inLoop() const override {
+      return std::this_thread::get_id() == threadId;
+    }
+  };
+  const InlineDeferredExecutor executor;
+
   int rv;
   std::string hostname;
   std::tie(rv, hostname) = getHostname();
@@ -96,7 +120,7 @@ std::tuple<Error, std::string> ContextImpl::lookupAddrForHostnameFromLoop() {
   }
 
   Addrinfo info;
-  std::tie(rv, info) = getAddrinfoFromLoop(loop_.ptr(), std::move(hostname));
+  std::tie(rv, info) = getAddrinfoFromLoop(&loop.loop, std::move(hostname));
   if (rv < 0) {
     return std::make_tuple(TP_CREATE_ERROR(UVError, rv), std::string());
   }
@@ -109,16 +133,16 @@ std::tuple<Error, std::string> ContextImpl::lookupAddrForHostnameFromLoop() {
 
     Sockaddr addr = Sockaddr(rp->ai_addr, rp->ai_addrlen);
 
-    // We allocate a shared_ptr, rather than a unique_ptr, because we then copy
-    // this into the closure of the lambda we pass as close callback, to ensure
-    // the handle remains alive until it's closed.
-    // FIXME This is sloppy. https://github.com/pytorch/tensorpipe/issues/242
-    auto handle = std::make_shared<TCPHandle>(loop_.ptr(), loop_);
-    handle->armCloseCallbackFromLoop([handle]() mutable { handle.reset(); });
-    TP_THROW_ASSERT_IF(closed());
-    handle->initFromLoop();
-    rv = handle->bindFromLoop(addr);
-    handle->closeFromLoop();
+    TCPHandle handle(&loop.loop, executor);
+    handle.initFromLoop();
+    rv = handle.bindFromLoop(addr);
+    handle.closeFromLoop();
+
+    // The handle will only be closed at the next loop iteration, so run it.
+    {
+      auto rv = uv_run(&loop.loop, UV_RUN_DEFAULT);
+      TP_THROW_ASSERT_IF(rv > 0);
+    }
 
     if (rv < 0) {
       // Record the first binding error we encounter and return that in the end
