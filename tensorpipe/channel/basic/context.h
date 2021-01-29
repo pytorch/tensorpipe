@@ -36,6 +36,8 @@ class Context : public CpuContext {
 
   size_t numConnectionsNeeded() const override;
 
+  bool isViable() const override;
+
   const std::string& domainDescriptor() const override;
 
   void setId(std::string id) override;
