@@ -15,7 +15,7 @@
 #include <sys/un.h>
 #include <unistd.h>
 
-#include <tensorpipe/channel/cma/context.h>
+#include <tensorpipe/channel/cma/factory.h>
 #include <tensorpipe/common/defs.h>
 
 namespace {}
@@ -130,7 +130,7 @@ int main(int argc, char* argv[]) {
   rv = ::close(fd);
   TP_THROW_SYSTEM_IF(rv < 0, errno);
 
-  auto ctx = std::make_shared<tensorpipe::channel::cma::Context>();
+  auto ctx = tensorpipe::channel::cma::create();
   TP_LOG_INFO() << "The CMA context's viability is: " << std::boolalpha
                 << ctx->isViable();
   TP_LOG_INFO() << "Its descriptor is: " << ctx->domainDescriptor();

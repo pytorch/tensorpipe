@@ -8,7 +8,7 @@
 
 #include <numeric>
 
-#include <tensorpipe/channel/cuda_xth/context.h>
+#include <tensorpipe/channel/cuda_xth/factory.h>
 #include <tensorpipe/test/channel/channel_test.h>
 
 namespace {
@@ -18,7 +18,7 @@ class CudaXthChannelTestHelper
  protected:
   std::shared_ptr<tensorpipe::channel::CudaContext> makeContextInternal(
       std::string id) override {
-    auto context = std::make_shared<tensorpipe::channel::cuda_xth::Context>();
+    auto context = tensorpipe::channel::cuda_xth::create();
     context->setId(std::move(id));
     return context;
   }

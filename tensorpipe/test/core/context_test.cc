@@ -144,10 +144,9 @@ TEST(Context, ClientPingSerial) {
   context->registerTransport(
       1, "shm", std::make_shared<transport::shm::Context>());
 #endif // TENSORPIPE_HAS_SHM_TRANSPORT
-  context->registerChannel(
-      0, "basic", std::make_shared<channel::basic::Context>());
+  context->registerChannel(0, "basic", channel::basic::create());
 #if TENSORPIPE_HAS_CMA_CHANNEL
-  context->registerChannel(1, "cma", std::make_shared<channel::cma::Context>());
+  context->registerChannel(1, "cma", channel::cma::create());
 #endif // TENSORPIPE_HAS_CMA_CHANNEL
 
   auto listener = context->listen(genUrls());
@@ -229,10 +228,9 @@ TEST(Context, ClientPingInline) {
   context->registerTransport(
       1, "shm", std::make_shared<transport::shm::Context>());
 #endif // TENSORPIPE_HAS_SHM_TRANSPORT
-  context->registerChannel(
-      0, "basic", std::make_shared<channel::basic::Context>());
+  context->registerChannel(0, "basic", channel::basic::create());
 #if TENSORPIPE_HAS_CMA_CHANNEL
-  context->registerChannel(1, "cma", std::make_shared<channel::cma::Context>());
+  context->registerChannel(1, "cma", channel::cma::create());
 #endif // TENSORPIPE_HAS_CMA_CHANNEL
 
   auto listener = context->listen(genUrls());
@@ -310,10 +308,9 @@ TEST(Context, ServerPingPongTwice) {
   context->registerTransport(
       1, "shm", std::make_shared<transport::shm::Context>());
 #endif // TENSORPIPE_HAS_SHM_TRANSPORT
-  context->registerChannel(
-      0, "basic", std::make_shared<channel::basic::Context>());
+  context->registerChannel(0, "basic", channel::basic::create());
 #if TENSORPIPE_HAS_CMA_CHANNEL
-  context->registerChannel(1, "cma", std::make_shared<channel::cma::Context>());
+  context->registerChannel(1, "cma", channel::cma::create());
 #endif // TENSORPIPE_HAS_CMA_CHANNEL
 
   auto listener = context->listen(genUrls());
@@ -482,10 +479,9 @@ TEST(Context, MixedTensorMessage) {
   context->registerTransport(
       1, "shm", std::make_shared<transport::shm::Context>());
 #endif // TENSORPIPE_HAS_SHM_TRANSPORT
-  context->registerChannel(
-      0, "basic", std::make_shared<channel::basic::Context>());
+  context->registerChannel(0, "basic", channel::basic::create());
 #if TENSORPIPE_HAS_CMA_CHANNEL
-  context->registerChannel(1, "cma", std::make_shared<channel::cma::Context>());
+  context->registerChannel(1, "cma", channel::cma::create());
 #endif // TENSORPIPE_HAS_CMA_CHANNEL
 
   auto listener = context->listen(genUrls());
