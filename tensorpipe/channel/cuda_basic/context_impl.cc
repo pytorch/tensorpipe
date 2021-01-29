@@ -40,15 +40,15 @@ std::shared_ptr<ContextImpl> ContextImpl::create(
 
 ContextImpl::ContextImpl()
     : ContextImplBoilerplate<CudaBuffer, ContextImpl, ChannelImpl>(
-          /*domainDescriptor=*/""),
-      isViable_(false) {}
+          /*isViable=*/false,
+          /*domainDescriptor=*/"") {}
 
 ContextImpl::ContextImpl(
     CudaLib cudaLib,
     std::shared_ptr<CpuContext> cpuContext)
     : ContextImplBoilerplate<CudaBuffer, ContextImpl, ChannelImpl>(
+          /*isViable=*/true,
           cpuContext->domainDescriptor()),
-      isViable_(true),
       cudaLib_(std::move(cudaLib)),
       cpuContext_(std::move(cpuContext)) {}
 
@@ -62,10 +62,6 @@ std::shared_ptr<CudaChannel> ContextImpl::createChannel(
 
 size_t ContextImpl::numConnectionsNeeded() const {
   return cpuContext_->numConnectionsNeeded();
-}
-
-bool ContextImpl::isViable() const {
-  return isViable_;
 }
 
 const CudaLib& ContextImpl::getCudaLib() {

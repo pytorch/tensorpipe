@@ -219,13 +219,13 @@ std::shared_ptr<ContextImpl> ContextImpl::create() {
 
 ContextImpl::ContextImpl()
     : ContextImplBoilerplate<CpuBuffer, ContextImpl, ChannelImpl>(
-          /*domainDescriptor=*/""),
-      isViable_(false) {}
+          /*isViable=*/false,
+          /*domainDescriptor=*/"") {}
 
 ContextImpl::ContextImpl(std::string domainDescriptor)
     : ContextImplBoilerplate<CpuBuffer, ContextImpl, ChannelImpl>(
-          std::move(domainDescriptor)),
-      isViable_(true) {
+          /*isViable=*/true,
+          std::move(domainDescriptor)) {
   thread_ = std::thread(&ContextImpl::handleCopyRequests, this);
 }
 
@@ -234,10 +234,6 @@ std::shared_ptr<CpuChannel> ContextImpl::createChannel(
     Endpoint /* unused */) {
   TP_DCHECK_EQ(numConnectionsNeeded(), connections.size());
   return createChannelInternal(std::move(connections[0]));
-}
-
-bool ContextImpl::isViable() const {
-  return isViable_;
 }
 
 void ContextImpl::closeImpl() {

@@ -46,6 +46,7 @@ ContextImpl::ContextImpl(
     std::vector<std::shared_ptr<transport::Context>> contexts,
     std::vector<std::shared_ptr<transport::Listener>> listeners)
     : ContextImplBoilerplate<CpuBuffer, ContextImpl, ChannelImpl>(
+          /*isViable=*/true,
           generateDomainDescriptor(contexts)),
       contexts_(std::move(contexts)),
       listeners_(std::move(listeners)) {
@@ -75,10 +76,6 @@ std::shared_ptr<CpuChannel> ContextImpl::createChannel(
     Endpoint endpoint) {
   TP_DCHECK_EQ(numConnectionsNeeded(), connections.size());
   return createChannelInternal(std::move(connections[0]), endpoint, numLanes_);
-}
-
-bool ContextImpl::isViable() const {
-  return true;
 }
 
 const std::vector<std::string>& ContextImpl::addresses() const {

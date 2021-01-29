@@ -33,8 +33,6 @@ class ContextImpl final
       std::vector<std::shared_ptr<transport::Connection>> connections,
       Endpoint endpoint);
 
-  bool isViable() const;
-
   const CudaLib& getCudaLib();
 
   // Implement the DeferredExecutor interface.
@@ -49,7 +47,6 @@ class ContextImpl final
  private:
   OnDemandDeferredExecutor loop_;
 
-  const bool isViable_;
   const CudaLib cudaLib_;
 };
 

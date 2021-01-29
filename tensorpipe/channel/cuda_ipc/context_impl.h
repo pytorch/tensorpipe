@@ -46,8 +46,6 @@ class ContextImpl final
       std::vector<std::shared_ptr<transport::Connection>> connections,
       Endpoint endpoint);
 
-  bool isViable() const;
-
   bool canCommunicateWithRemote(
       const std::string& remoteDomainDescriptor) const;
 
@@ -65,7 +63,6 @@ class ContextImpl final
  private:
   OnDemandDeferredExecutor loop_;
 
-  const bool isViable_;
   const CudaLib cudaLib_;
   const NvmlLib nvmlLib_;
 

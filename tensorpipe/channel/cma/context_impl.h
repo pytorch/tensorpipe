@@ -39,8 +39,6 @@ class ContextImpl final
       std::vector<std::shared_ptr<transport::Connection>> connections,
       Endpoint endpoint);
 
-  bool isViable() const;
-
   // Implement the DeferredExecutor interface.
   bool inLoop() const override;
   void deferToLoop(std::function<void()> fn) override;
@@ -61,8 +59,6 @@ class ContextImpl final
 
  private:
   OnDemandDeferredExecutor loop_;
-
-  const bool isViable_;
 
   struct CopyRequest {
     pid_t remotePid;

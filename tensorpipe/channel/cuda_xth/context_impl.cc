@@ -74,13 +74,13 @@ std::shared_ptr<ContextImpl> ContextImpl::create() {
 
 ContextImpl::ContextImpl()
     : ContextImplBoilerplate<CudaBuffer, ContextImpl, ChannelImpl>(
-          /*domainDescriptor=*/""),
-      isViable_(false) {}
+          /*isViable=*/false,
+          /*domainDescriptor=*/"") {}
 
 ContextImpl::ContextImpl(CudaLib cudaLib)
     : ContextImplBoilerplate<CudaBuffer, ContextImpl, ChannelImpl>(
+          /*isViable=*/true,
           generateDomainDescriptor()),
-      isViable_(true),
       cudaLib_(std::move(cudaLib)) {}
 
 std::shared_ptr<CudaChannel> ContextImpl::createChannel(
@@ -88,10 +88,6 @@ std::shared_ptr<CudaChannel> ContextImpl::createChannel(
     Endpoint /* unused */) {
   TP_DCHECK_EQ(numConnectionsNeeded(), connections.size());
   return createChannelInternal(std::move(connections[0]));
-}
-
-bool ContextImpl::isViable() const {
-  return isViable_;
 }
 
 const CudaLib& ContextImpl::getCudaLib() {
