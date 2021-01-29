@@ -1344,9 +1344,10 @@ void PipeImpl::onAcceptWhileServerWaitingForChannel(
       channelContext->createChannel(
           std::move(channelReceivedConnections[channelName]),
           channel::Endpoint::kListen);
+  channel->setId(id_ + ".ch_" + channelName);
+
   channelRegistrationIds.erase(channelRegistrationIdsIter);
   channelReceivedConnections.erase(channelName);
-  channel->setId(id_ + ".ch_" + channelName);
 
   auto& channels = channels_.get<TBuffer>();
   TP_DCHECK(channels.find(channelName) == channels.end());
