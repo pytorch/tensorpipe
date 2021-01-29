@@ -35,7 +35,6 @@ target_include_directories(tensorpipe PUBLIC $<BUILD_INTERFACE:${PROJECT_BINARY_
 
 target_sources(tensorpipe PRIVATE
   channel/basic/channel_impl.cc
-  channel/basic/context.cc
   channel/basic/context_impl.cc
   channel/basic/factory.cc)
 
@@ -43,7 +42,6 @@ target_sources(tensorpipe PRIVATE
 
 target_sources(tensorpipe PRIVATE
   channel/xth/channel_impl.cc
-  channel/xth/context.cc
   channel/xth/context_impl.cc
   channel/xth/factory.cc)
 
@@ -52,7 +50,6 @@ target_sources(tensorpipe PRIVATE
 if(TP_ENABLE_CMA)
   target_sources(tensorpipe PRIVATE
     channel/cma/channel_impl.cc
-    channel/cma/context.cc
     channel/cma/context_impl.cc
     channel/cma/factory.cc)
   set(TENSORPIPE_HAS_CMA_CHANNEL 1)
@@ -64,7 +61,6 @@ endif()
 
 target_sources(tensorpipe PRIVATE
   channel/mpt/channel_impl.cc
-  channel/mpt/context.cc
   channel/mpt/context_impl.cc
   channel/mpt/factory.cc)
 
@@ -80,7 +76,6 @@ if(TP_USE_CUDA)
 
   target_sources(tensorpipe PRIVATE
     channel/cuda_xth/channel_impl.cc
-    channel/cuda_xth/context.cc
     channel/cuda_xth/context_impl.cc
     channel/cuda_xth/factory.cc)
 
@@ -88,7 +83,6 @@ if(TP_USE_CUDA)
 
   target_sources(tensorpipe PRIVATE
     channel/cuda_basic/channel_impl.cc
-    channel/cuda_basic/context.cc
     channel/cuda_basic/context_impl.cc
     channel/cuda_basic/factory.cc
     common/cuda_loop.cc)
@@ -98,7 +92,6 @@ if(TP_USE_CUDA)
   if(TP_ENABLE_CUDA_IPC)
     target_sources(tensorpipe PRIVATE
       channel/cuda_ipc/channel_impl.cc
-      channel/cuda_ipc/context.cc
       channel/cuda_ipc/context_impl.cc
       channel/cuda_ipc/factory.cc)
     set(TENSORPIPE_HAS_CUDA_IPC_CHANNEL 1)
@@ -107,7 +100,6 @@ if(TP_USE_CUDA)
   target_sources(tensorpipe PRIVATE
     common/ibv.cc
     channel/cuda_gdr/channel_impl.cc
-    channel/cuda_gdr/context.cc
     channel/cuda_gdr/context_impl.cc
     channel/cuda_gdr/factory.cc)
   set(TENSORPIPE_HAS_CUDA_GDR_CHANNEL 1)

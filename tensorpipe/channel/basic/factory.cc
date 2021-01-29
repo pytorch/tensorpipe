@@ -8,14 +8,18 @@
 
 #include <tensorpipe/channel/basic/factory.h>
 
-#include <tensorpipe/channel/basic/context.h>
+#include <tensorpipe/channel/basic/channel_impl.h>
+#include <tensorpipe/channel/basic/context_impl.h>
+#include <tensorpipe/channel/context_boilerplate.h>
 
 namespace tensorpipe {
 namespace channel {
 namespace basic {
 
 std::shared_ptr<CpuContext> create() {
-  return std::make_shared<basic::Context>();
+  return std::make_shared<
+      ContextBoilerplate<CpuBuffer, ContextImpl, ChannelImpl>>(
+      ContextImpl::create());
 }
 
 } // namespace basic

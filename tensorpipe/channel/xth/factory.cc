@@ -8,14 +8,18 @@
 
 #include <tensorpipe/channel/xth/factory.h>
 
-#include <tensorpipe/channel/xth/context.h>
+#include <tensorpipe/channel/context_boilerplate.h>
+#include <tensorpipe/channel/xth/channel_impl.h>
+#include <tensorpipe/channel/xth/context_impl.h>
 
 namespace tensorpipe {
 namespace channel {
 namespace xth {
 
 std::shared_ptr<CpuContext> create() {
-  return std::make_shared<xth::Context>();
+  return std::make_shared<
+      ContextBoilerplate<CpuBuffer, ContextImpl, ChannelImpl>>(
+      ContextImpl::create());
 }
 
 } // namespace xth

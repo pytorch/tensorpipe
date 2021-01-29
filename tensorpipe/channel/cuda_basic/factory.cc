@@ -8,14 +8,18 @@
 
 #include <tensorpipe/channel/cuda_basic/factory.h>
 
-#include <tensorpipe/channel/cuda_basic/context.h>
+#include <tensorpipe/channel/context_boilerplate.h>
+#include <tensorpipe/channel/cuda_basic/channel_impl.h>
+#include <tensorpipe/channel/cuda_basic/context_impl.h>
 
 namespace tensorpipe {
 namespace channel {
 namespace cuda_basic {
 
 std::shared_ptr<CudaContext> create(std::shared_ptr<CpuContext> cpuContext) {
-  return std::make_shared<cuda_basic::Context>(std::move(cpuContext));
+  return std::make_shared<
+      ContextBoilerplate<CudaBuffer, ContextImpl, ChannelImpl>>(
+      ContextImpl::create(std::move(cpuContext)));
 }
 
 } // namespace cuda_basic
