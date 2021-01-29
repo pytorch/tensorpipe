@@ -96,7 +96,7 @@ std::tuple<Error, std::string> ContextImpl::lookupAddrForHostnameFromLoop() {
   }
 
   Addrinfo info;
-  std::tie(rv, info) = getAddrinfoFromLoop(loop_, std::move(hostname));
+  std::tie(rv, info) = getAddrinfoFromLoop(loop_.ptr(), std::move(hostname));
   if (rv < 0) {
     return std::make_tuple(TP_CREATE_ERROR(UVError, rv), std::string());
   }
@@ -113,8 +113,9 @@ std::tuple<Error, std::string> ContextImpl::lookupAddrForHostnameFromLoop() {
     // this into the closure of the lambda we pass as close callback, to ensure
     // the handle remains alive until it's closed.
     // FIXME This is sloppy. https://github.com/pytorch/tensorpipe/issues/242
-    auto handle = std::make_shared<TCPHandle>(loop_);
+    auto handle = std::make_shared<TCPHandle>(loop_.ptr(), loop_);
     handle->armCloseCallbackFromLoop([handle]() mutable { handle.reset(); });
+    TP_THROW_ASSERT_IF(closed());
     handle->initFromLoop();
     rv = handle->bindFromLoop(addr);
     handle->closeFromLoop();
@@ -147,7 +148,7 @@ void ContextImpl::deferToLoop(std::function<void()> fn) {
 };
 
 std::unique_ptr<TCPHandle> ContextImpl::createHandle() {
-  return std::make_unique<TCPHandle>(loop_);
+  return std::make_unique<TCPHandle>(loop_.ptr(), loop_);
 };
 
 } // namespace uv

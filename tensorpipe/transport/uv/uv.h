@@ -13,9 +13,8 @@
 
 #include <uv.h>
 
-#include <tensorpipe/common/callback.h>
+#include <tensorpipe/common/deferred_executor.h>
 #include <tensorpipe/common/defs.h>
-#include <tensorpipe/transport/uv/loop.h>
 #include <tensorpipe/transport/uv/sockaddr.h>
 
 #define TP_THROW_UV(err) TP_THROW(std::runtime_error)
@@ -39,7 +38,8 @@ class BaseHandle {
  public:
   using TCloseCallback = std::function<void()>;
 
-  explicit BaseHandle(Loop& loop) : loop_(loop) {
+  explicit BaseHandle(uv_loop_t* loop, const DeferredExecutor& executor)
+      : loop_(loop), executor_(executor) {
     handle_.data = this;
   }
 
@@ -56,7 +56,7 @@ class BaseHandle {
   }
 
   void armCloseCallbackFromLoop(TCloseCallback fn) {
-    TP_DCHECK(this->loop_.inLoop());
+    TP_DCHECK(this->executor_.inLoop());
     TP_THROW_ASSERT_IF(closeCallback_ != nullptr);
     closeCallback_ = std::move(fn);
   }
@@ -70,9 +70,12 @@ class BaseHandle {
   // Underlying libuv handle.
   U handle_;
 
-  // As long as the libuv handle of this instance is open the loop won't be
-  // destroyed.
-  Loop& loop_;
+  // Underlying libuv event loop.
+  uv_loop_t* const loop_;
+
+  // This DeferredExecutor is only used to check that all calls are performed
+  // from the right thread.
+  const DeferredExecutor& executor_;
 
   TCloseCallback closeCallback_;
 };
@@ -165,7 +168,7 @@ class StreamHandle : public BaseHandle<T, U> {
   // TODO Split this into a armConnectionCallback, a listenStart and a
   // listenStop method, to propagate the backpressure to the clients.
   void listenFromLoop(TConnectionCallback connectionCallback) {
-    TP_DCHECK(this->loop_.inLoop());
+    TP_DCHECK(this->executor_.inLoop());
     TP_THROW_ASSERT_IF(connectionCallback_ != nullptr);
     connectionCallback_ = std::move(connectionCallback);
     auto rv = uv_listen(
@@ -175,7 +178,7 @@ class StreamHandle : public BaseHandle<T, U> {
 
   template <typename V>
   void acceptFromLoop(V& other) {
-    TP_DCHECK(this->loop_.inLoop());
+    TP_DCHECK(this->executor_.inLoop());
     auto rv = uv_accept(
         reinterpret_cast<uv_stream_t*>(this->ptr()),
         reinterpret_cast<uv_stream_t*>(other.ptr()));
@@ -183,19 +186,19 @@ class StreamHandle : public BaseHandle<T, U> {
   }
 
   void armAllocCallbackFromLoop(TAllocCallback fn) {
-    TP_DCHECK(this->loop_.inLoop());
+    TP_DCHECK(this->executor_.inLoop());
     TP_THROW_ASSERT_IF(allocCallback_ != nullptr);
     allocCallback_ = std::move(fn);
   }
 
   void armReadCallbackFromLoop(TReadCallback fn) {
-    TP_DCHECK(this->loop_.inLoop());
+    TP_DCHECK(this->executor_.inLoop());
     TP_THROW_ASSERT_IF(readCallback_ != nullptr);
     readCallback_ = std::move(fn);
   }
 
   void readStartFromLoop() {
-    TP_DCHECK(this->loop_.inLoop());
+    TP_DCHECK(this->executor_.inLoop());
     TP_THROW_ASSERT_IF(allocCallback_ == nullptr);
     TP_THROW_ASSERT_IF(readCallback_ == nullptr);
     auto rv = uv_read_start(
@@ -204,7 +207,7 @@ class StreamHandle : public BaseHandle<T, U> {
   }
 
   void readStopFromLoop() {
-    TP_DCHECK(this->loop_.inLoop());
+    TP_DCHECK(this->executor_.inLoop());
     auto rv = uv_read_stop(reinterpret_cast<uv_stream_t*>(this->ptr()));
     TP_THROW_UV_IF(rv < 0, rv);
   }
@@ -213,7 +216,7 @@ class StreamHandle : public BaseHandle<T, U> {
       const uv_buf_t bufs[],
       unsigned int nbufs,
       WriteRequest::TWriteCallback fn) {
-    TP_DCHECK(this->loop_.inLoop());
+    TP_DCHECK(this->executor_.inLoop());
     auto rv = WriteRequest::perform(
         reinterpret_cast<uv_stream_t*>(this->ptr()),
         bufs,
@@ -260,17 +263,16 @@ class TCPHandle : public StreamHandle<TCPHandle, uv_tcp_t> {
   using StreamHandle<TCPHandle, uv_tcp_t>::StreamHandle;
 
   void initFromLoop() {
-    TP_DCHECK(this->loop_.inLoop());
-    TP_THROW_ASSERT_IF(loop_.closed());
+    TP_DCHECK(this->executor_.inLoop());
     int rv;
-    rv = uv_tcp_init(loop_.ptr(), this->ptr());
+    rv = uv_tcp_init(loop_, this->ptr());
     TP_THROW_UV_IF(rv < 0, rv);
     rv = uv_tcp_nodelay(this->ptr(), 1);
     TP_THROW_UV_IF(rv < 0, rv);
   }
 
   [[nodiscard]] int bindFromLoop(const Sockaddr& addr) {
-    TP_DCHECK(this->loop_.inLoop());
+    TP_DCHECK(this->executor_.inLoop());
     auto rv = uv_tcp_bind(ptr(), addr.addr(), 0);
     // We don't throw in case of errors here because sometimes we bind in order
     // to try if an address works and want to handle errors gracefully.
@@ -278,7 +280,7 @@ class TCPHandle : public StreamHandle<TCPHandle, uv_tcp_t> {
   }
 
   Sockaddr sockNameFromLoop() {
-    TP_DCHECK(this->loop_.inLoop());
+    TP_DCHECK(this->executor_.inLoop());
     struct sockaddr_storage ss;
     struct sockaddr* addr = reinterpret_cast<struct sockaddr*>(&ss);
     int addrlen = sizeof(ss);
@@ -290,7 +292,7 @@ class TCPHandle : public StreamHandle<TCPHandle, uv_tcp_t> {
   void connectFromLoop(
       const Sockaddr& addr,
       ConnectRequest::TConnectCallback fn) {
-    TP_DCHECK(this->loop_.inLoop());
+    TP_DCHECK(this->executor_.inLoop());
     auto rv = ConnectRequest::perform(ptr(), addr.addr(), std::move(fn));
     TP_THROW_UV_IF(rv < 0, rv);
   }
@@ -305,7 +307,7 @@ struct AddrinfoDeleter {
 using Addrinfo = std::unique_ptr<struct addrinfo, AddrinfoDeleter>;
 
 inline std::tuple<int, Addrinfo> getAddrinfoFromLoop(
-    Loop& loop,
+    uv_loop_t* loop,
     std::string hostname) {
   struct addrinfo hints;
   std::memset(&hints, 0, sizeof(hints));
@@ -318,7 +320,7 @@ inline std::tuple<int, Addrinfo> getAddrinfoFromLoop(
   // asynchronous version uses a thread pool, and it's not worth spawning new
   // threads for a functionality which is used so sparingly.
   auto rv = uv_getaddrinfo(
-      loop.ptr(),
+      loop,
       &request,
       /*getaddrinfo_cb=*/nullptr,
       hostname.c_str(),

@@ -17,8 +17,8 @@
 
 #include <uv.h>
 
-#include <tensorpipe/common/callback.h>
-#include <tensorpipe/common/defs.h>
+#include <tensorpipe/common/deferred_executor.h>
+#include <tensorpipe/transport/uv/uv.h>
 
 namespace tensorpipe {
 namespace transport {

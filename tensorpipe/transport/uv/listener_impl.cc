@@ -38,6 +38,7 @@ void ListenerImpl::initImplFromLoop() {
 
   TP_VLOG(9) << "Listener " << id_ << " is initializing in loop";
 
+  TP_THROW_ASSERT_IF(context_->closed());
   handle_->initFromLoop();
   auto rv = handle_->bindFromLoop(sockaddr_);
   TP_THROW_UV_IF(rv < 0, rv);
@@ -67,6 +68,7 @@ void ListenerImpl::connectionCallbackFromLoop(int status) {
   }
 
   auto connection = context_->createHandle();
+  TP_THROW_ASSERT_IF(context_->closed());
   connection->initFromLoop();
   handle_->acceptFromLoop(*connection);
   callback_.trigger(

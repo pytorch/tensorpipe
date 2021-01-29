@@ -55,6 +55,7 @@ void ConnectionImpl::initImplFromLoop() {
   TP_VLOG(9) << "Connection " << id_ << " is initializing in loop";
 
   if (sockaddr_.has_value()) {
+    TP_THROW_ASSERT_IF(context_->closed());
     handle_->initFromLoop();
     handle_->connectFromLoop(sockaddr_.value(), [this](int status) {
       if (status < 0) {
