@@ -65,7 +65,7 @@ class ContextImpl final
  private:
   OnDemandDeferredExecutor loop_;
 
-  const bool isViable_{true};
+  const bool isViable_;
   const CudaLib cudaLib_;
   const NvmlLib nvmlLib_;
 

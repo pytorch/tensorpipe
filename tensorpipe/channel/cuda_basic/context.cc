@@ -20,7 +20,7 @@ namespace channel {
 namespace cuda_basic {
 
 Context::Context(std::shared_ptr<CpuContext> cpuContext)
-    : impl_(std::make_shared<ContextImpl>(std::move(cpuContext))) {}
+    : impl_(ContextImpl::create(std::move(cpuContext))) {}
 
 // Explicitly define all methods of the context, which just forward to the impl.
 // We cannot use an intermediate ContextBoilerplate class without forcing a
