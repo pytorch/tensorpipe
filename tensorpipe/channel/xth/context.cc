@@ -19,7 +19,7 @@ namespace tensorpipe {
 namespace channel {
 namespace xth {
 
-Context::Context() : impl_(std::make_shared<ContextImpl>()) {}
+Context::Context() : impl_(ContextImpl::create()) {}
 
 // Explicitly define all methods of the context, which just forward to the impl.
 // We cannot use an intermediate ContextBoilerplate class without forcing a

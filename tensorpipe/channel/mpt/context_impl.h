@@ -33,6 +33,10 @@ class ChannelImpl;
 class ContextImpl final
     : public ContextImplBoilerplate<CpuBuffer, ContextImpl, ChannelImpl> {
  public:
+  static std::shared_ptr<ContextImpl> create(
+      std::vector<std::shared_ptr<transport::Context>> contexts,
+      std::vector<std::shared_ptr<transport::Listener>> listeners);
+
   ContextImpl(
       std::vector<std::shared_ptr<transport::Context>> contexts,
       std::vector<std::shared_ptr<transport::Listener>> listeners);

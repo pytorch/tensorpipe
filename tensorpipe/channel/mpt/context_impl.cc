@@ -42,6 +42,13 @@ std::string generateDomainDescriptor(
 
 } // namespace
 
+std::shared_ptr<ContextImpl> ContextImpl::create(
+    std::vector<std::shared_ptr<transport::Context>> contexts,
+    std::vector<std::shared_ptr<transport::Listener>> listeners) {
+  return std::make_shared<ContextImpl>(
+      std::move(contexts), std::move(listeners));
+}
+
 ContextImpl::ContextImpl(
     std::vector<std::shared_ptr<transport::Context>> contexts,
     std::vector<std::shared_ptr<transport::Listener>> listeners)
