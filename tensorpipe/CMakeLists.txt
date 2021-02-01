@@ -36,14 +36,16 @@ target_include_directories(tensorpipe PUBLIC $<BUILD_INTERFACE:${PROJECT_BINARY_
 target_sources(tensorpipe PRIVATE
   channel/basic/channel_impl.cc
   channel/basic/context.cc
-  channel/basic/context_impl.cc)
+  channel/basic/context_impl.cc
+  channel/basic/factory.cc)
 
 ### xth
 
 target_sources(tensorpipe PRIVATE
   channel/xth/channel_impl.cc
   channel/xth/context.cc
-  channel/xth/context_impl.cc)
+  channel/xth/context_impl.cc
+  channel/xth/factory.cc)
 
 ### cma
 
@@ -51,7 +53,8 @@ if(TP_ENABLE_CMA)
   target_sources(tensorpipe PRIVATE
     channel/cma/channel_impl.cc
     channel/cma/context.cc
-    channel/cma/context_impl.cc)
+    channel/cma/context_impl.cc
+    channel/cma/factory.cc)
   set(TENSORPIPE_HAS_CMA_CHANNEL 1)
 else()
   set(TENSORPIPE_HAS_CMA_CHANNEL 0)
@@ -62,7 +65,8 @@ endif()
 target_sources(tensorpipe PRIVATE
   channel/mpt/channel_impl.cc
   channel/mpt/context.cc
-  channel/mpt/context_impl.cc)
+  channel/mpt/context_impl.cc
+  channel/mpt/factory.cc)
 
 ## CUDA channels
 
@@ -77,7 +81,8 @@ if(TP_USE_CUDA)
   target_sources(tensorpipe PRIVATE
     channel/cuda_xth/channel_impl.cc
     channel/cuda_xth/context.cc
-    channel/cuda_xth/context_impl.cc)
+    channel/cuda_xth/context_impl.cc
+    channel/cuda_xth/factory.cc)
 
   ### cuda_basic
 
@@ -85,6 +90,7 @@ if(TP_USE_CUDA)
     channel/cuda_basic/channel_impl.cc
     channel/cuda_basic/context.cc
     channel/cuda_basic/context_impl.cc
+    channel/cuda_basic/factory.cc
     common/cuda_loop.cc)
 
   ### cuda_ipc
@@ -93,7 +99,8 @@ if(TP_USE_CUDA)
     target_sources(tensorpipe PRIVATE
       channel/cuda_ipc/channel_impl.cc
       channel/cuda_ipc/context.cc
-      channel/cuda_ipc/context_impl.cc)
+      channel/cuda_ipc/context_impl.cc
+      channel/cuda_ipc/factory.cc)
     set(TENSORPIPE_HAS_CUDA_IPC_CHANNEL 1)
   endif()
 
@@ -101,7 +108,8 @@ if(TP_USE_CUDA)
     common/ibv.cc
     channel/cuda_gdr/channel_impl.cc
     channel/cuda_gdr/context.cc
-    channel/cuda_gdr/context_impl.cc)
+    channel/cuda_gdr/context_impl.cc
+    channel/cuda_gdr/factory.cc)
   set(TENSORPIPE_HAS_CUDA_GDR_CHANNEL 1)
 endif()
 
