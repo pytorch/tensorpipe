@@ -27,7 +27,11 @@ class ListenerImpl;
 class ContextImpl final
     : public ContextImplBoilerplate<ContextImpl, ListenerImpl, ConnectionImpl> {
  public:
+  static std::shared_ptr<ContextImpl> create();
+
   ContextImpl();
+
+  ContextImpl(IbvLib ibvLib, IbvDeviceList deviceList);
 
   bool isViable() const;
 
@@ -54,6 +58,8 @@ class ContextImpl final
   void joinImpl() override;
 
  private:
+  const bool isViable_;
+
   Reactor reactor_;
   EpollLoop loop_{this->reactor_};
 };

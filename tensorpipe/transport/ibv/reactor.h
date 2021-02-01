@@ -57,7 +57,9 @@ class Reactor final : public BusyPollingLoop {
  public:
   Reactor();
 
-  IbvLib& getIbvLib() {
+  Reactor(IbvLib ibvLib, IbvDeviceList deviceList);
+
+  const IbvLib& getIbvLib() {
     return ibvLib_;
   }
 
@@ -85,8 +87,6 @@ class Reactor final : public BusyPollingLoop {
 
   void postAck(IbvQueuePair& qp, IbvLib::send_wr& wr);
 
-  bool isViable() const;
-
   void setId(std::string id);
 
   void close();
@@ -102,8 +102,7 @@ class Reactor final : public BusyPollingLoop {
 
  private:
   // InfiniBand stuff
-  bool foundIbvLib_{false};
-  IbvLib ibvLib_;
+  const IbvLib ibvLib_;
   IbvContext ctx_;
   IbvProtectionDomain pd_;
   IbvCompletionQueue cq_;
