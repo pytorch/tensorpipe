@@ -77,6 +77,10 @@ std::shared_ptr<CpuChannel> ContextImpl::createChannel(
   return createChannelInternal(std::move(connections[0]), endpoint, numLanes_);
 }
 
+bool ContextImpl::isViable() const {
+  return true;
+}
+
 const std::vector<std::string>& ContextImpl::addresses() const {
   // As this is an immutable member (after it has been initialized in
   // the constructor), we'll access it without deferring to the loop.

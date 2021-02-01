@@ -27,6 +27,10 @@ std::shared_ptr<CpuChannel> ContextImpl::createChannel(
   return createChannelInternal(std::move(connections[0]));
 }
 
+bool ContextImpl::isViable() const {
+  return true;
+}
+
 void ContextImpl::closeImpl() {}
 
 void ContextImpl::joinImpl() {}

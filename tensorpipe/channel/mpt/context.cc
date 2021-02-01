@@ -43,6 +43,10 @@ size_t Context::numConnectionsNeeded() const {
   return impl_->numConnectionsNeeded();
 }
 
+bool Context::isViable() const {
+  return impl_->isViable();
+}
+
 const std::string& Context::domainDescriptor() const {
   return impl_->domainDescriptor();
 }
