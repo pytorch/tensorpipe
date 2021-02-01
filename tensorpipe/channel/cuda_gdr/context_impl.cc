@@ -169,15 +169,11 @@ std::vector<std::string> matchGpusToIbvNics(
 } // namespace
 
 IbvNic::IbvNic(
-    std::string id,
     std::string name,
     IbvLib::device& device,
-    IbvLib& ibvLib,
-    CudaLib& cudaLib)
-    : id_(std::move(id)),
-      name_(std::move(name)),
-      cudaLib_(cudaLib),
-      ibvLib_(ibvLib) {
+    const IbvLib& ibvLib,
+    const CudaLib& cudaLib)
+    : name_(std::move(name)), cudaLib_(cudaLib), ibvLib_(ibvLib) {
   ctx_ = createIbvContext(ibvLib_, device);
   pd_ = createIbvProtectionDomain(ibvLib_, ctx_);
   cq_ = createIbvCompletionQueue(
@@ -335,53 +331,50 @@ void IbvNic::setId(std::string id) {
   id_ = std::move(id);
 }
 
-ContextImpl::ContextImpl(optional<std::vector<std::string>> gpuIdxToNicName)
-    : ContextImplBoilerplate<CudaBuffer, ContextImpl, ChannelImpl>("*") {
+std::shared_ptr<ContextImpl> ContextImpl::create(
+    optional<std::vector<std::string>> gpuIdxToNicName) {
   Error error;
 
-  std::tie(error, cudaLib_) = CudaLib::create();
+  CudaLib cudaLib;
+  std::tie(error, cudaLib) = CudaLib::create();
   // FIXME Instead of throwing away the error and setting a bool, we should have
   // a way to set the context in an error state, and use that for viability.
   if (error) {
-    TP_VLOG(5) << "Channel context " << id_
-               << " is not viable because libcuda could not be loaded: "
-               << error.what();
-    viable_ = false;
-    return;
+    TP_VLOG(5)
+        << "CUDA GDR channel is not viable because libcuda could not be loaded: "
+        << error.what();
+    return std::make_shared<ContextImpl>();
   }
 
-  std::tie(error, ibvLib_) = IbvLib::create();
+  IbvLib ibvLib;
+  std::tie(error, ibvLib) = IbvLib::create();
   // FIXME Instead of throwing away the error and setting a bool, we should have
   // a way to set the context in an error state, and use that for viability.
   if (error) {
-    TP_VLOG(5) << "Channel context " << id_
-               << " is not viable because libibverbs could not be loaded: "
-               << error.what();
-    viable_ = false;
-    return;
+    TP_VLOG(5)
+        << "CUDA GDR channel is not viable because libibverbs could not be loaded: "
+        << error.what();
+    return std::make_shared<ContextImpl>();
   }
 
   // TODO Check whether the NVIDIA memory peering kernel module is available.
   // And maybe even allocate and register some CUDA memory to ensure it works.
 
   IbvDeviceList deviceList;
-  std::tie(error, deviceList) = IbvDeviceList::create(getIbvLib());
+  std::tie(error, deviceList) = IbvDeviceList::create(ibvLib);
   if (error && error.isOfType<SystemError>() &&
       error.castToType<SystemError>()->errorCode() == ENOSYS) {
     TP_VLOG(5)
-        << "Channel context " << id_
-        << " couldn't get list of InfiniBand devices because the kernel module isn't "
+        << "CUDA GDR channel couldn't get list of InfiniBand devices because the kernel module isn't "
         << "loaded";
-    viable_ = false;
-    return;
+    return std::make_shared<ContextImpl>();
   }
   TP_THROW_ASSERT_IF(error)
       << "Couldn't get list of InfiniBand devices: " << error.what();
   if (deviceList.size() == 0) {
-    TP_VLOG(5) << "Channel context " << id_
-               << " is not viable because it couldn't find any InfiniBand NICs";
-    viable_ = false;
-    return;
+    TP_VLOG(5)
+        << "CUDA GDR channel is not viable because it couldn't find any InfiniBand NICs";
+    return std::make_shared<ContextImpl>();
   }
 
   std::vector<std::string> actualGpuIdxToNicName;
@@ -395,11 +388,11 @@ ContextImpl::ContextImpl(optional<std::vector<std::string>> gpuIdxToNicName)
 
     actualGpuIdxToNicName = std::move(gpuIdxToNicName.value());
   } else {
-    actualGpuIdxToNicName = matchGpusToIbvNics(ibvLib_, deviceList);
+    actualGpuIdxToNicName = matchGpusToIbvNics(ibvLib, deviceList);
   }
 
   for (int gpuIdx = 0; gpuIdx < actualGpuIdxToNicName.size(); gpuIdx++) {
-    TP_VLOG(5) << "Channel context " << id_ << " mapped GPU #" << gpuIdx
+    TP_VLOG(5) << "CUDA GDR channel mapped GPU #" << gpuIdx
                << " to InfiniBand NIC " << actualGpuIdxToNicName[gpuIdx];
   }
 
@@ -409,17 +402,18 @@ ContextImpl::ContextImpl(optional<std::vector<std::string>> gpuIdxToNicName)
   }
 
   std::unordered_map<std::string, size_t> nicNameToNicIdx;
+  std::vector<IbvNic> ibvNics;
   // The device index is among all available devices, the NIC index is among the
   // ones we will use.
   size_t nicIdx = 0;
   for (size_t deviceIdx = 0; deviceIdx < deviceList.size(); deviceIdx++) {
     IbvLib::device& device = deviceList[deviceIdx];
-    std::string deviceName(TP_CHECK_IBV_PTR(ibvLib_.get_device_name(&device)));
+    std::string deviceName(TP_CHECK_IBV_PTR(ibvLib.get_device_name(&device)));
     auto iter = nicNames.find(deviceName);
     if (iter != nicNames.end()) {
-      TP_VLOG(5) << "Channel context " << id_ << " is using InfiniBand NIC "
-                 << deviceName << " as device #" << nicIdx;
-      ibvNics_.emplace_back(id_, *iter, device, ibvLib_, cudaLib_);
+      TP_VLOG(5) << "CUDA GDR channel is using InfiniBand NIC " << deviceName
+                 << " as device #" << nicIdx;
+      ibvNics.emplace_back(*iter, device, ibvLib, cudaLib);
       nicNameToNicIdx[*iter] = nicIdx;
       nicIdx++;
       nicNames.erase(iter);
@@ -428,10 +422,35 @@ ContextImpl::ContextImpl(optional<std::vector<std::string>> gpuIdxToNicName)
   TP_THROW_ASSERT_IF(!nicNames.empty())
       << "Couldn't find all the devices I was supposed to use";
 
+  std::vector<size_t> gpuToNic;
   for (size_t gpuIdx = 0; gpuIdx < actualGpuIdxToNicName.size(); gpuIdx++) {
-    gpuToNic_.push_back(nicNameToNicIdx[actualGpuIdxToNicName[gpuIdx]]);
+    gpuToNic.push_back(nicNameToNicIdx[actualGpuIdxToNicName[gpuIdx]]);
   }
 
+  return std::make_shared<ContextImpl>(
+      std::move(cudaLib),
+      std::move(ibvLib),
+      std::move(ibvNics),
+      std::move(gpuToNic));
+}
+
+ContextImpl::ContextImpl()
+    : ContextImplBoilerplate<CudaBuffer, ContextImpl, ChannelImpl>(
+          /*domainDescriptor=*/""),
+      isViable_(false) {}
+
+ContextImpl::ContextImpl(
+    CudaLib cudaLib,
+    IbvLib ibvLib,
+    std::vector<IbvNic> ibvNics,
+    std::vector<size_t> gpuToNic)
+    : ContextImplBoilerplate<CudaBuffer, ContextImpl, ChannelImpl>(
+          /*domainDescriptor=*/"*"),
+      isViable_(true),
+      cudaLib_(std::move(cudaLib)),
+      ibvLib_(std::move(ibvLib)),
+      ibvNics_(std::move(ibvNics)),
+      gpuToNic_(std::move(gpuToNic)) {
   startThread("TP_CUDA_GDR_loop");
 }
 
@@ -443,7 +462,7 @@ const std::vector<size_t>& ContextImpl::getGpuToNicMapping() {
   return gpuToNic_;
 }
 
-IbvLib& ContextImpl::getIbvLib() {
+const IbvLib& ContextImpl::getIbvLib() {
   return ibvLib_;
 }
 
@@ -528,7 +547,7 @@ std::shared_ptr<CudaChannel> ContextImpl::createChannel(
 }
 
 bool ContextImpl::isViable() const {
-  return viable_;
+  return isViable_;
 }
 
 } // namespace cuda_gdr
