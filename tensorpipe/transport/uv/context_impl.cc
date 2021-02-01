@@ -32,6 +32,10 @@ std::string generateDomainDescriptor() {
 
 } // namespace
 
+std::shared_ptr<ContextImpl> ContextImpl::create() {
+  return std::make_shared<ContextImpl>();
+}
+
 ContextImpl::ContextImpl()
     : ContextImplBoilerplate<ContextImpl, ListenerImpl, ConnectionImpl>(
           /*isViable=*/true,
