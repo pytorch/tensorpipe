@@ -124,7 +124,8 @@ target_sources(tensorpipe PRIVATE
   transport/uv/error.cc
   transport/uv/listener_impl.cc
   transport/uv/loop.cc
-  transport/uv/sockaddr.cc)
+  transport/uv/sockaddr.cc
+  transport/uv/utility.cc)
 find_package(uv REQUIRED)
 target_link_libraries(tensorpipe PRIVATE uv::uv)
 
@@ -158,7 +159,8 @@ if(TP_ENABLE_IBV)
     transport/ibv/error.cc
     transport/ibv/listener_impl.cc
     transport/ibv/reactor.cc
-    transport/ibv/sockaddr.cc)
+    transport/ibv/sockaddr.cc
+    transport/ibv/utility.cc)
   set(TENSORPIPE_HAS_IBV_TRANSPORT 1)
 endif()
 

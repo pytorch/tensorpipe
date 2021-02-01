@@ -17,6 +17,7 @@
 #include <tensorpipe/transport/ibv/connection_impl.h>
 #include <tensorpipe/transport/ibv/context_impl.h>
 #include <tensorpipe/transport/ibv/listener_impl.h>
+#include <tensorpipe/transport/ibv/utility.h>
 
 namespace tensorpipe {
 namespace transport {
@@ -61,11 +62,11 @@ Context::~Context() {
 }
 
 std::tuple<Error, std::string> Context::lookupAddrForIface(std::string iface) {
-  return impl_->lookupAddrForIface(std::move(iface));
+  return ibv::lookupAddrForIface(std::move(iface));
 }
 
 std::tuple<Error, std::string> Context::lookupAddrForHostname() {
-  return impl_->lookupAddrForHostname();
+  return ibv::lookupAddrForHostname();
 }
 
 } // namespace ibv
