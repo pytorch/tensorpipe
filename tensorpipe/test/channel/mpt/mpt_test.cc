@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <tensorpipe/channel/mpt/context.h>
+#include <tensorpipe/channel/mpt/factory.h>
 #include <tensorpipe/test/channel/channel_test.h>
 
 namespace {
@@ -23,7 +23,7 @@ class MptChannelTestHelper : public ChannelTestHelper<tensorpipe::CpuBuffer> {
         contexts[0]->listen("127.0.0.1"),
         contexts[1]->listen("127.0.0.1"),
         contexts[2]->listen("127.0.0.1")};
-    auto context = std::make_shared<tensorpipe::channel::mpt::Context>(
+    auto context = tensorpipe::channel::mpt::create(
         std::move(contexts), std::move(listeners));
     context->setId(std::move(id));
     return context;

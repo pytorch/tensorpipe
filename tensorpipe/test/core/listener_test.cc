@@ -23,8 +23,7 @@ TEST(Listener, ClosingAbortsOperations) {
 
   context->registerTransport(
       0, "uv", std::make_shared<transport::uv::Context>());
-  context->registerChannel(
-      0, "basic", std::make_shared<channel::basic::Context>());
+  context->registerChannel(0, "basic", channel::basic::create());
 
   {
     auto listener = context->listen({"uv://127.0.0.1"});

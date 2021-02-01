@@ -8,8 +8,8 @@
 
 #include <numeric>
 
-#include <tensorpipe/channel/basic/context.h>
-#include <tensorpipe/channel/cuda_basic/context.h>
+#include <tensorpipe/channel/basic/factory.h>
+#include <tensorpipe/channel/cuda_basic/factory.h>
 #include <tensorpipe/test/channel/channel_test.h>
 
 namespace {
@@ -19,9 +19,9 @@ class CudaBasicChannelTestHelper
  protected:
   std::shared_ptr<tensorpipe::channel::CudaContext> makeContextInternal(
       std::string id) override {
-    auto cpuContext = std::make_shared<tensorpipe::channel::basic::Context>();
-    auto context = std::make_shared<tensorpipe::channel::cuda_basic::Context>(
-        std::move(cpuContext));
+    auto cpuContext = tensorpipe::channel::basic::create();
+    auto context =
+        tensorpipe::channel::cuda_basic::create(std::move(cpuContext));
     context->setId(std::move(id));
     return context;
   }
