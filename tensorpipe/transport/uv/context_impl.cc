@@ -34,11 +34,8 @@ std::string generateDomainDescriptor() {
 
 ContextImpl::ContextImpl()
     : ContextImplBoilerplate<ContextImpl, ListenerImpl, ConnectionImpl>(
+          /*isViable=*/true,
           generateDomainDescriptor()) {}
-
-bool ContextImpl::isViable() const {
-  return true;
-}
 
 void ContextImpl::closeImpl() {
   loop_.close();

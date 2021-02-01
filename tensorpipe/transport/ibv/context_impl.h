@@ -33,8 +33,6 @@ class ContextImpl final
 
   ContextImpl(IbvLib ibvLib, IbvDeviceList deviceList);
 
-  bool isViable() const;
-
   std::tuple<Error, std::string> lookupAddrForIface(std::string iface);
 
   std::tuple<Error, std::string> lookupAddrForHostname();
@@ -58,8 +56,6 @@ class ContextImpl final
   void joinImpl() override;
 
  private:
-  const bool isViable_;
-
   Reactor reactor_;
   EpollLoop loop_{this->reactor_};
 };

@@ -32,8 +32,6 @@ class ContextImpl final
 
   explicit ContextImpl(std::string domainDescriptor);
 
-  bool isViable() const;
-
   // Implement the DeferredExecutor interface.
   bool inLoop() const override;
   void deferToLoop(std::function<void()> fn) override;
@@ -60,8 +58,6 @@ class ContextImpl final
   void joinImpl() override;
 
  private:
-  const bool isViable_;
-
   Reactor reactor_;
   EpollLoop loop_{this->reactor_};
 };

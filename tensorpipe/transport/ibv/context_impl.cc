@@ -138,13 +138,13 @@ std::shared_ptr<ContextImpl> ContextImpl::create() {
 
 ContextImpl::ContextImpl()
     : ContextImplBoilerplate<ContextImpl, ListenerImpl, ConnectionImpl>(
-          /*domainDescriptor=*/""),
-      isViable_(false) {}
+          /*isViable=*/false,
+          /*domainDescriptor=*/"") {}
 
 ContextImpl::ContextImpl(IbvLib ibvLib, IbvDeviceList deviceList)
     : ContextImplBoilerplate<ContextImpl, ListenerImpl, ConnectionImpl>(
+          /*isViable=*/true,
           generateDomainDescriptor()),
-      isViable_(true),
       reactor_(std::move(ibvLib), std::move(deviceList)) {}
 
 void ContextImpl::closeImpl() {
@@ -155,10 +155,6 @@ void ContextImpl::closeImpl() {
 void ContextImpl::joinImpl() {
   loop_.join();
   reactor_.join();
-}
-
-bool ContextImpl::isViable() const {
-  return isViable_;
 }
 
 std::tuple<Error, std::string> ContextImpl::lookupAddrForIface(
