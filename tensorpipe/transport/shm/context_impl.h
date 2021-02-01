@@ -28,7 +28,9 @@ class ContextImpl final
  public:
   static std::shared_ptr<ContextImpl> create();
 
-  ContextImpl(bool isViable, std::string domainDescriptor);
+  ContextImpl();
+
+  explicit ContextImpl(std::string domainDescriptor);
 
   bool isViable() const;
 
