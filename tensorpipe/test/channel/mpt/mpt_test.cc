@@ -16,9 +16,9 @@ class MptChannelTestHelper : public ChannelTestHelper<tensorpipe::CpuBuffer> {
   std::shared_ptr<tensorpipe::channel::CpuContext> makeContextInternal(
       std::string id) override {
     std::vector<std::shared_ptr<tensorpipe::transport::Context>> contexts = {
-        std::make_shared<tensorpipe::transport::uv::Context>(),
-        std::make_shared<tensorpipe::transport::uv::Context>(),
-        std::make_shared<tensorpipe::transport::uv::Context>()};
+        tensorpipe::transport::uv::create(),
+        tensorpipe::transport::uv::create(),
+        tensorpipe::transport::uv::create()};
     std::vector<std::shared_ptr<tensorpipe::transport::Listener>> listeners = {
         contexts[0]->listen("127.0.0.1"),
         contexts[1]->listen("127.0.0.1"),

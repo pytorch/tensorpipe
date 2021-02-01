@@ -14,10 +14,10 @@ import pytensorpipe as tp
 class TestTensorpipe(unittest.TestCase):
     def test_read_write(self):
         context = tp.Context()
-        context.register_transport(0, "tcp", tp.UvTransport())
-        shm_transport = getattr(tp, "ShmTransport", None)
-        if shm_transport is not None:
-            context.register_transport(-1, "shm", shm_transport())
+        context.register_transport(0, "tcp", tp.create_uv_transport())
+        create_shm_transport = getattr(tp, "create_shm_transport", None)
+        if create_shm_transport is not None:
+            context.register_transport(-1, "shm", create_shm_transport())
         context.register_channel(0, "basic", tp.create_basic_channel())
         create_cma_channel = getattr(tp, "create_cma_channel", None)
         if create_cma_channel is not None:

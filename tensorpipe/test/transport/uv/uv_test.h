@@ -9,13 +9,13 @@
 #pragma once
 
 #include <tensorpipe/test/transport/transport_test.h>
-#include <tensorpipe/transport/uv/context.h>
+#include <tensorpipe/transport/uv/factory.h>
 
 class UVTransportTestHelper : public TransportTestHelper {
  protected:
   std::shared_ptr<tensorpipe::transport::Context> getContextInternal()
       override {
-    return std::make_shared<tensorpipe::transport::uv::Context>();
+    return tensorpipe::transport::uv::create();
   }
 
  public:

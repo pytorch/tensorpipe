@@ -219,10 +219,6 @@ tensorpipe::Message prepareToRead(std::shared_ptr<IncomingMessage> pyMessage) {
 template <typename T>
 using shared_ptr_class_ = py::class_<T, std::shared_ptr<T>>;
 
-template <typename T>
-using transport_class_ =
-    py::class_<T, tensorpipe::transport::Context, std::shared_ptr<T>>;
-
 } // namespace
 
 PYBIND11_MODULE(pytensorpipe, module) {
@@ -418,14 +414,10 @@ PYBIND11_MODULE(pytensorpipe, module) {
   shared_ptr_class_<tensorpipe::transport::Context> abstractTransport(
       module, "AbstractTransport");
 
-  transport_class_<tensorpipe::transport::uv::Context> uvTransport(
-      module, "UvTransport");
-  uvTransport.def(py::init<>());
+  module.def("create_uv_transport", &tensorpipe::transport::uv::create);
 
 #if TENSORPIPE_HAS_SHM_TRANSPORT
-  transport_class_<tensorpipe::transport::shm::Context> shmTransport(
-      module, "ShmTransport");
-  shmTransport.def(py::init<>());
+  module.def("create_shm_transport", &tensorpipe::transport::shm::create);
 #endif // TENSORPIPE_HAS_SHM_TRANSPORT
 
   context.def(

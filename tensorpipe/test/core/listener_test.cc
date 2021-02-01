@@ -21,8 +21,7 @@ using namespace tensorpipe;
 TEST(Listener, ClosingAbortsOperations) {
   auto context = std::make_shared<Context>();
 
-  context->registerTransport(
-      0, "uv", std::make_shared<transport::uv::Context>());
+  context->registerTransport(0, "uv", transport::uv::create());
   context->registerChannel(0, "basic", channel::basic::create());
 
   {
