@@ -122,6 +122,7 @@ target_sources(tensorpipe PRIVATE
   transport/uv/context.cc
   transport/uv/context_impl.cc
   transport/uv/error.cc
+  transport/uv/factory.cc
   transport/uv/listener_impl.cc
   transport/uv/loop.cc
   transport/uv/sockaddr.cc
@@ -137,6 +138,7 @@ if(TP_ENABLE_SHM)
     transport/shm/connection_impl.cc
     transport/shm/context.cc
     transport/shm/context_impl.cc
+    transport/shm/factory.cc
     transport/shm/listener_impl.cc
     transport/shm/reactor.cc
     transport/shm/sockaddr.cc
@@ -157,6 +159,7 @@ if(TP_ENABLE_IBV)
     transport/ibv/context.cc
     transport/ibv/context_impl.cc
     transport/ibv/error.cc
+    transport/ibv/factory.cc
     transport/ibv/listener_impl.cc
     transport/ibv/reactor.cc
     transport/ibv/sockaddr.cc
