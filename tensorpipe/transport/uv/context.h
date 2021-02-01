@@ -34,6 +34,8 @@ class Context : public transport::Context {
 
   std::shared_ptr<Listener> listen(std::string addr) override;
 
+  bool isViable() const override;
+
   const std::string& domainDescriptor() const override;
 
   std::tuple<Error, std::string> lookupAddrForIface(std::string iface);

@@ -36,6 +36,10 @@ ContextImpl::ContextImpl()
     : ContextImplBoilerplate<ContextImpl, ListenerImpl, ConnectionImpl>(
           generateDomainDescriptor()) {}
 
+bool ContextImpl::isViable() const {
+  return true;
+}
+
 void ContextImpl::closeImpl() {
   loop_.close();
 }

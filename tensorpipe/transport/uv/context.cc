@@ -36,6 +36,10 @@ std::shared_ptr<Listener> Context::listen(std::string addr) {
   return impl_->listen(std::move(addr));
 }
 
+bool Context::isViable() const {
+  return impl_->isViable();
+}
+
 const std::string& Context::domainDescriptor() const {
   return impl_->domainDescriptor();
 }

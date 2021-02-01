@@ -30,6 +30,8 @@ class ContextImpl final
  public:
   ContextImpl();
 
+  bool isViable() const;
+
   static std::tuple<Error, std::string> lookupAddrForIface(std::string iface);
 
   static std::tuple<Error, std::string> lookupAddrForHostname();
