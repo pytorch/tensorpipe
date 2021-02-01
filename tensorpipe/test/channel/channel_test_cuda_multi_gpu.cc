@@ -30,10 +30,7 @@ class SendAcrossDevicesTest : public ClientServerChannelTestCase<CudaBuffer> {
   }
 
  private:
-  void server(std::shared_ptr<transport::Connection> conn) override {
-    std::shared_ptr<CudaContext> ctx = this->helper_->makeContext("server");
-    auto channel = ctx->createChannel({std::move(conn)}, Endpoint::kListen);
-
+  void server(std::shared_ptr<CudaChannel> channel) override {
     // Send happens from device #0.
     TP_CUDA_CHECK(cudaSetDevice(0));
     cudaStream_t sendStream;
@@ -79,14 +76,9 @@ class SendAcrossDevicesTest : public ClientServerChannelTestCase<CudaBuffer> {
 
     this->peers_->done(PeerGroup::kServer);
     this->peers_->join(PeerGroup::kServer);
-
-    ctx->join();
   }
 
-  void client(std::shared_ptr<transport::Connection> conn) override {
-    std::shared_ptr<CudaContext> ctx = this->helper_->makeContext("client");
-    auto channel = ctx->createChannel({std::move(conn)}, Endpoint::kConnect);
-
+  void client(std::shared_ptr<CudaChannel> channel) override {
     // Recv happens on device #1.
     TP_CUDA_CHECK(cudaSetDevice(1));
     cudaStream_t recvStream;
@@ -123,8 +115,6 @@ class SendAcrossDevicesTest : public ClientServerChannelTestCase<CudaBuffer> {
 
     this->peers_->done(PeerGroup::kClient);
     this->peers_->join(PeerGroup::kClient);
-
-    ctx->join();
   }
 };
 
@@ -144,10 +134,7 @@ class SendReverseAcrossDevicesTest
   }
 
  private:
-  void server(std::shared_ptr<transport::Connection> conn) override {
-    std::shared_ptr<CudaContext> ctx = this->helper_->makeContext("server");
-    auto channel = ctx->createChannel({std::move(conn)}, Endpoint::kListen);
-
+  void server(std::shared_ptr<CudaChannel> channel) override {
     // Send happens from device #1.
     TP_CUDA_CHECK(cudaSetDevice(1));
     cudaStream_t sendStream;
@@ -193,14 +180,9 @@ class SendReverseAcrossDevicesTest
 
     this->peers_->done(PeerGroup::kServer);
     this->peers_->join(PeerGroup::kServer);
-
-    ctx->join();
   }
 
-  void client(std::shared_ptr<transport::Connection> conn) override {
-    std::shared_ptr<CudaContext> ctx = this->helper_->makeContext("client");
-    auto channel = ctx->createChannel({std::move(conn)}, Endpoint::kConnect);
-
+  void client(std::shared_ptr<CudaChannel> channel) override {
     // Recv happens on device #0.
     TP_CUDA_CHECK(cudaSetDevice(0));
     cudaStream_t recvStream;
@@ -237,8 +219,6 @@ class SendReverseAcrossDevicesTest
 
     this->peers_->done(PeerGroup::kClient);
     this->peers_->join(PeerGroup::kClient);
-
-    ctx->join();
   }
 };
 
@@ -258,10 +238,7 @@ class SendAcrossNonDefaultDevicesTest
   }
 
  private:
-  void server(std::shared_ptr<transport::Connection> conn) override {
-    std::shared_ptr<CudaContext> ctx = this->helper_->makeContext("server");
-    auto channel = ctx->createChannel({std::move(conn)}, Endpoint::kListen);
-
+  void server(std::shared_ptr<CudaChannel> channel) override {
     // Send happens from device #1.
     TP_CUDA_CHECK(cudaSetDevice(1));
     cudaStream_t sendStream;
@@ -307,14 +284,9 @@ class SendAcrossNonDefaultDevicesTest
 
     this->peers_->done(PeerGroup::kServer);
     this->peers_->join(PeerGroup::kServer);
-
-    ctx->join();
   }
 
-  void client(std::shared_ptr<transport::Connection> conn) override {
-    std::shared_ptr<CudaContext> ctx = this->helper_->makeContext("client");
-    auto channel = ctx->createChannel({std::move(conn)}, Endpoint::kConnect);
-
+  void client(std::shared_ptr<CudaChannel> channel) override {
     // Recv happens on device #1.
     TP_CUDA_CHECK(cudaSetDevice(1));
     cudaStream_t recvStream;
@@ -351,8 +323,6 @@ class SendAcrossNonDefaultDevicesTest
 
     this->peers_->done(PeerGroup::kClient);
     this->peers_->join(PeerGroup::kClient);
-
-    ctx->join();
   }
 };
 

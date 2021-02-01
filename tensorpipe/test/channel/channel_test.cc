@@ -42,11 +42,7 @@ class ClientToServerTest : public ClientServerChannelTestCase<TBuffer> {
  public:
   static constexpr int kDataSize = 256;
 
-  void server(std::shared_ptr<transport::Connection> conn) override {
-    std::shared_ptr<Context<TBuffer>> ctx =
-        this->helper_->makeContext("server");
-    auto channel = ctx->createChannel({std::move(conn)}, Endpoint::kListen);
-
+  void server(std::shared_ptr<Channel<TBuffer>> channel) override {
     // Initialize with sequential values.
     std::vector<uint8_t> data(kDataSize);
     std::iota(data.begin(), data.end(), 0);
@@ -67,15 +63,9 @@ class ClientToServerTest : public ClientServerChannelTestCase<TBuffer> {
 
     this->peers_->done(PeerGroup::kServer);
     this->peers_->join(PeerGroup::kServer);
-
-    ctx->join();
   }
 
-  void client(std::shared_ptr<transport::Connection> conn) override {
-    std::shared_ptr<Context<TBuffer>> ctx =
-        this->helper_->makeContext("client");
-    auto channel = ctx->createChannel({std::move(conn)}, Endpoint::kConnect);
-
+  void client(std::shared_ptr<Channel<TBuffer>> channel) override {
     DataWrapper<TBuffer> wrappedData(kDataSize);
 
     // Perform recv and wait for completion.
@@ -93,8 +83,6 @@ class ClientToServerTest : public ClientServerChannelTestCase<TBuffer> {
 
     this->peers_->done(PeerGroup::kClient);
     this->peers_->join(PeerGroup::kClient);
-
-    ctx->join();
   }
 };
 
@@ -105,11 +93,7 @@ class ServerToClientTest : public ClientServerChannelTestCase<TBuffer> {
   static constexpr int kDataSize = 256;
 
  public:
-  void server(std::shared_ptr<transport::Connection> conn) override {
-    std::shared_ptr<Context<TBuffer>> ctx =
-        this->helper_->makeContext("server");
-    auto channel = ctx->createChannel({std::move(conn)}, Endpoint::kListen);
-
+  void server(std::shared_ptr<Channel<TBuffer>> channel) override {
     DataWrapper<TBuffer> wrappedData(kDataSize);
 
     // Perform recv and wait for completion.
@@ -127,15 +111,9 @@ class ServerToClientTest : public ClientServerChannelTestCase<TBuffer> {
 
     this->peers_->done(PeerGroup::kServer);
     this->peers_->join(PeerGroup::kServer);
-
-    ctx->join();
   }
 
-  void client(std::shared_ptr<transport::Connection> conn) override {
-    std::shared_ptr<Context<TBuffer>> ctx =
-        this->helper_->makeContext("client");
-    auto channel = ctx->createChannel({std::move(conn)}, Endpoint::kConnect);
-
+  void client(std::shared_ptr<Channel<TBuffer>> channel) override {
     // Initialize with sequential values.
     std::vector<uint8_t> data(kDataSize);
     std::iota(data.begin(), data.end(), 0);
@@ -156,8 +134,6 @@ class ServerToClientTest : public ClientServerChannelTestCase<TBuffer> {
 
     this->peers_->done(PeerGroup::kClient);
     this->peers_->join(PeerGroup::kClient);
-
-    ctx->join();
   }
 };
 
@@ -171,11 +147,7 @@ class SendMultipleTensorsTest : public ClientServerChannelTestCase<TBuffer> {
   static constexpr int kNumTensors = 100;
 
  public:
-  void server(std::shared_ptr<transport::Connection> conn) override {
-    std::shared_ptr<Context<TBuffer>> ctx =
-        this->helper_->makeContext("server");
-    auto channel = ctx->createChannel({std::move(conn)}, Endpoint::kListen);
-
+  void server(std::shared_ptr<Channel<TBuffer>> channel) override {
     // Initialize with sequential values.
     std::vector<uint8_t> data(dataSize_);
     std::iota(data.begin(), data.end(), 0);
@@ -204,15 +176,9 @@ class SendMultipleTensorsTest : public ClientServerChannelTestCase<TBuffer> {
 
     this->peers_->done(PeerGroup::kServer);
     this->peers_->join(PeerGroup::kServer);
-
-    ctx->join();
   }
 
-  void client(std::shared_ptr<transport::Connection> conn) override {
-    std::shared_ptr<Context<TBuffer>> ctx =
-        this->helper_->makeContext("client");
-    auto channel = ctx->createChannel({std::move(conn)}, Endpoint::kConnect);
-
+  void client(std::shared_ptr<Channel<TBuffer>> channel) override {
     std::vector<DataWrapper<TBuffer>> wrappedDataVec;
     for (int i = 0; i < kNumTensors; i++) {
       wrappedDataVec.emplace_back(dataSize_);
@@ -243,8 +209,6 @@ class SendMultipleTensorsTest : public ClientServerChannelTestCase<TBuffer> {
 
     this->peers_->done(PeerGroup::kClient);
     this->peers_->join(PeerGroup::kClient);
-
-    ctx->join();
   }
 };
 
@@ -254,11 +218,7 @@ template <typename TBuffer>
 class SendTensorsBothWaysTest : public ClientServerChannelTestCase<TBuffer> {
   static constexpr int kDataSize = 256;
 
-  void server(std::shared_ptr<transport::Connection> conn) override {
-    std::shared_ptr<Context<TBuffer>> ctx =
-        this->helper_->makeContext("server");
-    auto channel = ctx->createChannel({std::move(conn)}, Endpoint::kListen);
-
+  void server(std::shared_ptr<Channel<TBuffer>> channel) override {
     // Initialize sendBuffer with sequential values.
     std::vector<uint8_t> sendData(kDataSize);
     std::iota(sendData.begin(), sendData.end(), 0);
@@ -303,15 +263,9 @@ class SendTensorsBothWaysTest : public ClientServerChannelTestCase<TBuffer> {
 
     this->peers_->done(PeerGroup::kServer);
     this->peers_->join(PeerGroup::kServer);
-
-    ctx->join();
   }
 
-  void client(std::shared_ptr<transport::Connection> conn) override {
-    std::shared_ptr<Context<TBuffer>> ctx =
-        this->helper_->makeContext("client");
-    auto channel = ctx->createChannel({std::move(conn)}, Endpoint::kConnect);
-
+  void client(std::shared_ptr<Channel<TBuffer>> channel) override {
     // Initialize sendBuffer with sequential values.
     std::vector<uint8_t> sendData(kDataSize);
     std::iota(sendData.begin(), sendData.end(), 0);
@@ -356,36 +310,7 @@ class SendTensorsBothWaysTest : public ClientServerChannelTestCase<TBuffer> {
 
     this->peers_->done(PeerGroup::kClient);
     this->peers_->join(PeerGroup::kClient);
-
-    ctx->join();
   }
 };
 
 CHANNEL_TEST_GENERIC(SendTensorsBothWays);
-
-template <typename TBuffer>
-class ContextIsNotJoinedTest : public ClientServerChannelTestCase<TBuffer> {
-  // Because it's static we must define it out-of-line (until C++-17, where we
-  // can mark this inline).
-  static const std::string kReady;
-
- public:
-  void server(std::shared_ptr<transport::Connection> conn) override {
-    std::shared_ptr<Context<TBuffer>> context =
-        this->helper_->makeContext("server");
-    this->peers_->send(PeerGroup::kClient, kReady);
-    context->createChannel({std::move(conn)}, Endpoint::kListen);
-  }
-
-  void client(std::shared_ptr<transport::Connection> conn) override {
-    std::shared_ptr<Context<TBuffer>> context =
-        this->helper_->makeContext("client");
-    EXPECT_EQ(kReady, this->peers_->recv(PeerGroup::kClient));
-    context->createChannel({std::move(conn)}, Endpoint::kConnect);
-  }
-};
-
-template <typename TBuffer>
-const std::string ContextIsNotJoinedTest<TBuffer>::kReady = "ready";
-
-CHANNEL_TEST_GENERIC(ContextIsNotJoined);

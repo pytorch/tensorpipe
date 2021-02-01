@@ -23,6 +23,7 @@
 #include <tensorpipe/common/cpu_buffer.h>
 #include <tensorpipe/config.h>
 #include <tensorpipe/test/peer_group.h>
+#include <tensorpipe/transport/connection.h>
 #include <tensorpipe/transport/listener.h>
 #include <tensorpipe/transport/uv/context.h>
 
@@ -202,6 +203,62 @@ class ChannelTestCase {
 
 template <typename TBuffer>
 class ClientServerChannelTestCase : public ChannelTestCase<TBuffer> {
+  std::vector<std::future<std::shared_ptr<tensorpipe::transport::Connection>>>
+  accept(
+      std::shared_ptr<tensorpipe::transport::Listener> listener,
+      size_t numConnections) {
+    auto promises = std::make_shared<std::vector<
+        std::promise<std::shared_ptr<tensorpipe::transport::Connection>>>>(
+        numConnections);
+    for (size_t i = 0; i < numConnections; ++i) {
+      listener->accept(
+          [&, promises](
+              const tensorpipe::Error& error,
+              std::shared_ptr<tensorpipe::transport::Connection> connection) {
+            ASSERT_FALSE(error) << error.what();
+            connection->read([promises, connection](
+                                 const tensorpipe::Error& error,
+                                 const void* connIdBuf,
+                                 size_t length) {
+              ASSERT_FALSE(error) << error.what();
+              ASSERT_EQ(sizeof(uint64_t), length);
+              promises->at(*static_cast<const uint64_t*>(connIdBuf))
+                  .set_value(std::move(connection));
+            });
+          });
+    }
+
+    std::vector<std::future<std::shared_ptr<tensorpipe::transport::Connection>>>
+        futures;
+
+    for (auto& p : *promises) {
+      futures.push_back(p.get_future());
+    }
+
+    return futures;
+  }
+
+  std::vector<std::shared_ptr<tensorpipe::transport::Connection>> connect(
+      std::shared_ptr<tensorpipe::transport::Context> transportCtx,
+      std::string addr,
+      size_t numConnections) {
+    std::vector<std::shared_ptr<tensorpipe::transport::Connection>> connections(
+        numConnections);
+    for (size_t connId = 0; connId < numConnections; ++connId) {
+      connections[connId] = transportCtx->connect(addr);
+      auto connIdBuf = std::make_shared<uint64_t>();
+      *connIdBuf = connId;
+      connections[connId]->write(
+          connIdBuf.get(),
+          sizeof(uint64_t),
+          [connIdBuf](const tensorpipe::Error& error) {
+            ASSERT_FALSE(error) << error.what();
+          });
+    }
+
+    return connections;
+  }
+
  public:
   void run(ChannelTestHelper<TBuffer>* helper) override {
     auto addr = "127.0.0.1";
@@ -210,41 +267,56 @@ class ClientServerChannelTestCase : public ChannelTestCase<TBuffer> {
     peers_ = helper_->makePeerGroup();
     peers_->spawn(
         [&] {
-          auto context = std::make_shared<tensorpipe::transport::uv::Context>();
-          context->setId("server_harness");
+          auto transportCtx =
+              std::make_shared<tensorpipe::transport::uv::Context>();
+          transportCtx->setId("server_harness");
+          auto ctx = helper_->makeContext("server");
 
-          auto listener = context->listen(addr);
+          auto listener = transportCtx->listen(addr);
 
-          std::promise<std::shared_ptr<tensorpipe::transport::Connection>>
-              connectionProm;
-          listener->accept(
-              [&](const tensorpipe::Error& error,
-                  std::shared_ptr<tensorpipe::transport::Connection>
-                      connection) {
-                ASSERT_FALSE(error) << error.what();
-                connectionProm.set_value(std::move(connection));
-              });
-
+          auto connectionFutures =
+              accept(listener, ctx->numConnectionsNeeded());
           peers_->send(PeerGroup::kClient, listener->addr());
-          server(connectionProm.get_future().get());
 
-          context->join();
+          std::vector<std::shared_ptr<tensorpipe::transport::Connection>>
+              connections;
+          for (auto& p : connectionFutures) {
+            connections.push_back(p.get());
+          }
+
+          auto channel = ctx->createChannel(
+              std::move(connections), tensorpipe::channel::Endpoint::kListen);
+
+          server(std::move(channel));
+
+          ctx->join();
+          transportCtx->join();
         },
         [&] {
-          auto context = std::make_shared<tensorpipe::transport::uv::Context>();
-          context->setId("client_harness");
+          auto transportCtx =
+              std::make_shared<tensorpipe::transport::uv::Context>();
+          transportCtx->setId("client_harness");
+          auto ctx = helper_->makeContext("client");
 
           auto laddr = peers_->recv(PeerGroup::kClient);
-          client(context->connect(laddr));
 
-          context->join();
+          auto connections =
+              connect(transportCtx, laddr, ctx->numConnectionsNeeded());
+
+          auto channel = ctx->createChannel(
+              std::move(connections), tensorpipe::channel::Endpoint::kConnect);
+
+          client(std::move(channel));
+
+          ctx->join();
+          transportCtx->join();
         });
   }
 
   virtual void server(
-      std::shared_ptr<tensorpipe::transport::Connection> connection) {}
+      std::shared_ptr<tensorpipe::channel::Channel<TBuffer>> channel) {}
   virtual void client(
-      std::shared_ptr<tensorpipe::transport::Connection> connection) {}
+      std::shared_ptr<tensorpipe::channel::Channel<TBuffer>> channel) {}
 
  protected:
   ChannelTestHelper<TBuffer>* helper_;

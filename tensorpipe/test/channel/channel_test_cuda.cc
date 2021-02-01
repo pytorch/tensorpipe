@@ -22,10 +22,7 @@ class ReceiverWaitsForStartEventTest
     : public ClientServerChannelTestCase<CudaBuffer> {
   static constexpr size_t kSize = 1024;
 
-  void server(std::shared_ptr<transport::Connection> conn) override {
-    std::shared_ptr<CudaContext> ctx = this->helper_->makeContext("server");
-    auto channel = ctx->createChannel({std::move(conn)}, Endpoint::kListen);
-
+  void server(std::shared_ptr<CudaChannel> channel) override {
     TP_CUDA_CHECK(cudaSetDevice(0));
     cudaStream_t sendStream;
     TP_CUDA_CHECK(
@@ -73,14 +70,9 @@ class ReceiverWaitsForStartEventTest
 
     this->peers_->done(PeerGroup::kServer);
     this->peers_->join(PeerGroup::kServer);
-
-    ctx->join();
   }
 
-  void client(std::shared_ptr<transport::Connection> conn) override {
-    std::shared_ptr<CudaContext> ctx = this->helper_->makeContext("client");
-    auto channel = ctx->createChannel({std::move(conn)}, Endpoint::kConnect);
-
+  void client(std::shared_ptr<CudaChannel> channel) override {
     TP_CUDA_CHECK(cudaSetDevice(0));
     cudaStream_t recvStream;
     TP_CUDA_CHECK(
@@ -116,8 +108,6 @@ class ReceiverWaitsForStartEventTest
 
     this->peers_->done(PeerGroup::kClient);
     this->peers_->join(PeerGroup::kClient);
-
-    ctx->join();
   }
 };
 
@@ -129,10 +119,7 @@ class SendOffsetAllocationTest
   static constexpr int kDataSize = 256;
   static constexpr int kOffset = 128;
 
-  void server(std::shared_ptr<transport::Connection> conn) override {
-    std::shared_ptr<CudaContext> ctx = this->helper_->makeContext("server");
-    auto channel = ctx->createChannel({std::move(conn)}, Endpoint::kListen);
-
+  void server(std::shared_ptr<CudaChannel> channel) override {
     // Initialize with sequential values.
     void* ptr;
     TP_CUDA_CHECK(cudaMalloc(&ptr, kOffset + kDataSize));
@@ -156,14 +143,9 @@ class SendOffsetAllocationTest
 
     this->peers_->done(PeerGroup::kServer);
     this->peers_->join(PeerGroup::kServer);
-
-    ctx->join();
   }
 
-  void client(std::shared_ptr<transport::Connection> conn) override {
-    std::shared_ptr<CudaContext> ctx = this->helper_->makeContext("client");
-    auto channel = ctx->createChannel({std::move(conn)}, Endpoint::kConnect);
-
+  void client(std::shared_ptr<CudaChannel> channel) override {
     DataWrapper<CudaBuffer> wrappedData(kDataSize);
 
     // Perform recv and wait for completion.
@@ -178,8 +160,6 @@ class SendOffsetAllocationTest
 
     this->peers_->done(PeerGroup::kClient);
     this->peers_->join(PeerGroup::kClient);
-
-    ctx->join();
   }
 };
 
