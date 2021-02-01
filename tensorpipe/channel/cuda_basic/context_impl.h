@@ -38,8 +38,6 @@ class ContextImpl final
 
   size_t numConnectionsNeeded() const override;
 
-  bool isViable() const;
-
   const CudaLib& getCudaLib();
 
   // Implement the DeferredExecutor interface.
@@ -55,7 +53,6 @@ class ContextImpl final
  private:
   OnDemandDeferredExecutor loop_;
 
-  const bool isViable_;
   const CudaLib cudaLib_;
 
   const std::shared_ptr<CpuContext> cpuContext_;

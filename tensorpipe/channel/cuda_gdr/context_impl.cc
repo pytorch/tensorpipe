@@ -436,8 +436,8 @@ std::shared_ptr<ContextImpl> ContextImpl::create(
 
 ContextImpl::ContextImpl()
     : ContextImplBoilerplate<CudaBuffer, ContextImpl, ChannelImpl>(
-          /*domainDescriptor=*/""),
-      isViable_(false) {}
+          /*isViable=*/false,
+          /*domainDescriptor=*/"") {}
 
 ContextImpl::ContextImpl(
     CudaLib cudaLib,
@@ -445,8 +445,8 @@ ContextImpl::ContextImpl(
     std::vector<IbvNic> ibvNics,
     std::vector<size_t> gpuToNic)
     : ContextImplBoilerplate<CudaBuffer, ContextImpl, ChannelImpl>(
+          /*isViable=*/true,
           /*domainDescriptor=*/"*"),
-      isViable_(true),
       cudaLib_(std::move(cudaLib)),
       ibvLib_(std::move(ibvLib)),
       ibvNics_(std::move(ibvNics)),
@@ -544,10 +544,6 @@ std::shared_ptr<CudaChannel> ContextImpl::createChannel(
     Endpoint /* unused */) {
   TP_DCHECK_EQ(numConnectionsNeeded(), connections.size());
   return createChannelInternal(std::move(connections[0]));
-}
-
-bool ContextImpl::isViable() const {
-  return isViable_;
 }
 
 } // namespace cuda_gdr

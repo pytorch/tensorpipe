@@ -138,8 +138,6 @@ class ContextImpl final
       std::vector<std::shared_ptr<transport::Connection>> connections,
       Endpoint endpoint);
 
-  bool isViable() const;
-
   const CudaLib& getCudaLib();
 
   const std::vector<size_t>& getGpuToNicMapping();
@@ -163,7 +161,6 @@ class ContextImpl final
   void setIdImpl() override;
 
  private:
-  const bool isViable_;
   const CudaLib cudaLib_;
   const IbvLib ibvLib_;
 

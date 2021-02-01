@@ -18,17 +18,15 @@ namespace channel {
 namespace basic {
 
 ContextImpl::ContextImpl()
-    : ContextImplBoilerplate<CpuBuffer, ContextImpl, ChannelImpl>("any") {}
+    : ContextImplBoilerplate<CpuBuffer, ContextImpl, ChannelImpl>(
+          /*isViable=*/true,
+          /*domainDescriptor=*/"any") {}
 
 std::shared_ptr<CpuChannel> ContextImpl::createChannel(
     std::vector<std::shared_ptr<transport::Connection>> connections,
     Endpoint /* unused */) {
   TP_DCHECK_EQ(numConnectionsNeeded(), connections.size());
   return createChannelInternal(std::move(connections[0]));
-}
-
-bool ContextImpl::isViable() const {
-  return true;
 }
 
 void ContextImpl::closeImpl() {}

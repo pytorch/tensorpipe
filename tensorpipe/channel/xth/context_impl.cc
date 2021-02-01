@@ -45,6 +45,7 @@ std::string generateDomainDescriptor() {
 
 ContextImpl::ContextImpl()
     : ContextImplBoilerplate<CpuBuffer, ContextImpl, ChannelImpl>(
+          /*isViable=*/true,
           generateDomainDescriptor()),
       requests_(std::numeric_limits<int>::max()) {
   thread_ = std::thread(&ContextImpl::handleCopyRequests, this);
@@ -55,10 +56,6 @@ std::shared_ptr<CpuChannel> ContextImpl::createChannel(
     Endpoint /* unused */) {
   TP_DCHECK_EQ(numConnectionsNeeded(), connections.size());
   return createChannelInternal(std::move(connections[0]));
-}
-
-bool ContextImpl::isViable() const {
-  return true;
 }
 
 void ContextImpl::closeImpl() {

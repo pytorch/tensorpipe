@@ -26,7 +26,7 @@ template <typename TBuffer, typename TCtx, typename TChan>
 class ContextImplBoilerplate : public virtual DeferredExecutor,
                                public std::enable_shared_from_this<TCtx> {
  public:
-  explicit ContextImplBoilerplate(std::string domainDescriptor);
+  ContextImplBoilerplate(bool isViable, std::string domainDescriptor);
 
   ContextImplBoilerplate(const ContextImplBoilerplate&) = delete;
   ContextImplBoilerplate(ContextImplBoilerplate&&) = delete;
@@ -35,6 +35,7 @@ class ContextImplBoilerplate : public virtual DeferredExecutor,
 
   virtual size_t numConnectionsNeeded() const;
 
+  bool isViable() const;
   const std::string& domainDescriptor() const;
 
   // Enrolling dependent objects (channels) causes them to be kept alive for as
@@ -76,6 +77,7 @@ class ContextImplBoilerplate : public virtual DeferredExecutor,
   std::atomic<bool> closed_{false};
   std::atomic<bool> joined_{false};
 
+  const bool isViable_;
   const std::string domainDescriptor_;
 
   // Sequence numbers for the channels created by this context, used to create
@@ -92,8 +94,9 @@ class ContextImplBoilerplate : public virtual DeferredExecutor,
 
 template <typename TBuffer, typename TCtx, typename TChan>
 ContextImplBoilerplate<TBuffer, TCtx, TChan>::ContextImplBoilerplate(
+    bool isViable,
     std::string domainDescriptor)
-    : domainDescriptor_(std::move(domainDescriptor)) {}
+    : isViable_(isViable), domainDescriptor_(std::move(domainDescriptor)) {}
 
 template <typename TBuffer, typename TCtx, typename TChan>
 template <typename... Args>
@@ -113,6 +116,11 @@ template <typename TBuffer, typename TCtx, typename TChan>
 size_t ContextImplBoilerplate<TBuffer, TCtx, TChan>::numConnectionsNeeded()
     const {
   return 1;
+}
+
+template <typename TBuffer, typename TCtx, typename TChan>
+bool ContextImplBoilerplate<TBuffer, TCtx, TChan>::isViable() const {
+  return isViable_;
 }
 
 template <typename TBuffer, typename TCtx, typename TChan>
