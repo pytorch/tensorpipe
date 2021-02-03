@@ -8,15 +8,19 @@
 
 #include <tensorpipe/transport/uv/factory.h>
 
-#include <tensorpipe/transport/uv/context.h>
+#include <tensorpipe/transport/context_boilerplate.h>
+#include <tensorpipe/transport/uv/connection_impl.h>
+#include <tensorpipe/transport/uv/context_impl.h>
+#include <tensorpipe/transport/uv/listener_impl.h>
 
 namespace tensorpipe {
 namespace transport {
 namespace uv {
 
-// Make namespaces explicit to disambiguate the downcast.
-std::shared_ptr<transport::Context> create() {
-  return std::make_shared<uv::Context>();
+std::shared_ptr<Context> create() {
+  return std::make_shared<
+      ContextBoilerplate<ContextImpl, ListenerImpl, ConnectionImpl>>(
+      ContextImpl::create());
 }
 
 } // namespace uv

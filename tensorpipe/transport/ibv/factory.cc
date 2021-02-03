@@ -8,15 +8,19 @@
 
 #include <tensorpipe/transport/ibv/factory.h>
 
-#include <tensorpipe/transport/ibv/context.h>
+#include <tensorpipe/transport/context_boilerplate.h>
+#include <tensorpipe/transport/ibv/connection_impl.h>
+#include <tensorpipe/transport/ibv/context_impl.h>
+#include <tensorpipe/transport/ibv/listener_impl.h>
 
 namespace tensorpipe {
 namespace transport {
 namespace ibv {
 
-// Make namespaces explicit to disambiguate the downcast.
-std::shared_ptr<transport::Context> create() {
-  return std::make_shared<ibv::Context>();
+std::shared_ptr<Context> create() {
+  return std::make_shared<
+      ContextBoilerplate<ContextImpl, ListenerImpl, ConnectionImpl>>(
+      ContextImpl::create());
 }
 
 } // namespace ibv

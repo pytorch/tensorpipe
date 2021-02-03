@@ -16,7 +16,7 @@ namespace tensorpipe {
 namespace transport {
 namespace uv {
 
-std::shared_ptr<transport::Context> create();
+std::shared_ptr<Context> create();
 
 } // namespace uv
 } // namespace transport

@@ -16,7 +16,7 @@ namespace tensorpipe {
 namespace transport {
 namespace ibv {
 
-std::shared_ptr<transport::Context> create();
+std::shared_ptr<Context> create();
 
 } // namespace ibv
 } // namespace transport

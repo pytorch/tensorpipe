@@ -8,15 +8,19 @@
 
 #include <tensorpipe/transport/shm/factory.h>
 
-#include <tensorpipe/transport/shm/context.h>
+#include <tensorpipe/transport/context_boilerplate.h>
+#include <tensorpipe/transport/shm/connection_impl.h>
+#include <tensorpipe/transport/shm/context_impl.h>
+#include <tensorpipe/transport/shm/listener_impl.h>
 
 namespace tensorpipe {
 namespace transport {
 namespace shm {
 
-// Make namespaces explicit to disambiguate the downcast.
-std::shared_ptr<transport::Context> create() {
-  return std::make_shared<shm::Context>();
+std::shared_ptr<Context> create() {
+  return std::make_shared<
+      ContextBoilerplate<ContextImpl, ListenerImpl, ConnectionImpl>>(
+      ContextImpl::create());
 }
 
 } // namespace shm

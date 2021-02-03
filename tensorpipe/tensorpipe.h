@@ -24,18 +24,15 @@
 #include <tensorpipe/transport/context.h>
 #include <tensorpipe/transport/error.h>
 
-#include <tensorpipe/transport/uv/context.h>
 #include <tensorpipe/transport/uv/error.h>
 #include <tensorpipe/transport/uv/factory.h>
 #include <tensorpipe/transport/uv/utility.h>
 
 #if TENSORPIPE_HAS_SHM_TRANSPORT
-#include <tensorpipe/transport/shm/context.h>
 #include <tensorpipe/transport/shm/factory.h>
 #endif // TENSORPIPE_HAS_SHM_TRANSPORT
 
 #if TENSORPIPE_HAS_IBV_TRANSPORT
-#include <tensorpipe/transport/ibv/context.h>
 #include <tensorpipe/transport/ibv/error.h>
 #include <tensorpipe/transport/ibv/factory.h>
 #include <tensorpipe/transport/ibv/utility.h>

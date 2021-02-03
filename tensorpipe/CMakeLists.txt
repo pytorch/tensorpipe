@@ -111,7 +111,6 @@ endif()
 
 target_sources(tensorpipe PRIVATE
   transport/uv/connection_impl.cc
-  transport/uv/context.cc
   transport/uv/context_impl.cc
   transport/uv/error.cc
   transport/uv/factory.cc
@@ -128,7 +127,6 @@ if(TP_ENABLE_SHM)
   target_sources(tensorpipe PRIVATE
     common/epoll_loop.cc
     transport/shm/connection_impl.cc
-    transport/shm/context.cc
     transport/shm/context_impl.cc
     transport/shm/factory.cc
     transport/shm/listener_impl.cc
@@ -148,7 +146,6 @@ if(TP_ENABLE_IBV)
     common/epoll_loop.cc
     common/ibv.cc
     transport/ibv/connection_impl.cc
-    transport/ibv/context.cc
     transport/ibv/context_impl.cc
     transport/ibv/error.cc
     transport/ibv/factory.cc
