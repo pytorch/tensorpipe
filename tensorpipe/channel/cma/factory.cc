@@ -8,14 +8,18 @@
 
 #include <tensorpipe/channel/cma/factory.h>
 
-#include <tensorpipe/channel/cma/context.h>
+#include <tensorpipe/channel/cma/channel_impl.h>
+#include <tensorpipe/channel/cma/context_impl.h>
+#include <tensorpipe/channel/context_boilerplate.h>
 
 namespace tensorpipe {
 namespace channel {
 namespace cma {
 
 std::shared_ptr<CpuContext> create() {
-  return std::make_shared<cma::Context>();
+  return std::make_shared<
+      ContextBoilerplate<CpuBuffer, ContextImpl, ChannelImpl>>(
+      ContextImpl::create());
 }
 
 } // namespace cma
