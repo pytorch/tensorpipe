@@ -320,11 +320,12 @@ PipeImpl::getOrderedChannels() {
 #endif // TENSORPIPE_SUPPORTS_CUDA
 
 void PipeImpl::init() {
-  loop_.deferToLoop([this]() { initFromLoop(); });
+  context_->deferToLoop(
+      [impl{this->shared_from_this()}]() { impl->initFromLoop(); });
 }
 
 void PipeImpl::initFromLoop() {
-  TP_DCHECK(loop_.inLoop());
+  TP_DCHECK(context_->inLoop());
   closingReceiver_.activate(*this);
   if (state_ == CLIENT_ABOUT_TO_SEND_HELLO_AND_BROCHURE) {
     auto nopHolderOut = std::make_shared<NopHolder<Packet>>();
@@ -403,11 +404,12 @@ const std::string& PipeImpl::getRemoteName() {
 }
 
 void PipeImpl::close() {
-  loop_.deferToLoop([this]() { closeFromLoop(); });
+  context_->deferToLoop(
+      [impl{this->shared_from_this()}]() { impl->closeFromLoop(); });
 }
 
 void PipeImpl::closeFromLoop() {
-  TP_DCHECK(loop_.inLoop());
+  TP_DCHECK(context_->inLoop());
   TP_VLOG(1) << "Pipe " << id_ << " is closing";
   setError(TP_CREATE_ERROR(PipeClosedError));
 }
@@ -417,13 +419,14 @@ void PipeImpl::closeFromLoop() {
 //
 
 void PipeImpl::readDescriptor(read_descriptor_callback_fn fn) {
-  loop_.deferToLoop([this, fn{std::move(fn)}]() mutable {
-    readDescriptorFromLoop(std::move(fn));
-  });
+  context_->deferToLoop(
+      [impl{this->shared_from_this()}, fn{std::move(fn)}]() mutable {
+        impl->readDescriptorFromLoop(std::move(fn));
+      });
 }
 
 void PipeImpl::readDescriptorFromLoop(read_descriptor_callback_fn fn) {
-  TP_DCHECK(loop_.inLoop());
+  TP_DCHECK(context_->inLoop());
 
   readOperations_.emplace_back();
   ReadOperation& op = readOperations_.back();
@@ -451,15 +454,15 @@ void PipeImpl::read(Message message, read_callback_fn fn) {
   // Messages aren't copyable and thus if a lambda captures them it cannot be
   // wrapped in a std::function. Therefore we wrap Messages in shared_ptrs.
   auto sharedMessage = std::make_shared<Message>(std::move(message));
-  loop_.deferToLoop([this,
-                     sharedMessage{std::move(sharedMessage)},
-                     fn{std::move(fn)}]() mutable {
-    readFromLoop(std::move(*sharedMessage), std::move(fn));
+  context_->deferToLoop([impl{this->shared_from_this()},
+                         sharedMessage{std::move(sharedMessage)},
+                         fn{std::move(fn)}]() mutable {
+    impl->readFromLoop(std::move(*sharedMessage), std::move(fn));
   });
 }
 
 void PipeImpl::readFromLoop(Message message, read_callback_fn fn) {
-  TP_DCHECK(loop_.inLoop());
+  TP_DCHECK(context_->inLoop());
 
   // This is such a bad logical error on the user's side that it doesn't deserve
   // to pass through the channel for "expected errors" (i.e., the callback).
@@ -499,7 +502,7 @@ void PipeImpl::readFromLoop(Message message, read_callback_fn fn) {
 }
 
 void PipeImpl::readPayloadsAndReceiveTensorsOfMessage(ReadOperation& op) {
-  TP_DCHECK(loop_.inLoop());
+  TP_DCHECK(context_->inLoop());
   TP_DCHECK_EQ(state_, ESTABLISHED);
 
   TP_DCHECK_EQ(op.state, ReadOperation::ASKING_FOR_ALLOCATION);
@@ -560,15 +563,15 @@ void PipeImpl::write(Message message, write_callback_fn fn) {
   // Messages aren't copyable and thus if a lambda captures them it cannot be
   // wrapped in a std::function. Therefore we wrap Messages in shared_ptrs.
   auto sharedMessage = std::make_shared<Message>(std::move(message));
-  loop_.deferToLoop([this,
-                     sharedMessage{std::move(sharedMessage)},
-                     fn{std::move(fn)}]() mutable {
-    writeFromLoop(std::move(*sharedMessage), std::move(fn));
+  context_->deferToLoop([impl{this->shared_from_this()},
+                         sharedMessage{std::move(sharedMessage)},
+                         fn{std::move(fn)}]() mutable {
+    impl->writeFromLoop(std::move(*sharedMessage), std::move(fn));
   });
 }
 
 void PipeImpl::writeFromLoop(Message message, write_callback_fn fn) {
-  TP_DCHECK(loop_.inLoop());
+  TP_DCHECK(context_->inLoop());
 
   writeOperations_.emplace_back();
   WriteOperation& op = writeOperations_.back();
@@ -599,7 +602,7 @@ void PipeImpl::writeFromLoop(Message message, write_callback_fn fn) {
 //
 
 void PipeImpl::callReadDescriptorCallback(ReadOperation& op) {
-  TP_DCHECK(loop_.inLoop());
+  TP_DCHECK(context_->inLoop());
   // Don't check state_ == ESTABLISHED: it can be called after failed handshake
 
   TP_DCHECK(
@@ -616,7 +619,7 @@ void PipeImpl::callReadDescriptorCallback(ReadOperation& op) {
 }
 
 void PipeImpl::callReadCallback(ReadOperation& op) {
-  TP_DCHECK(loop_.inLoop());
+  TP_DCHECK(context_->inLoop());
   // Don't check state_ == ESTABLISHED: it can be called after failed handshake
 
   TP_DCHECK(
@@ -630,7 +633,7 @@ void PipeImpl::callReadCallback(ReadOperation& op) {
 }
 
 void PipeImpl::callWriteCallback(WriteOperation& op) {
-  TP_DCHECK(loop_.inLoop());
+  TP_DCHECK(context_->inLoop());
   // Don't check state_ == ESTABLISHED: it can be called after failed handshake
 
   TP_DCHECK(
@@ -660,7 +663,7 @@ void PipeImpl::setError(Error error) {
 }
 
 void PipeImpl::handleError() {
-  TP_DCHECK(loop_.inLoop());
+  TP_DCHECK(context_->inLoop());
   TP_VLOG(2) << "Pipe " << id_ << " is handling error " << error_.what();
 
   connection_->close();
@@ -697,7 +700,7 @@ void PipeImpl::handleError() {
 //
 
 void PipeImpl::startReadingUponEstablishingPipe() {
-  TP_DCHECK(loop_.inLoop());
+  TP_DCHECK(context_->inLoop());
   TP_DCHECK_EQ(state_, ESTABLISHED);
 
   if (!readOperations_.empty()) {
@@ -706,7 +709,7 @@ void PipeImpl::startReadingUponEstablishingPipe() {
 }
 
 void PipeImpl::startWritingUponEstablishingPipe() {
-  TP_DCHECK(loop_.inLoop());
+  TP_DCHECK(context_->inLoop());
   TP_DCHECK_EQ(state_, ESTABLISHED);
 
   if (!writeOperations_.empty()) {
@@ -727,7 +730,7 @@ void PipeImpl::advanceReadOperation(ReadOperation& initialOp) {
 }
 
 bool PipeImpl::advanceOneReadOperation(ReadOperation& op) {
-  TP_DCHECK(loop_.inLoop());
+  TP_DCHECK(context_->inLoop());
   // Don't check state_ == ESTABLISHED: it can be called after failed handshake
 
   // The operations must advance in order: later operations cannot "overtake"
@@ -825,7 +828,7 @@ void PipeImpl::advanceWriteOperation(WriteOperation& initialOp) {
 }
 
 bool PipeImpl::advanceOneWriteOperation(WriteOperation& op) {
-  TP_DCHECK(loop_.inLoop());
+  TP_DCHECK(context_->inLoop());
   // Don't check state_ == ESTABLISHED: it can be called after failed handshake
 
   // The operations must advance in order: later operations cannot "overtake"
@@ -905,7 +908,7 @@ bool PipeImpl::advanceOneWriteOperation(WriteOperation& op) {
 }
 
 void PipeImpl::readDescriptorOfMessage(ReadOperation& op) {
-  TP_DCHECK(loop_.inLoop());
+  TP_DCHECK(context_->inLoop());
   TP_DCHECK_EQ(state_, ESTABLISHED);
 
   TP_DCHECK_EQ(op.state, ReadOperation::UNINITIALIZED);
@@ -930,7 +933,7 @@ void PipeImpl::readDescriptorOfMessage(ReadOperation& op) {
 }
 
 void PipeImpl::sendTensorsOfMessage(WriteOperation& op) {
-  TP_DCHECK(loop_.inLoop());
+  TP_DCHECK(context_->inLoop());
   TP_DCHECK_EQ(state_, ESTABLISHED);
 
   TP_DCHECK_EQ(op.state, WriteOperation::UNINITIALIZED);
@@ -984,7 +987,7 @@ void PipeImpl::sendTensorsOfMessage(WriteOperation& op) {
 }
 
 void PipeImpl::writeDescriptorAndPayloadsOfMessage(WriteOperation& op) {
-  TP_DCHECK(loop_.inLoop());
+  TP_DCHECK(context_->inLoop());
   TP_DCHECK_EQ(state_, ESTABLISHED);
 
   TP_DCHECK_EQ(
@@ -1026,7 +1029,7 @@ void PipeImpl::writeDescriptorAndPayloadsOfMessage(WriteOperation& op) {
 }
 
 void PipeImpl::onReadWhileServerWaitingForBrochure(const Packet& nopPacketIn) {
-  TP_DCHECK(loop_.inLoop());
+  TP_DCHECK(context_->inLoop());
   TP_DCHECK_EQ(state_, SERVER_WAITING_FOR_BROCHURE);
   TP_DCHECK_EQ(nopPacketIn.index(), nopPacketIn.index_of<Brochure>());
   const Brochure& nopBrochure = *nopPacketIn.get<Brochure>();
@@ -1189,7 +1192,7 @@ std::shared_ptr<channel::Context<CudaBuffer>> PipeImpl::getChannelContext(
 
 void PipeImpl::onReadWhileClientWaitingForBrochureAnswer(
     const Packet& nopPacketIn) {
-  TP_DCHECK(loop_.inLoop());
+  TP_DCHECK(context_->inLoop());
   TP_DCHECK_EQ(state_, CLIENT_WAITING_FOR_BROCHURE_ANSWER);
   TP_DCHECK_EQ(nopPacketIn.index(), nopPacketIn.index_of<BrochureAnswer>());
 
@@ -1290,7 +1293,7 @@ void PipeImpl::onReadWhileClientWaitingForBrochureAnswer(
 void PipeImpl::onAcceptWhileServerWaitingForConnection(
     std::string receivedTransport,
     std::shared_ptr<transport::Connection> receivedConnection) {
-  TP_DCHECK(loop_.inLoop());
+  TP_DCHECK(context_->inLoop());
   TP_DCHECK_EQ(state_, SERVER_WAITING_FOR_CONNECTIONS);
   TP_DCHECK(registrationId_.has_value());
   listener_->unregisterConnectionRequest(registrationId_.value());
@@ -1313,7 +1316,7 @@ void PipeImpl::onAcceptWhileServerWaitingForChannel(
     size_t connId,
     std::string receivedTransport,
     std::shared_ptr<transport::Connection> receivedConnection) {
-  TP_DCHECK(loop_.inLoop());
+  TP_DCHECK(context_->inLoop());
   TP_DCHECK_EQ(state_, SERVER_WAITING_FOR_CONNECTIONS);
   TP_DCHECK_EQ(transport_, receivedTransport);
   auto& channelRegistrationIds = channelRegistrationIds_.get<TBuffer>();
@@ -1363,7 +1366,7 @@ void PipeImpl::onAcceptWhileServerWaitingForChannel(
 void PipeImpl::onReadOfMessageDescriptor(
     ReadOperation& op,
     const Packet& nopPacketIn) {
-  TP_DCHECK(loop_.inLoop());
+  TP_DCHECK(context_->inLoop());
   TP_DCHECK_EQ(state_, ESTABLISHED);
 
   TP_DCHECK_EQ(op.state, ReadOperation::READING_DESCRIPTOR);
@@ -1377,7 +1380,7 @@ void PipeImpl::onDescriptorOfTensor(
     WriteOperation& op,
     int64_t tensorIdx,
     channel::TDescriptor descriptor) {
-  TP_DCHECK(loop_.inLoop());
+  TP_DCHECK(context_->inLoop());
 
   TP_DCHECK_EQ(
       op.state, WriteOperation::SENDING_TENSORS_AND_COLLECTING_DESCRIPTORS);
@@ -1389,7 +1392,7 @@ void PipeImpl::onDescriptorOfTensor(
 }
 
 void PipeImpl::onReadOfPayload(ReadOperation& op) {
-  TP_DCHECK(loop_.inLoop());
+  TP_DCHECK(context_->inLoop());
 
   TP_DCHECK_EQ(op.state, ReadOperation::READING_PAYLOADS_AND_RECEIVING_TENSORS);
   op.numPayloadsBeingRead--;
@@ -1398,7 +1401,7 @@ void PipeImpl::onReadOfPayload(ReadOperation& op) {
 }
 
 void PipeImpl::onRecvOfTensor(ReadOperation& op) {
-  TP_DCHECK(loop_.inLoop());
+  TP_DCHECK(context_->inLoop());
 
   TP_DCHECK_EQ(op.state, ReadOperation::READING_PAYLOADS_AND_RECEIVING_TENSORS);
   op.numTensorsBeingReceived--;
@@ -1407,7 +1410,7 @@ void PipeImpl::onRecvOfTensor(ReadOperation& op) {
 }
 
 void PipeImpl::onWriteOfPayload(WriteOperation& op) {
-  TP_DCHECK(loop_.inLoop());
+  TP_DCHECK(context_->inLoop());
 
   TP_DCHECK_EQ(op.state, WriteOperation::WRITING_PAYLOADS_AND_SENDING_TENSORS);
   op.numPayloadsBeingWritten--;
@@ -1416,7 +1419,7 @@ void PipeImpl::onWriteOfPayload(WriteOperation& op) {
 }
 
 void PipeImpl::onSendOfTensor(WriteOperation& op) {
-  TP_DCHECK(loop_.inLoop());
+  TP_DCHECK(context_->inLoop());
 
   TP_DCHECK_GE(
       op.state, WriteOperation::SENDING_TENSORS_AND_COLLECTING_DESCRIPTORS);

@@ -20,6 +20,7 @@
 #include <tensorpipe/common/callback.h>
 #include <tensorpipe/common/deferred_executor.h>
 #include <tensorpipe/common/error.h>
+#include <tensorpipe/core/context_impl.h>
 #include <tensorpipe/core/listener.h>
 #include <tensorpipe/core/nop_types.h>
 #include <tensorpipe/transport/context.h>
@@ -57,8 +58,6 @@ class ListenerImpl final : public std::enable_shared_from_this<ListenerImpl> {
   void close();
 
  private:
-  OnDemandDeferredExecutor loop_;
-
   void acceptFromLoop(accept_callback_fn fn);
 
   void closeFromLoop();
@@ -94,8 +93,7 @@ class ListenerImpl final : public std::enable_shared_from_this<ListenerImpl> {
   std::unordered_set<std::shared_ptr<transport::Connection>>
       connectionsWaitingForHello_;
 
-  // This is atomic because it may be accessed from outside the loop.
-  std::atomic<uint64_t> nextConnectionRequestRegistrationId_{0};
+  uint64_t nextConnectionRequestRegistrationId_{0};
 
   // FIXME Consider using a (ordered) map, because keys are IDs which are
   // generated in sequence and thus we can do a quick (but partial) check of
@@ -113,20 +111,12 @@ class ListenerImpl final : public std::enable_shared_from_this<ListenerImpl> {
   void initFromLoop();
 
   //
-  // Entry points for internal code
-  //
-
-  void registerConnectionRequestFromLoop(
-      uint64_t registrationId,
-      connection_request_callback_fn fn);
-
-  void unregisterConnectionRequestFromLoop(uint64_t registrationId);
-
-  //
   // Helpers to prepare callbacks from transports
   //
 
-  LazyCallbackWrapper<ListenerImpl> lazyCallbackWrapper_{*this, this->loop_};
+  LazyCallbackWrapper<ListenerImpl> lazyCallbackWrapper_{
+      *this,
+      *this->context_};
 
   //
   // Error handling
