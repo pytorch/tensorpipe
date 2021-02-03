@@ -23,6 +23,7 @@
 #include <tensorpipe/common/optional.h>
 #include <tensorpipe/core/buffer.h>
 #include <tensorpipe/core/buffer_helpers.h>
+#include <tensorpipe/core/context_impl.h>
 #include <tensorpipe/core/message.h>
 #include <tensorpipe/core/nop_types.h>
 #include <tensorpipe/core/pipe.h>
@@ -133,8 +134,6 @@ class PipeImpl final : public std::enable_shared_from_this<PipeImpl> {
   void close();
 
  private:
-  OnDemandDeferredExecutor loop_;
-
   void initFromLoop();
 
   void readDescriptorFromLoop(read_descriptor_callback_fn fn);
@@ -232,8 +231,8 @@ class PipeImpl final : public std::enable_shared_from_this<PipeImpl> {
   // Helpers to prepare callbacks from transports and listener
   //
 
-  LazyCallbackWrapper<PipeImpl> lazyCallbackWrapper_{*this, this->loop_};
-  EagerCallbackWrapper<PipeImpl> eagerCallbackWrapper_{*this, this->loop_};
+  LazyCallbackWrapper<PipeImpl> lazyCallbackWrapper_{*this, *this->context_};
+  EagerCallbackWrapper<PipeImpl> eagerCallbackWrapper_{*this, *this->context_};
 
   //
   // Helpers to schedule our callbacks into user code

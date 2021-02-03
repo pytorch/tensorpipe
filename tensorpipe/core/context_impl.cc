@@ -205,6 +205,14 @@ const std::string& ContextImpl::getName() {
   return name_;
 }
 
+void ContextImpl::deferToLoop(TTask fn) {
+  loop_.deferToLoop(std::move(fn));
+}
+
+bool ContextImpl::inLoop() const {
+  return loop_.inLoop();
+}
+
 void ContextImpl::close() {
   if (!closed_.exchange(true)) {
     TP_VLOG(1) << "Context " << id_ << " is closing";
