@@ -62,13 +62,25 @@ constexpr PageType getDefaultPageType(uint64_t size) {
   }
 }
 
+#ifdef MAP_SHARED_VALIDATE
+bool isMapSharedValidateSupported() {
+  static bool rc = []() {
+    // If MAP_SHARED_VALIDATE is supported by kernel,
+    // errno should be EOPNOTSUPP, if not EINVAL
+    void *ptr = mmap(NULL, 8, 0, 0x800000 | MAP_SHARED_VALIDATE, 0, 0);
+    return ptr == MAP_FAILED && errno == EOPNOTSUPP;
+  }();
+  return rc;
+}
+#endif
+
 std::tuple<Error, MmappedPtr> mmapShmFd(
     int fd,
     size_t byteSize,
     bool permWrite,
     optional<PageType> pageType) {
 #ifdef MAP_SHARED_VALIDATE
-  int flags = MAP_SHARED | MAP_SHARED_VALIDATE;
+  int flags = isMapSharedValidateSupported() ? MAP_SHARED_VALIDATE : MAP_SHARED;
 #else
 
 #warning \
