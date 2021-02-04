@@ -307,6 +307,13 @@ class PipeImpl final : public std::enable_shared_from_this<PipeImpl> {
   friend class LazyCallbackWrapper;
   template <typename T>
   friend class EagerCallbackWrapper;
+
+  // Contexts and listeners do sometimes need to call directly into initFromLoop
+  // and closeFromLoop, in order to make sure that some of their operations can
+  // happen "atomically" on the connection, without possibly other operations
+  // occurring in between (e.g., an error).
+  friend ContextImpl;
+  friend ListenerImpl;
 };
 
 } // namespace tensorpipe

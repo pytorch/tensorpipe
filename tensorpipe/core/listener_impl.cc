@@ -25,6 +25,7 @@
 #include <tensorpipe/core/error.h>
 #include <tensorpipe/core/nop_types.h>
 #include <tensorpipe/core/pipe.h>
+#include <tensorpipe/core/pipe_impl.h>
 #include <tensorpipe/transport/connection.h>
 #include <tensorpipe/transport/listener.h>
 
@@ -281,15 +282,22 @@ void ListenerImpl::onConnectionHelloRead(
       TP_VLOG(1) << "Pipe " << pipeId << " aliased as " << aliasPipeId;
       pipeId = std::move(aliasPipeId);
     }
-    auto pipe = std::make_shared<Pipe>(
-        Pipe::ConstructorToken(),
+    auto pipe = std::make_shared<PipeImpl>(
         context_,
         shared_from_this(),
         std::move(pipeId),
         remoteContextName,
         std::move(transport),
         std::move(connection));
-    acceptCallback_.trigger(Error::kSuccess, std::move(pipe));
+    // We initialize the pipe from the loop immediately, inline, because the
+    // initialization of a pipe accepted by a listener happens partly in the
+    // listener and partly in the pipe's initFromLoop, and we need these two
+    // steps to happen "atomicically" to make it impossible for an error to
+    // occur in between.
+    pipe->initFromLoop();
+    acceptCallback_.trigger(
+        Error::kSuccess,
+        std::make_shared<Pipe>(Pipe::ConstructorToken(), std::move(pipe)));
   } else if (nopPacketIn.is<RequestedConnection>()) {
     const RequestedConnection& nopRequestedConnection =
         *nopPacketIn.get<RequestedConnection>();

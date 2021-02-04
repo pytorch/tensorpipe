@@ -53,14 +53,7 @@ class Pipe final {
       std::string remoteName,
       const std::string& url);
 
-  Pipe(
-      ConstructorToken token,
-      std::shared_ptr<ContextImpl> context,
-      std::shared_ptr<ListenerImpl> listener,
-      std::string id,
-      std::string remoteName,
-      std::string transport,
-      std::shared_ptr<transport::Connection> connection);
+  Pipe(ConstructorToken token, std::shared_ptr<PipeImpl> impl);
 
   //
   // Entry points for user code
