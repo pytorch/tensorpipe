@@ -151,10 +151,6 @@ std::shared_ptr<Pipe> ContextImpl::connect(
       url);
 }
 
-ClosingEmitter& ContextImpl::getClosingEmitter() {
-  return closingEmitter_;
-}
-
 std::shared_ptr<transport::Context> ContextImpl::getTransport(
     const std::string& transport) {
   auto iter = transports_.find(transport);
@@ -255,7 +251,20 @@ void ContextImpl::close() {
     if (!closed_.exchange(true)) {
       TP_VLOG(1) << "Context " << id_ << " is closing";
 
-      closingEmitter_.close();
+      // Make a copy as they could unenroll themselves inline.
+      auto listenersCopy = listeners_;
+      auto pipesCopy = pipes_;
+      // We call closeFromLoop, rather than just close, because we need these
+      // objects to transition _immediately_ to error, "atomically". If we just
+      // deferred closing to later, this could come after some already-enqueued
+      // operations that could try to access the context, which would be closed,
+      // and this could fail.
+      for (auto& iter : listenersCopy) {
+        iter.second->closeFromLoop();
+      }
+      for (auto& iter : pipesCopy) {
+        iter.second->closeFromLoop();
+      }
 
       for (auto& iter : transports_) {
         iter.second->close();
