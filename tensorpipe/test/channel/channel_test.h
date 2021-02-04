@@ -203,10 +203,13 @@ class ChannelTestCase {
 
 template <typename TBuffer>
 class ClientServerChannelTestCase : public ChannelTestCase<TBuffer> {
-  std::future<std::vector<std::shared_ptr<tensorpipe::transport::Connection>>>
+  std::future<std::pair<
+      tensorpipe::Error,
+      std::vector<std::shared_ptr<tensorpipe::transport::Connection>>>>
   accept(tensorpipe::transport::Listener& listener, size_t numConnections) {
-    auto promise = std::make_shared<std::promise<
-        std::vector<std::shared_ptr<tensorpipe::transport::Connection>>>>();
+    auto promise = std::make_shared<std::promise<std::pair<
+        tensorpipe::Error,
+        std::vector<std::shared_ptr<tensorpipe::transport::Connection>>>>>();
     auto connections = std::make_shared<
         std::vector<std::shared_ptr<tensorpipe::transport::Connection>>>(
         numConnections);
@@ -217,8 +220,7 @@ class ClientServerChannelTestCase : public ChannelTestCase<TBuffer> {
                           std::shared_ptr<tensorpipe::transport::Connection>
                               connection) mutable {
         if (error) {
-          promise->set_exception(
-              std::make_exception_ptr(std::runtime_error(error.what())));
+          promise->set_value(std::make_pair(error, *connections));
           return;
         }
 
@@ -227,8 +229,7 @@ class ClientServerChannelTestCase : public ChannelTestCase<TBuffer> {
                              const void* connIdBuf,
                              size_t length) mutable {
           if (error) {
-            promise->set_exception(
-                std::make_exception_ptr(std::runtime_error(error.what())));
+            promise->set_value(std::make_pair(error, *connections));
             return;
           }
           ASSERT_EQ(sizeof(uint64_t), length);
@@ -241,7 +242,7 @@ class ClientServerChannelTestCase : public ChannelTestCase<TBuffer> {
               return;
             }
           }
-          promise->set_value(std::move(*connections));
+          promise->set_value(std::make_pair(error, std::move(*connections)));
         });
       });
     }
@@ -287,7 +288,11 @@ class ClientServerChannelTestCase : public ChannelTestCase<TBuffer> {
               accept(*listener, ctx->numConnectionsNeeded());
           peers_->send(PeerGroup::kClient, listener->addr());
 
-          auto connections = connectionsFuture.get();
+          tensorpipe::Error connectionsError;
+          std::vector<std::shared_ptr<tensorpipe::transport::Connection>>
+              connections;
+          std::tie(connectionsError, connections) = connectionsFuture.get();
+          EXPECT_FALSE(connectionsError) << connectionsError.what();
 
           auto channel = ctx->createChannel(
               std::move(connections), tensorpipe::channel::Endpoint::kListen);
