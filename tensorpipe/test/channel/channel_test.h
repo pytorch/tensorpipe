@@ -203,51 +203,83 @@ class ChannelTestCase {
 
 template <typename TBuffer>
 class ClientServerChannelTestCase : public ChannelTestCase<TBuffer> {
-  std::future<std::pair<
+  using MultiAcceptResult = std::pair<
       tensorpipe::Error,
-      std::vector<std::shared_ptr<tensorpipe::transport::Connection>>>>
-  accept(tensorpipe::transport::Listener& listener, size_t numConnections) {
-    auto promise = std::make_shared<std::promise<std::pair<
-        tensorpipe::Error,
-        std::vector<std::shared_ptr<tensorpipe::transport::Connection>>>>>();
-    auto connections = std::make_shared<
-        std::vector<std::shared_ptr<tensorpipe::transport::Connection>>>(
-        numConnections);
-    auto connectionsMutex = std::make_shared<std::mutex>();
-    for (size_t i = 0; i < numConnections; ++i) {
-      listener.accept([promise, connections, connectionsMutex](
-                          const tensorpipe::Error& error,
-                          std::shared_ptr<tensorpipe::transport::Connection>
-                              connection) mutable {
-        if (error) {
-          promise->set_value(std::make_pair(error, *connections));
-          return;
+      std::vector<std::shared_ptr<tensorpipe::transport::Connection>>>;
+
+  class MultiAcceptResultPromise {
+   public:
+    explicit MultiAcceptResultPromise(size_t numConnections)
+        : connections_(numConnections) {}
+
+    ~MultiAcceptResultPromise() {
+      // Sanity check
+      if (!error_) {
+        for (const auto& conn : connections_) {
+          EXPECT_NE(conn, nullptr);
         }
-
-        connection->read([promise, connections, connectionsMutex, connection](
-                             const tensorpipe::Error& error,
-                             const void* connIdBuf,
-                             size_t length) mutable {
-          if (error) {
-            promise->set_value(std::make_pair(error, *connections));
-            return;
-          }
-          ASSERT_EQ(sizeof(uint64_t), length);
-
-          std::unique_lock<std::mutex> lock(*connectionsMutex);
-          connections->at(*static_cast<const uint64_t*>(connIdBuf)) =
-              std::move(connection);
-          for (const auto& c : *connections) {
-            if (c == nullptr) {
-              return;
-            }
-          }
-          promise->set_value(std::make_pair(error, std::move(*connections)));
-        });
-      });
+      }
+      promise_.set_value(
+          MultiAcceptResult(std::move(error_), std::move(connections_)));
     }
 
-    return promise->get_future();
+    std::future<MultiAcceptResult> getFuture() {
+      return promise_.get_future();
+    }
+
+    void setConnection(
+        size_t connId,
+        std::shared_ptr<tensorpipe::transport::Connection> connection) {
+      EXPECT_LT(connId, connections_.size());
+      connections_[connId] = std::move(connection);
+    }
+
+    void setError(tensorpipe::Error error) {
+      std::unique_lock<std::mutex> lock(errorMutex_);
+      if (error_) {
+        return;
+      }
+      error_ = std::move(error);
+    }
+
+   private:
+    tensorpipe::Error error_{tensorpipe::Error::kSuccess};
+    std::mutex errorMutex_;
+    std::vector<std::shared_ptr<tensorpipe::transport::Connection>>
+        connections_;
+    std::promise<MultiAcceptResult> promise_;
+  };
+
+  std::future<MultiAcceptResult> accept(
+      tensorpipe::transport::Listener& listener,
+      size_t numConnections) {
+    auto promise = std::make_shared<MultiAcceptResultPromise>(numConnections);
+    for (size_t i = 0; i < numConnections; ++i) {
+      listener.accept(
+          [promise](
+              const tensorpipe::Error& error,
+              std::shared_ptr<tensorpipe::transport::Connection> connection) {
+            if (error) {
+              promise->setError(std::move(error));
+              return;
+            }
+
+            connection->read([promise, connection](
+                                 const tensorpipe::Error& error,
+                                 const void* connIdBuf,
+                                 size_t length) mutable {
+              if (error) {
+                promise->setError(std::move(error));
+                return;
+              }
+              ASSERT_EQ(sizeof(uint64_t), length);
+              uint64_t connId = *static_cast<const uint64_t*>(connIdBuf);
+              promise->setConnection(connId, std::move(connection));
+            });
+          });
+    }
+
+    return promise->getFuture();
   }
 
   std::vector<std::shared_ptr<tensorpipe::transport::Connection>> connect(
@@ -263,7 +295,7 @@ class ClientServerChannelTestCase : public ChannelTestCase<TBuffer> {
           connIdBuf.get(),
           sizeof(uint64_t),
           [connIdBuf](const tensorpipe::Error& error) {
-            ASSERT_FALSE(error) << error.what();
+            EXPECT_FALSE(error) << error.what();
           });
     }
 
