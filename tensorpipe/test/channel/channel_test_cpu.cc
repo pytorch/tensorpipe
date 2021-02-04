@@ -111,16 +111,16 @@ class CallbacksAreDeferredTest : public ClientServerChannelTestCase<CpuBuffer> {
     // Perform send and wait for completion.
     std::promise<std::tuple<Error, TDescriptor>> descriptorPromise;
     std::promise<Error> sendPromise;
-    std::mutex mutex;
-    std::unique_lock<std::mutex> callerLock(mutex);
+    auto mutex = std::make_shared<std::mutex>();
+    std::unique_lock<std::mutex> callerLock(*mutex);
     channel->send(
         CpuBuffer{data.data(), kDataSize},
         [&descriptorPromise](const Error& error, TDescriptor descriptor) {
           descriptorPromise.set_value(
               std::make_tuple(error, std::move(descriptor)));
         },
-        [&sendPromise, &mutex](const Error& error) {
-          std::unique_lock<std::mutex> calleeLock(mutex);
+        [&sendPromise, mutex](const Error& error) {
+          std::unique_lock<std::mutex> calleeLock(*mutex);
           sendPromise.set_value(error);
         });
     callerLock.unlock();
