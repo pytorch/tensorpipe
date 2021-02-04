@@ -235,6 +235,11 @@ void ContextImpl::unenroll(PipeImpl& pipe) {
   TP_DCHECK_EQ(numRemoved, 1);
 }
 
+bool ContextImpl::closed() {
+  TP_DCHECK(inLoop());
+  return closed_;
+}
+
 void ContextImpl::deferToLoop(TTask fn) {
   loop_.deferToLoop(std::move(fn));
 }

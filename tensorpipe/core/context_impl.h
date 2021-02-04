@@ -101,6 +101,10 @@ class ContextImpl final : public virtual DeferredExecutor,
   void unenroll(ListenerImpl& listener);
   void unenroll(PipeImpl& pipe);
 
+  // Return whether the context is in a closed state. To avoid race conditions,
+  // this must be called from within the loop.
+  bool closed();
+
   // Implement DeferredExecutor interface.
   void deferToLoop(TTask fn) override;
   bool inLoop() const override;
