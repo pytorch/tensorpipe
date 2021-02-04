@@ -51,11 +51,12 @@ ListenerImpl::ListenerImpl(
 }
 
 void ListenerImpl::init() {
-  loop_.deferToLoop([this]() { initFromLoop(); });
+  context_->deferToLoop(
+      [impl{this->shared_from_this()}]() { impl->initFromLoop(); });
 }
 
 void ListenerImpl::initFromLoop() {
-  TP_DCHECK(loop_.inLoop());
+  TP_DCHECK(context_->inLoop());
   closingReceiver_.activate(*this);
   for (const auto& listener : listeners_) {
     armListener(listener.first);
@@ -63,11 +64,12 @@ void ListenerImpl::initFromLoop() {
 }
 
 void ListenerImpl::close() {
-  loop_.deferToLoop([this]() { closeFromLoop(); });
+  context_->deferToLoop(
+      [impl{this->shared_from_this()}]() { impl->closeFromLoop(); });
 }
 
 void ListenerImpl::closeFromLoop() {
-  TP_DCHECK(loop_.inLoop());
+  TP_DCHECK(context_->inLoop());
   TP_VLOG(1) << "Listener " << id_ << " is closing";
   setError(TP_CREATE_ERROR(ListenerClosedError));
 }
@@ -77,12 +79,14 @@ void ListenerImpl::closeFromLoop() {
 //
 
 void ListenerImpl::accept(accept_callback_fn fn) {
-  loop_.deferToLoop(
-      [this, fn{std::move(fn)}]() mutable { acceptFromLoop(std::move(fn)); });
+  context_->deferToLoop(
+      [impl{this->shared_from_this()}, fn{std::move(fn)}]() mutable {
+        impl->acceptFromLoop(std::move(fn));
+      });
 }
 
 void ListenerImpl::acceptFromLoop(accept_callback_fn fn) {
-  TP_DCHECK(loop_.inLoop());
+  TP_DCHECK(context_->inLoop());
 
   uint64_t sequenceNumber = nextPipeBeingAccepted_++;
   TP_VLOG(1) << "Listener " << id_ << " received an accept request (#"
@@ -133,22 +137,9 @@ std::string ListenerImpl::url(const std::string& transport) const {
 
 uint64_t ListenerImpl::registerConnectionRequest(
     connection_request_callback_fn fn) {
-  // We cannot return a value if we defer the function. Thus we obtain an ID
-  // now (and this is why the next ID is an atomic), return it, and defer the
-  // rest of the processing.
-  // FIXME Avoid this hack by doing like we did with the channels' recv: have
-  // this accept a callback that is called with the registration ID.
-  uint64_t registrationId = nextConnectionRequestRegistrationId_++;
-  loop_.deferToLoop([this, registrationId, fn{std::move(fn)}]() mutable {
-    registerConnectionRequestFromLoop(registrationId, std::move(fn));
-  });
-  return registrationId;
-}
+  TP_DCHECK(context_->inLoop());
 
-void ListenerImpl::registerConnectionRequestFromLoop(
-    uint64_t registrationId,
-    connection_request_callback_fn fn) {
-  TP_DCHECK(loop_.inLoop());
+  uint64_t registrationId = nextConnectionRequestRegistrationId_++;
 
   TP_VLOG(1) << "Listener " << id_
              << " received a connection request registration (#"
@@ -172,20 +163,17 @@ void ListenerImpl::registerConnectionRequestFromLoop(
   } else {
     connectionRequestRegistrations_.emplace(registrationId, std::move(fn));
   }
+
+  return registrationId;
 }
 
 void ListenerImpl::unregisterConnectionRequest(uint64_t registrationId) {
-  loop_.deferToLoop([this, registrationId]() {
-    unregisterConnectionRequestFromLoop(registrationId);
-  });
-}
+  TP_DCHECK(context_->inLoop());
 
-void ListenerImpl::unregisterConnectionRequestFromLoop(
-    uint64_t registrationId) {
-  TP_DCHECK(loop_.inLoop());
   TP_VLOG(1) << "Listener " << id_
              << " received a connection request de-registration (#"
              << registrationId << ")";
+
   connectionRequestRegistrations_.erase(registrationId);
 }
 
@@ -205,7 +193,7 @@ void ListenerImpl::setError(Error error) {
 }
 
 void ListenerImpl::handleError() {
-  TP_DCHECK(loop_.inLoop());
+  TP_DCHECK(context_->inLoop());
   TP_VLOG(2) << "Listener " << id_ << " is handling error " << error_.what();
 
   acceptCallback_.triggerAll([&]() {
@@ -230,7 +218,7 @@ void ListenerImpl::handleError() {
 void ListenerImpl::onAccept(
     std::string transport,
     std::shared_ptr<transport::Connection> connection) {
-  TP_DCHECK(loop_.inLoop());
+  TP_DCHECK(context_->inLoop());
   // Keep it alive until we figure out what to do with it.
   connectionsWaitingForHello_.insert(connection);
   auto nopHolderIn = std::make_shared<NopHolder<Packet>>();
@@ -257,7 +245,7 @@ void ListenerImpl::onAccept(
 }
 
 void ListenerImpl::armListener(std::string transport) {
-  TP_DCHECK(loop_.inLoop());
+  TP_DCHECK(context_->inLoop());
   auto iter = listeners_.find(transport);
   if (iter == listeners_.end()) {
     TP_THROW_EINVAL() << "unsupported transport " << transport;
@@ -280,7 +268,7 @@ void ListenerImpl::onConnectionHelloRead(
     std::string transport,
     std::shared_ptr<transport::Connection> connection,
     const Packet& nopPacketIn) {
-  TP_DCHECK(loop_.inLoop());
+  TP_DCHECK(context_->inLoop());
   if (nopPacketIn.is<SpontaneousConnection>()) {
     const SpontaneousConnection& nopSpontaneousConnection =
         *nopPacketIn.get<SpontaneousConnection>();

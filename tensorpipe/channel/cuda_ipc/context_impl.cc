@@ -297,8 +297,9 @@ std::shared_ptr<ContextImpl> ContextImpl::create() {
 }
 
 ContextImpl::ContextImpl()
-    : ContextImplBoilerplate<CudaBuffer, ContextImpl, ChannelImpl>(""),
-      isViable_(false) {}
+    : ContextImplBoilerplate<CudaBuffer, ContextImpl, ChannelImpl>(
+          /*isViable=*/false,
+          /*domainDescriptor=*/"") {}
 
 ContextImpl::ContextImpl(
     std::string domainDescriptor,
@@ -309,8 +310,8 @@ ContextImpl::ContextImpl(
     std::vector<std::vector<bool>> p2pSupport,
     std::vector<int> globalIdxOfVisibleDevices)
     : ContextImplBoilerplate<CudaBuffer, ContextImpl, ChannelImpl>(
+          /*isViable=*/true,
           std::move(domainDescriptor)),
-      isViable_(true),
       cudaLib_(std::move(cudaLib)),
       nvmlLib_(std::move(nvmlLib)),
       bootId_(std::move(bootId)),
@@ -323,10 +324,6 @@ std::shared_ptr<CudaChannel> ContextImpl::createChannel(
     Endpoint /* unused */) {
   TP_DCHECK_EQ(numConnectionsNeeded(), connections.size());
   return createChannelInternal(std::move(connections[0]));
-}
-
-bool ContextImpl::isViable() const {
-  return isViable_;
 }
 
 bool ContextImpl::canCommunicateWithRemote(

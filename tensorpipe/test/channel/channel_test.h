@@ -24,7 +24,7 @@
 #include <tensorpipe/config.h>
 #include <tensorpipe/test/peer_group.h>
 #include <tensorpipe/transport/listener.h>
-#include <tensorpipe/transport/uv/context.h>
+#include <tensorpipe/transport/uv/factory.h>
 
 #if TENSORPIPE_SUPPORTS_CUDA
 #include <tensorpipe/common/cuda.h>
@@ -210,7 +210,7 @@ class ClientServerChannelTestCase : public ChannelTestCase<TBuffer> {
     peers_ = helper_->makePeerGroup();
     peers_->spawn(
         [&] {
-          auto context = std::make_shared<tensorpipe::transport::uv::Context>();
+          auto context = tensorpipe::transport::uv::create();
           context->setId("server_harness");
 
           auto listener = context->listen(addr);
@@ -231,7 +231,7 @@ class ClientServerChannelTestCase : public ChannelTestCase<TBuffer> {
           context->join();
         },
         [&] {
-          auto context = std::make_shared<tensorpipe::transport::uv::Context>();
+          auto context = tensorpipe::transport::uv::create();
           context->setId("client_harness");
 
           auto laddr = peers_->recv(PeerGroup::kClient);

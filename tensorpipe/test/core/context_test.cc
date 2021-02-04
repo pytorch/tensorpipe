@@ -138,16 +138,13 @@ TEST(Context, ClientPingSerial) {
 
   auto context = std::make_shared<Context>();
 
-  context->registerTransport(
-      0, "uv", std::make_shared<transport::uv::Context>());
+  context->registerTransport(0, "uv", transport::uv::create());
 #if TENSORPIPE_HAS_SHM_TRANSPORT
-  context->registerTransport(
-      1, "shm", std::make_shared<transport::shm::Context>());
+  context->registerTransport(1, "shm", transport::shm::create());
 #endif // TENSORPIPE_HAS_SHM_TRANSPORT
-  context->registerChannel(
-      0, "basic", std::make_shared<channel::basic::Context>());
+  context->registerChannel(0, "basic", channel::basic::create());
 #if TENSORPIPE_HAS_CMA_CHANNEL
-  context->registerChannel(1, "cma", std::make_shared<channel::cma::Context>());
+  context->registerChannel(1, "cma", channel::cma::create());
 #endif // TENSORPIPE_HAS_CMA_CHANNEL
 
   auto listener = context->listen(genUrls());
@@ -223,16 +220,13 @@ TEST(Context, ClientPingInline) {
 
   auto context = std::make_shared<Context>();
 
-  context->registerTransport(
-      0, "uv", std::make_shared<transport::uv::Context>());
+  context->registerTransport(0, "uv", transport::uv::create());
 #if TENSORPIPE_HAS_SHM_TRANSPORT
-  context->registerTransport(
-      1, "shm", std::make_shared<transport::shm::Context>());
+  context->registerTransport(1, "shm", transport::shm::create());
 #endif // TENSORPIPE_HAS_SHM_TRANSPORT
-  context->registerChannel(
-      0, "basic", std::make_shared<channel::basic::Context>());
+  context->registerChannel(0, "basic", channel::basic::create());
 #if TENSORPIPE_HAS_CMA_CHANNEL
-  context->registerChannel(1, "cma", std::make_shared<channel::cma::Context>());
+  context->registerChannel(1, "cma", channel::cma::create());
 #endif // TENSORPIPE_HAS_CMA_CHANNEL
 
   auto listener = context->listen(genUrls());
@@ -304,16 +298,13 @@ TEST(Context, ServerPingPongTwice) {
 
   auto context = std::make_shared<Context>();
 
-  context->registerTransport(
-      0, "uv", std::make_shared<transport::uv::Context>());
+  context->registerTransport(0, "uv", transport::uv::create());
 #if TENSORPIPE_HAS_SHM_TRANSPORT
-  context->registerTransport(
-      1, "shm", std::make_shared<transport::shm::Context>());
+  context->registerTransport(1, "shm", transport::shm::create());
 #endif // TENSORPIPE_HAS_SHM_TRANSPORT
-  context->registerChannel(
-      0, "basic", std::make_shared<channel::basic::Context>());
+  context->registerChannel(0, "basic", channel::basic::create());
 #if TENSORPIPE_HAS_CMA_CHANNEL
-  context->registerChannel(1, "cma", std::make_shared<channel::cma::Context>());
+  context->registerChannel(1, "cma", channel::cma::create());
 #endif // TENSORPIPE_HAS_CMA_CHANNEL
 
   auto listener = context->listen(genUrls());
@@ -476,16 +467,13 @@ TEST(Context, MixedTensorMessage) {
 
   auto context = std::make_shared<Context>();
 
-  context->registerTransport(
-      0, "uv", std::make_shared<transport::uv::Context>());
+  context->registerTransport(0, "uv", transport::uv::create());
 #if TENSORPIPE_HAS_SHM_TRANSPORT
-  context->registerTransport(
-      1, "shm", std::make_shared<transport::shm::Context>());
+  context->registerTransport(1, "shm", transport::shm::create());
 #endif // TENSORPIPE_HAS_SHM_TRANSPORT
-  context->registerChannel(
-      0, "basic", std::make_shared<channel::basic::Context>());
+  context->registerChannel(0, "basic", channel::basic::create());
 #if TENSORPIPE_HAS_CMA_CHANNEL
-  context->registerChannel(1, "cma", std::make_shared<channel::cma::Context>());
+  context->registerChannel(1, "cma", channel::cma::create());
 #endif // TENSORPIPE_HAS_CMA_CHANNEL
 
   auto listener = context->listen(genUrls());

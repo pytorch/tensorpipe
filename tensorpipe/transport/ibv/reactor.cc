@@ -15,34 +15,11 @@ namespace tensorpipe {
 namespace transport {
 namespace ibv {
 
-Reactor::Reactor() {
-  Error error;
-  std::tie(error, ibvLib_) = IbvLib::create();
-  // FIXME Instead of throwing away the error and setting a bool, we should have
-  // a way to set the reactor in an error state, and use that for viability.
-  if (error) {
-    TP_VLOG(9) << "Transport context " << id_
-               << " couldn't open libibverbs: " << error.what();
-    return;
-  }
-  foundIbvLib_ = true;
-  IbvDeviceList deviceList;
-  std::tie(error, deviceList) = IbvDeviceList::create(getIbvLib());
-  if (error && error.isOfType<SystemError>() &&
-      error.castToType<SystemError>()->errorCode() == ENOSYS) {
-    TP_VLOG(9)
-        << "Transport context " << id_
-        << " couldn't get list of InfiniBand devices because the kernel module isn't "
-        << "loaded";
-    return;
-  }
-  TP_THROW_ASSERT_IF(error)
-      << "Couldn't get list of InfiniBand devices: " << error.what();
-  if (deviceList.size() == 0) {
-    TP_VLOG(9) << "Transport context " << id_
-               << " is not viable because it couldn't find any InfiniBand NICs";
-    return;
-  }
+Reactor::Reactor() {}
+
+Reactor::Reactor(IbvLib ibvLib, IbvDeviceList deviceList)
+    : ibvLib_(std::move(ibvLib)) {
+  TP_DCHECK_GE(deviceList.size(), 1);
   ctx_ = createIbvContext(getIbvLib(), deviceList[0]);
   pd_ = createIbvProtectionDomain(getIbvLib(), ctx_);
   cq_ = createIbvCompletionQueue(
@@ -64,10 +41,6 @@ Reactor::Reactor() {
 
   startThread("TP_IBV_reactor");
   threadRunning_ = true;
-}
-
-bool Reactor::isViable() const {
-  return foundIbvLib_ && const_cast<IbvContext&>(ctx_).get() != nullptr;
 }
 
 void Reactor::postRecvRequestsOnSRQ(int num) {

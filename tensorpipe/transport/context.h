@@ -30,9 +30,7 @@ class Context {
   // of permissions). They can report it through this method in order
   // for the core context to avoid registering them in the first place.
   //
-  virtual bool isViable() const {
-    return true;
-  }
+  virtual bool isViable() const = 0;
 
   // Return string to describe the domain for this context.
   //

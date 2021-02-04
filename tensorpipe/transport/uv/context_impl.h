@@ -28,11 +28,9 @@ class ListenerImpl;
 class ContextImpl final
     : public ContextImplBoilerplate<ContextImpl, ListenerImpl, ConnectionImpl> {
  public:
+  static std::shared_ptr<ContextImpl> create();
+
   ContextImpl();
-
-  static std::tuple<Error, std::string> lookupAddrForIface(std::string iface);
-
-  static std::tuple<Error, std::string> lookupAddrForHostname();
 
   // Implement the DeferredExecutor interface.
   bool inLoop() const override;

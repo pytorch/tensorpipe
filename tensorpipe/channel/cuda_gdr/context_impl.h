@@ -39,11 +39,10 @@ class ChannelImpl;
 class IbvNic {
  public:
   IbvNic(
-      std::string id,
       std::string name,
       IbvLib::device& device,
-      IbvLib& ibvLib,
-      CudaLib& cudaLib);
+      const IbvLib& ibvLib,
+      const CudaLib& cudaLib);
 
   IbvProtectionDomain& getIbvPd() {
     return pd_;
@@ -79,11 +78,11 @@ class IbvNic {
   // The ID of the context, for use in verbose logging.
   std::string id_{"N/A"};
   // The name of the InfiniBand device.
-  std::string name_;
+  const std::string name_;
 
-  CudaLib& cudaLib_;
+  const CudaLib& cudaLib_;
 
-  IbvLib& ibvLib_;
+  const IbvLib& ibvLib_;
   IbvContext ctx_;
   IbvProtectionDomain pd_;
   IbvCompletionQueue cq_;
@@ -124,20 +123,26 @@ class ContextImpl final
     : public BusyPollingLoop,
       public ContextImplBoilerplate<CudaBuffer, ContextImpl, ChannelImpl> {
  public:
-  explicit ContextImpl(
+  static std::shared_ptr<ContextImpl> create(
       optional<std::vector<std::string>> gpuIdxToNicName = nullopt);
+
+  ContextImpl();
+
+  ContextImpl(
+      CudaLib cudaLib,
+      IbvLib ibvLib,
+      std::vector<IbvNic> ibvNics,
+      std::vector<size_t> gpuToNic);
 
   std::shared_ptr<CudaChannel> createChannel(
       std::vector<std::shared_ptr<transport::Connection>> connections,
       Endpoint endpoint);
 
-  bool isViable() const;
-
   const CudaLib& getCudaLib();
 
   const std::vector<size_t>& getGpuToNicMapping();
 
-  IbvLib& getIbvLib();
+  const IbvLib& getIbvLib();
 
   IbvNic& getIbvNic(size_t nicIdx);
 
@@ -156,12 +161,11 @@ class ContextImpl final
   void setIdImpl() override;
 
  private:
-  bool viable_{true};
-  CudaLib cudaLib_;
-  IbvLib ibvLib_;
-  std::vector<IbvNic> ibvNics_;
+  const CudaLib cudaLib_;
+  const IbvLib ibvLib_;
 
-  std::vector<size_t> gpuToNic_;
+  std::vector<IbvNic> ibvNics_;
+  const std::vector<size_t> gpuToNic_;
 
   std::list<std::tuple<const CudaEvent&, std::function<void(const Error&)>>>
       pendingCudaEvents_;

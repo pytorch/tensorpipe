@@ -17,8 +17,14 @@ namespace tensorpipe {
 namespace channel {
 namespace basic {
 
+std::shared_ptr<ContextImpl> ContextImpl::create() {
+  return std::make_shared<ContextImpl>();
+}
+
 ContextImpl::ContextImpl()
-    : ContextImplBoilerplate<CpuBuffer, ContextImpl, ChannelImpl>("any") {}
+    : ContextImplBoilerplate<CpuBuffer, ContextImpl, ChannelImpl>(
+          /*isViable=*/true,
+          /*domainDescriptor=*/"any") {}
 
 std::shared_ptr<CpuChannel> ContextImpl::createChannel(
     std::vector<std::shared_ptr<transport::Connection>> connections,

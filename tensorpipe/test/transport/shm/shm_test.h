@@ -11,13 +11,13 @@
 #include <sstream>
 
 #include <tensorpipe/test/transport/transport_test.h>
-#include <tensorpipe/transport/shm/context.h>
+#include <tensorpipe/transport/shm/factory.h>
 
 class SHMTransportTestHelper : public TransportTestHelper {
  protected:
   std::shared_ptr<tensorpipe::transport::Context> getContextInternal()
       override {
-    return std::make_shared<tensorpipe::transport::shm::Context>();
+    return tensorpipe::transport::shm::create();
   }
 
  public:

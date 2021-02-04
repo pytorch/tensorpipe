@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <tensorpipe/channel/xth/context.h>
+#include <tensorpipe/channel/xth/factory.h>
 #include <tensorpipe/test/channel/channel_test.h>
 
 namespace {
@@ -15,7 +15,7 @@ class XthChannelTestHelper : public ChannelTestHelper<tensorpipe::CpuBuffer> {
  protected:
   std::shared_ptr<tensorpipe::channel::CpuContext> makeContextInternal(
       std::string id) override {
-    auto context = std::make_shared<tensorpipe::channel::xth::Context>();
+    auto context = tensorpipe::channel::xth::create();
     context->setId(std::move(id));
     return context;
   }

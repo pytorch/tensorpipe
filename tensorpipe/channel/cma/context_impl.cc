@@ -63,7 +63,9 @@ std::string joinStrs(const std::vector<std::string>& strs) {
   return oss.str();
 }
 
-std::tuple<bool, std::string> determineViabilityAndGenerateDomainDescriptor() {
+} // namespace
+
+std::shared_ptr<ContextImpl> ContextImpl::create() {
   int rv;
   std::ostringstream oss;
   oss << kDomainDescriptorPrefix;
@@ -123,7 +125,7 @@ std::tuple<bool, std::string> determineViabilityAndGenerateDomainDescriptor() {
                << " (saved-set). Group IDs are " << realGroupId << " (real), "
                << effectiveGroupId << " (effective) and " << savedSetGroupId
                << " (saved-set).";
-    return std::make_tuple(false, std::string());
+    return std::make_shared<ContextImpl>();
   }
   oss << '_' << realUserId << '_' << realGroupId;
 
@@ -134,7 +136,7 @@ std::tuple<bool, std::string> determineViabilityAndGenerateDomainDescriptor() {
   // SUID_DUMP_USER has a value of 1.
   if (rv != 1) {
     TP_VLOG(5) << "Process isn't dumpable";
-    return std::make_tuple(false, std::string());
+    return std::make_shared<ContextImpl>();
   }
 
   // Next the Linux Security Modules (LSMs) kick in. Since users could register
@@ -193,10 +195,10 @@ std::tuple<bool, std::string> determineViabilityAndGenerateDomainDescriptor() {
           break;
         case YamaPtraceScope::kAdminOnlyAttach:
           TP_VLOG(5) << "YAMA ptrace scope set to admin-only attach";
-          return std::make_tuple(false, std::string());
+          return std::make_shared<ContextImpl>();
         case YamaPtraceScope::kNoAttach:
           TP_VLOG(5) << "YAMA ptrace scope set to no attach";
-          return std::make_tuple(false, std::string());
+          return std::make_shared<ContextImpl>();
         default:
           TP_THROW_ASSERT() << "Unknown YAMA ptrace scope";
       }
@@ -207,28 +209,23 @@ std::tuple<bool, std::string> determineViabilityAndGenerateDomainDescriptor() {
   // the process_vm_readv syscall is outright blocked by seccomp-bpf.
   if (!isProcessVmReadvSyscallAllowed()) {
     TP_VLOG(5) << "The process_vm_readv syscall appears to be blocked";
-    return std::make_tuple(false, std::string());
+    return std::make_shared<ContextImpl>();
   }
 
   std::string domainDescriptor = oss.str();
   TP_VLOG(5) << "The domain descriptor for CMA is " << domainDescriptor;
-  return std::make_tuple(true, std::move(domainDescriptor));
+  return std::make_shared<ContextImpl>(std::move(domainDescriptor));
 }
 
-} // namespace
-
-std::shared_ptr<ContextImpl> ContextImpl::create() {
-  bool isVIable;
-  std::string domainDescriptor;
-  std::tie(isVIable, domainDescriptor) =
-      determineViabilityAndGenerateDomainDescriptor();
-  return std::make_shared<ContextImpl>(isVIable, std::move(domainDescriptor));
-}
-
-ContextImpl::ContextImpl(bool isVIable, std::string domainDescriptor)
+ContextImpl::ContextImpl()
     : ContextImplBoilerplate<CpuBuffer, ContextImpl, ChannelImpl>(
-          std::move(domainDescriptor)),
-      isViable_(isVIable) {
+          /*isViable=*/false,
+          /*domainDescriptor=*/"") {}
+
+ContextImpl::ContextImpl(std::string domainDescriptor)
+    : ContextImplBoilerplate<CpuBuffer, ContextImpl, ChannelImpl>(
+          /*isViable=*/true,
+          std::move(domainDescriptor)) {
   thread_ = std::thread(&ContextImpl::handleCopyRequests, this);
 }
 
@@ -237,10 +234,6 @@ std::shared_ptr<CpuChannel> ContextImpl::createChannel(
     Endpoint /* unused */) {
   TP_DCHECK_EQ(numConnectionsNeeded(), connections.size());
   return createChannelInternal(std::move(connections[0]));
-}
-
-bool ContextImpl::isViable() const {
-  return isViable_;
 }
 
 void ContextImpl::closeImpl() {

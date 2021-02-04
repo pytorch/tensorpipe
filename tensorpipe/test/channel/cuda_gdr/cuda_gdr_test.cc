@@ -8,7 +8,7 @@
 
 #include <numeric>
 
-#include <tensorpipe/channel/cuda_gdr/context.h>
+#include <tensorpipe/channel/cuda_gdr/factory.h>
 #include <tensorpipe/test/channel/channel_test.h>
 
 namespace {
@@ -18,7 +18,7 @@ class CudaGdrChannelTestHelper
  protected:
   std::shared_ptr<tensorpipe::channel::CudaContext> makeContextInternal(
       std::string id) override {
-    auto context = std::make_shared<tensorpipe::channel::cuda_gdr::Context>();
+    auto context = tensorpipe::channel::cuda_gdr::create();
     context->setId(std::move(id));
     return context;
   }
