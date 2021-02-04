@@ -203,39 +203,50 @@ class ChannelTestCase {
 
 template <typename TBuffer>
 class ClientServerChannelTestCase : public ChannelTestCase<TBuffer> {
-  std::vector<std::future<std::shared_ptr<tensorpipe::transport::Connection>>>
-  accept(
-      std::shared_ptr<tensorpipe::transport::Listener> listener,
-      size_t numConnections) {
-    auto promises = std::make_shared<std::vector<
-        std::promise<std::shared_ptr<tensorpipe::transport::Connection>>>>(
+  std::future<std::vector<std::shared_ptr<tensorpipe::transport::Connection>>>
+  accept(tensorpipe::transport::Listener& listener, size_t numConnections) {
+    auto promise = std::make_shared<std::promise<
+        std::vector<std::shared_ptr<tensorpipe::transport::Connection>>>>();
+    auto connections = std::make_shared<
+        std::vector<std::shared_ptr<tensorpipe::transport::Connection>>>(
         numConnections);
+    auto connectionsMutex = std::make_shared<std::mutex>();
     for (size_t i = 0; i < numConnections; ++i) {
-      listener->accept(
-          [&, promises](
-              const tensorpipe::Error& error,
-              std::shared_ptr<tensorpipe::transport::Connection> connection) {
-            ASSERT_FALSE(error) << error.what();
-            connection->read([promises, connection](
-                                 const tensorpipe::Error& error,
-                                 const void* connIdBuf,
-                                 size_t length) {
-              ASSERT_FALSE(error) << error.what();
-              ASSERT_EQ(sizeof(uint64_t), length);
-              promises->at(*static_cast<const uint64_t*>(connIdBuf))
-                  .set_value(std::move(connection));
-            });
-          });
+      listener.accept([promise, connections, connectionsMutex](
+                          const tensorpipe::Error& error,
+                          std::shared_ptr<tensorpipe::transport::Connection>
+                              connection) mutable {
+        if (error) {
+          promise->set_exception(
+              std::make_exception_ptr(std::runtime_error(error.what())));
+          return;
+        }
+
+        connection->read([promise, connections, connectionsMutex, connection](
+                             const tensorpipe::Error& error,
+                             const void* connIdBuf,
+                             size_t length) mutable {
+          if (error) {
+            promise->set_exception(
+                std::make_exception_ptr(std::runtime_error(error.what())));
+            return;
+          }
+          ASSERT_EQ(sizeof(uint64_t), length);
+
+          std::unique_lock<std::mutex> lock(*connectionsMutex);
+          connections->at(*static_cast<const uint64_t*>(connIdBuf)) =
+              std::move(connection);
+          for (const auto& c : *connections) {
+            if (c == nullptr) {
+              return;
+            }
+          }
+          promise->set_value(std::move(*connections));
+        });
+      });
     }
 
-    std::vector<std::future<std::shared_ptr<tensorpipe::transport::Connection>>>
-        futures;
-
-    for (auto& p : *promises) {
-      futures.push_back(p.get_future());
-    }
-
-    return futures;
+    return promise->get_future();
   }
 
   std::vector<std::shared_ptr<tensorpipe::transport::Connection>> connect(
@@ -246,8 +257,7 @@ class ClientServerChannelTestCase : public ChannelTestCase<TBuffer> {
         numConnections);
     for (size_t connId = 0; connId < numConnections; ++connId) {
       connections[connId] = transportCtx->connect(addr);
-      auto connIdBuf = std::make_shared<uint64_t>();
-      *connIdBuf = connId;
+      auto connIdBuf = std::make_shared<uint64_t>(connId);
       connections[connId]->write(
           connIdBuf.get(),
           sizeof(uint64_t),
@@ -274,15 +284,11 @@ class ClientServerChannelTestCase : public ChannelTestCase<TBuffer> {
 
           auto listener = transportCtx->listen(addr);
 
-          auto connectionFutures =
-              accept(listener, ctx->numConnectionsNeeded());
+          auto connectionsFuture =
+              accept(*listener, ctx->numConnectionsNeeded());
           peers_->send(PeerGroup::kClient, listener->addr());
 
-          std::vector<std::shared_ptr<tensorpipe::transport::Connection>>
-              connections;
-          for (auto& p : connectionFutures) {
-            connections.push_back(p.get());
-          }
+          auto connections = connectionsFuture.get();
 
           auto channel = ctx->createChannel(
               std::move(connections), tensorpipe::channel::Endpoint::kListen);
