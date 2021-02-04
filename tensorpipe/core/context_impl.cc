@@ -23,7 +23,9 @@
 #include <tensorpipe/common/queue.h>
 #include <tensorpipe/core/buffer_helpers.h>
 #include <tensorpipe/core/listener.h>
+#include <tensorpipe/core/listener_impl.h>
 #include <tensorpipe/core/pipe.h>
+#include <tensorpipe/core/pipe_impl.h>
 #include <tensorpipe/transport/connection.h>
 
 namespace tensorpipe {
@@ -205,6 +207,34 @@ const std::string& ContextImpl::getName() {
   return name_;
 }
 
+void ContextImpl::enroll(ListenerImpl& listener) {
+  TP_DCHECK(inLoop());
+  bool wasInserted;
+  std::tie(std::ignore, wasInserted) =
+      listeners_.emplace(&listener, listener.shared_from_this());
+  TP_DCHECK(wasInserted);
+}
+
+void ContextImpl::enroll(PipeImpl& pipe) {
+  TP_DCHECK(inLoop());
+  bool wasInserted;
+  std::tie(std::ignore, wasInserted) =
+      pipes_.emplace(&pipe, pipe.shared_from_this());
+  TP_DCHECK(wasInserted);
+}
+
+void ContextImpl::unenroll(ListenerImpl& listener) {
+  TP_DCHECK(inLoop());
+  auto numRemoved = listeners_.erase(&listener);
+  TP_DCHECK_EQ(numRemoved, 1);
+}
+
+void ContextImpl::unenroll(PipeImpl& pipe) {
+  TP_DCHECK(inLoop());
+  auto numRemoved = pipes_.erase(&pipe);
+  TP_DCHECK_EQ(numRemoved, 1);
+}
+
 void ContextImpl::deferToLoop(TTask fn) {
   loop_.deferToLoop(std::move(fn));
 }
@@ -248,6 +278,9 @@ void ContextImpl::join() {
     });
 
     TP_VLOG(1) << "Context " << id_ << " done joining";
+
+    TP_DCHECK(listeners_.empty());
+    TP_DCHECK(pipes_.empty());
   }
 }
 

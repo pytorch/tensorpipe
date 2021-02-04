@@ -58,7 +58,10 @@ void ListenerImpl::init() {
 
 void ListenerImpl::initFromLoop() {
   TP_DCHECK(context_->inLoop());
+
+  context_->enroll(*this);
   closingReceiver_.activate(*this);
+
   for (const auto& listener : listeners_) {
     armListener(listener.first);
   }
@@ -210,6 +213,8 @@ void ListenerImpl::handleError() {
     listener.second->close();
   }
   connectionsWaitingForHello_.clear();
+
+  context_->unenroll(*this);
 }
 
 //
