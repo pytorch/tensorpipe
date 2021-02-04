@@ -42,30 +42,15 @@ std::string generateDomainDescriptor() {
 
 } // namespace
 
-ContextImpl::ContextImpl()
-    : ContextImplBoilerplate<CudaBuffer, ContextImpl, ChannelImpl>(
-          generateDomainDescriptor()) {
+std::shared_ptr<ContextImpl> ContextImpl::create() {
   Error error;
-  std::tie(error, cudaLib_) = CudaLib::create();
+  CudaLib cudaLib;
+  std::tie(error, cudaLib) = CudaLib::create();
   if (error) {
-    TP_VLOG(5) << "Channel context " << id_
-               << " is not viable because libcuda could not be loaded: "
-               << error.what();
-    return;
-  }
-  foundCudaLib_ = true;
-}
-
-std::shared_ptr<CudaChannel> ContextImpl::createChannel(
-    std::vector<std::shared_ptr<transport::Connection>> connections,
-    Endpoint /* unused */) {
-  TP_DCHECK_EQ(numConnectionsNeeded(), connections.size());
-  return createChannelInternal(std::move(connections[0]));
-}
-
-bool ContextImpl::isViable() const {
-  if (!foundCudaLib_) {
-    return false;
+    TP_VLOG(5)
+        << "CUDA XTH channel is not viable because libcuda could not be loaded: "
+        << error.what();
+    return std::make_shared<ContextImpl>();
   }
 
   int deviceCount;
@@ -78,14 +63,31 @@ bool ContextImpl::isViable() const {
     // could lift this requirement by adding a fallback to
     // `cudaMemcpyPeerAsync()`.
     if (!props.unifiedAddressing) {
-      TP_VLOG(4) << "Channel context " << id_
-                 << " is not viable because CUDA device " << i
+      TP_VLOG(4) << "CUDA XTH channel is not viable because CUDA device " << i
                  << " does not have unified addressing";
-      return false;
+      return std::make_shared<ContextImpl>();
     }
   }
 
-  return true;
+  return std::make_shared<ContextImpl>(std::move(cudaLib));
+}
+
+ContextImpl::ContextImpl()
+    : ContextImplBoilerplate<CudaBuffer, ContextImpl, ChannelImpl>(
+          /*isViable=*/false,
+          /*domainDescriptor=*/"") {}
+
+ContextImpl::ContextImpl(CudaLib cudaLib)
+    : ContextImplBoilerplate<CudaBuffer, ContextImpl, ChannelImpl>(
+          /*isViable=*/true,
+          generateDomainDescriptor()),
+      cudaLib_(std::move(cudaLib)) {}
+
+std::shared_ptr<CudaChannel> ContextImpl::createChannel(
+    std::vector<std::shared_ptr<transport::Connection>> connections,
+    Endpoint /* unused */) {
+  TP_DCHECK_EQ(numConnectionsNeeded(), connections.size());
+  return createChannelInternal(std::move(connections[0]));
 }
 
 const CudaLib& ContextImpl::getCudaLib() {

@@ -37,15 +37,13 @@ namespace tensorpipe {
 //   to the shared_ptr to make sure the object doesn't get destroyed while the
 //   callable is running.
 template <typename TSubject, typename TBoundFn>
-auto runIfAlive(
-    std::enable_shared_from_this<TSubject>& subject,
-    TBoundFn&& fn) {
+auto runIfAlive(std::enable_shared_from_this<TSubject>& subject, TBoundFn fn) {
   // In C++17 use weak_from_this().
   return [weak{std::weak_ptr<TSubject>(subject.shared_from_this())},
           fn{std::move(fn)}](auto&&... args) mutable {
     std::shared_ptr<TSubject> shared = weak.lock();
     if (shared) {
-      fn(*shared, std::forward<decltype(args)>(args)...);
+      fn(std::move(shared), std::forward<decltype(args)>(args)...);
     }
   };
 }
@@ -128,13 +126,15 @@ class LazyCallbackWrapper {
       : subject_(subject), loop_(loop) {}
 
   template <typename TBoundFn>
-  auto operator()(TBoundFn&& fn) {
+  auto operator()(TBoundFn fn) {
     return runIfAlive(
         subject_,
         [this, fn{std::move(fn)}](
-            TSubject& subject, const Error& error, auto&&... args) mutable {
+            std::shared_ptr<TSubject> subject,
+            const Error& error,
+            auto&&... args) mutable {
           this->entryPoint(
-              subject,
+              std::move(subject),
               std::move(fn),
               error,
               std::forward<decltype(args)>(args)...);
@@ -147,15 +147,19 @@ class LazyCallbackWrapper {
 
   template <typename TBoundFn, typename... Args>
   void entryPoint(
-      TSubject& subject,
-      TBoundFn&& fn,
+      std::shared_ptr<TSubject> subject,
+      TBoundFn fn,
       const Error& error,
       Args&&... args) {
+    // Do *NOT* move subject into the lambda's closure, as the shared_ptr we're
+    // holding may be the last one keeping subject alive, in which case it would
+    // die once the lambda runs, and it might kill the loop in turn too, _while_
+    // the loop's deferToLoop method is running. That's bad. So copy it instead.
     // FIXME We're copying the args here...
     loop_.deferToLoop(
-        [this, &subject, fn{std::move(fn)}, error, args...]() mutable {
+        [this, subject, fn{std::move(fn)}, error{error}, args...]() mutable {
           entryPointFromLoop(
-              subject, std::move(fn), error, std::forward<Args>(args)...);
+              *subject, std::move(fn), error, std::forward<Args>(args)...);
         });
   }
 
@@ -193,11 +197,11 @@ class EagerCallbackWrapper {
       : subject_(subject), loop_(loop) {}
 
   template <typename TBoundFn>
-  auto operator()(TBoundFn&& fn) {
+  auto operator()(TBoundFn fn) {
     return [this, subject{subject_.shared_from_this()}, fn{std::move(fn)}](
                const Error& error, auto&&... args) mutable {
       this->entryPoint(
-          *subject,
+          std::move(subject),
           std::move(fn),
           error,
           std::forward<decltype(args)>(args)...);
@@ -210,15 +214,19 @@ class EagerCallbackWrapper {
 
   template <typename TBoundFn, typename... Args>
   void entryPoint(
-      TSubject& subject,
-      TBoundFn&& fn,
+      std::shared_ptr<TSubject> subject,
+      TBoundFn fn,
       const Error& error,
       Args&&... args) {
+    // Do *NOT* move subject into the lambda's closure, as the shared_ptr we're
+    // holding may be the last one keeping subject alive, in which case it would
+    // die once the lambda runs, and it might kill the loop in turn too, _while_
+    // the loop's deferToLoop method is running. That's bad. So copy it instead.
     // FIXME We're copying the args here...
     loop_.deferToLoop(
-        [this, &subject, fn{std::move(fn)}, error, args...]() mutable {
+        [this, subject, fn{std::move(fn)}, error{error}, args...]() mutable {
           entryPointFromLoop(
-              subject, std::move(fn), error, std::forward<Args>(args)...);
+              *subject, std::move(fn), error, std::forward<Args>(args)...);
         });
   }
 
@@ -294,7 +302,9 @@ class ClosingReceiver {
     token_ = reinterpret_cast<uint64_t>(&subject);
     TP_DCHECK_GT(token_, 0);
     emitter_->subscribe(
-        token_, runIfAlive(subject, [](T& subject) { subject.close(); }));
+        token_, runIfAlive(subject, [](std::shared_ptr<T> subject) {
+          subject->close();
+        }));
   }
 
   ~ClosingReceiver() {

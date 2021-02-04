@@ -219,14 +219,6 @@ tensorpipe::Message prepareToRead(std::shared_ptr<IncomingMessage> pyMessage) {
 template <typename T>
 using shared_ptr_class_ = py::class_<T, std::shared_ptr<T>>;
 
-template <typename T>
-using transport_class_ =
-    py::class_<T, tensorpipe::transport::Context, std::shared_ptr<T>>;
-
-template <typename T>
-using channel_class_ =
-    py::class_<T, tensorpipe::channel::CpuContext, std::shared_ptr<T>>;
-
 } // namespace
 
 PYBIND11_MODULE(pytensorpipe, module) {
@@ -422,14 +414,10 @@ PYBIND11_MODULE(pytensorpipe, module) {
   shared_ptr_class_<tensorpipe::transport::Context> abstractTransport(
       module, "AbstractTransport");
 
-  transport_class_<tensorpipe::transport::uv::Context> uvTransport(
-      module, "UvTransport");
-  uvTransport.def(py::init<>());
+  module.def("create_uv_transport", &tensorpipe::transport::uv::create);
 
 #if TENSORPIPE_HAS_SHM_TRANSPORT
-  transport_class_<tensorpipe::transport::shm::Context> shmTransport(
-      module, "ShmTransport");
-  shmTransport.def(py::init<>());
+  module.def("create_shm_transport", &tensorpipe::transport::shm::create);
 #endif // TENSORPIPE_HAS_SHM_TRANSPORT
 
   context.def(
@@ -442,14 +430,10 @@ PYBIND11_MODULE(pytensorpipe, module) {
   shared_ptr_class_<tensorpipe::channel::CpuContext> abstractChannel(
       module, "AbstractChannel");
 
-  channel_class_<tensorpipe::channel::basic::Context> basicChannel(
-      module, "BasicChannel");
-  basicChannel.def(py::init<>());
+  module.def("create_basic_channel", &tensorpipe::channel::basic::create);
 
 #if TENSORPIPE_HAS_CMA_CHANNEL
-  channel_class_<tensorpipe::channel::cma::Context> cmaChannel(
-      module, "CmaChannel");
-  cmaChannel.def(py::init<>());
+  module.def("create_cma_channel", &tensorpipe::channel::cma::create);
 #endif // TENSORPIPE_HAS_CMA_CHANNEL
 
   context.def(

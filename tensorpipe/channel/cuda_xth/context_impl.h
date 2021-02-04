@@ -23,13 +23,15 @@ class ChannelImpl;
 class ContextImpl final
     : public ContextImplBoilerplate<CudaBuffer, ContextImpl, ChannelImpl> {
  public:
+  static std::shared_ptr<ContextImpl> create();
+
   ContextImpl();
+
+  explicit ContextImpl(CudaLib cudaLib);
 
   std::shared_ptr<CudaChannel> createChannel(
       std::vector<std::shared_ptr<transport::Connection>> connections,
       Endpoint endpoint);
-
-  bool isViable() const;
 
   const CudaLib& getCudaLib();
 
@@ -45,8 +47,7 @@ class ContextImpl final
  private:
   OnDemandDeferredExecutor loop_;
 
-  bool foundCudaLib_{false};
-  CudaLib cudaLib_;
+  const CudaLib cudaLib_;
 };
 
 } // namespace cuda_xth

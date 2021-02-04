@@ -27,13 +27,11 @@ class ListenerImpl;
 class ContextImpl final
     : public ContextImplBoilerplate<ContextImpl, ListenerImpl, ConnectionImpl> {
  public:
+  static std::shared_ptr<ContextImpl> create();
+
   ContextImpl();
 
-  bool isViable() const;
-
-  std::tuple<Error, std::string> lookupAddrForIface(std::string iface);
-
-  std::tuple<Error, std::string> lookupAddrForHostname();
+  ContextImpl(IbvLib ibvLib, IbvDeviceList deviceList);
 
   // Implement the DeferredExecutor interface.
   bool inLoop() const override;

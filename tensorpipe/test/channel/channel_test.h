@@ -25,7 +25,7 @@
 #include <tensorpipe/test/peer_group.h>
 #include <tensorpipe/transport/connection.h>
 #include <tensorpipe/transport/listener.h>
-#include <tensorpipe/transport/uv/context.h>
+#include <tensorpipe/transport/uv/factory.h>
 
 #if TENSORPIPE_SUPPORTS_CUDA
 #include <tensorpipe/common/cuda.h>
@@ -277,8 +277,7 @@ class ClientServerChannelTestCase : public ChannelTestCase<TBuffer> {
     peers_ = helper_->makePeerGroup();
     peers_->spawn(
         [&] {
-          auto transportCtx =
-              std::make_shared<tensorpipe::transport::uv::Context>();
+          auto transportCtx = tensorpipe::transport::uv::create();
           transportCtx->setId("server_harness");
           auto ctx = helper_->makeContext("server");
 
@@ -299,8 +298,7 @@ class ClientServerChannelTestCase : public ChannelTestCase<TBuffer> {
           transportCtx->join();
         },
         [&] {
-          auto transportCtx =
-              std::make_shared<tensorpipe::transport::uv::Context>();
+          auto transportCtx = tensorpipe::transport::uv::create();
           transportCtx->setId("client_harness");
           auto ctx = helper_->makeContext("client");
 
@@ -331,7 +329,6 @@ class ClientServerChannelTestCase : public ChannelTestCase<TBuffer> {
 
 class CpuChannelTestSuite : public ::testing::TestWithParam<
                                 ChannelTestHelper<tensorpipe::CpuBuffer>*> {};
-
 #if TENSORPIPE_SUPPORTS_CUDA
 class CudaChannelTestSuite : public ::testing::TestWithParam<
                                  ChannelTestHelper<tensorpipe::CudaBuffer>*> {};

@@ -18,20 +18,39 @@ namespace tensorpipe {
 namespace channel {
 namespace cuda_basic {
 
-ContextImpl::ContextImpl(std::shared_ptr<CpuContext> cpuContext)
-    : ContextImplBoilerplate<CudaBuffer, ContextImpl, ChannelImpl>(
-          cpuContext->domainDescriptor()),
-      cpuContext_(std::move(cpuContext)) {
+std::shared_ptr<ContextImpl> ContextImpl::create(
+    std::shared_ptr<CpuContext> cpuContext) {
   Error error;
-  std::tie(error, cudaLib_) = CudaLib::create();
+  CudaLib cudaLib;
+  std::tie(error, cudaLib) = CudaLib::create();
   if (error) {
-    TP_VLOG(5) << "Channel context " << id_
-               << " is not viable because libcuda could not be loaded: "
-               << error.what();
-    return;
+    TP_VLOG(5)
+        << "CUDA basic channel is not viable because libcuda could not be loaded: "
+        << error.what();
+    return std::make_shared<ContextImpl>();
   }
-  foundCudaLib_ = true;
+
+  if (!cpuContext->isViable()) {
+    return std::make_shared<ContextImpl>();
+  }
+
+  return std::make_shared<ContextImpl>(
+      std::move(cudaLib), std::move(cpuContext));
 }
+
+ContextImpl::ContextImpl()
+    : ContextImplBoilerplate<CudaBuffer, ContextImpl, ChannelImpl>(
+          /*isViable=*/false,
+          /*domainDescriptor=*/"") {}
+
+ContextImpl::ContextImpl(
+    CudaLib cudaLib,
+    std::shared_ptr<CpuContext> cpuContext)
+    : ContextImplBoilerplate<CudaBuffer, ContextImpl, ChannelImpl>(
+          /*isViable=*/true,
+          cpuContext->domainDescriptor()),
+      cudaLib_(std::move(cudaLib)),
+      cpuContext_(std::move(cpuContext)) {}
 
 std::shared_ptr<CudaChannel> ContextImpl::createChannel(
     std::vector<std::shared_ptr<transport::Connection>> connections,
@@ -49,21 +68,21 @@ size_t ContextImpl::numConnectionsNeeded() const {
   return 1 + cpuContext_->numConnectionsNeeded();
 }
 
-bool ContextImpl::isViable() const {
-  return foundCudaLib_ && cpuContext_->isViable();
-}
-
 const CudaLib& ContextImpl::getCudaLib() {
   return cudaLib_;
 }
 
 void ContextImpl::closeImpl() {
-  cpuContext_->close();
+  if (cpuContext_ != nullptr) {
+    cpuContext_->close();
+  }
   cudaLoop_.close();
 }
 
 void ContextImpl::joinImpl() {
-  cpuContext_->join();
+  if (cpuContext_ != nullptr) {
+    cpuContext_->join();
+  }
   cudaLoop_.join();
 }
 

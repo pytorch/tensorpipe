@@ -29,6 +29,8 @@ class ChannelImpl;
 class ContextImpl final
     : public ContextImplBoilerplate<CpuBuffer, ContextImpl, ChannelImpl> {
  public:
+  static std::shared_ptr<ContextImpl> create();
+
   ContextImpl();
 
   std::shared_ptr<CpuChannel> createChannel(

@@ -21,10 +21,8 @@ using namespace tensorpipe;
 TEST(Listener, ClosingAbortsOperations) {
   auto context = std::make_shared<Context>();
 
-  context->registerTransport(
-      0, "uv", std::make_shared<transport::uv::Context>());
-  context->registerChannel(
-      0, "basic", std::make_shared<channel::basic::Context>());
+  context->registerTransport(0, "uv", transport::uv::create());
+  context->registerChannel(0, "basic", channel::basic::create());
 
   {
     auto listener = context->listen({"uv://127.0.0.1"});
