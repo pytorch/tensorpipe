@@ -17,7 +17,7 @@ TP_DEFINE_SHARED_REGISTRY(
 // BASIC
 
 std::shared_ptr<tensorpipe::channel::CpuContext> makeBasicChannel() {
-  return std::make_shared<tensorpipe::channel::basic::Context>();
+  return tensorpipe::channel::basic::create();
 }
 
 TP_REGISTER_CREATOR(TensorpipeChannelRegistry, basic, makeBasicChannel);
@@ -26,7 +26,7 @@ TP_REGISTER_CREATOR(TensorpipeChannelRegistry, basic, makeBasicChannel);
 
 #if TENSORPIPE_HAS_CMA_CHANNEL
 std::shared_ptr<tensorpipe::channel::CpuContext> makeCmaChannel() {
-  return std::make_shared<tensorpipe::channel::cma::Context>();
+  return tensorpipe::channel::cma::create();
 }
 
 TP_REGISTER_CREATOR(TensorpipeChannelRegistry, cma, makeCmaChannel);
@@ -43,7 +43,7 @@ TP_REGISTER_CREATOR(TensorpipeChannelRegistry, mpt, makeMptChannel);
 // XTH
 
 std::shared_ptr<tensorpipe::channel::CpuContext> makeXthChannel() {
-  return std::make_shared<tensorpipe::channel::xth::Context>();
+  return tensorpipe::channel::xth::create();
 }
 
 TP_REGISTER_CREATOR(TensorpipeChannelRegistry, xth, makeXthChannel);

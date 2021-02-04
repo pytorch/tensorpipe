@@ -24,7 +24,9 @@ namespace {
 // disambiguate descriptors when debugging.
 const std::string kDomainDescriptorPrefix{"shm:"};
 
-std::tuple<bool, std::string> determineViabilityAndGenerateDomainDescriptor() {
+} // namespace
+
+std::shared_ptr<ContextImpl> ContextImpl::create() {
   std::ostringstream oss;
   oss << kDomainDescriptorPrefix;
 
@@ -52,7 +54,7 @@ std::tuple<bool, std::string> determineViabilityAndGenerateDomainDescriptor() {
       1024 * 1024, /*permWrite=*/true, /*pageType=*/nullopt);
   if (error) {
     TP_VLOG(8) << "Couldn't allocate shared memory segment: " << error.what();
-    return std::make_tuple(false, std::string());
+    return std::make_shared<ContextImpl>();
   }
 
   // A separate problem is that /dev/shm may be sized too small for all the
@@ -61,27 +63,18 @@ std::tuple<bool, std::string> determineViabilityAndGenerateDomainDescriptor() {
 
   std::string domainDescriptor = oss.str();
   TP_VLOG(8) << "The domain descriptor for SHM is " << domainDescriptor;
-  return std::make_tuple(true, std::move(domainDescriptor));
+  return std::make_shared<ContextImpl>(std::move(domainDescriptor));
 }
 
-} // namespace
-
-std::shared_ptr<ContextImpl> ContextImpl::create() {
-  bool isViable;
-  std::string domainDescriptor;
-  std::tie(isViable, domainDescriptor) =
-      determineViabilityAndGenerateDomainDescriptor();
-  return std::make_shared<ContextImpl>(isViable, std::move(domainDescriptor));
-}
-
-ContextImpl::ContextImpl(bool isViable, std::string domainDescriptor)
+ContextImpl::ContextImpl()
     : ContextImplBoilerplate<ContextImpl, ListenerImpl, ConnectionImpl>(
-          std::move(domainDescriptor)),
-      isViable_(isViable) {}
+          /*isViable=*/false,
+          /*domainDescriptor=*/"") {}
 
-bool ContextImpl::isViable() const {
-  return isViable_;
-}
+ContextImpl::ContextImpl(std::string domainDescriptor)
+    : ContextImplBoilerplate<ContextImpl, ListenerImpl, ConnectionImpl>(
+          /*isViable=*/true,
+          std::move(domainDescriptor)) {}
 
 void ContextImpl::closeImpl() {
   loop_.close();

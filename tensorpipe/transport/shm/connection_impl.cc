@@ -85,20 +85,18 @@ void ConnectionImpl::initImplFromLoop() {
       << "Couldn't allocate ringbuffer for connection inbox: " << error.what();
 
   // Register method to be called when our peer writes to our inbox.
-  inboxReactorToken_ =
-      context_->addReaction(runIfAlive(*this, [](ConnectionImpl& impl) {
-        TP_VLOG(9) << "Connection " << impl.id_
-                   << " is reacting to the peer writing to the inbox";
-        impl.processReadOperationsFromLoop();
-      }));
+  inboxReactorToken_ = context_->addReaction([this]() {
+    TP_VLOG(9) << "Connection " << id_
+               << " is reacting to the peer writing to the inbox";
+    processReadOperationsFromLoop();
+  });
 
   // Register method to be called when our peer reads from our outbox.
-  outboxReactorToken_ =
-      context_->addReaction(runIfAlive(*this, [](ConnectionImpl& impl) {
-        TP_VLOG(9) << "Connection " << impl.id_
-                   << " is reacting to the peer reading from the outbox";
-        impl.processWriteOperationsFromLoop();
-      }));
+  outboxReactorToken_ = context_->addReaction([this]() {
+    TP_VLOG(9) << "Connection " << id_
+               << " is reacting to the peer reading from the outbox";
+    processWriteOperationsFromLoop();
+  });
 
   // We're sending file descriptors first, so wait for writability.
   state_ = SEND_FDS;

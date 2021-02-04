@@ -25,15 +25,18 @@ class ChannelImpl;
 class ContextImpl final
     : public ContextImplBoilerplate<CudaBuffer, ContextImpl, ChannelImpl> {
  public:
-  explicit ContextImpl(std::shared_ptr<CpuContext> cpuContext);
+  static std::shared_ptr<ContextImpl> create(
+      std::shared_ptr<CpuContext> cpuContext);
+
+  ContextImpl();
+
+  ContextImpl(CudaLib cudaLib, std::shared_ptr<CpuContext> cpuContext);
 
   std::shared_ptr<CudaChannel> createChannel(
       std::vector<std::shared_ptr<transport::Connection>> connections,
       Endpoint endpoint);
 
   size_t numConnectionsNeeded() const override;
-
-  bool isViable() const;
 
   const CudaLib& getCudaLib();
 
@@ -50,8 +53,7 @@ class ContextImpl final
  private:
   OnDemandDeferredExecutor loop_;
 
-  bool foundCudaLib_{false};
-  CudaLib cudaLib_;
+  const CudaLib cudaLib_;
 
   const std::shared_ptr<CpuContext> cpuContext_;
   // TODO: Lazy initialization of cuda loop.

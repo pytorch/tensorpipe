@@ -7,6 +7,7 @@
  */
 
 #include <tensorpipe/test/transport/ibv/ibv_test.h>
+#include <tensorpipe/transport/ibv/utility.h>
 
 #include <gtest/gtest.h>
 
@@ -23,13 +24,9 @@ using namespace tensorpipe;
 // Linux-only because OSX machines on CircleCI cannot resolve their hostname
 #ifdef __linux__
 TEST_P(IbvTransportContextTest, LookupHostnameAddress) {
-  auto context = std::dynamic_pointer_cast<transport::ibv::Context>(
-      GetParam()->getContext());
-  ASSERT_TRUE(context);
-
   Error error;
   std::string addr;
-  std::tie(error, addr) = context->lookupAddrForHostname();
+  std::tie(error, addr) = transport::ibv::lookupAddrForHostname();
   EXPECT_FALSE(error) << error.what();
   EXPECT_NE(addr, "");
 }
@@ -45,13 +42,10 @@ TEST_P(IbvTransportContextTest, LookupHostnameAddress) {
 
 #ifdef LOOPBACK_INTERFACE
 TEST_P(IbvTransportContextTest, LookupInterfaceAddress) {
-  auto context = std::dynamic_pointer_cast<transport::ibv::Context>(
-      GetParam()->getContext());
-  ASSERT_TRUE(context);
-
   Error error;
   std::string addr;
-  std::tie(error, addr) = context->lookupAddrForIface(LOOPBACK_INTERFACE);
+  std::tie(error, addr) =
+      transport::ibv::lookupAddrForIface(LOOPBACK_INTERFACE);
   EXPECT_FALSE(error) << error.what();
   EXPECT_NE(addr, "");
 }

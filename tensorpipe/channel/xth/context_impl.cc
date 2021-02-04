@@ -43,8 +43,13 @@ std::string generateDomainDescriptor() {
 
 } // namespace
 
+std::shared_ptr<ContextImpl> ContextImpl::create() {
+  return std::make_shared<ContextImpl>();
+}
+
 ContextImpl::ContextImpl()
     : ContextImplBoilerplate<CpuBuffer, ContextImpl, ChannelImpl>(
+          /*isViable=*/true,
           generateDomainDescriptor()),
       requests_(std::numeric_limits<int>::max()) {
   thread_ = std::thread(&ContextImpl::handleCopyRequests, this);

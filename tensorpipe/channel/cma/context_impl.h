@@ -31,13 +31,13 @@ class ContextImpl final
  public:
   static std::shared_ptr<ContextImpl> create();
 
-  ContextImpl(bool isViable, std::string domainDescriptor);
+  ContextImpl();
+
+  explicit ContextImpl(std::string domainDescriptor);
 
   std::shared_ptr<CpuChannel> createChannel(
       std::vector<std::shared_ptr<transport::Connection>> connections,
       Endpoint endpoint);
-
-  bool isViable() const;
 
   // Implement the DeferredExecutor interface.
   bool inLoop() const override;
@@ -59,8 +59,6 @@ class ContextImpl final
 
  private:
   OnDemandDeferredExecutor loop_;
-
-  const bool isViable_;
 
   struct CopyRequest {
     pid_t remotePid;

@@ -26,7 +26,7 @@ template <typename TCtx, typename TList, typename TConn>
 class ContextImplBoilerplate : public virtual DeferredExecutor,
                                public std::enable_shared_from_this<TCtx> {
  public:
-  explicit ContextImplBoilerplate(std::string domainDescriptor);
+  ContextImplBoilerplate(bool isViable, std::string domainDescriptor);
 
   ContextImplBoilerplate(const ContextImplBoilerplate&) = delete;
   ContextImplBoilerplate(ContextImplBoilerplate&&) = delete;
@@ -37,6 +37,7 @@ class ContextImplBoilerplate : public virtual DeferredExecutor,
 
   std::shared_ptr<Listener> listen(std::string addr);
 
+  bool isViable() const;
   const std::string& domainDescriptor() const;
 
   // Enrolling dependent objects (listeners and connections) causes them to be
@@ -76,6 +77,7 @@ class ContextImplBoilerplate : public virtual DeferredExecutor,
   std::atomic<bool> closed_{false};
   std::atomic<bool> joined_{false};
 
+  const bool isViable_;
   const std::string domainDescriptor_;
 
   // Sequence numbers for the listeners and connections created by this context,
@@ -94,8 +96,9 @@ class ContextImplBoilerplate : public virtual DeferredExecutor,
 
 template <typename TCtx, typename TList, typename TConn>
 ContextImplBoilerplate<TCtx, TList, TConn>::ContextImplBoilerplate(
+    bool isViable,
     std::string domainDescriptor)
-    : domainDescriptor_(std::move(domainDescriptor)) {}
+    : isViable_(isViable), domainDescriptor_(std::move(domainDescriptor)) {}
 
 template <typename TCtx, typename TList, typename TConn>
 std::shared_ptr<Connection> ContextImplBoilerplate<TCtx, TList, TConn>::connect(
@@ -122,6 +125,11 @@ std::shared_ptr<Listener> ContextImplBoilerplate<TCtx, TList, TConn>::listen(
       this->shared_from_this(),
       std::move(listenerId),
       std::move(addr));
+}
+
+template <typename TCtx, typename TList, typename TConn>
+bool ContextImplBoilerplate<TCtx, TList, TConn>::isViable() const {
+  return isViable_;
 }
 
 template <typename TCtx, typename TList, typename TConn>

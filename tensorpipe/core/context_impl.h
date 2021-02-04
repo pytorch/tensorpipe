@@ -29,7 +29,8 @@
 
 namespace tensorpipe {
 
-class ContextImpl final : public std::enable_shared_from_this<ContextImpl> {
+class ContextImpl final : public virtual DeferredExecutor,
+                          public std::enable_shared_from_this<ContextImpl> {
  public:
   explicit ContextImpl(ContextOptions opts);
 
@@ -85,11 +86,17 @@ class ContextImpl final : public std::enable_shared_from_this<ContextImpl> {
   // by the pipes and listener in order to attach it to logged messages.
   const std::string& getName();
 
+  // Implement DeferredExecutor interface.
+  void deferToLoop(TTask fn) override;
+  bool inLoop() const override;
+
   void close();
 
   void join();
 
  private:
+  OnDemandDeferredExecutor loop_;
+
   std::atomic<bool> closed_{false};
   std::atomic<bool> joined_{false};
 
