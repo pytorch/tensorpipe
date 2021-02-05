@@ -30,23 +30,8 @@ Pipe::Pipe(
   impl_->init();
 }
 
-Pipe::Pipe(
-    ConstructorToken /* unused */,
-    std::shared_ptr<ContextImpl> context,
-    std::shared_ptr<ListenerImpl> listener,
-    std::string id,
-    std::string remoteName,
-    std::string transport,
-    std::shared_ptr<transport::Connection> connection)
-    : impl_(std::make_shared<PipeImpl>(
-          std::move(context),
-          std::move(listener),
-          std::move(id),
-          std::move(remoteName),
-          std::move(transport),
-          std::move(connection))) {
-  impl_->init();
-}
+Pipe::Pipe(ConstructorToken /* unused */, std::shared_ptr<PipeImpl> impl)
+    : impl_(std::move(impl)) {}
 
 const std::string& Pipe::getRemoteName() {
   return impl_->getRemoteName();
