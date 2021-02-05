@@ -35,9 +35,7 @@ ListenerImpl::ListenerImpl(
     std::shared_ptr<ContextImpl> context,
     std::string id,
     const std::vector<std::string>& urls)
-    : context_(std::move(context)),
-      id_(std::move(id)),
-      closingReceiver_(context_, context_->getClosingEmitter()) {
+    : context_(std::move(context)), id_(std::move(id)) {
   for (const auto& url : urls) {
     std::string transport;
     std::string address;
@@ -69,7 +67,6 @@ void ListenerImpl::initFromLoop() {
   }
 
   context_->enroll(*this);
-  closingReceiver_.activate(*this);
 
   for (const auto& listener : listeners_) {
     armListener(listener.first);

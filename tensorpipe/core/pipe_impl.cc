@@ -275,8 +275,7 @@ PipeImpl::PipeImpl(
     : state_(CLIENT_ABOUT_TO_SEND_HELLO_AND_BROCHURE),
       context_(std::move(context)),
       id_(std::move(id)),
-      remoteName_(std::move(remoteName)),
-      closingReceiver_(context_, context_->getClosingEmitter()) {
+      remoteName_(std::move(remoteName)) {
   std::string address;
   std::tie(transport_, address) = splitSchemeOfURL(url);
   connection_ = context_->getTransport(transport_)->connect(std::move(address));
@@ -296,8 +295,7 @@ PipeImpl::PipeImpl(
       id_(std::move(id)),
       remoteName_(std::move(remoteName)),
       transport_(std::move(transport)),
-      connection_(std::move(connection)),
-      closingReceiver_(context_, context_->getClosingEmitter()) {
+      connection_(std::move(connection)) {
   connection_->setId(id_ + ".tr_" + transport_);
 }
 
@@ -337,7 +335,6 @@ void PipeImpl::initFromLoop() {
   }
 
   context_->enroll(*this);
-  closingReceiver_.activate(*this);
 
   if (state_ == CLIENT_ABOUT_TO_SEND_HELLO_AND_BROCHURE) {
     auto nopHolderOut = std::make_shared<NopHolder<Packet>>();

@@ -58,8 +58,6 @@ class ContextImpl final : public virtual DeferredExecutor,
 
   std::shared_ptr<Pipe> connect(const std::string& url, PipeOptions opts);
 
-  ClosingEmitter& getClosingEmitter();
-
   std::shared_ptr<transport::Context> getTransport(
       const std::string& transport);
   std::shared_ptr<channel::CpuContext> getCpuChannel(
@@ -156,8 +154,6 @@ class ContextImpl final : public virtual DeferredExecutor,
 
   TP_DEVICE_FIELD(TOrderedChannels<CpuBuffer>, TOrderedChannels<CudaBuffer>)
   channelsByPriority_;
-
-  ClosingEmitter closingEmitter_;
 
   template <typename TBuffer>
   void registerChannel(

@@ -191,8 +191,6 @@ class PipeImpl final : public std::enable_shared_from_this<PipeImpl> {
   TP_DEVICE_FIELD(TChannelConnectionsMap, TChannelConnectionsMap)
   channelReceivedConnections_;
 
-  ClosingReceiver closingReceiver_;
-
   std::deque<ReadOperation> readOperations_;
   std::deque<WriteOperation> writeOperations_;
 
