@@ -194,21 +194,15 @@ void ContextImpl::onAcceptOfLane(
   auto npHolderIn = std::make_shared<NopHolder<Packet>>();
   TP_VLOG(6) << "Channel context " << id_
              << " reading nop object (client hello)";
-  // FIXME Avoid using a weak_ptr here.
   connection->read(
       *npHolderIn,
       eagerCallbackWrapper_(
-          [npHolderIn,
-           weakConnection{std::weak_ptr<transport::Connection>(connection)}](
-              ContextImpl& impl) mutable {
+          [npHolderIn, connection](ContextImpl& impl) mutable {
             TP_VLOG(6) << "Channel context " << impl.id_
                        << " done reading nop object (client hello)";
             if (impl.error_) {
               return;
             }
-            std::shared_ptr<transport::Connection> connection =
-                weakConnection.lock();
-            TP_DCHECK(connection);
             impl.connectionsWaitingForHello_.erase(connection);
             impl.onReadClientHelloOnLane(
                 std::move(connection), npHolderIn->getObject());

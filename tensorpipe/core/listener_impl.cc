@@ -240,23 +240,17 @@ void ListenerImpl::onAccept(
   auto nopHolderIn = std::make_shared<NopHolder<Packet>>();
   TP_VLOG(3) << "Listener " << id_
              << " is reading nop object (spontaneous or requested connection)";
-  // FIXME Avoid using a weak_ptr here.
   connection->read(
       *nopHolderIn,
       eagerCallbackWrapper_([nopHolderIn,
                              transport{std::move(transport)},
-                             weakConnection{
-                                 std::weak_ptr<transport::Connection>(
-                                     connection)}](ListenerImpl& impl) mutable {
+                             connection](ListenerImpl& impl) mutable {
         TP_VLOG(3)
             << "Listener " << impl.id_
             << " done reading nop object (spontaneous or requested connection)";
         if (impl.error_) {
           return;
         }
-        std::shared_ptr<transport::Connection> connection =
-            weakConnection.lock();
-        TP_DCHECK(connection);
         impl.connectionsWaitingForHello_.erase(connection);
         impl.onConnectionHelloRead(
             std::move(transport),
