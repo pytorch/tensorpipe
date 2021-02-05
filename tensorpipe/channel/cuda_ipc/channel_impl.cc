@@ -200,19 +200,24 @@ void ChannelImpl::recvImplFromLoop(
 
   connection_->write(
       *nopPacketHolder,
-      lazyCallbackWrapper_([nopPacketHolder, sequenceNumber{op.sequenceNumber}](
-                               ChannelImpl& impl) {
-        TP_VLOG(6) << "Channel " << impl.id_
-                   << " done writing reply notification (#" << sequenceNumber
-                   << ")";
-      }));
+      eagerCallbackWrapper_(
+          [nopPacketHolder,
+           sequenceNumber{op.sequenceNumber}](ChannelImpl& impl) {
+            TP_VLOG(6) << "Channel " << impl.id_
+                       << " done writing reply notification (#"
+                       << sequenceNumber << ")";
+          }));
 }
 
 void ChannelImpl::readPackets() {
   auto nopPacketHolder = std::make_shared<NopHolder<Packet>>();
   connection_->read(
       *nopPacketHolder,
-      lazyCallbackWrapper_([nopPacketHolder](ChannelImpl& impl) {
+      eagerCallbackWrapper_([nopPacketHolder](ChannelImpl& impl) {
+        if (impl.error_) {
+          return;
+        }
+
         const Packet& nopPacket = nopPacketHolder->getObject();
         if (nopPacket.is<Reply>()) {
           impl.onReply(*nopPacket.get<Reply>());
@@ -248,12 +253,13 @@ void ChannelImpl::onReply(const Reply& nopReply) {
 
   connection_->write(
       *nopPacketHolder,
-      lazyCallbackWrapper_([nopPacketHolder, sequenceNumber{op.sequenceNumber}](
-                               ChannelImpl& impl) {
-        TP_VLOG(6) << "Channel " << impl.id_
-                   << " done writing ACK notification (#" << sequenceNumber
-                   << ")";
-      }));
+      eagerCallbackWrapper_(
+          [nopPacketHolder,
+           sequenceNumber{op.sequenceNumber}](ChannelImpl& impl) {
+            TP_VLOG(6) << "Channel " << impl.id_
+                       << " done writing ACK notification (#" << sequenceNumber
+                       << ")";
+          }));
 
   sendOperations_.pop_front();
 }

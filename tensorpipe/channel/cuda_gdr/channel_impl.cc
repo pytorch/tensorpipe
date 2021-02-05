@@ -53,7 +53,7 @@ void ChannelImpl::initImplFromLoop() {
   TP_VLOG(6) << "Channel " << id_
              << " is writing nop object (handshake num NICs)";
   connection_->write(
-      *nopHolderOut, lazyCallbackWrapper_([nopHolderOut](ChannelImpl& impl) {
+      *nopHolderOut, eagerCallbackWrapper_([nopHolderOut](ChannelImpl& impl) {
         TP_VLOG(6) << "Channel " << impl.id_
                    << " done writing nop object (handshake num NICs)";
       }));
@@ -62,10 +62,12 @@ void ChannelImpl::initImplFromLoop() {
   TP_VLOG(6) << "Channel " << id_
              << " is reading nop object (handshake num NICs)";
   connection_->read(
-      *nopHolderIn, lazyCallbackWrapper_([nopHolderIn](ChannelImpl& impl) {
+      *nopHolderIn, eagerCallbackWrapper_([nopHolderIn](ChannelImpl& impl) {
         TP_VLOG(6) << "Channel " << impl.id_
                    << " done reading nop object (handshake num NICs)";
-        impl.onReadHandshakeNumNics(nopHolderIn->getObject());
+        if (!impl.error_) {
+          impl.onReadHandshakeNumNics(nopHolderIn->getObject());
+        }
       }));
 
   state_ = WAITING_FOR_HANDSHAKE_NUM_NICS;
@@ -119,7 +121,7 @@ void ChannelImpl::onReadHandshakeNumNics(
   nopHandshakeSetupInfo.setupInfo = std::move(allSetupInfo);
   TP_VLOG(6) << "Channel " << id_ << " is writing nop object (handshake two)";
   connection_->write(
-      *nopHolderOut, lazyCallbackWrapper_([nopHolderOut](ChannelImpl& impl) {
+      *nopHolderOut, eagerCallbackWrapper_([nopHolderOut](ChannelImpl& impl) {
         TP_VLOG(6) << "Channel " << impl.id_
                    << " done writing nop object (handshake two)";
       }));
@@ -127,10 +129,12 @@ void ChannelImpl::onReadHandshakeNumNics(
   auto nopHolderIn = std::make_shared<NopHolder<HandshakeSetupInfo>>();
   TP_VLOG(6) << "Channel " << id_ << " is reading nop object (handshake two)";
   connection_->read(
-      *nopHolderIn, lazyCallbackWrapper_([nopHolderIn](ChannelImpl& impl) {
+      *nopHolderIn, eagerCallbackWrapper_([nopHolderIn](ChannelImpl& impl) {
         TP_VLOG(6) << "Channel " << impl.id_
                    << " done reading nop object (handshake two)";
-        impl.onReadHandshakeSetupInfo(nopHolderIn->getObject());
+        if (!impl.error_) {
+          impl.onReadHandshakeSetupInfo(nopHolderIn->getObject());
+        }
       }));
 
   state_ = WAITING_FOR_HANDSHAKE_SETUP_INFO;
@@ -394,7 +398,7 @@ void ChannelImpl::onRecvEventReady(RecvOperation& op) {
              << op.sequenceNumber << ")";
   connection_->write(
       *nopHolderOut,
-      lazyCallbackWrapper_(
+      eagerCallbackWrapper_(
           [sequenceNumber{op.sequenceNumber}, nopHolderOut](ChannelImpl& impl) {
             TP_VLOG(6) << "Channel " << impl.id_
                        << " done writing ready-to-receive (#" << sequenceNumber

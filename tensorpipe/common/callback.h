@@ -24,30 +24,6 @@
 
 namespace tensorpipe {
 
-// Given an object (actually, something that can produce a shared_ptr of that
-// object) and a callable that takes a reference to such an object as its first
-// argument, return another callable that does three things:
-// - It holds a weak_ptr to the object, to avoid it being artificially kept
-//   alive by the mere existence of the returned callable.
-// - Once the returned callable is executed, it attempts to reacquire a
-//   shared_ptr and if it fails (meaning the object has been destroyed) it does
-//   not run the original callable (this feature is where this function takes
-//   its name from).
-// - It calls the original callable with a reference to object while holding on
-//   to the shared_ptr to make sure the object doesn't get destroyed while the
-//   callable is running.
-template <typename TSubject, typename TBoundFn>
-auto runIfAlive(std::enable_shared_from_this<TSubject>& subject, TBoundFn fn) {
-  // In C++17 use weak_from_this().
-  return [weak{std::weak_ptr<TSubject>(subject.shared_from_this())},
-          fn{std::move(fn)}](auto&&... args) mutable {
-    std::shared_ptr<TSubject> shared = weak.lock();
-    if (shared) {
-      fn(std::move(shared), std::forward<decltype(args)>(args)...);
-    }
-  };
-}
-
 namespace {
 
 // NOTE: This is an incomplete implementation of C++17's `std::apply`.
@@ -113,81 +89,9 @@ class RearmableCallback {
 
 // This class provides some boilerplate that is used by the pipe, the listener
 // and others when passing a callback to some lower-level component.
-// It is called "lazy" because it will only acquire a weak_ptr to the object
-// (thus allowing the object to be destroyed without the callback having fired)
-// and because in case of error it will deal with it on its own and won't end up
-// invoking the actual callback.
-template <typename TSubject>
-class LazyCallbackWrapper {
- public:
-  LazyCallbackWrapper(
-      std::enable_shared_from_this<TSubject>& subject,
-      DeferredExecutor& loop)
-      : subject_(subject), loop_(loop) {}
-
-  template <typename TBoundFn>
-  auto operator()(TBoundFn fn) {
-    return runIfAlive(
-        subject_,
-        [this, fn{std::move(fn)}](
-            std::shared_ptr<TSubject> subject,
-            const Error& error,
-            auto&&... args) mutable {
-          this->entryPoint(
-              std::move(subject),
-              std::move(fn),
-              error,
-              std::forward<decltype(args)>(args)...);
-        });
-  }
-
- private:
-  std::enable_shared_from_this<TSubject>& subject_;
-  DeferredExecutor& loop_;
-
-  template <typename TBoundFn, typename... Args>
-  void entryPoint(
-      std::shared_ptr<TSubject> subject,
-      TBoundFn fn,
-      const Error& error,
-      Args&&... args) {
-    // Do *NOT* move subject into the lambda's closure, as the shared_ptr we're
-    // holding may be the last one keeping subject alive, in which case it would
-    // die once the lambda runs, and it might kill the loop in turn too, _while_
-    // the loop's deferToLoop method is running. That's bad. So copy it instead.
-    // FIXME We're copying the args here...
-    loop_.deferToLoop(
-        [this, subject, fn{std::move(fn)}, error{error}, args...]() mutable {
-          entryPointFromLoop(
-              *subject, std::move(fn), error, std::forward<Args>(args)...);
-        });
-  }
-
-  template <typename TBoundFn, typename... Args>
-  void entryPointFromLoop(
-      TSubject& subject,
-      TBoundFn fn,
-      const Error& error,
-      Args&&... args) {
-    TP_DCHECK(loop_.inLoop());
-
-    subject.setError(error);
-    // Proceed only in case of success: this is why it's called "lazy".
-    if (!subject.error_) {
-      fn(subject, std::forward<Args>(args)...);
-    }
-  }
-};
-
-// This class is very similar to the above one: it provides some boilerplate
-// that is used by the pipe, the listener and others when passing a callback to
-// some lower-level component.
-// It is called "eager" because it will acquire a shared_ptr to the object (thus
-// preventing the object from being destroyed until the callback has been fired)
-// and because in case of error it will deal with it but it will still end up
-// invoking the actual callback.
-// The use case for this class is when a resource was "acquired" (e.g., a buffer
-// was passed to a transport) and it will be "released" by calling the callback.
+// It will acquire a shared_ptr to the object (thus preventing the object from
+// being destroyed until the callback has been fired) and in case of error it
+// will deal with it but it will still end up invoking the actual callback.
 template <typename TSubject>
 class EagerCallbackWrapper {
  public:

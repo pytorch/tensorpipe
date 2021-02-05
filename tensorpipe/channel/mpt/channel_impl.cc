@@ -46,10 +46,12 @@ void ChannelImpl::initImplFromLoop() {
     auto nopHolderIn = std::make_shared<NopHolder<Packet>>();
     TP_VLOG(6) << "Channel " << id_ << " reading nop object (server hello)";
     connection_->read(
-        *nopHolderIn, lazyCallbackWrapper_([nopHolderIn](ChannelImpl& impl) {
+        *nopHolderIn, eagerCallbackWrapper_([nopHolderIn](ChannelImpl& impl) {
           TP_VLOG(6) << "Channel " << impl.id_
                      << " done reading nop object (server hello)";
-          impl.onClientReadHelloOnConnection(nopHolderIn->getObject());
+          if (!impl.error_) {
+            impl.onClientReadHelloOnConnection(nopHolderIn->getObject());
+          }
         }));
   } else if (endpoint_ == Endpoint::kListen) {
     state_ = SERVER_ACCEPTING_LANES;
@@ -68,14 +70,16 @@ void ChannelImpl::initImplFromLoop() {
                  << laneIdx << ")";
       uint64_t token = context_->registerConnectionRequest(
           laneIdx,
-          lazyCallbackWrapper_(
+          eagerCallbackWrapper_(
               [laneIdx](
                   ChannelImpl& impl,
                   std::shared_ptr<transport::Connection> connection) {
                 TP_VLOG(6) << "Channel " << impl.id_
                            << " done requesting connection (for lane "
                            << laneIdx << ")";
-                impl.onServerAcceptOfLane(laneIdx, std::move(connection));
+                if (!impl.error_) {
+                  impl.onServerAcceptOfLane(laneIdx, std::move(connection));
+                }
               }));
       laneRegistrationIds_.emplace(laneIdx, token);
       nopLaneAdvertisement.registrationId = token;
@@ -83,7 +87,7 @@ void ChannelImpl::initImplFromLoop() {
     }
     TP_VLOG(6) << "Channel " << id_ << " writing nop object (server hello)";
     connection_->write(
-        *nopHolderOut, lazyCallbackWrapper_([nopHolderOut](ChannelImpl& impl) {
+        *nopHolderOut, eagerCallbackWrapper_([nopHolderOut](ChannelImpl& impl) {
           TP_VLOG(6) << "Channel " << impl.id_
                      << " done writing nop object (server hello)";
         }));
@@ -152,7 +156,7 @@ void ChannelImpl::onClientReadHelloOnConnection(const Packet& nopPacketIn) {
                << " writing nop object (client hello) on lane " << laneIdx;
     lane->write(
         *nopHolderOut,
-        lazyCallbackWrapper_([laneIdx, nopHolderOut](ChannelImpl& impl) {
+        eagerCallbackWrapper_([laneIdx, nopHolderOut](ChannelImpl& impl) {
           TP_VLOG(6) << "Channel " << impl.id_
                      << " done writing nop object (client hello) on lane "
                      << laneIdx;

@@ -229,7 +229,6 @@ class PipeImpl final : public std::enable_shared_from_this<PipeImpl> {
   // Helpers to prepare callbacks from transports and listener
   //
 
-  LazyCallbackWrapper<PipeImpl> lazyCallbackWrapper_{*this, *this->context_};
   EagerCallbackWrapper<PipeImpl> eagerCallbackWrapper_{*this, *this->context_};
 
   //
@@ -301,8 +300,6 @@ class PipeImpl final : public std::enable_shared_from_this<PipeImpl> {
 
   bool pendingRegistrations();
 
-  template <typename T>
-  friend class LazyCallbackWrapper;
   template <typename T>
   friend class EagerCallbackWrapper;
 

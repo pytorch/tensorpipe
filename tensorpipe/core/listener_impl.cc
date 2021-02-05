@@ -218,6 +218,10 @@ void ListenerImpl::handleError() {
   for (const auto& listener : listeners_) {
     listener.second->close();
   }
+
+  for (const auto& connection : connectionsWaitingForHello_) {
+    connection->close();
+  }
   connectionsWaitingForHello_.clear();
 
   context_->unenroll(*this);
@@ -236,15 +240,20 @@ void ListenerImpl::onAccept(
   auto nopHolderIn = std::make_shared<NopHolder<Packet>>();
   TP_VLOG(3) << "Listener " << id_
              << " is reading nop object (spontaneous or requested connection)";
+  // FIXME Avoid using a weak_ptr here.
   connection->read(
       *nopHolderIn,
-      lazyCallbackWrapper_([nopHolderIn,
-                            transport{std::move(transport)},
-                            weakConnection{std::weak_ptr<transport::Connection>(
-                                connection)}](ListenerImpl& impl) mutable {
+      eagerCallbackWrapper_([nopHolderIn,
+                             transport{std::move(transport)},
+                             weakConnection{
+                                 std::weak_ptr<transport::Connection>(
+                                     connection)}](ListenerImpl& impl) mutable {
         TP_VLOG(3)
             << "Listener " << impl.id_
             << " done reading nop object (spontaneous or requested connection)";
+        if (impl.error_) {
+          return;
+        }
         std::shared_ptr<transport::Connection> connection =
             weakConnection.lock();
         TP_DCHECK(connection);
@@ -265,12 +274,15 @@ void ListenerImpl::armListener(std::string transport) {
   auto transportListener = iter->second;
   TP_VLOG(3) << "Listener " << id_ << " is accepting connection on transport "
              << transport;
-  transportListener->accept(lazyCallbackWrapper_(
+  transportListener->accept(eagerCallbackWrapper_(
       [transport](
           ListenerImpl& impl,
           std::shared_ptr<transport::Connection> connection) {
         TP_VLOG(3) << "Listener " << impl.id_
                    << " done accepting connection on transport " << transport;
+        if (impl.error_) {
+          return;
+        }
         impl.onAccept(transport, std::move(connection));
         impl.armListener(transport);
       }));

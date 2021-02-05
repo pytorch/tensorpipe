@@ -171,12 +171,15 @@ void ContextImpl::acceptLane(uint64_t laneIdx) {
 
   TP_VLOG(6) << "Channel context " << id_ << " accepting connection on lane "
              << laneIdx;
-  listeners_[laneIdx]->accept(lazyCallbackWrapper_(
+  listeners_[laneIdx]->accept(eagerCallbackWrapper_(
       [laneIdx](
           ContextImpl& impl,
           std::shared_ptr<transport::Connection> connection) {
         TP_VLOG(6) << "Channel context " << impl.id_
                    << " done accepting connection on lane " << laneIdx;
+        if (impl.error_) {
+          return;
+        }
         impl.onAcceptOfLane(std::move(connection));
         impl.acceptLane(laneIdx);
       }));
@@ -191,20 +194,25 @@ void ContextImpl::onAcceptOfLane(
   auto npHolderIn = std::make_shared<NopHolder<Packet>>();
   TP_VLOG(6) << "Channel context " << id_
              << " reading nop object (client hello)";
+  // FIXME Avoid using a weak_ptr here.
   connection->read(
       *npHolderIn,
-      lazyCallbackWrapper_([npHolderIn,
-                            weakConnection{std::weak_ptr<transport::Connection>(
-                                connection)}](ContextImpl& impl) mutable {
-        TP_VLOG(6) << "Channel context " << impl.id_
-                   << " done reading nop object (client hello)";
-        std::shared_ptr<transport::Connection> connection =
-            weakConnection.lock();
-        TP_DCHECK(connection);
-        impl.connectionsWaitingForHello_.erase(connection);
-        impl.onReadClientHelloOnLane(
-            std::move(connection), npHolderIn->getObject());
-      }));
+      eagerCallbackWrapper_(
+          [npHolderIn,
+           weakConnection{std::weak_ptr<transport::Connection>(connection)}](
+              ContextImpl& impl) mutable {
+            TP_VLOG(6) << "Channel context " << impl.id_
+                       << " done reading nop object (client hello)";
+            if (impl.error_) {
+              return;
+            }
+            std::shared_ptr<transport::Connection> connection =
+                weakConnection.lock();
+            TP_DCHECK(connection);
+            impl.connectionsWaitingForHello_.erase(connection);
+            impl.onReadClientHelloOnLane(
+                std::move(connection), npHolderIn->getObject());
+          }));
 }
 
 void ContextImpl::onReadClientHelloOnLane(
@@ -247,7 +255,11 @@ void ContextImpl::handleError() {
   }
   connectionRequestRegistrations_.clear();
 
+  for (const auto& connection : connectionsWaitingForHello_) {
+    connection->close();
+  }
   connectionsWaitingForHello_.clear();
+
   for (auto& listener : listeners_) {
     listener->close();
   }

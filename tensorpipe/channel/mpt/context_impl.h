@@ -113,12 +113,9 @@ class ContextImpl final
   std::unordered_map<uint64_t, connection_request_callback_fn>
       connectionRequestRegistrations_;
 
-  LazyCallbackWrapper<ContextImpl> lazyCallbackWrapper_{*this, this->loop_};
   EagerCallbackWrapper<ContextImpl> eagerCallbackWrapper_{*this, this->loop_};
 
   // For some odd reason it seems we need to use a qualified name here...
-  template <typename T>
-  friend class tensorpipe::LazyCallbackWrapper;
   template <typename T>
   friend class tensorpipe::EagerCallbackWrapper;
 };

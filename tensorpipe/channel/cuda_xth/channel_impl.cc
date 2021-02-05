@@ -134,7 +134,7 @@ void ChannelImpl::recvImplFromLoop(
   TP_VLOG(6) << "Channel " << id_ << " is writing notification (#"
              << sequenceNumber << ")";
   connection_->write(
-      nullptr, 0, lazyCallbackWrapper_([sequenceNumber](ChannelImpl& impl) {
+      nullptr, 0, eagerCallbackWrapper_([sequenceNumber](ChannelImpl& impl) {
         TP_VLOG(6) << "Channel " << impl.id_ << " done writing notification (#"
                    << sequenceNumber << ")";
       }));

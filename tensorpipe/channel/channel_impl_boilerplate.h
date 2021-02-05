@@ -93,7 +93,6 @@ class ChannelImplBoilerplate : public std::enable_shared_from_this<TChan> {
   // only be used for logging and debugging purposes.
   std::string id_;
 
-  LazyCallbackWrapper<TChan> lazyCallbackWrapper_{*this, *this->context_};
   EagerCallbackWrapper<TChan> eagerCallbackWrapper_{*this, *this->context_};
 
  private:
@@ -125,8 +124,6 @@ class ChannelImplBoilerplate : public std::enable_shared_from_this<TChan> {
   uint64_t nextTensorBeingReceived_{0};
 
   // For some odd reason it seems we need to use a qualified name here...
-  template <typename T>
-  friend class tensorpipe::LazyCallbackWrapper;
   template <typename T>
   friend class tensorpipe::EagerCallbackWrapper;
 
