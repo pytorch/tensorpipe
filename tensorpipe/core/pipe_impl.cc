@@ -1039,9 +1039,7 @@ void PipeImpl::writeDescriptorAndPayloadsOfMessage(WriteOperation& op) {
         callbackWrapper_([&op, payloadIdx](PipeImpl& impl) {
           TP_VLOG(3) << "Pipe " << impl.id_ << " done writing payload #"
                      << op.sequenceNumber << "." << payloadIdx;
-          if (!impl.error_) {
-            impl.onWriteOfPayload(op);
-          }
+          impl.onWriteOfPayload(op);
         }));
     ++op.numPayloadsBeingWritten;
   }
