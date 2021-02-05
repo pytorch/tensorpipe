@@ -59,6 +59,15 @@ void ListenerImpl::init() {
 void ListenerImpl::initFromLoop() {
   TP_DCHECK(context_->inLoop());
 
+  if (context_->closed()) {
+    // Set the error without calling setError because we do not want to invoke
+    // handleError as it would find itself in a weird state (since the rest of
+    // initFromLoop wouldn't have been called).
+    error_ = TP_CREATE_ERROR(ListenerClosedError);
+    TP_VLOG(1) << "Listener " << id_ << " is closing (without initing)";
+    return;
+  }
+
   context_->enroll(*this);
   closingReceiver_.activate(*this);
 
