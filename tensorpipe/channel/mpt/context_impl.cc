@@ -157,10 +157,10 @@ void ContextImpl::acceptLane(uint64_t laneIdx) {
 
   TP_VLOG(6) << "Channel context " << id_ << " accepting connection on lane "
              << laneIdx;
-  listeners_[laneIdx]->accept(eagerCallbackWrapper_(
-      [laneIdx](
-          ContextImpl& impl,
-          std::shared_ptr<transport::Connection> connection) {
+  listeners_[laneIdx]->accept(
+      callbackWrapper_([laneIdx](
+                           ContextImpl& impl,
+                           std::shared_ptr<transport::Connection> connection) {
         TP_VLOG(6) << "Channel context " << impl.id_
                    << " done accepting connection on lane " << laneIdx;
         if (impl.error_) {
@@ -182,17 +182,16 @@ void ContextImpl::onAcceptOfLane(
              << " reading nop object (client hello)";
   connection->read(
       *npHolderIn,
-      eagerCallbackWrapper_(
-          [npHolderIn, connection](ContextImpl& impl) mutable {
-            TP_VLOG(6) << "Channel context " << impl.id_
-                       << " done reading nop object (client hello)";
-            if (impl.error_) {
-              return;
-            }
-            impl.connectionsWaitingForHello_.erase(connection);
-            impl.onReadClientHelloOnLane(
-                std::move(connection), npHolderIn->getObject());
-          }));
+      callbackWrapper_([npHolderIn, connection](ContextImpl& impl) mutable {
+        TP_VLOG(6) << "Channel context " << impl.id_
+                   << " done reading nop object (client hello)";
+        if (impl.error_) {
+          return;
+        }
+        impl.connectionsWaitingForHello_.erase(connection);
+        impl.onReadClientHelloOnLane(
+            std::move(connection), npHolderIn->getObject());
+      }));
 }
 
 void ContextImpl::onReadClientHelloOnLane(

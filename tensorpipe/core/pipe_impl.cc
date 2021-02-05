@@ -346,7 +346,7 @@ void PipeImpl::initFromLoop() {
     TP_VLOG(3) << "Pipe " << id_
                << " is writing nop object (spontaneous connection)";
     connection_->write(
-        *nopHolderOut, eagerCallbackWrapper_([nopHolderOut](PipeImpl& impl) {
+        *nopHolderOut, callbackWrapper_([nopHolderOut](PipeImpl& impl) {
           TP_VLOG(3) << "Pipe " << impl.id_
                      << " done writing nop object (spontaneous connection)";
         }));
@@ -381,7 +381,7 @@ void PipeImpl::initFromLoop() {
     });
     TP_VLOG(3) << "Pipe " << id_ << " is writing nop object (brochure)";
     connection_->write(
-        *nopHolderOut2, eagerCallbackWrapper_([nopHolderOut2](PipeImpl& impl) {
+        *nopHolderOut2, callbackWrapper_([nopHolderOut2](PipeImpl& impl) {
           TP_VLOG(3) << "Pipe " << impl.id_
                      << " done writing nop object (brochure)";
         }));
@@ -389,7 +389,7 @@ void PipeImpl::initFromLoop() {
     auto nopHolderIn = std::make_shared<NopHolder<Packet>>();
     TP_VLOG(3) << "Pipe " << id_ << " is reading nop object (brochure answer)";
     connection_->read(
-        *nopHolderIn, eagerCallbackWrapper_([nopHolderIn](PipeImpl& impl) {
+        *nopHolderIn, callbackWrapper_([nopHolderIn](PipeImpl& impl) {
           TP_VLOG(3) << "Pipe " << impl.id_
                      << " done reading nop object (brochure answer)";
           if (!impl.error_) {
@@ -402,7 +402,7 @@ void PipeImpl::initFromLoop() {
     auto nopHolderIn = std::make_shared<NopHolder<Packet>>();
     TP_VLOG(3) << "Pipe " << id_ << " is reading nop object (brochure)";
     connection_->read(
-        *nopHolderIn, eagerCallbackWrapper_([nopHolderIn](PipeImpl& impl) {
+        *nopHolderIn, callbackWrapper_([nopHolderIn](PipeImpl& impl) {
           TP_VLOG(3) << "Pipe " << impl.id_
                      << " done reading nop object (brochure)";
           if (!impl.error_) {
@@ -535,7 +535,7 @@ void PipeImpl::readPayloadsAndReceiveTensorsOfMessage(ReadOperation& op) {
     connection_->read(
         payload.data,
         payload.length,
-        eagerCallbackWrapper_(
+        callbackWrapper_(
             [&op, payloadIdx](
                 PipeImpl& impl, const void* /* unused */, size_t /* unused */) {
               TP_VLOG(3) << "Pipe " << impl.id_ << " done reading payload #"
@@ -562,7 +562,7 @@ void PipeImpl::readPayloadsAndReceiveTensorsOfMessage(ReadOperation& op) {
           channel->recv(
               std::move(tensorBeingAllocated.descriptor),
               unwrap<decltype(buffer)>(tensor.buffer),
-              eagerCallbackWrapper_([&op, tensorIdx](PipeImpl& impl) {
+              callbackWrapper_([&op, tensorIdx](PipeImpl& impl) {
                 TP_VLOG(3) << "Pipe " << impl.id_ << " done receiving tensor #"
                            << op.sequenceNumber << "." << tensorIdx;
                 impl.onRecvOfTensor(op);
@@ -938,7 +938,7 @@ void PipeImpl::readDescriptorOfMessage(ReadOperation& op) {
   TP_VLOG(3) << "Pipe " << id_ << " is reading nop object (message descriptor #"
              << op.sequenceNumber << ")";
   connection_->read(
-      *nopHolderIn, eagerCallbackWrapper_([&op, nopHolderIn](PipeImpl& impl) {
+      *nopHolderIn, callbackWrapper_([&op, nopHolderIn](PipeImpl& impl) {
         TP_VLOG(3) << "Pipe " << impl.id_
                    << " done reading nop object (message descriptor #"
                    << op.sequenceNumber << ")";
@@ -978,14 +978,14 @@ void PipeImpl::sendTensorsOfMessage(WriteOperation& op) {
 
         channel.send(
             unwrap<decltype(buffer)>(tensor.buffer),
-            eagerCallbackWrapper_([&op, tensorIdx](
-                                      PipeImpl& impl,
-                                      channel::TDescriptor descriptor) {
+            callbackWrapper_([&op, tensorIdx](
+                                 PipeImpl& impl,
+                                 channel::TDescriptor descriptor) {
               TP_VLOG(3) << "Pipe " << impl.id_ << " got tensor descriptor #"
                          << op.sequenceNumber << "." << tensorIdx;
               impl.onDescriptorOfTensor(op, tensorIdx, std::move(descriptor));
             }),
-            eagerCallbackWrapper_([&op, tensorIdx](PipeImpl& impl) {
+            callbackWrapper_([&op, tensorIdx](PipeImpl& impl) {
               TP_VLOG(3) << "Pipe " << impl.id_ << " done sending tensor #"
                          << op.sequenceNumber << "." << tensorIdx;
               impl.onSendOfTensor(op);
@@ -1021,7 +1021,7 @@ void PipeImpl::writeDescriptorAndPayloadsOfMessage(WriteOperation& op) {
              << op.sequenceNumber << ")";
   connection_->write(
       *holder,
-      eagerCallbackWrapper_(
+      callbackWrapper_(
           [sequenceNumber{op.sequenceNumber}, holder](PipeImpl& impl) {
             TP_VLOG(3) << "Pipe " << impl.id_
                        << " done writing nop object (message descriptor #"
@@ -1036,7 +1036,7 @@ void PipeImpl::writeDescriptorAndPayloadsOfMessage(WriteOperation& op) {
     connection_->write(
         payload.data,
         payload.length,
-        eagerCallbackWrapper_([&op, payloadIdx](PipeImpl& impl) {
+        callbackWrapper_([&op, payloadIdx](PipeImpl& impl) {
           TP_VLOG(3) << "Pipe " << impl.id_ << " done writing payload #"
                      << op.sequenceNumber << "." << payloadIdx;
           if (!impl.error_) {
@@ -1098,18 +1098,17 @@ void PipeImpl::onReadWhileServerWaitingForBrochure(const Packet& nopPacketIn) {
       TP_DCHECK(!registrationId_.has_value());
       TP_VLOG(3) << "Pipe " << id_
                  << " is requesting connection (as replacement)";
-      uint64_t token =
-          listener_->registerConnectionRequest(eagerCallbackWrapper_(
-              [](PipeImpl& impl,
-                 std::string transport,
-                 std::shared_ptr<transport::Connection> connection) {
-                TP_VLOG(3) << "Pipe " << impl.id_
-                           << " done requesting connection (as replacement)";
-                if (!impl.error_) {
-                  impl.onAcceptWhileServerWaitingForConnection(
-                      std::move(transport), std::move(connection));
-                }
-              }));
+      uint64_t token = listener_->registerConnectionRequest(callbackWrapper_(
+          [](PipeImpl& impl,
+             std::string transport,
+             std::shared_ptr<transport::Connection> connection) {
+            TP_VLOG(3) << "Pipe " << impl.id_
+                       << " done requesting connection (as replacement)";
+            if (!impl.error_) {
+              impl.onAcceptWhileServerWaitingForConnection(
+                  std::move(transport), std::move(connection));
+            }
+          }));
       registrationId_.emplace(token);
       needToWaitForConnections = true;
       nopBrochureAnswer.transportRegistrationId = token;
@@ -1153,24 +1152,23 @@ void PipeImpl::onReadWhileServerWaitingForBrochure(const Packet& nopPacketIn) {
         TP_VLOG(3) << "Pipe " << id_ << " is requesting connection " << connId
                    << "/" << numConnectionsNeeded << " (for channel "
                    << channelName << ")";
-        uint64_t token =
-            listener_->registerConnectionRequest(eagerCallbackWrapper_(
-                [channelName, connId, numConnectionsNeeded](
-                    PipeImpl& impl,
-                    std::string transport,
-                    std::shared_ptr<transport::Connection> connection) {
-                  TP_VLOG(3)
-                      << "Pipe " << impl.id_ << " done requesting connection "
-                      << connId << "/" << numConnectionsNeeded
-                      << " (for channel " << channelName << ")";
-                  if (!impl.error_) {
-                    impl.onAcceptWhileServerWaitingForChannel<decltype(buffer)>(
-                        channelName,
-                        connId,
-                        std::move(transport),
-                        std::move(connection));
-                  }
-                }));
+        uint64_t token = listener_->registerConnectionRequest(callbackWrapper_(
+            [channelName, connId, numConnectionsNeeded](
+                PipeImpl& impl,
+                std::string transport,
+                std::shared_ptr<transport::Connection> connection) {
+              TP_VLOG(3) << "Pipe " << impl.id_
+                         << " done requesting connection " << connId << "/"
+                         << numConnectionsNeeded << " (for channel "
+                         << channelName << ")";
+              if (!impl.error_) {
+                impl.onAcceptWhileServerWaitingForChannel<decltype(buffer)>(
+                    channelName,
+                    connId,
+                    std::move(transport),
+                    std::move(connection));
+              }
+            }));
         channelRegistrationIds[connId] = token;
         needToWaitForConnections = true;
       }
@@ -1185,7 +1183,7 @@ void PipeImpl::onReadWhileServerWaitingForBrochure(const Packet& nopPacketIn) {
 
   TP_VLOG(3) << "Pipe " << id_ << " is writing nop object (brochure answer)";
   connection_->write(
-      *nopHolderOut, eagerCallbackWrapper_([nopHolderOut](PipeImpl& impl) {
+      *nopHolderOut, callbackWrapper_([nopHolderOut](PipeImpl& impl) {
         TP_VLOG(3) << "Pipe " << impl.id_
                    << " done writing nop object (brochure answer)";
       }));
@@ -1244,7 +1242,7 @@ void PipeImpl::onReadWhileClientWaitingForBrochureAnswer(
     TP_VLOG(3) << "Pipe " << id_
                << " is writing nop object (requested connection)";
     connection->write(
-        *nopHolderOut, eagerCallbackWrapper_([nopHolderOut](PipeImpl& impl) {
+        *nopHolderOut, callbackWrapper_([nopHolderOut](PipeImpl& impl) {
           TP_VLOG(3) << "Pipe " << impl.id_
                      << " done writing nop object (requested connection)";
         }));
@@ -1292,8 +1290,7 @@ void PipeImpl::onReadWhileClientWaitingForBrochureAnswer(
         TP_VLOG(3) << "Pipe " << id_
                    << " is writing nop object (requested connection)";
         connection->write(
-            *nopHolderOut,
-            eagerCallbackWrapper_([nopHolderOut](PipeImpl& impl) {
+            *nopHolderOut, callbackWrapper_([nopHolderOut](PipeImpl& impl) {
               TP_VLOG(3) << "Pipe " << impl.id_
                          << " done writing nop object (requested connection)";
             }));

@@ -112,9 +112,7 @@ class ListenerImpl final : public std::enable_shared_from_this<ListenerImpl> {
   // Helpers to prepare callbacks from transports
   //
 
-  EagerCallbackWrapper<ListenerImpl> eagerCallbackWrapper_{
-      *this,
-      *this->context_};
+  CallbackWrapper<ListenerImpl> callbackWrapper_{*this, *this->context_};
 
   //
   // Error handling
@@ -138,7 +136,7 @@ class ListenerImpl final : public std::enable_shared_from_this<ListenerImpl> {
       const Packet& nopPacketIn);
 
   template <typename T>
-  friend class EagerCallbackWrapper;
+  friend class CallbackWrapper;
 
   // Contexts do sometimes need to call directly into closeFromLoop, in order to
   // make sure that some of their operations can happen "atomically" on the

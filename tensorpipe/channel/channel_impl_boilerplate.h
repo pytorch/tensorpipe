@@ -93,7 +93,7 @@ class ChannelImplBoilerplate : public std::enable_shared_from_this<TChan> {
   // only be used for logging and debugging purposes.
   std::string id_;
 
-  EagerCallbackWrapper<TChan> eagerCallbackWrapper_{*this, *this->context_};
+  CallbackWrapper<TChan> callbackWrapper_{*this, *this->context_};
 
  private:
   // Initialize member fields that need `shared_from_this`.
@@ -125,7 +125,7 @@ class ChannelImplBoilerplate : public std::enable_shared_from_this<TChan> {
 
   // For some odd reason it seems we need to use a qualified name here...
   template <typename T>
-  friend class tensorpipe::EagerCallbackWrapper;
+  friend class tensorpipe::CallbackWrapper;
 
   // Contexts do sometimes need to call directly into closeFromLoop, in order to
   // make sure that some of their operations can happen "atomically" on the

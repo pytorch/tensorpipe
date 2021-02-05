@@ -242,9 +242,9 @@ void ListenerImpl::onAccept(
              << " is reading nop object (spontaneous or requested connection)";
   connection->read(
       *nopHolderIn,
-      eagerCallbackWrapper_([nopHolderIn,
-                             transport{std::move(transport)},
-                             connection](ListenerImpl& impl) mutable {
+      callbackWrapper_([nopHolderIn,
+                        transport{std::move(transport)},
+                        connection](ListenerImpl& impl) mutable {
         TP_VLOG(3)
             << "Listener " << impl.id_
             << " done reading nop object (spontaneous or requested connection)";
@@ -268,10 +268,10 @@ void ListenerImpl::armListener(std::string transport) {
   auto transportListener = iter->second;
   TP_VLOG(3) << "Listener " << id_ << " is accepting connection on transport "
              << transport;
-  transportListener->accept(eagerCallbackWrapper_(
-      [transport](
-          ListenerImpl& impl,
-          std::shared_ptr<transport::Connection> connection) {
+  transportListener->accept(
+      callbackWrapper_([transport](
+                           ListenerImpl& impl,
+                           std::shared_ptr<transport::Connection> connection) {
         TP_VLOG(3) << "Listener " << impl.id_
                    << " done accepting connection on transport " << transport;
         if (impl.error_) {

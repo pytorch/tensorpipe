@@ -93,9 +93,9 @@ class RearmableCallback {
 // being destroyed until the callback has been fired) and in case of error it
 // will deal with it but it will still end up invoking the actual callback.
 template <typename TSubject>
-class EagerCallbackWrapper {
+class CallbackWrapper {
  public:
-  EagerCallbackWrapper(
+  CallbackWrapper(
       std::enable_shared_from_this<TSubject>& subject,
       DeferredExecutor& loop)
       : subject_(subject), loop_(loop) {}

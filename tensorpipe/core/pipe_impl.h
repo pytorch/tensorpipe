@@ -229,7 +229,7 @@ class PipeImpl final : public std::enable_shared_from_this<PipeImpl> {
   // Helpers to prepare callbacks from transports and listener
   //
 
-  EagerCallbackWrapper<PipeImpl> eagerCallbackWrapper_{*this, *this->context_};
+  CallbackWrapper<PipeImpl> callbackWrapper_{*this, *this->context_};
 
   //
   // Helpers to schedule our callbacks into user code
@@ -301,7 +301,7 @@ class PipeImpl final : public std::enable_shared_from_this<PipeImpl> {
   bool pendingRegistrations();
 
   template <typename T>
-  friend class EagerCallbackWrapper;
+  friend class CallbackWrapper;
 
   // Contexts and listeners do sometimes need to call directly into initFromLoop
   // and closeFromLoop, in order to make sure that some of their operations can

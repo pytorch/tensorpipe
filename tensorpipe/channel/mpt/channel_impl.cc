@@ -46,7 +46,7 @@ void ChannelImpl::initImplFromLoop() {
     auto nopHolderIn = std::make_shared<NopHolder<Packet>>();
     TP_VLOG(6) << "Channel " << id_ << " reading nop object (server hello)";
     connection_->read(
-        *nopHolderIn, eagerCallbackWrapper_([nopHolderIn](ChannelImpl& impl) {
+        *nopHolderIn, callbackWrapper_([nopHolderIn](ChannelImpl& impl) {
           TP_VLOG(6) << "Channel " << impl.id_
                      << " done reading nop object (server hello)";
           if (!impl.error_) {
@@ -70,7 +70,7 @@ void ChannelImpl::initImplFromLoop() {
                  << laneIdx << ")";
       uint64_t token = context_->registerConnectionRequest(
           laneIdx,
-          eagerCallbackWrapper_(
+          callbackWrapper_(
               [laneIdx](
                   ChannelImpl& impl,
                   std::shared_ptr<transport::Connection> connection) {
@@ -87,7 +87,7 @@ void ChannelImpl::initImplFromLoop() {
     }
     TP_VLOG(6) << "Channel " << id_ << " writing nop object (server hello)";
     connection_->write(
-        *nopHolderOut, eagerCallbackWrapper_([nopHolderOut](ChannelImpl& impl) {
+        *nopHolderOut, callbackWrapper_([nopHolderOut](ChannelImpl& impl) {
           TP_VLOG(6) << "Channel " << impl.id_
                      << " done writing nop object (server hello)";
         }));
@@ -156,7 +156,7 @@ void ChannelImpl::onClientReadHelloOnConnection(const Packet& nopPacketIn) {
                << " writing nop object (client hello) on lane " << laneIdx;
     lane->write(
         *nopHolderOut,
-        eagerCallbackWrapper_([laneIdx, nopHolderOut](ChannelImpl& impl) {
+        callbackWrapper_([laneIdx, nopHolderOut](ChannelImpl& impl) {
           TP_VLOG(6) << "Channel " << impl.id_
                      << " done writing nop object (client hello) on lane "
                      << laneIdx;
@@ -219,7 +219,7 @@ void ChannelImpl::sendOperation(SendOperation& op) {
     TP_VLOG(6) << "Channel " << id_ << " writing payload #" << op.sequenceNumber
                << " on lane " << laneIdx;
     lanes_[laneIdx]->write(
-        ptr, length, eagerCallbackWrapper_([&op, laneIdx](ChannelImpl& impl) {
+        ptr, length, callbackWrapper_([&op, laneIdx](ChannelImpl& impl) {
           TP_VLOG(6) << "Channel " << impl.id_ << " done writing payload #"
                      << op.sequenceNumber << " on lane " << laneIdx;
           impl.onWriteOfPayload(op);
@@ -248,10 +248,10 @@ void ChannelImpl::recvOperation(RecvOperation& op) {
     lanes_[laneIdx]->read(
         ptr,
         length,
-        eagerCallbackWrapper_([&op, laneIdx](
-                                  ChannelImpl& impl,
-                                  const void* /* unused */,
-                                  size_t /* unused */) {
+        callbackWrapper_([&op, laneIdx](
+                             ChannelImpl& impl,
+                             const void* /* unused */,
+                             size_t /* unused */) {
           TP_VLOG(6) << "Channel " << impl.id_ << " done reading payload #"
                      << op.sequenceNumber << " on lane " << laneIdx;
           impl.onReadOfPayload(op);
