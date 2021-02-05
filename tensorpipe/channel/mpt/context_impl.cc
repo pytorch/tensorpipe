@@ -45,9 +45,20 @@ std::string generateDomainDescriptor(
 std::shared_ptr<ContextImpl> ContextImpl::create(
     std::vector<std::shared_ptr<transport::Context>> contexts,
     std::vector<std::shared_ptr<transport::Listener>> listeners) {
+  for (const auto& context : contexts) {
+    if (!context->isViable()) {
+      return std::make_shared<ContextImpl>();
+    }
+  }
+
   return std::make_shared<ContextImpl>(
       std::move(contexts), std::move(listeners));
 }
+
+ContextImpl::ContextImpl()
+    : ContextImplBoilerplate<CpuBuffer, ContextImpl, ChannelImpl>(
+          /*isViable=*/false,
+          /*domainDescriptor=*/"") {}
 
 ContextImpl::ContextImpl(
     std::vector<std::shared_ptr<transport::Context>> contexts,
