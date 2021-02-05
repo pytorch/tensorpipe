@@ -326,7 +326,10 @@ void PipeImpl::init() {
 
 void PipeImpl::initFromLoop() {
   TP_DCHECK(context_->inLoop());
+
+  context_->enroll(*this);
   closingReceiver_.activate(*this);
+
   if (state_ == CLIENT_ABOUT_TO_SEND_HELLO_AND_BROCHURE) {
     auto nopHolderOut = std::make_shared<NopHolder<Packet>>();
     Packet& nopPacketOut = nopHolderOut->getObject();
@@ -693,6 +696,8 @@ void PipeImpl::handleError() {
   if (!writeOperations_.empty()) {
     advanceWriteOperation(writeOperations_.front());
   }
+
+  context_->unenroll(*this);
 }
 
 //

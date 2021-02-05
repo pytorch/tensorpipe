@@ -29,6 +29,9 @@
 
 namespace tensorpipe {
 
+class ListenerImpl;
+class PipeImpl;
+
 class ContextImpl final : public virtual DeferredExecutor,
                           public std::enable_shared_from_this<ContextImpl> {
  public:
@@ -86,6 +89,18 @@ class ContextImpl final : public virtual DeferredExecutor,
   // by the pipes and listener in order to attach it to logged messages.
   const std::string& getName();
 
+  // Enrolling dependent objects (listeners and pipes) causes them to be kept
+  // alive for as long as the context exists. These objects should enroll
+  // themselves as soon as they're created (in their initFromLoop method) and
+  // unenroll themselves after they've completed handling an error (either right
+  // in the handleError method or in a subsequent callback). The context, on the
+  // other hand, should avoid terminating (i.e., complete joining) until all
+  // objects have unenrolled themselves.
+  void enroll(ListenerImpl& listener);
+  void enroll(PipeImpl& pipe);
+  void unenroll(ListenerImpl& listener);
+  void unenroll(PipeImpl& pipe);
+
   // Implement DeferredExecutor interface.
   void deferToLoop(TTask fn) override;
   bool inLoop() const override;
@@ -112,6 +127,13 @@ class ContextImpl final : public virtual DeferredExecutor,
   // only be used for logging and debugging.
   std::atomic<uint64_t> listenerCounter_{0};
   std::atomic<uint64_t> pipeCounter_{0};
+
+  // Store shared_ptrs to dependent objects that have enrolled themselves to
+  // keep them alive. We use a map, indexed by raw pointers, rather than a set
+  // of shared_ptrs so that we can erase objects without them having to create
+  // a fresh shared_ptr just for that.
+  std::unordered_map<ListenerImpl*, std::shared_ptr<ListenerImpl>> listeners_;
+  std::unordered_map<PipeImpl*, std::shared_ptr<PipeImpl>> pipes_;
 
   // A user-provided name for this context which should be semantically
   // meaningful. It will only be used for logging and debugging purposes, to
