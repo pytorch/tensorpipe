@@ -105,50 +105,36 @@ const std::vector<std::string>& ContextImpl::addresses() const {
 uint64_t ContextImpl::registerConnectionRequest(
     uint64_t laneIdx,
     connection_request_callback_fn fn) {
-  // We cannot return a value if we defer the function. Thus we obtain an ID
-  // now (and this is why the next ID is an atomic), return it, and defer the
-  // rest of the processing.
-  // FIXME Avoid this hack by doing like we did with the channels' recv: have
-  // this accept a callback that is called with the registration ID.
-  uint64_t registrationId = nextConnectionRequestRegistrationId_++;
-  loop_.deferToLoop(
-      [this, laneIdx, registrationId, fn{std::move(fn)}]() mutable {
-        registerConnectionRequestFromLoop(
-            laneIdx, registrationId, std::move(fn));
-      });
-  return registrationId;
-}
-
-void ContextImpl::registerConnectionRequestFromLoop(
-    uint64_t laneIdx,
-    uint64_t registrationId,
-    connection_request_callback_fn fn) {
   TP_DCHECK(loop_.inLoop());
+
+  uint64_t registrationId = nextConnectionRequestRegistrationId_++;
 
   TP_VLOG(4) << "Channel context " << id_
              << " received a connection request registration (#"
              << registrationId << ") on lane " << laneIdx;
 
-  if (error_) {
+  fn = [this, registrationId, fn{std::move(fn)}](
+           const Error& error,
+           std::shared_ptr<transport::Connection> connection) {
     TP_VLOG(4) << "Channel context " << id_
                << " calling a connection request registration callback (#"
                << registrationId << ")";
-    fn(error_, std::shared_ptr<transport::Connection>());
+    fn(error, std::move(connection));
     TP_VLOG(4) << "Channel context " << id_
                << " done calling a connection request registration callback (#"
                << registrationId << ")";
+  };
+
+  if (error_) {
+    fn(error_, std::shared_ptr<transport::Connection>());
   } else {
     connectionRequestRegistrations_.emplace(registrationId, std::move(fn));
   }
+
+  return registrationId;
 }
 
 void ContextImpl::unregisterConnectionRequest(uint64_t registrationId) {
-  loop_.deferToLoop([this, registrationId]() {
-    unregisterConnectionRequestFromLoop(registrationId);
-  });
-}
-
-void ContextImpl::unregisterConnectionRequestFromLoop(uint64_t registrationId) {
   TP_DCHECK(loop_.inLoop());
 
   TP_VLOG(4) << "Channel context " << id_

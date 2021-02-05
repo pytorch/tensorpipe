@@ -80,13 +80,6 @@ class ContextImpl final
 
   void initFromLoop();
 
-  void registerConnectionRequestFromLoop(
-      uint64_t laneIdx,
-      uint64_t registrationId,
-      connection_request_callback_fn fn);
-
-  void unregisterConnectionRequestFromLoop(uint64_t registrationId);
-
   void acceptLane(uint64_t laneIdx);
   void onAcceptOfLane(std::shared_ptr<transport::Connection> connection);
   void onReadClientHelloOnLane(
@@ -103,8 +96,7 @@ class ContextImpl final
   uint64_t numLanes_{0};
   std::vector<std::string> addresses_;
 
-  // This is atomic because it may be accessed from outside the loop.
-  std::atomic<uint64_t> nextConnectionRequestRegistrationId_{0};
+  uint64_t nextConnectionRequestRegistrationId_{0};
 
   // Needed to keep them alive.
   std::unordered_set<std::shared_ptr<transport::Connection>>
