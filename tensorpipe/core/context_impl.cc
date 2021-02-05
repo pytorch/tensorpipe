@@ -249,22 +249,26 @@ bool ContextImpl::inLoop() const {
 }
 
 void ContextImpl::close() {
-  if (!closed_.exchange(true)) {
-    TP_VLOG(1) << "Context " << id_ << " is closing";
+  // Defer this to the loop so that it won't race with other code accessing it
+  // (in other words: any code in the loop can assume that this won't change).
+  deferToLoop([this]() {
+    if (!closed_.exchange(true)) {
+      TP_VLOG(1) << "Context " << id_ << " is closing";
 
-    closingEmitter_.close();
+      closingEmitter_.close();
 
-    for (auto& iter : transports_) {
-      iter.second->close();
-    }
-    forEachDeviceType([&](auto buffer) {
-      for (auto& iter : channels_.get<decltype(buffer)>()) {
+      for (auto& iter : transports_) {
         iter.second->close();
       }
-    });
+      forEachDeviceType([&](auto buffer) {
+        for (auto& iter : channels_.get<decltype(buffer)>()) {
+          iter.second->close();
+        }
+      });
 
-    TP_VLOG(1) << "Context " << id_ << " done closing";
-  }
+      TP_VLOG(1) << "Context " << id_ << " done closing";
+    }
+  });
 }
 
 void ContextImpl::join() {
@@ -272,6 +276,14 @@ void ContextImpl::join() {
 
   if (!joined_.exchange(true)) {
     TP_VLOG(1) << "Context " << id_ << " is joining";
+
+    // As closing is deferred to the loop, we must wait for close to be actually
+    // called before we join, to avoid race conditions. For this, we defer
+    // another task to the loop, which we know will run after the closing, and
+    // then we wait for that task to be run.
+    std::promise<void> hasClosed;
+    deferToLoop([&]() { hasClosed.set_value(); });
+    hasClosed.get_future().wait();
 
     for (auto& iter : transports_) {
       iter.second->join();
