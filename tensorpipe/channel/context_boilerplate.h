@@ -40,6 +40,9 @@ class ContextBoilerplate : public Context<TBuffer> {
 
   const std::string& domainDescriptor() const override;
 
+  bool canCommunicateWithRemote(
+      const std::string& remoteDomainDescriptor) const override;
+
   void setId(std::string id) override;
 
   void close() override;
@@ -88,6 +91,12 @@ template <typename TBuffer, typename TCtx, typename TChan>
 const std::string& ContextBoilerplate<TBuffer, TCtx, TChan>::domainDescriptor()
     const {
   return impl_->domainDescriptor();
+}
+
+template <typename TBuffer, typename TCtx, typename TChan>
+bool ContextBoilerplate<TBuffer, TCtx, TChan>::canCommunicateWithRemote(
+    const std::string& remoteDomainDescriptor) const {
+  return impl_->canCommunicateWithRemote(remoteDomainDescriptor);
 }
 
 template <typename TBuffer, typename TCtx, typename TChan>

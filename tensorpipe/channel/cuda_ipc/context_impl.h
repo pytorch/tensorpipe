@@ -47,7 +47,7 @@ class ContextImpl final
       Endpoint endpoint);
 
   bool canCommunicateWithRemote(
-      const std::string& remoteDomainDescriptor) const;
+      const std::string& remoteDomainDescriptor) const override;
 
   const CudaLib& getCudaLib();
 

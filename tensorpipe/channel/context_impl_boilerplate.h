@@ -37,6 +37,8 @@ class ContextImplBoilerplate : public virtual DeferredExecutor,
 
   bool isViable() const;
   const std::string& domainDescriptor() const;
+  virtual bool canCommunicateWithRemote(
+      const std::string& remoteDomainDescriptor) const;
 
   // Enrolling dependent objects (channels) causes them to be kept alive for as
   // long as the context exists. These objects should enroll themselves as soon
@@ -127,6 +129,12 @@ template <typename TBuffer, typename TCtx, typename TChan>
 const std::string& ContextImplBoilerplate<TBuffer, TCtx, TChan>::
     domainDescriptor() const {
   return domainDescriptor_;
+}
+
+template <typename TBuffer, typename TCtx, typename TChan>
+bool ContextImplBoilerplate<TBuffer, TCtx, TChan>::canCommunicateWithRemote(
+    const std::string& remoteDomainDescriptor) const {
+  return domainDescriptor_ == remoteDomainDescriptor;
 }
 
 template <typename TBuffer, typename TCtx, typename TChan>
