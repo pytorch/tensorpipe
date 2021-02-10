@@ -128,7 +128,7 @@ ListenerImplBoilerplate<TCtx, TList, TConn>::ListenerImplBoilerplate(
 
 template <typename TCtx, typename TList, typename TConn>
 void ListenerImplBoilerplate<TCtx, TList, TConn>::init() {
-  context_->deferToLoop(
+  context_->runInLoop(
       [impl{this->shared_from_this()}]() { impl->initFromLoop(); });
 }
 
