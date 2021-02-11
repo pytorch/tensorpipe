@@ -18,6 +18,10 @@ std::string LogicError::what() const {
   return ss.str();
 }
 
+std::string ContextClosedError::what() const {
+  return "context closed";
+}
+
 std::string ListenerClosedError::what() const {
   return "listener closed";
 }

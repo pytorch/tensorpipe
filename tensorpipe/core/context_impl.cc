@@ -19,9 +19,11 @@
 
 #include <tensorpipe/common/callback.h>
 #include <tensorpipe/common/defs.h>
+#include <tensorpipe/common/error_macros.h>
 #include <tensorpipe/common/optional.h>
 #include <tensorpipe/common/queue.h>
 #include <tensorpipe/core/buffer_helpers.h>
+#include <tensorpipe/core/error.h>
 #include <tensorpipe/core/listener.h>
 #include <tensorpipe/core/listener_impl.h>
 #include <tensorpipe/core/pipe.h>
@@ -233,7 +235,7 @@ void ContextImpl::unenroll(PipeImpl& pipe) {
 
 bool ContextImpl::closed() {
   TP_DCHECK(inLoop());
-  return closed_;
+  return error_;
 }
 
 void ContextImpl::deferToLoop(TTask fn) {
@@ -245,37 +247,52 @@ bool ContextImpl::inLoop() const {
 }
 
 void ContextImpl::close() {
-  // Defer this to the loop so that it won't race with other code accessing it
-  // (in other words: any code in the loop can assume that this won't change).
-  deferToLoop([this]() {
-    if (!closed_.exchange(true)) {
-      TP_VLOG(1) << "Context " << id_ << " is closing";
+  deferToLoop([this]() { closeFromLoop(); });
+}
 
-      // Make a copy as they could unenroll themselves inline.
-      auto listenersCopy = listeners_;
-      auto pipesCopy = pipes_;
-      // We call closeFromLoop, rather than just close, because we need these
-      // objects to transition _immediately_ to error, "atomically". If we just
-      // deferred closing to later, this could come after some already-enqueued
-      // operations that could try to access the context, which would be closed,
-      // and this could fail.
-      for (auto& iter : listenersCopy) {
-        iter.second->closeFromLoop();
-      }
-      for (auto& iter : pipesCopy) {
-        iter.second->closeFromLoop();
-      }
+void ContextImpl::closeFromLoop() {
+  TP_DCHECK(inLoop());
+  TP_VLOG(1) << "Context " << id_ << " is closing";
+  setError(TP_CREATE_ERROR(ContextClosedError));
+  TP_VLOG(1) << "Context " << id_ << " done closing";
+}
 
-      for (auto& iter : transports_) {
-        iter.second->close();
-      }
-      forEachDeviceType([&](auto buffer) {
-        for (auto& iter : channels_.get<decltype(buffer)>()) {
-          iter.second->close();
-        }
-      });
+void ContextImpl::setError(Error error) {
+  // Don't overwrite an error that's already set.
+  if (error_ || !error) {
+    return;
+  }
 
-      TP_VLOG(1) << "Context " << id_ << " done closing";
+  error_ = std::move(error);
+
+  handleError();
+}
+
+void ContextImpl::handleError() {
+  TP_DCHECK(inLoop());
+  TP_VLOG(5) << "Context " << id_ << " is handling error " << error_.what();
+
+  // Make a copy as they could unenroll themselves inline.
+  auto listenersCopy = listeners_;
+  auto pipesCopy = pipes_;
+  // We call closeFromLoop, rather than just close, because we need these
+  // objects to transition _immediately_ to error, "atomically". If we just
+  // deferred closing to later, this could come after some already-enqueued
+  // operations that could try to access the context, which would be closed,
+  // and this could fail.
+  for (auto& iter : listenersCopy) {
+    iter.second->closeFromLoop();
+  }
+  for (auto& iter : pipesCopy) {
+    iter.second->closeFromLoop();
+  }
+
+  for (auto& iter : transports_) {
+    iter.second->close();
+  }
+  forEachDeviceType([&](auto buffer) {
+    for (auto& iter : channels_.get<decltype(buffer)>()) {
+      iter.second->close();
     }
   });
 }

@@ -11,6 +11,10 @@
 namespace tensorpipe {
 namespace transport {
 
+std::string ContextClosedError::what() const {
+  return "context closed";
+}
+
 std::string ListenerClosedError::what() const {
   return "listener closed";
 }

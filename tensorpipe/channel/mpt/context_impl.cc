@@ -212,22 +212,7 @@ void ContextImpl::onReadClientHelloOnLane(
   }
 }
 
-void ContextImpl::setError(Error error) {
-  // Don't overwrite an error that's already set.
-  if (error_ || !error) {
-    return;
-  }
-
-  error_ = std::move(error);
-
-  handleError();
-}
-
-void ContextImpl::handleError() {
-  TP_DCHECK(loop_.inLoop());
-  TP_VLOG(5) << "Channel context " << id_ << " handling error "
-             << error_.what();
-
+void ContextImpl::handleErrorImpl() {
   for (auto& iter : connectionRequestRegistrations_) {
     connection_request_callback_fn fn = std::move(iter.second);
     fn(error_, std::shared_ptr<transport::Connection>());
@@ -254,14 +239,6 @@ void ContextImpl::setIdImpl() {
         id_ + ".ctx_" + std::to_string(laneIdx) + ".l_" +
         std::to_string(laneIdx));
   }
-}
-
-void ContextImpl::closeImpl() {
-  loop_.deferToLoop([this]() { closeFromLoop(); });
-}
-
-void ContextImpl::closeFromLoop() {
-  setError(TP_CREATE_ERROR(ContextClosedError));
 }
 
 void ContextImpl::joinImpl() {

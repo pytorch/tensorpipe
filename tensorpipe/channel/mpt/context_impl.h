@@ -70,13 +70,12 @@ class ContextImpl final
 
  protected:
   // Implement the entry points called by ContextImplBoilerplate.
-  void closeImpl() override;
+  void handleErrorImpl() override;
   void joinImpl() override;
   void setIdImpl() override;
 
  private:
   OnDemandDeferredExecutor loop_;
-  Error error_{Error::kSuccess};
 
   void initFromLoop();
 
@@ -85,10 +84,6 @@ class ContextImpl final
   void onReadClientHelloOnLane(
       std::shared_ptr<transport::Connection> connection,
       const Packet& nopPacketIn);
-
-  void setError(Error error);
-  void handleError();
-  void closeFromLoop();
 
   const std::vector<std::shared_ptr<transport::Context>> contexts_;
   const std::vector<std::shared_ptr<transport::Listener>> listeners_;

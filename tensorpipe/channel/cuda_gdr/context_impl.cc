@@ -521,7 +521,7 @@ bool ContextImpl::readyToClose() {
   return pendingCudaEvents_.empty();
 }
 
-void ContextImpl::closeImpl() {
+void ContextImpl::handleErrorImpl() {
   stopBusyPolling();
 }
 

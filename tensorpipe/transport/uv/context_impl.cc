@@ -37,7 +37,7 @@ ContextImpl::ContextImpl()
           /*isViable=*/true,
           generateDomainDescriptor()) {}
 
-void ContextImpl::closeImpl() {
+void ContextImpl::handleErrorImpl() {
   loop_.close();
 }
 

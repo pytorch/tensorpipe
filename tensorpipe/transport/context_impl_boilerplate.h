@@ -65,8 +65,12 @@ class ContextImplBoilerplate : public virtual DeferredExecutor,
   virtual ~ContextImplBoilerplate() = default;
 
  protected:
-  virtual void closeImpl() = 0;
+  virtual void handleErrorImpl() = 0;
   virtual void joinImpl() = 0;
+
+  void setError(Error error);
+
+  Error error_{Error::kSuccess};
 
   // An identifier for the context, composed of the identifier for the context,
   // combined with the transport's name. It will only be used for logging and
@@ -74,7 +78,10 @@ class ContextImplBoilerplate : public virtual DeferredExecutor,
   std::string id_{"N/A"};
 
  private:
-  std::atomic<bool> closed_{false};
+  void closeFromLoop();
+
+  void handleError();
+
   std::atomic<bool> joined_{false};
 
   const bool isViable_;
@@ -173,7 +180,7 @@ void ContextImplBoilerplate<TCtx, TList, TConn>::unenroll(TConn& connection) {
 template <typename TCtx, typename TList, typename TConn>
 bool ContextImplBoilerplate<TCtx, TList, TConn>::closed() {
   TP_DCHECK(inLoop());
-  return closed_;
+  return error_;
 };
 
 template <typename TCtx, typename TList, typename TConn>
@@ -184,32 +191,51 @@ void ContextImplBoilerplate<TCtx, TList, TConn>::setId(std::string id) {
 
 template <typename TCtx, typename TList, typename TConn>
 void ContextImplBoilerplate<TCtx, TList, TConn>::close() {
-  // Defer this to the loop so that it won't race with other code accessing it
-  // (in other words: any code in the loop can assume that this won't change).
-  deferToLoop([this]() {
-    if (!closed_.exchange(true)) {
-      TP_VLOG(7) << "Transport context " << id_ << " is closing";
+  deferToLoop([this]() { closeFromLoop(); });
+}
 
-      // Make a copy as they could unenroll themselves inline.
-      auto listenersCopy = listeners_;
-      auto connectionsCopy = connections_;
-      // We call closeFromLoop, rather than just close, because we need these
-      // objects to transition _immediately_ to error, "atomically". If we just
-      // deferred closing to later, this could come after some already-enqueued
-      // operations that could try to access the context, which would be closed,
-      // and this could fail.
-      for (auto& iter : listenersCopy) {
-        iter.second->closeFromLoop();
-      }
-      for (auto& iter : connectionsCopy) {
-        iter.second->closeFromLoop();
-      }
+template <typename TCtx, typename TList, typename TConn>
+void ContextImplBoilerplate<TCtx, TList, TConn>::closeFromLoop() {
+  TP_DCHECK(inLoop());
+  TP_VLOG(7) << "Transport context " << id_ << " is closing";
+  setError(TP_CREATE_ERROR(ContextClosedError));
+  TP_VLOG(7) << "Transport context " << id_ << " done closing";
+}
 
-      closeImpl();
+template <typename TCtx, typename TList, typename TConn>
+void ContextImplBoilerplate<TCtx, TList, TConn>::setError(Error error) {
+  // Don't overwrite an error that's already set.
+  if (error_ || !error) {
+    return;
+  }
 
-      TP_VLOG(7) << "Transport context " << id_ << " done closing";
-    }
-  });
+  error_ = std::move(error);
+
+  handleError();
+}
+
+template <typename TCtx, typename TList, typename TConn>
+void ContextImplBoilerplate<TCtx, TList, TConn>::handleError() {
+  TP_DCHECK(inLoop());
+  TP_VLOG(8) << "Transport context " << id_ << " is handling error "
+             << error_.what();
+
+  // Make a copy as they could unenroll themselves inline.
+  auto listenersCopy = listeners_;
+  auto connectionsCopy = connections_;
+  // We call closeFromLoop, rather than just close, because we need these
+  // objects to transition _immediately_ to error, "atomically". If we just
+  // deferred closing to later, this could come after some already-enqueued
+  // operations that could try to access the context, which would be closed,
+  // and this could fail.
+  for (auto& iter : listenersCopy) {
+    iter.second->closeFromLoop();
+  }
+  for (auto& iter : connectionsCopy) {
+    iter.second->closeFromLoop();
+  }
+
+  handleErrorImpl();
 }
 
 template <typename TCtx, typename TList, typename TConn>

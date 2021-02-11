@@ -97,7 +97,7 @@ const CudaLib& ContextImpl::getCudaLib() {
   return cudaLib_;
 }
 
-void ContextImpl::closeImpl() {}
+void ContextImpl::handleErrorImpl() {}
 
 void ContextImpl::joinImpl() {}
 

@@ -15,6 +15,13 @@
 namespace tensorpipe {
 namespace transport {
 
+class ContextClosedError final : public BaseError {
+ public:
+  ContextClosedError() {}
+
+  std::string what() const override;
+};
+
 class ListenerClosedError final : public BaseError {
  public:
   ListenerClosedError() {}

@@ -114,7 +114,8 @@ class ContextImpl final : public virtual DeferredExecutor,
  private:
   OnDemandDeferredExecutor loop_;
 
-  std::atomic<bool> closed_{false};
+  Error error_{Error::kSuccess};
+
   std::atomic<bool> joined_{false};
 
   // An identifier for the context, either consisting of the user-provided name
@@ -164,6 +165,10 @@ class ContextImpl final : public virtual DeferredExecutor,
   template <typename TBuffer>
   std::shared_ptr<channel::Context<TBuffer>> getChannel(
       const std::string& channel);
+
+  void closeFromLoop();
+  void setError(Error error);
+  void handleError();
 };
 
 } // namespace tensorpipe

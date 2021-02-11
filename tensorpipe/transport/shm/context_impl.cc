@@ -76,7 +76,7 @@ ContextImpl::ContextImpl(std::string domainDescriptor)
           /*isViable=*/true,
           std::move(domainDescriptor)) {}
 
-void ContextImpl::closeImpl() {
+void ContextImpl::handleErrorImpl() {
   loop_.close();
   reactor_.close();
 }
