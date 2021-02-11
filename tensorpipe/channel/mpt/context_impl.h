@@ -96,12 +96,6 @@ class ContextImpl final
 
   std::unordered_map<uint64_t, connection_request_callback_fn>
       connectionRequestRegistrations_;
-
-  CallbackWrapper<ContextImpl> callbackWrapper_{*this, this->loop_};
-
-  // For some odd reason it seems we need to use a qualified name here...
-  template <typename T>
-  friend class tensorpipe::CallbackWrapper;
 };
 
 } // namespace mpt

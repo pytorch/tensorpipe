@@ -80,6 +80,8 @@ class ContextImplBoilerplate : public virtual DeferredExecutor,
   // debugging purposes.
   std::string id_{"N/A"};
 
+  CallbackWrapper<TCtx> callbackWrapper_{*this, *this};
+
  private:
   void initFromLoop();
   void closeFromLoop();
@@ -103,6 +105,10 @@ class ContextImplBoilerplate : public virtual DeferredExecutor,
   // a fresh shared_ptr just for that.
   std::unordered_map<TList*, std::shared_ptr<TList>> listeners_;
   std::unordered_map<TConn*, std::shared_ptr<TConn>> connections_;
+
+  // For some odd reason it seems we need to use a qualified name here...
+  template <typename T>
+  friend class tensorpipe::CallbackWrapper;
 };
 
 template <typename TCtx, typename TList, typename TConn>

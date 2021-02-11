@@ -158,6 +158,8 @@ class ContextImpl final : public virtual DeferredExecutor,
   TP_DEVICE_FIELD(TOrderedChannels<CpuBuffer>, TOrderedChannels<CudaBuffer>)
   channelsByPriority_;
 
+  CallbackWrapper<ContextImpl> callbackWrapper_{*this, *this};
+
   void initFromLoop();
 
   template <typename TBuffer>
@@ -173,6 +175,9 @@ class ContextImpl final : public virtual DeferredExecutor,
   void closeFromLoop();
   void setError(Error error);
   void handleError();
+
+  template <typename T>
+  friend class CallbackWrapper;
 };
 
 } // namespace tensorpipe
