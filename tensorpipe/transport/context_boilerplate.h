@@ -23,7 +23,8 @@ namespace transport {
 template <typename TCtx, typename TList, typename TConn>
 class ContextBoilerplate : public Context {
  public:
-  explicit ContextBoilerplate(std::shared_ptr<TCtx> context);
+  template <typename... Args>
+  explicit ContextBoilerplate(Args&&... args);
 
   ContextBoilerplate(const ContextBoilerplate&) = delete;
   ContextBoilerplate(ContextBoilerplate&&) = delete;
@@ -55,9 +56,9 @@ class ContextBoilerplate : public Context {
 };
 
 template <typename TCtx, typename TList, typename TConn>
-ContextBoilerplate<TCtx, TList, TConn>::ContextBoilerplate(
-    std::shared_ptr<TCtx> context)
-    : impl_(std::move(context)) {
+template <typename... Args>
+ContextBoilerplate<TCtx, TList, TConn>::ContextBoilerplate(Args&&... args)
+    : impl_(TCtx::create(std::forward<Args>(args)...)) {
   static_assert(
       std::is_base_of<ContextImplBoilerplate<TCtx, TList, TConn>, TCtx>::value,
       "");

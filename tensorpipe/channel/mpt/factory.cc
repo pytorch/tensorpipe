@@ -19,9 +19,9 @@ namespace mpt {
 std::shared_ptr<CpuContext> create(
     std::vector<std::shared_ptr<transport::Context>> contexts,
     std::vector<std::shared_ptr<transport::Listener>> listeners) {
-  auto impl = ContextImpl::create(std::move(contexts), std::move(listeners));
   return std::make_shared<
-      ContextBoilerplate<CpuBuffer, ContextImpl, ChannelImpl>>(std::move(impl));
+      ContextBoilerplate<CpuBuffer, ContextImpl, ChannelImpl>>(
+      std::move(contexts), std::move(listeners));
 }
 
 } // namespace mpt

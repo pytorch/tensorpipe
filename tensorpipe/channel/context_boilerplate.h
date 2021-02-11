@@ -23,7 +23,8 @@ namespace channel {
 template <typename TBuffer, typename TCtx, typename TChan>
 class ContextBoilerplate : public Context<TBuffer> {
  public:
-  explicit ContextBoilerplate(std::shared_ptr<TCtx> context);
+  template <typename... Args>
+  explicit ContextBoilerplate(Args&&... args);
 
   ContextBoilerplate(const ContextBoilerplate&) = delete;
   ContextBoilerplate(ContextBoilerplate&&) = delete;
@@ -60,9 +61,9 @@ class ContextBoilerplate : public Context<TBuffer> {
 };
 
 template <typename TBuffer, typename TCtx, typename TChan>
-ContextBoilerplate<TBuffer, TCtx, TChan>::ContextBoilerplate(
-    std::shared_ptr<TCtx> context)
-    : impl_(std::move(context)) {
+template <typename... Args>
+ContextBoilerplate<TBuffer, TCtx, TChan>::ContextBoilerplate(Args&&... args)
+    : impl_(TCtx::create(std::forward<Args>(args)...)) {
   static_assert(
       std::is_base_of<ChannelImplBoilerplate<TBuffer, TCtx, TChan>, TChan>::
           value,
