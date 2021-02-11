@@ -29,5 +29,12 @@ class ChannelClosedError final : public BaseError {
   std::string what() const override;
 };
 
+class ContextNotViableError final : public BaseError {
+ public:
+  ContextNotViableError() {}
+
+  std::string what() const override;
+};
+
 } // namespace channel
 } // namespace tensorpipe

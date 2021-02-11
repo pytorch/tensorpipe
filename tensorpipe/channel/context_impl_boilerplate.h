@@ -134,6 +134,15 @@ template <typename TBuffer, typename TCtx, typename TChan>
 void ContextImplBoilerplate<TBuffer, TCtx, TChan>::initFromLoop() {
   TP_DCHECK(inLoop());
 
+  TP_DCHECK(!error_);
+  if (!isViable_) {
+    // Set the error without calling setError because we do not want to invoke
+    // the subclass's handleErrorImpl as it would find itself in a weird state
+    // (since initFromLoop wouldn't have been called).
+    error_ = TP_CREATE_ERROR(ContextNotViableError);
+    return;
+  }
+
   initImplFromLoop();
 }
 

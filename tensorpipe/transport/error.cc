@@ -23,5 +23,9 @@ std::string ConnectionClosedError::what() const {
   return "connection closed";
 }
 
+std::string ContextNotViableError::what() const {
+  return "context not viable";
+}
+
 } // namespace transport
 } // namespace tensorpipe
