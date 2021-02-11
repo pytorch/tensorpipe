@@ -33,6 +33,8 @@ class ContextImplBoilerplate : public virtual DeferredExecutor,
   ContextImplBoilerplate& operator=(const ContextImplBoilerplate&) = delete;
   ContextImplBoilerplate& operator=(ContextImplBoilerplate&&) = delete;
 
+  void init();
+
   std::shared_ptr<Connection> connect(std::string addr);
 
   std::shared_ptr<Listener> listen(std::string addr);
@@ -65,6 +67,7 @@ class ContextImplBoilerplate : public virtual DeferredExecutor,
   virtual ~ContextImplBoilerplate() = default;
 
  protected:
+  virtual void initImplFromLoop() {}
   virtual void handleErrorImpl() = 0;
   virtual void joinImpl() = 0;
 
@@ -78,6 +81,7 @@ class ContextImplBoilerplate : public virtual DeferredExecutor,
   std::string id_{"N/A"};
 
  private:
+  void initFromLoop();
   void closeFromLoop();
 
   void handleError();
@@ -106,6 +110,18 @@ ContextImplBoilerplate<TCtx, TList, TConn>::ContextImplBoilerplate(
     bool isViable,
     std::string domainDescriptor)
     : isViable_(isViable), domainDescriptor_(std::move(domainDescriptor)) {}
+
+template <typename TCtx, typename TList, typename TConn>
+void ContextImplBoilerplate<TCtx, TList, TConn>::init() {
+  deferToLoop([this]() { initFromLoop(); });
+}
+
+template <typename TCtx, typename TList, typename TConn>
+void ContextImplBoilerplate<TCtx, TList, TConn>::initFromLoop() {
+  TP_DCHECK(inLoop());
+
+  initImplFromLoop();
+}
 
 template <typename TCtx, typename TList, typename TConn>
 std::shared_ptr<Connection> ContextImplBoilerplate<TCtx, TList, TConn>::connect(

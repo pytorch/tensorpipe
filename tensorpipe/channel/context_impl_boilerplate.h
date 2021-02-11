@@ -33,6 +33,8 @@ class ContextImplBoilerplate : public virtual DeferredExecutor,
   ContextImplBoilerplate& operator=(const ContextImplBoilerplate&) = delete;
   ContextImplBoilerplate& operator=(ContextImplBoilerplate&&) = delete;
 
+  void init();
+
   virtual size_t numConnectionsNeeded() const;
 
   bool isViable() const;
@@ -63,6 +65,7 @@ class ContextImplBoilerplate : public virtual DeferredExecutor,
   virtual ~ContextImplBoilerplate() = default;
 
  protected:
+  virtual void initImplFromLoop() {}
   virtual void handleErrorImpl() = 0;
   virtual void joinImpl() = 0;
   virtual void setIdImpl() {}
@@ -80,6 +83,7 @@ class ContextImplBoilerplate : public virtual DeferredExecutor,
   std::string id_{"N/A"};
 
  private:
+  void initFromLoop();
   void closeFromLoop();
 
   void handleError();
@@ -119,6 +123,18 @@ std::shared_ptr<Channel<TBuffer>> ContextImplBoilerplate<TBuffer, TCtx, TChan>::
       this->shared_from_this(),
       std::move(channelId),
       std::forward<Args>(args)...);
+}
+
+template <typename TBuffer, typename TCtx, typename TChan>
+void ContextImplBoilerplate<TBuffer, TCtx, TChan>::init() {
+  deferToLoop([this]() { initFromLoop(); });
+}
+
+template <typename TBuffer, typename TCtx, typename TChan>
+void ContextImplBoilerplate<TBuffer, TCtx, TChan>::initFromLoop() {
+  TP_DCHECK(inLoop());
+
+  initImplFromLoop();
 }
 
 template <typename TBuffer, typename TCtx, typename TChan>

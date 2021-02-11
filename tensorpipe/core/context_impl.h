@@ -37,6 +37,8 @@ class ContextImpl final : public virtual DeferredExecutor,
  public:
   explicit ContextImpl(ContextOptions opts);
 
+  void init();
+
   void registerTransport(
       int64_t priority,
       std::string transport,
@@ -155,6 +157,8 @@ class ContextImpl final : public virtual DeferredExecutor,
 
   TP_DEVICE_FIELD(TOrderedChannels<CpuBuffer>, TOrderedChannels<CudaBuffer>)
   channelsByPriority_;
+
+  void initFromLoop();
 
   template <typename TBuffer>
   void registerChannel(

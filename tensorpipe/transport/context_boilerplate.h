@@ -61,6 +61,7 @@ ContextBoilerplate<TCtx, TList, TConn>::ContextBoilerplate(
   static_assert(
       std::is_base_of<ContextImplBoilerplate<TCtx, TList, TConn>, TCtx>::value,
       "");
+  impl_->init();
 }
 
 template <typename TCtx, typename TList, typename TConn>

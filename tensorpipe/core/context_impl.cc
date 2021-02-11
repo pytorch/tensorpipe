@@ -57,6 +57,12 @@ ContextImpl::ContextImpl(ContextOptions opts)
   }
 }
 
+void ContextImpl::init() {
+  deferToLoop([this]() { initFromLoop(); });
+}
+
+void ContextImpl::initFromLoop() {}
+
 void ContextImpl::registerTransport(
     int64_t priority,
     std::string transport,

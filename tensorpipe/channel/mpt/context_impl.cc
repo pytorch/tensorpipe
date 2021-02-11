@@ -77,13 +77,7 @@ ContextImpl::ContextImpl(
   }
 }
 
-void ContextImpl::init() {
-  loop_.deferToLoop([this]() { initFromLoop(); });
-}
-
-void ContextImpl::initFromLoop() {
-  TP_DCHECK(loop_.inLoop());
-
+void ContextImpl::initImplFromLoop() {
   for (uint64_t laneIdx = 0; laneIdx < numLanes_; ++laneIdx) {
     acceptLane(laneIdx);
   }

@@ -43,8 +43,6 @@ class ContextImpl final
       std::vector<std::shared_ptr<transport::Context>> contexts,
       std::vector<std::shared_ptr<transport::Listener>> listeners);
 
-  void init();
-
   std::shared_ptr<CpuChannel> createChannel(
       std::vector<std::shared_ptr<transport::Connection>> connections,
       Endpoint endpoint);
@@ -70,14 +68,13 @@ class ContextImpl final
 
  protected:
   // Implement the entry points called by ContextImplBoilerplate.
+  void initImplFromLoop() override;
   void handleErrorImpl() override;
   void joinImpl() override;
   void setIdImpl() override;
 
  private:
   OnDemandDeferredExecutor loop_;
-
-  void initFromLoop();
 
   void acceptLane(uint64_t laneIdx);
   void onAcceptOfLane(std::shared_ptr<transport::Connection> connection);

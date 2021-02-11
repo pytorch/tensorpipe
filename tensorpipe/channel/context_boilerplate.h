@@ -67,6 +67,7 @@ ContextBoilerplate<TBuffer, TCtx, TChan>::ContextBoilerplate(
       std::is_base_of<ChannelImplBoilerplate<TBuffer, TCtx, TChan>, TChan>::
           value,
       "");
+  impl_->init();
 }
 
 template <typename TBuffer, typename TCtx, typename TChan>
