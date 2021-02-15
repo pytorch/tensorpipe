@@ -30,11 +30,19 @@ namespace tensorpipe {
 // Master list of all symbols we care about from libnvidia-ml.
 
 #define TP_FORALL_NVML_SYMBOLS(_)                                             \
+  _(deviceGetComputeRunningProcesses,                                         \
+    nvmlDeviceGetComputeRunningProcesses,                                     \
+    nvmlReturn_t,                                                             \
+    (nvmlDevice_t, unsigned int*, nvmlProcessInfo_t*))                        \
   _(deviceGetCount_v2, nvmlDeviceGetCount_v2, nvmlReturn_t, (unsigned int*))  \
   _(deviceGetHandleByIndex_v2,                                                \
     nvmlDeviceGetHandleByIndex_v2,                                            \
     nvmlReturn_t,                                                             \
     (unsigned int, nvmlDevice_t*))                                            \
+  _(deviceGetHandleByUUID,                                                    \
+    nvmlDeviceGetHandleByUUID,                                                \
+    nvmlReturn_t,                                                             \
+    (const char*, nvmlDevice_t*))                                             \
   _(deviceGetP2PStatus,                                                       \
     nvmlDeviceGetP2PStatus,                                                   \
     nvmlReturn_t,                                                             \
