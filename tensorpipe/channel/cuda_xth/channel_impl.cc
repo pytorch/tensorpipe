@@ -40,12 +40,15 @@ class SendOperation {
     startEv_.wait(dstBuffer.stream, dstDeviceIdx);
 
     TP_DCHECK_EQ(buffer_.length, dstBuffer.length);
-    TP_CUDA_CHECK(cudaMemcpyAsync(
-        dstBuffer.ptr,
-        buffer_.ptr,
-        dstBuffer.length,
-        cudaMemcpyDeviceToDevice,
-        dstBuffer.stream));
+    {
+      CudaDeviceGuard guard(dstDeviceIdx);
+      TP_CUDA_CHECK(cudaMemcpyAsync(
+          dstBuffer.ptr,
+          buffer_.ptr,
+          dstBuffer.length,
+          cudaMemcpyDeviceToDevice,
+          dstBuffer.stream));
+    }
 
     CudaEvent stopEv(dstDeviceIdx);
     stopEv.record(dstBuffer.stream);
