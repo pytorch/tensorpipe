@@ -22,6 +22,7 @@
 
 #include <tensorpipe/channel/cma/channel_impl.h>
 #include <tensorpipe/common/defs.h>
+#include <tensorpipe/common/strings.h>
 #include <tensorpipe/common/system.h>
 
 namespace tensorpipe {
@@ -49,18 +50,6 @@ bool isProcessVmReadvSyscallAllowed() {
   };
   ssize_t nread = ::process_vm_readv(::getpid(), &target, 1, &source, 1, 0);
   return nread == sizeof(uint64_t) && someTargetValue == someSourceValue;
-}
-
-std::string joinStrs(const std::vector<std::string>& strs) {
-  if (strs.empty()) {
-    return "";
-  }
-  std::ostringstream oss;
-  oss << strs[0];
-  for (size_t idx = 1; idx < strs.size(); idx++) {
-    oss << ", " << strs[idx];
-  }
-  return oss.str();
 }
 
 } // namespace
