@@ -18,8 +18,7 @@ namespace cuda_xth {
 
 std::shared_ptr<CudaContext> create() {
   return std::make_shared<
-      ContextBoilerplate<CudaBuffer, ContextImpl, ChannelImpl>>(
-      ContextImpl::create());
+      ContextBoilerplate<CudaBuffer, ContextImpl, ChannelImpl>>();
 }
 
 } // namespace cuda_xth

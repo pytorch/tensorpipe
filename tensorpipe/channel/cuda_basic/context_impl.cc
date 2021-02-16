@@ -72,7 +72,7 @@ const CudaLib& ContextImpl::getCudaLib() {
   return cudaLib_;
 }
 
-void ContextImpl::closeImpl() {
+void ContextImpl::handleErrorImpl() {
   if (cpuContext_ != nullptr) {
     cpuContext_->close();
   }

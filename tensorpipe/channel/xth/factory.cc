@@ -18,8 +18,7 @@ namespace xth {
 
 std::shared_ptr<CpuContext> create() {
   return std::make_shared<
-      ContextBoilerplate<CpuBuffer, ContextImpl, ChannelImpl>>(
-      ContextImpl::create());
+      ContextBoilerplate<CpuBuffer, ContextImpl, ChannelImpl>>();
 }
 
 } // namespace xth

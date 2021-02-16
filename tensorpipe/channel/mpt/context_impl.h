@@ -37,11 +37,11 @@ class ContextImpl final
       std::vector<std::shared_ptr<transport::Context>> contexts,
       std::vector<std::shared_ptr<transport::Listener>> listeners);
 
+  ContextImpl();
+
   ContextImpl(
       std::vector<std::shared_ptr<transport::Context>> contexts,
       std::vector<std::shared_ptr<transport::Listener>> listeners);
-
-  void init();
 
   std::shared_ptr<CpuChannel> createChannel(
       std::vector<std::shared_ptr<transport::Connection>> connections,
@@ -68,22 +68,13 @@ class ContextImpl final
 
  protected:
   // Implement the entry points called by ContextImplBoilerplate.
-  void closeImpl() override;
+  void initImplFromLoop() override;
+  void handleErrorImpl() override;
   void joinImpl() override;
   void setIdImpl() override;
 
  private:
   OnDemandDeferredExecutor loop_;
-  Error error_{Error::kSuccess};
-
-  void initFromLoop();
-
-  void registerConnectionRequestFromLoop(
-      uint64_t laneIdx,
-      uint64_t registrationId,
-      connection_request_callback_fn fn);
-
-  void unregisterConnectionRequestFromLoop(uint64_t registrationId);
 
   void acceptLane(uint64_t laneIdx);
   void onAcceptOfLane(std::shared_ptr<transport::Connection> connection);
@@ -91,18 +82,13 @@ class ContextImpl final
       std::shared_ptr<transport::Connection> connection,
       const Packet& nopPacketIn);
 
-  void setError(Error error);
-  void handleError();
-  void closeFromLoop();
-
   const std::vector<std::shared_ptr<transport::Context>> contexts_;
   const std::vector<std::shared_ptr<transport::Listener>> listeners_;
 
   uint64_t numLanes_{0};
   std::vector<std::string> addresses_;
 
-  // This is atomic because it may be accessed from outside the loop.
-  std::atomic<uint64_t> nextConnectionRequestRegistrationId_{0};
+  uint64_t nextConnectionRequestRegistrationId_{0};
 
   // Needed to keep them alive.
   std::unordered_set<std::shared_ptr<transport::Connection>>
@@ -110,15 +96,6 @@ class ContextImpl final
 
   std::unordered_map<uint64_t, connection_request_callback_fn>
       connectionRequestRegistrations_;
-
-  LazyCallbackWrapper<ContextImpl> lazyCallbackWrapper_{*this, this->loop_};
-  EagerCallbackWrapper<ContextImpl> eagerCallbackWrapper_{*this, this->loop_};
-
-  // For some odd reason it seems we need to use a qualified name here...
-  template <typename T>
-  friend class tensorpipe::LazyCallbackWrapper;
-  template <typename T>
-  friend class tensorpipe::EagerCallbackWrapper;
 };
 
 } // namespace mpt

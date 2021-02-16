@@ -23,7 +23,8 @@ namespace channel {
 template <typename TBuffer, typename TCtx, typename TChan>
 class ContextBoilerplate : public Context<TBuffer> {
  public:
-  explicit ContextBoilerplate(std::shared_ptr<TCtx> context);
+  template <typename... Args>
+  explicit ContextBoilerplate(Args&&... args);
 
   ContextBoilerplate(const ContextBoilerplate&) = delete;
   ContextBoilerplate(ContextBoilerplate&&) = delete;
@@ -39,6 +40,9 @@ class ContextBoilerplate : public Context<TBuffer> {
   bool isViable() const override;
 
   const std::string& domainDescriptor() const override;
+
+  bool canCommunicateWithRemote(
+      const std::string& remoteDomainDescriptor) const override;
 
   void setId(std::string id) override;
 
@@ -57,13 +61,14 @@ class ContextBoilerplate : public Context<TBuffer> {
 };
 
 template <typename TBuffer, typename TCtx, typename TChan>
-ContextBoilerplate<TBuffer, TCtx, TChan>::ContextBoilerplate(
-    std::shared_ptr<TCtx> context)
-    : impl_(std::move(context)) {
+template <typename... Args>
+ContextBoilerplate<TBuffer, TCtx, TChan>::ContextBoilerplate(Args&&... args)
+    : impl_(TCtx::create(std::forward<Args>(args)...)) {
   static_assert(
       std::is_base_of<ChannelImplBoilerplate<TBuffer, TCtx, TChan>, TChan>::
           value,
       "");
+  impl_->init();
 }
 
 template <typename TBuffer, typename TCtx, typename TChan>
@@ -88,6 +93,12 @@ template <typename TBuffer, typename TCtx, typename TChan>
 const std::string& ContextBoilerplate<TBuffer, TCtx, TChan>::domainDescriptor()
     const {
   return impl_->domainDescriptor();
+}
+
+template <typename TBuffer, typename TCtx, typename TChan>
+bool ContextBoilerplate<TBuffer, TCtx, TChan>::canCommunicateWithRemote(
+    const std::string& remoteDomainDescriptor) const {
+  return impl_->canCommunicateWithRemote(remoteDomainDescriptor);
 }
 
 template <typename TBuffer, typename TCtx, typename TChan>
