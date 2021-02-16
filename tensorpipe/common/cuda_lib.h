@@ -84,7 +84,7 @@ class CudaLib {
     // through this handle and are not exposed (a.k.a., "leaked") to other
     // shared objects.
     std::tie(error, dlhandle) =
-        createDynamicLibraryHandle("libcuda.so", RTLD_LOCAL | RTLD_LAZY);
+        createDynamicLibraryHandle("libcuda.so.1", RTLD_LOCAL | RTLD_LAZY);
     if (error) {
       return std::make_tuple(std::move(error), CudaLib());
     }

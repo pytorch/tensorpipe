@@ -145,7 +145,17 @@ optional<std::string> getBootID() {
   return bootID;
 }
 
-#ifdef __linux__
+#ifdef __APPLE__
+
+// OSX is a UNIX, so often we'd like some of our Linux backends to work there
+// too, but its lack of support for namespaces poses issues. However, that's
+// like saying that in OSX all processes are in the same namespace with respect
+// to all resources, so we pretend namespaces are supported, with a constant ID.
+optional<std::string> getLinuxNamespaceId(LinuxNamespace ns) {
+  return std::string();
+}
+
+#elif defined(__linux__)
 
 // According to namespaces(7):
 // > Each process has a /proc/[pid]/ns/ subdirectory containing one entry for

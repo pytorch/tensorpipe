@@ -19,8 +19,7 @@ namespace uv {
 
 std::shared_ptr<Context> create() {
   return std::make_shared<
-      ContextBoilerplate<ContextImpl, ListenerImpl, ConnectionImpl>>(
-      ContextImpl::create());
+      ContextBoilerplate<ContextImpl, ListenerImpl, ConnectionImpl>>();
 }
 
 } // namespace uv

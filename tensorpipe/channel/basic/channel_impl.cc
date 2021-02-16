@@ -46,7 +46,7 @@ void ChannelImpl::sendImplFromLoop(
   connection_->write(
       buffer.ptr,
       buffer.length,
-      eagerCallbackWrapper_(
+      callbackWrapper_(
           [sequenceNumber, callback{std::move(callback)}](ChannelImpl& impl) {
             TP_VLOG(6) << "Channel " << impl.id_ << " done writing payload (#"
                        << sequenceNumber << ")";
@@ -68,10 +68,10 @@ void ChannelImpl::recvImplFromLoop(
   connection_->read(
       buffer.ptr,
       buffer.length,
-      eagerCallbackWrapper_([sequenceNumber, callback{std::move(callback)}](
-                                ChannelImpl& impl,
-                                const void* /* unused */,
-                                size_t /* unused */) {
+      callbackWrapper_([sequenceNumber, callback{std::move(callback)}](
+                           ChannelImpl& impl,
+                           const void* /* unused */,
+                           size_t /* unused */) {
         TP_VLOG(6) << "Channel " << impl.id_ << " done reading payload (#"
                    << sequenceNumber << ")";
         callback(impl.error_);

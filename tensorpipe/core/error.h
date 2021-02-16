@@ -24,6 +24,13 @@ class LogicError final : public BaseError {
   const std::string reason_;
 };
 
+class ContextClosedError final : public BaseError {
+ public:
+  explicit ContextClosedError() {}
+
+  std::string what() const override;
+};
+
 class ListenerClosedError final : public BaseError {
  public:
   explicit ListenerClosedError() {}

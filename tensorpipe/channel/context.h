@@ -67,9 +67,7 @@ class Context {
   // Unless overridden it defaults to string comparison.
   //
   virtual bool canCommunicateWithRemote(
-      const std::string& remoteDomainDescriptor) const {
-    return domainDescriptor() == remoteDomainDescriptor;
-  }
+      const std::string& remoteDomainDescriptor) const = 0;
 
   // Return newly created channel using the specified connections.
   //

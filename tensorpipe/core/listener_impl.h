@@ -102,8 +102,6 @@ class ListenerImpl final : public std::enable_shared_from_this<ListenerImpl> {
   std::unordered_map<uint64_t, connection_request_callback_fn>
       connectionRequestRegistrations_;
 
-  ClosingReceiver closingReceiver_;
-
   //
   // Initialization
   //
@@ -114,9 +112,7 @@ class ListenerImpl final : public std::enable_shared_from_this<ListenerImpl> {
   // Helpers to prepare callbacks from transports
   //
 
-  LazyCallbackWrapper<ListenerImpl> lazyCallbackWrapper_{
-      *this,
-      *this->context_};
+  CallbackWrapper<ListenerImpl> callbackWrapper_{*this, *this->context_};
 
   //
   // Error handling
@@ -140,7 +136,13 @@ class ListenerImpl final : public std::enable_shared_from_this<ListenerImpl> {
       const Packet& nopPacketIn);
 
   template <typename T>
-  friend class LazyCallbackWrapper;
+  friend class CallbackWrapper;
+
+  // Contexts do sometimes need to call directly into closeFromLoop, in order to
+  // make sure that some of their operations can happen "atomically" on the
+  // connection, without possibly other operations occurring in between (e.g.,
+  // an error).
+  friend ContextImpl;
 };
 
 } // namespace tensorpipe

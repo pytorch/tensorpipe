@@ -40,7 +40,7 @@ class ContextImpl final
 
  protected:
   // Implement the entry points called by ContextImplBoilerplate.
-  void closeImpl() override;
+  void handleErrorImpl() override;
   void joinImpl() override;
 
  private:

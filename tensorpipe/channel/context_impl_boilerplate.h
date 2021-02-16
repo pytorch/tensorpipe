@@ -33,10 +33,14 @@ class ContextImplBoilerplate : public virtual DeferredExecutor,
   ContextImplBoilerplate& operator=(const ContextImplBoilerplate&) = delete;
   ContextImplBoilerplate& operator=(ContextImplBoilerplate&&) = delete;
 
+  void init();
+
   virtual size_t numConnectionsNeeded() const;
 
   bool isViable() const;
   const std::string& domainDescriptor() const;
+  virtual bool canCommunicateWithRemote(
+      const std::string& remoteDomainDescriptor) const;
 
   // Enrolling dependent objects (channels) causes them to be kept alive for as
   // long as the context exists. These objects should enroll themselves as soon
@@ -61,20 +65,31 @@ class ContextImplBoilerplate : public virtual DeferredExecutor,
   virtual ~ContextImplBoilerplate() = default;
 
  protected:
-  virtual void closeImpl() = 0;
+  virtual void initImplFromLoop() {}
+  virtual void handleErrorImpl() = 0;
   virtual void joinImpl() = 0;
   virtual void setIdImpl() {}
 
+  void setError(Error error);
+
   template <typename... Args>
   std::shared_ptr<Channel<TBuffer>> createChannelInternal(Args&&... args);
+
+  Error error_{Error::kSuccess};
 
   // An identifier for the context, composed of the identifier for the context,
   // combined with the channel's name. It will only be used for logging and
   // debugging purposes.
   std::string id_{"N/A"};
 
+  CallbackWrapper<TCtx> callbackWrapper_{*this, *this};
+
  private:
-  std::atomic<bool> closed_{false};
+  void initFromLoop();
+  void closeFromLoop();
+
+  void handleError();
+
   std::atomic<bool> joined_{false};
 
   const bool isViable_;
@@ -90,6 +105,10 @@ class ContextImplBoilerplate : public virtual DeferredExecutor,
   // of shared_ptrs so that we can erase objects without them having to create
   // a fresh shared_ptr just for that.
   std::unordered_map<TChan*, std::shared_ptr<TChan>> channels_;
+
+  // For some odd reason it seems we need to use a qualified name here...
+  template <typename T>
+  friend class tensorpipe::CallbackWrapper;
 };
 
 template <typename TBuffer, typename TCtx, typename TChan>
@@ -113,6 +132,27 @@ std::shared_ptr<Channel<TBuffer>> ContextImplBoilerplate<TBuffer, TCtx, TChan>::
 }
 
 template <typename TBuffer, typename TCtx, typename TChan>
+void ContextImplBoilerplate<TBuffer, TCtx, TChan>::init() {
+  deferToLoop([this]() { initFromLoop(); });
+}
+
+template <typename TBuffer, typename TCtx, typename TChan>
+void ContextImplBoilerplate<TBuffer, TCtx, TChan>::initFromLoop() {
+  TP_DCHECK(inLoop());
+
+  TP_DCHECK(!error_);
+  if (!isViable_) {
+    // Set the error without calling setError because we do not want to invoke
+    // the subclass's handleErrorImpl as it would find itself in a weird state
+    // (since initFromLoop wouldn't have been called).
+    error_ = TP_CREATE_ERROR(ContextNotViableError);
+    return;
+  }
+
+  initImplFromLoop();
+}
+
+template <typename TBuffer, typename TCtx, typename TChan>
 size_t ContextImplBoilerplate<TBuffer, TCtx, TChan>::numConnectionsNeeded()
     const {
   return 1;
@@ -127,6 +167,12 @@ template <typename TBuffer, typename TCtx, typename TChan>
 const std::string& ContextImplBoilerplate<TBuffer, TCtx, TChan>::
     domainDescriptor() const {
   return domainDescriptor_;
+}
+
+template <typename TBuffer, typename TCtx, typename TChan>
+bool ContextImplBoilerplate<TBuffer, TCtx, TChan>::canCommunicateWithRemote(
+    const std::string& remoteDomainDescriptor) const {
+  return domainDescriptor_ == remoteDomainDescriptor;
 }
 
 template <typename TBuffer, typename TCtx, typename TChan>
@@ -148,7 +194,7 @@ void ContextImplBoilerplate<TBuffer, TCtx, TChan>::unenroll(TChan& channel) {
 template <typename TBuffer, typename TCtx, typename TChan>
 bool ContextImplBoilerplate<TBuffer, TCtx, TChan>::closed() {
   TP_DCHECK(inLoop());
-  return closed_;
+  return error_;
 };
 
 template <typename TBuffer, typename TCtx, typename TChan>
@@ -160,28 +206,47 @@ void ContextImplBoilerplate<TBuffer, TCtx, TChan>::setId(std::string id) {
 
 template <typename TBuffer, typename TCtx, typename TChan>
 void ContextImplBoilerplate<TBuffer, TCtx, TChan>::close() {
-  // Defer this to the loop so that it won't race with other code accessing it
-  // (in other words: any code in the loop can assume that this won't change).
-  deferToLoop([this]() {
-    if (!closed_.exchange(true)) {
-      TP_VLOG(4) << "Channel context " << id_ << " is closing";
+  deferToLoop([this]() { closeFromLoop(); });
+}
 
-      // Make a copy as they could unenroll themselves inline.
-      auto channelsCopy = channels_;
-      // We call closeFromLoop, rather than just close, because we need these
-      // objects to transition _immediately_ to error, "atomically". If we just
-      // deferred closing to later, this could come after some already-enqueued
-      // operations that could try to access the context, which would be closed,
-      // and this could fail.
-      for (auto& iter : channelsCopy) {
-        iter.second->closeFromLoop();
-      }
+template <typename TBuffer, typename TCtx, typename TChan>
+void ContextImplBoilerplate<TBuffer, TCtx, TChan>::closeFromLoop() {
+  TP_DCHECK(inLoop());
+  TP_VLOG(4) << "Channel context " << id_ << " is closing";
+  setError(TP_CREATE_ERROR(ContextClosedError));
+  TP_VLOG(4) << "Channel context " << id_ << " done closing";
+}
 
-      closeImpl();
+template <typename TBuffer, typename TCtx, typename TChan>
+void ContextImplBoilerplate<TBuffer, TCtx, TChan>::setError(Error error) {
+  // Don't overwrite an error that's already set.
+  if (error_ || !error) {
+    return;
+  }
 
-      TP_VLOG(4) << "Channel context " << id_ << " done closing";
-    }
-  });
+  error_ = std::move(error);
+
+  handleError();
+}
+
+template <typename TBuffer, typename TCtx, typename TChan>
+void ContextImplBoilerplate<TBuffer, TCtx, TChan>::handleError() {
+  TP_DCHECK(inLoop());
+  TP_VLOG(5) << "Channel context " << id_ << " is handling error "
+             << error_.what();
+
+  // Make a copy as they could unenroll themselves inline.
+  auto channelsCopy = channels_;
+  // We call closeFromLoop, rather than just close, because we need these
+  // objects to transition _immediately_ to error, "atomically". If we just
+  // deferred closing to later, this could come after some already-enqueued
+  // operations that could try to access the context, which would be closed,
+  // and this could fail.
+  for (auto& iter : channelsCopy) {
+    iter.second->closeFromLoop();
+  }
+
+  handleErrorImpl();
 }
 
 template <typename TBuffer, typename TCtx, typename TChan>

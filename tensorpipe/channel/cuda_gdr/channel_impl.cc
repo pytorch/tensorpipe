@@ -53,7 +53,7 @@ void ChannelImpl::initImplFromLoop() {
   TP_VLOG(6) << "Channel " << id_
              << " is writing nop object (handshake num NICs)";
   connection_->write(
-      *nopHolderOut, lazyCallbackWrapper_([nopHolderOut](ChannelImpl& impl) {
+      *nopHolderOut, callbackWrapper_([nopHolderOut](ChannelImpl& impl) {
         TP_VLOG(6) << "Channel " << impl.id_
                    << " done writing nop object (handshake num NICs)";
       }));
@@ -62,10 +62,12 @@ void ChannelImpl::initImplFromLoop() {
   TP_VLOG(6) << "Channel " << id_
              << " is reading nop object (handshake num NICs)";
   connection_->read(
-      *nopHolderIn, lazyCallbackWrapper_([nopHolderIn](ChannelImpl& impl) {
+      *nopHolderIn, callbackWrapper_([nopHolderIn](ChannelImpl& impl) {
         TP_VLOG(6) << "Channel " << impl.id_
                    << " done reading nop object (handshake num NICs)";
-        impl.onReadHandshakeNumNics(nopHolderIn->getObject());
+        if (!impl.error_) {
+          impl.onReadHandshakeNumNics(nopHolderIn->getObject());
+        }
       }));
 
   state_ = WAITING_FOR_HANDSHAKE_NUM_NICS;
@@ -119,7 +121,7 @@ void ChannelImpl::onReadHandshakeNumNics(
   nopHandshakeSetupInfo.setupInfo = std::move(allSetupInfo);
   TP_VLOG(6) << "Channel " << id_ << " is writing nop object (handshake two)";
   connection_->write(
-      *nopHolderOut, lazyCallbackWrapper_([nopHolderOut](ChannelImpl& impl) {
+      *nopHolderOut, callbackWrapper_([nopHolderOut](ChannelImpl& impl) {
         TP_VLOG(6) << "Channel " << impl.id_
                    << " done writing nop object (handshake two)";
       }));
@@ -127,10 +129,12 @@ void ChannelImpl::onReadHandshakeNumNics(
   auto nopHolderIn = std::make_shared<NopHolder<HandshakeSetupInfo>>();
   TP_VLOG(6) << "Channel " << id_ << " is reading nop object (handshake two)";
   connection_->read(
-      *nopHolderIn, lazyCallbackWrapper_([nopHolderIn](ChannelImpl& impl) {
+      *nopHolderIn, callbackWrapper_([nopHolderIn](ChannelImpl& impl) {
         TP_VLOG(6) << "Channel " << impl.id_
                    << " done reading nop object (handshake two)";
-        impl.onReadHandshakeSetupInfo(nopHolderIn->getObject());
+        if (!impl.error_) {
+          impl.onReadHandshakeSetupInfo(nopHolderIn->getObject());
+        }
       }));
 
   state_ = WAITING_FOR_HANDSHAKE_SETUP_INFO;
@@ -203,8 +207,7 @@ void ChannelImpl::processSendOperationFromLoop(SendOperation& op) {
   TP_VLOG(6) << "Channel " << id_ << " is reading ready-to-receive (#"
              << op.sequenceNumber << ")";
   connection_->read(
-      *nopHolderIn,
-      eagerCallbackWrapper_([&op, nopHolderIn](ChannelImpl& impl) {
+      *nopHolderIn, callbackWrapper_([&op, nopHolderIn](ChannelImpl& impl) {
         TP_VLOG(6) << "Channel " << impl.id_
                    << " done reading ready-to-receive (# " << op.sequenceNumber
                    << ")";
@@ -234,7 +237,7 @@ void ChannelImpl::onReadReadyToReceive(
   // send earlier, thus messing up the order and causing a mismatch with the
   // receiver. The proper fix for this is a state machine, like the pipe has.
   context_->waitForCudaEvent(
-      op.event, eagerCallbackWrapper_([&op](ChannelImpl& impl) {
+      op.event, callbackWrapper_([&op](ChannelImpl& impl) {
         TP_VLOG(6) << "Channel " << impl.id_
                    << " done waiting for CUDA event to send (# "
                    << op.sequenceNumber << ")";
@@ -272,7 +275,7 @@ void ChannelImpl::onSendEventReady(SendOperation& op) {
 
   TP_VLOG(6) << "Channel " << id_ << " is sending tensor (#"
              << op.sequenceNumber << ") on QP " << qp->qp_num;
-  localNic.postSend(qp, wr, eagerCallbackWrapper_([&op](ChannelImpl& impl) {
+  localNic.postSend(qp, wr, callbackWrapper_([&op](ChannelImpl& impl) {
                       TP_VLOG(6) << "Channel " << impl.id_
                                  << " done sending tensor (# "
                                  << op.sequenceNumber << ")";
@@ -342,7 +345,7 @@ void ChannelImpl::processRecvOperationFromLoop(RecvOperation& op) {
   // recv earlier, thus messing up the order and causing a mismatch with the
   // sender. The proper fix for this is a state machine, like the pipe has.
   context_->waitForCudaEvent(
-      op.event, eagerCallbackWrapper_([&op](ChannelImpl& impl) {
+      op.event, callbackWrapper_([&op](ChannelImpl& impl) {
         TP_VLOG(6) << "Channel " << impl.id_
                    << " done waiting for CUDA event to recv (# "
                    << op.sequenceNumber << ")";
@@ -379,7 +382,7 @@ void ChannelImpl::onRecvEventReady(RecvOperation& op) {
 
   TP_VLOG(6) << "Channel " << id_ << " is receiving tensor (#"
              << op.sequenceNumber << ") on QP " << qp->qp_num;
-  localNic.postRecv(qp, wr, eagerCallbackWrapper_([&op](ChannelImpl& impl) {
+  localNic.postRecv(qp, wr, callbackWrapper_([&op](ChannelImpl& impl) {
                       TP_VLOG(6) << "Channel " << impl.id_
                                  << " done receiving tensor (# "
                                  << op.sequenceNumber << ")";
@@ -394,7 +397,7 @@ void ChannelImpl::onRecvEventReady(RecvOperation& op) {
              << op.sequenceNumber << ")";
   connection_->write(
       *nopHolderOut,
-      lazyCallbackWrapper_(
+      callbackWrapper_(
           [sequenceNumber{op.sequenceNumber}, nopHolderOut](ChannelImpl& impl) {
             TP_VLOG(6) << "Channel " << impl.id_
                        << " done writing ready-to-receive (#" << sequenceNumber

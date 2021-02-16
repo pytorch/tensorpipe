@@ -156,7 +156,7 @@ class ContextImpl final
   bool readyToClose() override;
 
   // Implement the entry points called by ContextImplBoilerplate.
-  void closeImpl() override;
+  void handleErrorImpl() override;
   void joinImpl() override;
   void setIdImpl() override;
 
