@@ -316,6 +316,22 @@ class SendTensorsBothWaysTest : public ClientServerChannelTestCase<TBuffer> {
 CHANNEL_TEST_GENERIC(SendTensorsBothWays);
 
 template <typename TBuffer>
-class ContextIsNotJoinedTest : public ClientServerChannelTestCase<TBuffer> {};
+class ContextIsNotJoinedTest : public ClientServerChannelTestCase<TBuffer> {
+  // Because it's static we must define it out-of-line (until C++-17, where we
+  // can mark this inline).
+  static const std::string kReady;
+
+ public:
+  void server(std::shared_ptr<Channel<TBuffer>> channel) override {
+    this->peers_->send(PeerGroup::kClient, kReady);
+  }
+
+  void client(std::shared_ptr<Channel<TBuffer>> channel) override {
+    EXPECT_EQ(kReady, this->peers_->recv(PeerGroup::kClient));
+  }
+};
+
+template <typename TBuffer>
+const std::string ContextIsNotJoinedTest<TBuffer>::kReady = "ready";
 
 CHANNEL_TEST_GENERIC(ContextIsNotJoined);
