@@ -32,10 +32,13 @@ std::string generateDomainDescriptor() {
   auto bootID = getBootID();
   TP_THROW_ASSERT_IF(!bootID) << "Unable to read boot_id";
 
+  auto nsID = getLinuxNamespaceId(LinuxNamespace::kPid);
+  TP_THROW_ASSERT_IF(!nsID) << "Unable to read PID namespace ID";
+
   pid_t pid = getpid();
 
-  // Combine boot ID and PID.
-  oss << bootID.value() << "-" << pid;
+  // Combine boot ID, namespace ID and PID.
+  oss << bootID.value() << "-" << nsID.value() << "-" << pid;
 
   return oss.str();
 }
@@ -94,7 +97,7 @@ const CudaLib& ContextImpl::getCudaLib() {
   return cudaLib_;
 }
 
-void ContextImpl::closeImpl() {}
+void ContextImpl::handleErrorImpl() {}
 
 void ContextImpl::joinImpl() {}
 

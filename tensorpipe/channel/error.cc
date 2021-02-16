@@ -22,5 +22,9 @@ std::string ChannelClosedError::what() const {
   return "channel closed";
 }
 
+std::string ContextNotViableError::what() const {
+  return "context not viable";
+}
+
 } // namespace channel
 } // namespace tensorpipe

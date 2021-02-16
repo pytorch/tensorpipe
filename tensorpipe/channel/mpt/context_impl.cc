@@ -45,9 +45,20 @@ std::string generateDomainDescriptor(
 std::shared_ptr<ContextImpl> ContextImpl::create(
     std::vector<std::shared_ptr<transport::Context>> contexts,
     std::vector<std::shared_ptr<transport::Listener>> listeners) {
+  for (const auto& context : contexts) {
+    if (!context->isViable()) {
+      return std::make_shared<ContextImpl>();
+    }
+  }
+
   return std::make_shared<ContextImpl>(
       std::move(contexts), std::move(listeners));
 }
+
+ContextImpl::ContextImpl()
+    : ContextImplBoilerplate<CpuBuffer, ContextImpl, ChannelImpl>(
+          /*isViable=*/false,
+          /*domainDescriptor=*/"") {}
 
 ContextImpl::ContextImpl(
     std::vector<std::shared_ptr<transport::Context>> contexts,
@@ -66,13 +77,7 @@ ContextImpl::ContextImpl(
   }
 }
 
-void ContextImpl::init() {
-  loop_.deferToLoop([this]() { initFromLoop(); });
-}
-
-void ContextImpl::initFromLoop() {
-  TP_DCHECK(loop_.inLoop());
-
+void ContextImpl::initImplFromLoop() {
   for (uint64_t laneIdx = 0; laneIdx < numLanes_; ++laneIdx) {
     acceptLane(laneIdx);
   }
@@ -94,50 +99,36 @@ const std::vector<std::string>& ContextImpl::addresses() const {
 uint64_t ContextImpl::registerConnectionRequest(
     uint64_t laneIdx,
     connection_request_callback_fn fn) {
-  // We cannot return a value if we defer the function. Thus we obtain an ID
-  // now (and this is why the next ID is an atomic), return it, and defer the
-  // rest of the processing.
-  // FIXME Avoid this hack by doing like we did with the channels' recv: have
-  // this accept a callback that is called with the registration ID.
-  uint64_t registrationId = nextConnectionRequestRegistrationId_++;
-  loop_.deferToLoop(
-      [this, laneIdx, registrationId, fn{std::move(fn)}]() mutable {
-        registerConnectionRequestFromLoop(
-            laneIdx, registrationId, std::move(fn));
-      });
-  return registrationId;
-}
-
-void ContextImpl::registerConnectionRequestFromLoop(
-    uint64_t laneIdx,
-    uint64_t registrationId,
-    connection_request_callback_fn fn) {
   TP_DCHECK(loop_.inLoop());
+
+  uint64_t registrationId = nextConnectionRequestRegistrationId_++;
 
   TP_VLOG(4) << "Channel context " << id_
              << " received a connection request registration (#"
              << registrationId << ") on lane " << laneIdx;
 
-  if (error_) {
+  fn = [this, registrationId, fn{std::move(fn)}](
+           const Error& error,
+           std::shared_ptr<transport::Connection> connection) {
     TP_VLOG(4) << "Channel context " << id_
                << " calling a connection request registration callback (#"
                << registrationId << ")";
-    fn(error_, std::shared_ptr<transport::Connection>());
+    fn(error, std::move(connection));
     TP_VLOG(4) << "Channel context " << id_
                << " done calling a connection request registration callback (#"
                << registrationId << ")";
+  };
+
+  if (error_) {
+    fn(error_, std::shared_ptr<transport::Connection>());
   } else {
     connectionRequestRegistrations_.emplace(registrationId, std::move(fn));
   }
+
+  return registrationId;
 }
 
 void ContextImpl::unregisterConnectionRequest(uint64_t registrationId) {
-  loop_.deferToLoop([this, registrationId]() {
-    unregisterConnectionRequestFromLoop(registrationId);
-  });
-}
-
-void ContextImpl::unregisterConnectionRequestFromLoop(uint64_t registrationId) {
   TP_DCHECK(loop_.inLoop());
 
   TP_VLOG(4) << "Channel context " << id_
@@ -160,12 +151,15 @@ void ContextImpl::acceptLane(uint64_t laneIdx) {
 
   TP_VLOG(6) << "Channel context " << id_ << " accepting connection on lane "
              << laneIdx;
-  listeners_[laneIdx]->accept(lazyCallbackWrapper_(
-      [laneIdx](
-          ContextImpl& impl,
-          std::shared_ptr<transport::Connection> connection) {
+  listeners_[laneIdx]->accept(
+      callbackWrapper_([laneIdx](
+                           ContextImpl& impl,
+                           std::shared_ptr<transport::Connection> connection) {
         TP_VLOG(6) << "Channel context " << impl.id_
                    << " done accepting connection on lane " << laneIdx;
+        if (impl.error_) {
+          return;
+        }
         impl.onAcceptOfLane(std::move(connection));
         impl.acceptLane(laneIdx);
       }));
@@ -182,14 +176,12 @@ void ContextImpl::onAcceptOfLane(
              << " reading nop object (client hello)";
   connection->read(
       *npHolderIn,
-      lazyCallbackWrapper_([npHolderIn,
-                            weakConnection{std::weak_ptr<transport::Connection>(
-                                connection)}](ContextImpl& impl) mutable {
+      callbackWrapper_([npHolderIn, connection](ContextImpl& impl) mutable {
         TP_VLOG(6) << "Channel context " << impl.id_
                    << " done reading nop object (client hello)";
-        std::shared_ptr<transport::Connection> connection =
-            weakConnection.lock();
-        TP_DCHECK(connection);
+        if (impl.error_) {
+          return;
+        }
         impl.connectionsWaitingForHello_.erase(connection);
         impl.onReadClientHelloOnLane(
             std::move(connection), npHolderIn->getObject());
@@ -214,29 +206,18 @@ void ContextImpl::onReadClientHelloOnLane(
   }
 }
 
-void ContextImpl::setError(Error error) {
-  // Don't overwrite an error that's already set.
-  if (error_ || !error) {
-    return;
-  }
-
-  error_ = std::move(error);
-
-  handleError();
-}
-
-void ContextImpl::handleError() {
-  TP_DCHECK(loop_.inLoop());
-  TP_VLOG(5) << "Channel context " << id_ << " handling error "
-             << error_.what();
-
+void ContextImpl::handleErrorImpl() {
   for (auto& iter : connectionRequestRegistrations_) {
     connection_request_callback_fn fn = std::move(iter.second);
     fn(error_, std::shared_ptr<transport::Connection>());
   }
   connectionRequestRegistrations_.clear();
 
+  for (const auto& connection : connectionsWaitingForHello_) {
+    connection->close();
+  }
   connectionsWaitingForHello_.clear();
+
   for (auto& listener : listeners_) {
     listener->close();
   }
@@ -252,14 +233,6 @@ void ContextImpl::setIdImpl() {
         id_ + ".ctx_" + std::to_string(laneIdx) + ".l_" +
         std::to_string(laneIdx));
   }
-}
-
-void ContextImpl::closeImpl() {
-  loop_.deferToLoop([this]() { closeFromLoop(); });
-}
-
-void ContextImpl::closeFromLoop() {
-  setError(TP_CREATE_ERROR(ContextClosedError));
 }
 
 void ContextImpl::joinImpl() {

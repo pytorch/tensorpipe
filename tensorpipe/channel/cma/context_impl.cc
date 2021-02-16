@@ -236,7 +236,7 @@ std::shared_ptr<CpuChannel> ContextImpl::createChannel(
   return createChannelInternal(std::move(connections[0]));
 }
 
-void ContextImpl::closeImpl() {
+void ContextImpl::handleErrorImpl() {
   requests_.push(nullopt);
 }
 

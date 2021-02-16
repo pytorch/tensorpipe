@@ -76,7 +76,7 @@ ContextImpl::ContextImpl(IbvLib ibvLib, IbvDeviceList deviceList)
           generateDomainDescriptor()),
       reactor_(std::move(ibvLib), std::move(deviceList)) {}
 
-void ContextImpl::closeImpl() {
+void ContextImpl::handleErrorImpl() {
   loop_.close();
   reactor_.close();
 }

@@ -20,7 +20,7 @@ std::shared_ptr<CudaContext> create(
     optional<std::vector<std::string>> gpuIdxToNicName) {
   return std::make_shared<
       ContextBoilerplate<CudaBuffer, ContextImpl, ChannelImpl>>(
-      ContextImpl::create(std::move(gpuIdxToNicName)));
+      std::move(gpuIdxToNicName));
 }
 
 } // namespace cuda_gdr

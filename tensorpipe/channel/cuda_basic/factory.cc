@@ -19,7 +19,7 @@ namespace cuda_basic {
 std::shared_ptr<CudaContext> create(std::shared_ptr<CpuContext> cpuContext) {
   return std::make_shared<
       ContextBoilerplate<CudaBuffer, ContextImpl, ChannelImpl>>(
-      ContextImpl::create(std::move(cpuContext)));
+      std::move(cpuContext));
 }
 
 } // namespace cuda_basic

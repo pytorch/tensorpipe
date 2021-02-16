@@ -47,7 +47,7 @@ class ContextImpl final
       Endpoint endpoint);
 
   bool canCommunicateWithRemote(
-      const std::string& remoteDomainDescriptor) const;
+      const std::string& remoteDomainDescriptor) const override;
 
   const CudaLib& getCudaLib();
 
@@ -57,7 +57,7 @@ class ContextImpl final
 
  protected:
   // Implement the entry points called by ContextImplBoilerplate.
-  void closeImpl() override;
+  void handleErrorImpl() override;
   void joinImpl() override;
 
  private:

@@ -18,7 +18,9 @@
 namespace tensorpipe {
 
 Context::Context(ContextOptions opts)
-    : impl_(std::make_shared<ContextImpl>(std::move(opts))) {}
+    : impl_(std::make_shared<ContextImpl>(std::move(opts))) {
+  impl_->init();
+}
 
 void Context::registerTransport(
     int64_t priority,

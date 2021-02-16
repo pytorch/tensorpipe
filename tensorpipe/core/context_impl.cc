@@ -19,11 +19,15 @@
 
 #include <tensorpipe/common/callback.h>
 #include <tensorpipe/common/defs.h>
+#include <tensorpipe/common/error_macros.h>
 #include <tensorpipe/common/optional.h>
 #include <tensorpipe/common/queue.h>
 #include <tensorpipe/core/buffer_helpers.h>
+#include <tensorpipe/core/error.h>
 #include <tensorpipe/core/listener.h>
+#include <tensorpipe/core/listener_impl.h>
 #include <tensorpipe/core/pipe.h>
+#include <tensorpipe/core/pipe_impl.h>
 #include <tensorpipe/transport/connection.h>
 
 namespace tensorpipe {
@@ -52,6 +56,12 @@ ContextImpl::ContextImpl(ContextOptions opts)
     id_ = name_;
   }
 }
+
+void ContextImpl::init() {
+  deferToLoop([this]() { initFromLoop(); });
+}
+
+void ContextImpl::initFromLoop() {}
 
 void ContextImpl::registerTransport(
     int64_t priority,
@@ -149,10 +159,6 @@ std::shared_ptr<Pipe> ContextImpl::connect(
       url);
 }
 
-ClosingEmitter& ContextImpl::getClosingEmitter() {
-  return closingEmitter_;
-}
-
 std::shared_ptr<transport::Context> ContextImpl::getTransport(
     const std::string& transport) {
   auto iter = transports_.find(transport);
@@ -205,6 +211,39 @@ const std::string& ContextImpl::getName() {
   return name_;
 }
 
+void ContextImpl::enroll(ListenerImpl& listener) {
+  TP_DCHECK(inLoop());
+  bool wasInserted;
+  std::tie(std::ignore, wasInserted) =
+      listeners_.emplace(&listener, listener.shared_from_this());
+  TP_DCHECK(wasInserted);
+}
+
+void ContextImpl::enroll(PipeImpl& pipe) {
+  TP_DCHECK(inLoop());
+  bool wasInserted;
+  std::tie(std::ignore, wasInserted) =
+      pipes_.emplace(&pipe, pipe.shared_from_this());
+  TP_DCHECK(wasInserted);
+}
+
+void ContextImpl::unenroll(ListenerImpl& listener) {
+  TP_DCHECK(inLoop());
+  auto numRemoved = listeners_.erase(&listener);
+  TP_DCHECK_EQ(numRemoved, 1);
+}
+
+void ContextImpl::unenroll(PipeImpl& pipe) {
+  TP_DCHECK(inLoop());
+  auto numRemoved = pipes_.erase(&pipe);
+  TP_DCHECK_EQ(numRemoved, 1);
+}
+
+bool ContextImpl::closed() {
+  TP_DCHECK(inLoop());
+  return error_;
+}
+
 void ContextImpl::deferToLoop(TTask fn) {
   loop_.deferToLoop(std::move(fn));
 }
@@ -214,22 +253,54 @@ bool ContextImpl::inLoop() const {
 }
 
 void ContextImpl::close() {
-  if (!closed_.exchange(true)) {
-    TP_VLOG(1) << "Context " << id_ << " is closing";
+  deferToLoop([this]() { closeFromLoop(); });
+}
 
-    closingEmitter_.close();
+void ContextImpl::closeFromLoop() {
+  TP_DCHECK(inLoop());
+  TP_VLOG(1) << "Context " << id_ << " is closing";
+  setError(TP_CREATE_ERROR(ContextClosedError));
+  TP_VLOG(1) << "Context " << id_ << " done closing";
+}
 
-    for (auto& iter : transports_) {
+void ContextImpl::setError(Error error) {
+  // Don't overwrite an error that's already set.
+  if (error_ || !error) {
+    return;
+  }
+
+  error_ = std::move(error);
+
+  handleError();
+}
+
+void ContextImpl::handleError() {
+  TP_DCHECK(inLoop());
+  TP_VLOG(5) << "Context " << id_ << " is handling error " << error_.what();
+
+  // Make a copy as they could unenroll themselves inline.
+  auto listenersCopy = listeners_;
+  auto pipesCopy = pipes_;
+  // We call closeFromLoop, rather than just close, because we need these
+  // objects to transition _immediately_ to error, "atomically". If we just
+  // deferred closing to later, this could come after some already-enqueued
+  // operations that could try to access the context, which would be closed,
+  // and this could fail.
+  for (auto& iter : listenersCopy) {
+    iter.second->closeFromLoop();
+  }
+  for (auto& iter : pipesCopy) {
+    iter.second->closeFromLoop();
+  }
+
+  for (auto& iter : transports_) {
+    iter.second->close();
+  }
+  forEachDeviceType([&](auto buffer) {
+    for (auto& iter : channels_.get<decltype(buffer)>()) {
       iter.second->close();
     }
-    forEachDeviceType([&](auto buffer) {
-      for (auto& iter : channels_.get<decltype(buffer)>()) {
-        iter.second->close();
-      }
-    });
-
-    TP_VLOG(1) << "Context " << id_ << " done closing";
-  }
+  });
 }
 
 void ContextImpl::join() {
@@ -237,6 +308,14 @@ void ContextImpl::join() {
 
   if (!joined_.exchange(true)) {
     TP_VLOG(1) << "Context " << id_ << " is joining";
+
+    // As closing is deferred to the loop, we must wait for close to be actually
+    // called before we join, to avoid race conditions. For this, we defer
+    // another task to the loop, which we know will run after the closing, and
+    // then we wait for that task to be run.
+    std::promise<void> hasClosed;
+    deferToLoop([&]() { hasClosed.set_value(); });
+    hasClosed.get_future().wait();
 
     for (auto& iter : transports_) {
       iter.second->join();
@@ -248,6 +327,9 @@ void ContextImpl::join() {
     });
 
     TP_VLOG(1) << "Context " << id_ << " done joining";
+
+    TP_DCHECK(listeners_.empty());
+    TP_DCHECK(pipes_.empty());
   }
 }
 

@@ -25,6 +25,7 @@
 #include <tensorpipe/core/error.h>
 #include <tensorpipe/core/nop_types.h>
 #include <tensorpipe/core/pipe.h>
+#include <tensorpipe/core/pipe_impl.h>
 #include <tensorpipe/transport/connection.h>
 #include <tensorpipe/transport/listener.h>
 
@@ -34,9 +35,7 @@ ListenerImpl::ListenerImpl(
     std::shared_ptr<ContextImpl> context,
     std::string id,
     const std::vector<std::string>& urls)
-    : context_(std::move(context)),
-      id_(std::move(id)),
-      closingReceiver_(context_, context_->getClosingEmitter()) {
+    : context_(std::move(context)), id_(std::move(id)) {
   for (const auto& url : urls) {
     std::string transport;
     std::string address;
@@ -57,7 +56,18 @@ void ListenerImpl::init() {
 
 void ListenerImpl::initFromLoop() {
   TP_DCHECK(context_->inLoop());
-  closingReceiver_.activate(*this);
+
+  if (context_->closed()) {
+    // Set the error without calling setError because we do not want to invoke
+    // handleError as it would find itself in a weird state (since the rest of
+    // initFromLoop wouldn't have been called).
+    error_ = TP_CREATE_ERROR(ListenerClosedError);
+    TP_VLOG(1) << "Listener " << id_ << " is closing (without initing)";
+    return;
+  }
+
+  context_->enroll(*this);
+
   for (const auto& listener : listeners_) {
     armListener(listener.first);
   }
@@ -208,7 +218,13 @@ void ListenerImpl::handleError() {
   for (const auto& listener : listeners_) {
     listener.second->close();
   }
+
+  for (const auto& connection : connectionsWaitingForHello_) {
+    connection->close();
+  }
   connectionsWaitingForHello_.clear();
+
+  context_->unenroll(*this);
 }
 
 //
@@ -226,16 +242,15 @@ void ListenerImpl::onAccept(
              << " is reading nop object (spontaneous or requested connection)";
   connection->read(
       *nopHolderIn,
-      lazyCallbackWrapper_([nopHolderIn,
-                            transport{std::move(transport)},
-                            weakConnection{std::weak_ptr<transport::Connection>(
-                                connection)}](ListenerImpl& impl) mutable {
+      callbackWrapper_([nopHolderIn,
+                        transport{std::move(transport)},
+                        connection](ListenerImpl& impl) mutable {
         TP_VLOG(3)
             << "Listener " << impl.id_
             << " done reading nop object (spontaneous or requested connection)";
-        std::shared_ptr<transport::Connection> connection =
-            weakConnection.lock();
-        TP_DCHECK(connection);
+        if (impl.error_) {
+          return;
+        }
         impl.connectionsWaitingForHello_.erase(connection);
         impl.onConnectionHelloRead(
             std::move(transport),
@@ -253,12 +268,15 @@ void ListenerImpl::armListener(std::string transport) {
   auto transportListener = iter->second;
   TP_VLOG(3) << "Listener " << id_ << " is accepting connection on transport "
              << transport;
-  transportListener->accept(lazyCallbackWrapper_(
-      [transport](
-          ListenerImpl& impl,
-          std::shared_ptr<transport::Connection> connection) {
+  transportListener->accept(
+      callbackWrapper_([transport](
+                           ListenerImpl& impl,
+                           std::shared_ptr<transport::Connection> connection) {
         TP_VLOG(3) << "Listener " << impl.id_
                    << " done accepting connection on transport " << transport;
+        if (impl.error_) {
+          return;
+        }
         impl.onAccept(transport, std::move(connection));
         impl.armListener(transport);
       }));
@@ -281,15 +299,22 @@ void ListenerImpl::onConnectionHelloRead(
       TP_VLOG(1) << "Pipe " << pipeId << " aliased as " << aliasPipeId;
       pipeId = std::move(aliasPipeId);
     }
-    auto pipe = std::make_shared<Pipe>(
-        Pipe::ConstructorToken(),
+    auto pipe = std::make_shared<PipeImpl>(
         context_,
         shared_from_this(),
         std::move(pipeId),
         remoteContextName,
         std::move(transport),
         std::move(connection));
-    acceptCallback_.trigger(Error::kSuccess, std::move(pipe));
+    // We initialize the pipe from the loop immediately, inline, because the
+    // initialization of a pipe accepted by a listener happens partly in the
+    // listener and partly in the pipe's initFromLoop, and we need these two
+    // steps to happen "atomically" to make it impossible for an error to occur
+    // in between.
+    pipe->initFromLoop();
+    acceptCallback_.trigger(
+        Error::kSuccess,
+        std::make_shared<Pipe>(Pipe::ConstructorToken(), std::move(pipe)));
   } else if (nopPacketIn.is<RequestedConnection>()) {
     const RequestedConnection& nopRequestedConnection =
         *nopPacketIn.get<RequestedConnection>();
