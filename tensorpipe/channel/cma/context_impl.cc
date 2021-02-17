@@ -295,7 +295,7 @@ void ContextImpl::handleCopyRequests() {
     auto nread =
         ::process_vm_readv(request.remotePid, &local, 1, &remote, 1, 0);
     if (nread == -1) {
-      request.callback(TP_CREATE_ERROR(SystemError, "cma", errno));
+      request.callback(TP_CREATE_ERROR(SystemError, "process_vm_readv", errno));
     } else if (nread != request.length) {
       request.callback(TP_CREATE_ERROR(ShortReadError, request.length, nread));
     } else {
