@@ -8,13 +8,20 @@
 
 #pragma once
 
+#include <iomanip>
+#include <ios>
 #include <memory>
+#include <sstream>
+#include <string>
+#include <utility>
+#include <vector>
 
 #include <cuda_runtime.h>
 
 #include <tensorpipe/common/cuda_lib.h>
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/error.h>
+#include <tensorpipe/common/strings.h>
 
 #define TP_CUDA_CHECK(a)                                                \
   do {                                                                  \
@@ -150,6 +157,44 @@ inline CudaPinnedBuffer makeCudaPinnedBuffer(size_t length) {
   return CudaPinnedBuffer(reinterpret_cast<uint8_t*>(ptr), [](uint8_t* ptr) {
     TP_CUDA_CHECK(cudaFreeHost(ptr));
   });
+}
+
+inline std::vector<std::string> getUuidsOfVisibleDevices(
+    const CudaLib& cudaLib) {
+  int deviceCount;
+  TP_CUDA_DRIVER_CHECK(cudaLib, cudaLib.deviceGetCount(&deviceCount));
+
+  std::vector<std::string> result(deviceCount);
+  for (int devIdx = 0; devIdx < deviceCount; ++devIdx) {
+    CUdevice device;
+    TP_CUDA_DRIVER_CHECK(cudaLib, cudaLib.deviceGet(&device, devIdx));
+
+    CUuuid uuid;
+    TP_CUDA_DRIVER_CHECK(cudaLib, cudaLib.deviceGetUuid(&uuid, device));
+
+    // The CUDA driver and NVML choose two different format for UUIDs, hence we
+    // need to reconcile them. We do so using the most human readable format,
+    // that is "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee" (8-4-4-4-12).
+    std::ostringstream uuidSs;
+    uuidSs << std::hex << std::setfill('0');
+    for (int j = 0; j < 16; ++j) {
+      // The bitmask is required otherwise a negative value will get promoted to
+      // (signed) int with sign extension if char is signed.
+      uuidSs << std::setw(2) << (uuid.bytes[j] & 0xff);
+      if (j == 3 || j == 5 || j == 7 || j == 9) {
+        uuidSs << '-';
+      }
+    }
+
+    std::string uuidStr = uuidSs.str();
+    TP_THROW_ASSERT_IF(!isValidUuid(uuidStr))
+        << "Couldn't obtain valid UUID for GPU #" << devIdx
+        << " from CUDA driver. Got: " << uuidStr;
+
+    result[devIdx] = std::move(uuidStr);
+  }
+
+  return result;
 }
 
 } // namespace tensorpipe
