@@ -316,19 +316,67 @@ class SendTensorsBothWaysTest : public ClientServerChannelTestCase<TBuffer> {
 CHANNEL_TEST_GENERIC(SendTensorsBothWays);
 
 template <typename TBuffer>
-class ContextIsNotJoinedTest : public ClientServerChannelTestCase<TBuffer> {
+class ContextIsNotJoinedTest : public ChannelTestCase<TBuffer> {
   // Because it's static we must define it out-of-line (until C++-17, where we
   // can mark this inline).
   static const std::string kReady;
 
  public:
-  void server(std::shared_ptr<Channel<TBuffer>> channel) override {
-    this->peers_->send(PeerGroup::kClient, kReady);
+  void run(ChannelTestHelper<TBuffer>* helper) override {
+    auto addr = "127.0.0.1";
+
+    helper_ = helper;
+    peers_ = helper_->makePeerGroup();
+    peers_->spawn(
+        [&] {
+          auto context = tensorpipe::transport::uv::create();
+          context->setId("server_harness");
+
+          auto listener = context->listen(addr);
+
+          std::promise<std::shared_ptr<tensorpipe::transport::Connection>>
+              connectionProm;
+          listener->accept(
+              [&](const tensorpipe::Error& error,
+                  std::shared_ptr<tensorpipe::transport::Connection>
+                      connection) {
+                ASSERT_FALSE(error) << error.what();
+                connectionProm.set_value(std::move(connection));
+              });
+
+          peers_->send(PeerGroup::kClient, listener->addr());
+          server(connectionProm.get_future().get());
+
+          context->join();
+        },
+        [&] {
+          auto context = tensorpipe::transport::uv::create();
+          context->setId("client_harness");
+
+          auto laddr = peers_->recv(PeerGroup::kClient);
+          client(context->connect(laddr));
+
+          context->join();
+        });
   }
 
-  void client(std::shared_ptr<Channel<TBuffer>> channel) override {
-    EXPECT_EQ(kReady, this->peers_->recv(PeerGroup::kClient));
+  void server(std::shared_ptr<transport::Connection> conn) {
+    std::shared_ptr<Context<TBuffer>> context =
+        this->helper_->makeContext("server");
+    this->peers_->send(PeerGroup::kClient, kReady);
+    context->createChannel({std::move(conn)}, Endpoint::kListen);
   }
+
+  void client(std::shared_ptr<transport::Connection> conn) {
+    std::shared_ptr<Context<TBuffer>> context =
+        this->helper_->makeContext("client");
+    EXPECT_EQ(kReady, this->peers_->recv(PeerGroup::kClient));
+    context->createChannel({std::move(conn)}, Endpoint::kConnect);
+  }
+
+ protected:
+  ChannelTestHelper<TBuffer>* helper_;
+  std::shared_ptr<PeerGroup> peers_;
 };
 
 template <typename TBuffer>
