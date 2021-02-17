@@ -12,6 +12,7 @@
 #include <tensorpipe/channel/cuda_context.h>
 #include <tensorpipe/common/cuda.h>
 #include <tensorpipe/test/channel/channel_test.h>
+#include <tensorpipe/test/channel/cuda_helpers.h>
 #include <tensorpipe/test/test_environment.h>
 
 using namespace tensorpipe;
@@ -81,6 +82,12 @@ class SendAcrossDevicesTest : public ClientServerChannelTestCase<CudaBuffer> {
     this->peers_->join(PeerGroup::kServer);
 
     ctx->join();
+
+    if (this->peers_->endpointsInSameProcess()) {
+      EXPECT_TRUE(initializedCudaContexts({0, 1}));
+    } else {
+      EXPECT_TRUE(initializedCudaContexts({0}));
+    }
   }
 
   void client(std::shared_ptr<transport::Connection> conn) override {
@@ -125,6 +132,12 @@ class SendAcrossDevicesTest : public ClientServerChannelTestCase<CudaBuffer> {
     this->peers_->join(PeerGroup::kClient);
 
     ctx->join();
+
+    if (this->peers_->endpointsInSameProcess()) {
+      EXPECT_TRUE(initializedCudaContexts({0, 1}));
+    } else {
+      EXPECT_TRUE(initializedCudaContexts({1}));
+    }
   }
 };
 
@@ -195,6 +208,12 @@ class SendReverseAcrossDevicesTest
     this->peers_->join(PeerGroup::kServer);
 
     ctx->join();
+
+    if (this->peers_->endpointsInSameProcess()) {
+      EXPECT_TRUE(initializedCudaContexts({0, 1}));
+    } else {
+      EXPECT_TRUE(initializedCudaContexts({1}));
+    }
   }
 
   void client(std::shared_ptr<transport::Connection> conn) override {
@@ -239,6 +258,12 @@ class SendReverseAcrossDevicesTest
     this->peers_->join(PeerGroup::kClient);
 
     ctx->join();
+
+    if (this->peers_->endpointsInSameProcess()) {
+      EXPECT_TRUE(initializedCudaContexts({0, 1}));
+    } else {
+      EXPECT_TRUE(initializedCudaContexts({0}));
+    }
   }
 };
 
@@ -309,6 +334,8 @@ class SendAcrossNonDefaultDevicesTest
     this->peers_->join(PeerGroup::kServer);
 
     ctx->join();
+
+    EXPECT_TRUE(initializedCudaContexts({1}));
   }
 
   void client(std::shared_ptr<transport::Connection> conn) override {
@@ -353,6 +380,8 @@ class SendAcrossNonDefaultDevicesTest
     this->peers_->join(PeerGroup::kClient);
 
     ctx->join();
+
+    EXPECT_TRUE(initializedCudaContexts({1}));
   }
 };
 
