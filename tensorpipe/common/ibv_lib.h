@@ -640,21 +640,33 @@ class IbvLib {
     // to global) so that the ibverbs symbols can only be resolved through this
     // handle and are not exposed (a.k.a., "leaded") to other shared objects.
     std::tie(error, dlhandle) =
-        createDynamicLibraryHandle("libibverbs.so.1", RTLD_LOCAL | RTLD_LAZY);
+        DynamicLibraryHandle::create("libibverbs.so.1", RTLD_LOCAL | RTLD_LAZY);
     if (error) {
       return std::make_tuple(std::move(error), IbvLib());
     }
+    // Log at level 9 as we can't know whether this will be used in a transport
+    // or channel, thus err on the side of this being as low-level as possible
+    // because we don't expect this to be of interest that often.
+    TP_VLOG(9) << [&]() -> std::string {
+      std::string filename;
+      std::tie(error, filename) = dlhandle.getFilename();
+      if (error) {
+        return "Couldn't determine location of shared library libibverbs.so.1: " +
+            error.what();
+      }
+      return "Found shared library libibverbs.so.1 at " + filename;
+    }();
     IbvLib lib(std::move(dlhandle));
-#define TP_LOAD_SYMBOL(function_name, return_type, args_types)               \
-  {                                                                          \
-    void* ptr;                                                               \
-    std::tie(error, ptr) = loadSymbol(lib.dlhandle_, "ibv_" #function_name); \
-    if (error) {                                                             \
-      return std::make_tuple(std::move(error), IbvLib());                    \
-    }                                                                        \
-    TP_THROW_ASSERT_IF(ptr == nullptr);                                      \
-    lib.function_name##_ptr_ =                                               \
-        reinterpret_cast<decltype(function_name##_ptr_)>(ptr);               \
+#define TP_LOAD_SYMBOL(function_name, return_type, args_types)              \
+  {                                                                         \
+    void* ptr;                                                              \
+    std::tie(error, ptr) = lib.dlhandle_.loadSymbol("ibv_" #function_name); \
+    if (error) {                                                            \
+      return std::make_tuple(std::move(error), IbvLib());                   \
+    }                                                                       \
+    TP_THROW_ASSERT_IF(ptr == nullptr);                                     \
+    lib.function_name##_ptr_ =                                              \
+        reinterpret_cast<decltype(function_name##_ptr_)>(ptr);              \
   }
     TP_FORALL_IBV_SYMBOLS(TP_LOAD_SYMBOL)
 #undef TP_LOAD_SYMBOL
