@@ -8,13 +8,20 @@
 
 #pragma once
 
+#include <iomanip>
+#include <ios>
 #include <memory>
+#include <sstream>
+#include <string>
+#include <utility>
+#include <vector>
 
 #include <cuda_runtime.h>
 
 #include <tensorpipe/common/cuda_lib.h>
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/error.h>
+#include <tensorpipe/common/strings.h>
 
 #define TP_CUDA_CHECK(a)                                                \
   do {                                                                  \
@@ -67,8 +74,9 @@ class CudaEvent {
   CudaEvent& operator=(const CudaEvent&) = delete;
   CudaEvent& operator=(CudaEvent&&) = delete;
 
-  explicit CudaEvent(int device, bool interprocess = false) {
-    CudaDeviceGuard guard(device);
+  explicit CudaEvent(int device, bool interprocess = false)
+      : deviceIdx_(device) {
+    CudaDeviceGuard guard(deviceIdx_);
     int flags = cudaEventDisableTiming;
     if (interprocess) {
       flags |= cudaEventInterprocess;
@@ -76,13 +84,15 @@ class CudaEvent {
     TP_CUDA_CHECK(cudaEventCreateWithFlags(&ev_, flags));
   }
 
-  explicit CudaEvent(int device, cudaIpcEventHandle_t handle) {
+  explicit CudaEvent(int device, cudaIpcEventHandle_t handle)
+      : deviceIdx_(device) {
     // It could crash if we don't set device when creating events from handles
-    CudaDeviceGuard guard(device);
+    CudaDeviceGuard guard(deviceIdx_);
     TP_CUDA_CHECK(cudaIpcOpenEventHandle(&ev_, handle));
   }
 
   void record(cudaStream_t stream) {
+    CudaDeviceGuard guard(deviceIdx_);
     TP_CUDA_CHECK(cudaEventRecord(ev_, stream));
   }
 
@@ -92,6 +102,7 @@ class CudaEvent {
   }
 
   bool query() const {
+    CudaDeviceGuard guard(deviceIdx_);
     cudaError_t res = cudaEventQuery(ev_);
     if (res == cudaErrorNotReady) {
       return false;
@@ -101,6 +112,7 @@ class CudaEvent {
   }
 
   std::string serializedHandle() {
+    CudaDeviceGuard guard(deviceIdx_);
     cudaIpcEventHandle_t handle;
     TP_CUDA_CHECK(cudaIpcGetEventHandle(&handle, ev_));
 
@@ -108,11 +120,13 @@ class CudaEvent {
   }
 
   ~CudaEvent() {
+    CudaDeviceGuard guard(deviceIdx_);
     TP_CUDA_CHECK(cudaEventDestroy(ev_));
   }
 
  private:
   cudaEvent_t ev_;
+  int deviceIdx_;
 };
 
 inline int cudaDeviceForPointer(const CudaLib& cudaLib, const void* ptr) {
@@ -130,26 +144,67 @@ inline int cudaDeviceForPointer(const CudaLib& cudaLib, const void* ptr) {
   TP_CUDA_DRIVER_CHECK(cudaLib, cudaLib.ctxGetCurrent(&ctx));
   TP_CUDA_DRIVER_CHECK(cudaLib, cudaLib.ctxSetCurrent(nullptr));
 
-  cudaPointerAttributes attrs;
-  TP_CUDA_CHECK(cudaPointerGetAttributes(&attrs, ptr));
-#if (CUDART_VERSION >= 10000)
-  TP_DCHECK_EQ(cudaMemoryTypeDevice, attrs.type);
-#else
-  TP_DCHECK_EQ(cudaMemoryTypeDevice, attrs.memoryType);
-#endif
+  int deviceIdx;
+  TP_CUDA_DRIVER_CHECK(
+      cudaLib,
+      cudaLib.pointerGetAttribute(
+          &deviceIdx,
+          CU_POINTER_ATTRIBUTE_DEVICE_ORDINAL,
+          reinterpret_cast<CUdeviceptr>(ptr)));
 
   TP_CUDA_DRIVER_CHECK(cudaLib, cudaLib.ctxSetCurrent(ctx));
-  return attrs.device;
+  return deviceIdx;
 }
 
 using CudaPinnedBuffer = std::shared_ptr<uint8_t>;
 
-inline CudaPinnedBuffer makeCudaPinnedBuffer(size_t length) {
+inline CudaPinnedBuffer makeCudaPinnedBuffer(size_t length, int deviceIdx) {
+  CudaDeviceGuard guard(deviceIdx);
   void* ptr;
   TP_CUDA_CHECK(cudaMallocHost(&ptr, length));
-  return CudaPinnedBuffer(reinterpret_cast<uint8_t*>(ptr), [](uint8_t* ptr) {
-    TP_CUDA_CHECK(cudaFreeHost(ptr));
-  });
+  return CudaPinnedBuffer(
+      reinterpret_cast<uint8_t*>(ptr), [deviceIdx](uint8_t* ptr) {
+        CudaDeviceGuard guard(deviceIdx);
+        TP_CUDA_CHECK(cudaFreeHost(ptr));
+      });
+}
+
+inline std::vector<std::string> getUuidsOfVisibleDevices(
+    const CudaLib& cudaLib) {
+  int deviceCount;
+  TP_CUDA_DRIVER_CHECK(cudaLib, cudaLib.deviceGetCount(&deviceCount));
+
+  std::vector<std::string> result(deviceCount);
+  for (int devIdx = 0; devIdx < deviceCount; ++devIdx) {
+    CUdevice device;
+    TP_CUDA_DRIVER_CHECK(cudaLib, cudaLib.deviceGet(&device, devIdx));
+
+    CUuuid uuid;
+    TP_CUDA_DRIVER_CHECK(cudaLib, cudaLib.deviceGetUuid(&uuid, device));
+
+    // The CUDA driver and NVML choose two different format for UUIDs, hence we
+    // need to reconcile them. We do so using the most human readable format,
+    // that is "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee" (8-4-4-4-12).
+    std::ostringstream uuidSs;
+    uuidSs << std::hex << std::setfill('0');
+    for (int j = 0; j < 16; ++j) {
+      // The bitmask is required otherwise a negative value will get promoted to
+      // (signed) int with sign extension if char is signed.
+      uuidSs << std::setw(2) << (uuid.bytes[j] & 0xff);
+      if (j == 3 || j == 5 || j == 7 || j == 9) {
+        uuidSs << '-';
+      }
+    }
+
+    std::string uuidStr = uuidSs.str();
+    TP_THROW_ASSERT_IF(!isValidUuid(uuidStr))
+        << "Couldn't obtain valid UUID for GPU #" << devIdx
+        << " from CUDA driver. Got: " << uuidStr;
+
+    result[devIdx] = std::move(uuidStr);
+  }
+
+  return result;
 }
 
 } // namespace tensorpipe
