@@ -30,11 +30,19 @@ namespace tensorpipe {
 // Master list of all symbols we care about from libnvidia-ml.
 
 #define TP_FORALL_NVML_SYMBOLS(_)                                             \
+  _(deviceGetComputeRunningProcesses,                                         \
+    nvmlDeviceGetComputeRunningProcesses,                                     \
+    nvmlReturn_t,                                                             \
+    (nvmlDevice_t, unsigned int*, nvmlProcessInfo_t*))                        \
   _(deviceGetCount_v2, nvmlDeviceGetCount_v2, nvmlReturn_t, (unsigned int*))  \
   _(deviceGetHandleByIndex_v2,                                                \
     nvmlDeviceGetHandleByIndex_v2,                                            \
     nvmlReturn_t,                                                             \
     (unsigned int, nvmlDevice_t*))                                            \
+  _(deviceGetHandleByUUID,                                                    \
+    nvmlDeviceGetHandleByUUID,                                                \
+    nvmlReturn_t,                                                             \
+    (const char*, nvmlDevice_t*))                                             \
   _(deviceGetP2PStatus,                                                       \
     nvmlDeviceGetP2PStatus,                                                   \
     nvmlReturn_t,                                                             \
@@ -99,16 +107,28 @@ class NvmlLib {
     // opposed to global) so that the cuda symbols can only be resolved
     // through this handle and are not exposed (a.k.a., "leaked") to other
     // shared objects.
-    std::tie(error, dlhandle) =
-        createDynamicLibraryHandle("libnvidia-ml.so.1", RTLD_LOCAL | RTLD_LAZY);
+    std::tie(error, dlhandle) = DynamicLibraryHandle::create(
+        "libnvidia-ml.so.1", RTLD_LOCAL | RTLD_LAZY);
     if (error) {
       return std::make_tuple(std::move(error), NvmlLib());
     }
+    // Log at level 9 as we can't know whether this will be used in a transport
+    // or channel, thus err on the side of this being as low-level as possible
+    // because we don't expect this to be of interest that often.
+    TP_VLOG(9) << [&]() -> std::string {
+      std::string filename;
+      std::tie(error, filename) = dlhandle.getFilename();
+      if (error) {
+        return "Couldn't determine location of shared library libnvidia-ml.so.1: " +
+            error.what();
+      }
+      return "Found shared library libnvidia-ml.so.1 at " + filename;
+    }();
     NvmlLib lib(std::move(dlhandle));
 #define TP_LOAD_SYMBOL(method_name, function_name, return_type, args_types) \
   {                                                                         \
     void* ptr;                                                              \
-    std::tie(error, ptr) = loadSymbol(lib.dlhandle_, #function_name);       \
+    std::tie(error, ptr) = lib.dlhandle_.loadSymbol(#function_name);        \
     if (error) {                                                            \
       return std::make_tuple(std::move(error), NvmlLib());                  \
     }                                                                       \
@@ -125,7 +145,7 @@ class NvmlLib {
 
   ~NvmlLib() {
     if (inited_) {
-      TP_DCHECK(dlhandle_ != nullptr);
+      TP_DCHECK(dlhandle_.hasValue());
       TP_NVML_CHECK(*this, shutdown());
     }
   }

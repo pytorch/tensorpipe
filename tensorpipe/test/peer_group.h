@@ -36,6 +36,10 @@ class PeerGroup {
   // Spawn two peers each running one of the provided functions.
   virtual void spawn(std::function<void()>, std::function<void()>) = 0;
 
+  // Whether the two endpoints are two threads in the same process (as opposed
+  // to two separate processes).
+  virtual bool endpointsInSameProcess() const = 0;
+
   // Signal other peers that this peer is done.
   void done(int selfId) {
     send(1 - selfId, doneString_);
@@ -83,6 +87,10 @@ class ThreadPeerGroup : public PeerGroup {
     for (auto& t : ts) {
       t.join();
     }
+  }
+
+  bool endpointsInSameProcess() const override {
+    return true;
   }
 
  private:
@@ -202,6 +210,10 @@ class ProcessPeerGroup : public PeerGroup {
       const int exitStatus = WEXITSTATUS(status);
       EXPECT_EQ(0, exitStatus);
     }
+  }
+
+  bool endpointsInSameProcess() const override {
+    return false;
   }
 
  private:

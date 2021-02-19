@@ -29,6 +29,7 @@
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/nop.h>
 #include <tensorpipe/common/optional.h>
+#include <tensorpipe/common/strings.h>
 #include <tensorpipe/common/system.h>
 
 namespace tensorpipe {
@@ -36,91 +37,6 @@ namespace channel {
 namespace cuda_ipc {
 
 namespace {
-
-// FIXME This is duplicated in CMA, find a place in common for it.
-std::string joinStrs(const std::vector<std::string>& strs) {
-  if (strs.empty()) {
-    return "";
-  }
-  std::ostringstream oss;
-  oss << strs[0];
-  for (size_t idx = 1; idx < strs.size(); idx++) {
-    oss << ", " << strs[idx];
-  }
-  return oss.str();
-}
-
-template <typename T>
-std::string formatMatrix(const std::vector<std::vector<T>>& matrix) {
-  std::ostringstream oss;
-  oss << "{";
-  for (size_t rowIdx = 0; rowIdx < matrix.size(); rowIdx++) {
-    if (rowIdx > 0) {
-      oss << ", ";
-    }
-    oss << "{";
-    for (size_t colIdx = 0; colIdx < matrix[rowIdx].size(); colIdx++) {
-      if (colIdx > 0) {
-        oss << ", ";
-      }
-      oss << matrix[rowIdx][colIdx];
-    }
-    oss << "}";
-  }
-  oss << "}";
-  return oss.str();
-}
-
-// Since text manipulation is hard, let's use this to double-check our results.
-bool isValidUuid(const std::string& uuid) {
-  // Check it's in this format:
-  // aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee
-  // |0   |5   |10  |15  |20  |25  |30  |35
-  if (uuid.size() != 36) {
-    return false;
-  }
-  for (int i = 0; i < uuid.size(); i++) {
-    if (i == 8 || i == 13 || i == 18 || i == 23) {
-      if (uuid[i] != '-') {
-        return false;
-      }
-    } else {
-      if (!((uuid[i] >= '0' && uuid[i] <= '9') ||
-            (uuid[i] >= 'a' && uuid[i] <= 'f'))) {
-        return false;
-      }
-    }
-  }
-  return true;
-}
-
-std::string getUuidOfCudaDev(const CudaLib& cudaLib, int devIdx) {
-  CUdevice device;
-  TP_CUDA_DRIVER_CHECK(cudaLib, cudaLib.deviceGet(&device, devIdx));
-
-  CUuuid uuid;
-  TP_CUDA_DRIVER_CHECK(cudaLib, cudaLib.deviceGetUuid(&uuid, device));
-
-  // The CUDA driver and NVML choose two different format for UUIDs, hence we
-  // need to reconcile them. We do so using the most human readable format, that
-  // is "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee" (8-4-4-4-12).
-  std::ostringstream uuidSs;
-  uuidSs << std::hex << std::setfill('0');
-  for (int j = 0; j < 16; ++j) {
-    // The bitmask is required otherwise a negative value will get promoted to
-    // (signed) int with sign extension if char is signed.
-    uuidSs << std::setw(2) << (uuid.bytes[j] & 0xff);
-    if (j == 3 || j == 5 || j == 7 || j == 9) {
-      uuidSs << '-';
-    }
-  }
-
-  std::string uuidStr = uuidSs.str();
-  TP_THROW_ASSERT_IF(!isValidUuid(uuidStr))
-      << "Couldn't obtain valid UUID for GPU #" << devIdx
-      << " from CUDA driver. Got: " << uuidStr;
-  return uuidStr;
-}
 
 std::tuple<std::vector<std::string>, std::vector<std::vector<bool>>>
 getGlobalUuidsAndP2pSupport(const NvmlLib& nvmlLib) {
@@ -191,12 +107,7 @@ getBootIdAndVisibleUuidsAndDomainDescriptor(const CudaLib& cudaLib) {
   TP_THROW_ASSERT_IF(!bootID) << "Unable to read boot_id";
   domainDescriptor.bootId = std::move(bootID.value());
 
-  int deviceCount;
-  TP_CUDA_DRIVER_CHECK(cudaLib, cudaLib.deviceGetCount(&deviceCount));
-  domainDescriptor.gpuUuids.resize(deviceCount);
-  for (int i = 0; i < deviceCount; ++i) {
-    domainDescriptor.gpuUuids[i] = getUuidOfCudaDev(cudaLib, i);
-  }
+  domainDescriptor.gpuUuids = getUuidsOfVisibleDevices(cudaLib);
 
   std::string domainDescriptorStr = saveDescriptor(nopHolder);
   return std::make_tuple(
