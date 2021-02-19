@@ -108,16 +108,19 @@ void RecvOperation::process(
   CudaEvent startEv(deviceIdx_, startEvHandle);
   startEv.wait(stream_, deviceIdx_);
 
-  void* remotePtr;
-  TP_CUDA_CHECK(cudaIpcOpenMemHandle(
-      &remotePtr, remoteHandle, cudaIpcMemLazyEnablePeerAccess));
-  TP_CUDA_CHECK(cudaMemcpyAsync(
-      ptr_,
-      static_cast<uint8_t*>(remotePtr) + offset,
-      length_,
-      cudaMemcpyDeviceToDevice,
-      stream_));
-  TP_CUDA_CHECK(cudaIpcCloseMemHandle(remotePtr));
+  {
+    CudaDeviceGuard guard(deviceIdx_);
+    void* remotePtr;
+    TP_CUDA_CHECK(cudaIpcOpenMemHandle(
+        &remotePtr, remoteHandle, cudaIpcMemLazyEnablePeerAccess));
+    TP_CUDA_CHECK(cudaMemcpyAsync(
+        ptr_,
+        static_cast<uint8_t*>(remotePtr) + offset,
+        length_,
+        cudaMemcpyDeviceToDevice,
+        stream_));
+    TP_CUDA_CHECK(cudaIpcCloseMemHandle(remotePtr));
+  }
 
   stopEv_.record(stream_);
 }
@@ -164,10 +167,6 @@ void ChannelImpl::recvImplFromLoop(
     CudaBuffer buffer,
     TRecvCallback callback) {
   int deviceIdx = cudaDeviceForPointer(context_->getCudaLib(), buffer.ptr);
-  // Need to guard otherwise some op on the receiver will crash.
-  // TODO: figure out which CUDA op crashed and replace this with a
-  // more precise fix.
-  CudaDeviceGuard guard(deviceIdx);
   recvOperations_.emplace_back(
       sequenceNumber, deviceIdx, buffer.ptr, buffer.stream, buffer.length);
   auto& op = recvOperations_.back();

@@ -70,6 +70,7 @@ class ChannelImpl final
   void onCpuChannelRecv(
       uint64_t sequenceNumber,
       CudaBuffer buffer,
+      int deviceIdx,
       CudaPinnedBuffer tmpBuffer,
       TRecvCallback callback);
 };

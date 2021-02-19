@@ -333,6 +333,8 @@ class ClientServerChannelTestCase : public ChannelTestCase<TBuffer> {
 
           ctx->join();
           transportCtx->join();
+
+          afterServer();
         },
         [&] {
           auto transportCtx = tensorpipe::transport::uv::create();
@@ -351,6 +353,8 @@ class ClientServerChannelTestCase : public ChannelTestCase<TBuffer> {
 
           ctx->join();
           transportCtx->join();
+
+          afterClient();
         });
   }
 
@@ -358,6 +362,9 @@ class ClientServerChannelTestCase : public ChannelTestCase<TBuffer> {
       std::shared_ptr<tensorpipe::channel::Channel<TBuffer>> channel) {}
   virtual void client(
       std::shared_ptr<tensorpipe::channel::Channel<TBuffer>> channel) {}
+
+  virtual void afterServer() {}
+  virtual void afterClient() {}
 
  protected:
   ChannelTestHelper<TBuffer>* helper_;

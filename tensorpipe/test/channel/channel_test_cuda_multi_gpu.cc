@@ -12,6 +12,7 @@
 #include <tensorpipe/channel/cuda_context.h>
 #include <tensorpipe/common/cuda.h>
 #include <tensorpipe/test/channel/channel_test.h>
+#include <tensorpipe/test/channel/cuda_helpers.h>
 #include <tensorpipe/test/test_environment.h>
 
 using namespace tensorpipe;
@@ -31,16 +32,18 @@ class SendAcrossDevicesTest : public ClientServerChannelTestCase<CudaBuffer> {
 
  private:
   void server(std::shared_ptr<CudaChannel> channel) override {
-    // Send happens from device #0.
-    TP_CUDA_CHECK(cudaSetDevice(0));
     cudaStream_t sendStream;
-    TP_CUDA_CHECK(
-        cudaStreamCreateWithFlags(&sendStream, cudaStreamNonBlocking));
     void* ptr;
-    TP_CUDA_CHECK(cudaMalloc(&ptr, kSize));
+    {
+      // Send happens from device #0.
+      CudaDeviceGuard guard(0);
+      TP_CUDA_CHECK(
+          cudaStreamCreateWithFlags(&sendStream, cudaStreamNonBlocking));
+      TP_CUDA_CHECK(cudaMalloc(&ptr, kSize));
 
-    // Set buffer to target value.
-    TP_CUDA_CHECK(cudaMemsetAsync(ptr, 0x42, kSize, sendStream));
+      // Set buffer to target value.
+      TP_CUDA_CHECK(cudaMemsetAsync(ptr, 0x42, kSize, sendStream));
+    }
 
     // Perform send and wait for completion.
     auto descriptorPromise = std::make_shared<
@@ -72,20 +75,35 @@ class SendAcrossDevicesTest : public ClientServerChannelTestCase<CudaBuffer> {
     this->peers_->send(PeerGroup::kClient, descriptor);
     Error sendError = sendFuture.get();
     EXPECT_FALSE(sendError) << sendError.what();
-    TP_CUDA_CHECK(cudaFree(ptr));
+
+    {
+      CudaDeviceGuard guard(0);
+      TP_CUDA_CHECK(cudaFree(ptr));
+      TP_CUDA_CHECK(cudaStreamDestroy(sendStream));
+    }
 
     this->peers_->done(PeerGroup::kServer);
     this->peers_->join(PeerGroup::kServer);
   }
 
+  void afterServer() override {
+    if (this->peers_->endpointsInSameProcess()) {
+      EXPECT_TRUE(initializedCudaContexts({0, 1}));
+    } else {
+      EXPECT_TRUE(initializedCudaContexts({0}));
+    }
+  }
+
   void client(std::shared_ptr<CudaChannel> channel) override {
-    // Recv happens on device #1.
-    TP_CUDA_CHECK(cudaSetDevice(1));
     cudaStream_t recvStream;
-    TP_CUDA_CHECK(
-        cudaStreamCreateWithFlags(&recvStream, cudaStreamNonBlocking));
     void* ptr;
-    TP_CUDA_CHECK(cudaMalloc(&ptr, kSize));
+    {
+      // Recv happens on device #1.
+      CudaDeviceGuard guard(1);
+      TP_CUDA_CHECK(
+          cudaStreamCreateWithFlags(&recvStream, cudaStreamNonBlocking));
+      TP_CUDA_CHECK(cudaMalloc(&ptr, kSize));
+    }
 
     auto descriptor = this->peers_->recv(PeerGroup::kClient);
 
@@ -107,14 +125,26 @@ class SendAcrossDevicesTest : public ClientServerChannelTestCase<CudaBuffer> {
     Error recvError = recvFuture.get();
     EXPECT_FALSE(recvError) << recvError.what();
 
-    std::array<uint8_t, kSize> data;
-    TP_CUDA_CHECK(cudaStreamSynchronize(recvStream));
-    TP_CUDA_CHECK(cudaMemcpy(data.data(), ptr, kSize, cudaMemcpyDefault));
-    EXPECT_THAT(data, ::testing::Each(0x42));
-    TP_CUDA_CHECK(cudaFree(ptr));
+    {
+      CudaDeviceGuard guard(1);
+      std::array<uint8_t, kSize> data;
+      TP_CUDA_CHECK(cudaStreamSynchronize(recvStream));
+      TP_CUDA_CHECK(cudaMemcpy(data.data(), ptr, kSize, cudaMemcpyDefault));
+      EXPECT_THAT(data, ::testing::Each(0x42));
+      TP_CUDA_CHECK(cudaFree(ptr));
+      TP_CUDA_CHECK(cudaStreamDestroy(recvStream));
+    }
 
     this->peers_->done(PeerGroup::kClient);
     this->peers_->join(PeerGroup::kClient);
+  }
+
+  void afterClient() override {
+    if (this->peers_->endpointsInSameProcess()) {
+      EXPECT_TRUE(initializedCudaContexts({0, 1}));
+    } else {
+      EXPECT_TRUE(initializedCudaContexts({1}));
+    }
   }
 };
 
@@ -135,16 +165,18 @@ class SendReverseAcrossDevicesTest
 
  private:
   void server(std::shared_ptr<CudaChannel> channel) override {
-    // Send happens from device #1.
-    TP_CUDA_CHECK(cudaSetDevice(1));
     cudaStream_t sendStream;
-    TP_CUDA_CHECK(
-        cudaStreamCreateWithFlags(&sendStream, cudaStreamNonBlocking));
     void* ptr;
-    TP_CUDA_CHECK(cudaMalloc(&ptr, kSize));
+    {
+      // Send happens from device #1.
+      CudaDeviceGuard guard(1);
+      TP_CUDA_CHECK(
+          cudaStreamCreateWithFlags(&sendStream, cudaStreamNonBlocking));
+      TP_CUDA_CHECK(cudaMalloc(&ptr, kSize));
 
-    // Set buffer to target value.
-    TP_CUDA_CHECK(cudaMemsetAsync(ptr, 0x42, kSize, sendStream));
+      // Set buffer to target value.
+      TP_CUDA_CHECK(cudaMemsetAsync(ptr, 0x42, kSize, sendStream));
+    }
 
     // Perform send and wait for completion.
     auto descriptorPromise = std::make_shared<
@@ -176,20 +208,35 @@ class SendReverseAcrossDevicesTest
     this->peers_->send(PeerGroup::kClient, descriptor);
     Error sendError = sendFuture.get();
     EXPECT_FALSE(sendError) << sendError.what();
-    TP_CUDA_CHECK(cudaFree(ptr));
+
+    {
+      CudaDeviceGuard guard(1);
+      TP_CUDA_CHECK(cudaFree(ptr));
+      TP_CUDA_CHECK(cudaStreamDestroy(sendStream));
+    }
 
     this->peers_->done(PeerGroup::kServer);
     this->peers_->join(PeerGroup::kServer);
   }
 
+  void afterServer() override {
+    if (this->peers_->endpointsInSameProcess()) {
+      EXPECT_TRUE(initializedCudaContexts({0, 1}));
+    } else {
+      EXPECT_TRUE(initializedCudaContexts({1}));
+    }
+  }
+
   void client(std::shared_ptr<CudaChannel> channel) override {
-    // Recv happens on device #0.
-    TP_CUDA_CHECK(cudaSetDevice(0));
     cudaStream_t recvStream;
-    TP_CUDA_CHECK(
-        cudaStreamCreateWithFlags(&recvStream, cudaStreamNonBlocking));
     void* ptr;
-    TP_CUDA_CHECK(cudaMalloc(&ptr, kSize));
+    {
+      // Recv happens on device #0.
+      CudaDeviceGuard guard(0);
+      TP_CUDA_CHECK(
+          cudaStreamCreateWithFlags(&recvStream, cudaStreamNonBlocking));
+      TP_CUDA_CHECK(cudaMalloc(&ptr, kSize));
+    }
 
     auto descriptor = this->peers_->recv(PeerGroup::kClient);
 
@@ -211,14 +258,26 @@ class SendReverseAcrossDevicesTest
     Error recvError = recvFuture.get();
     EXPECT_FALSE(recvError) << recvError.what();
 
-    std::array<uint8_t, kSize> data;
-    TP_CUDA_CHECK(cudaStreamSynchronize(recvStream));
-    TP_CUDA_CHECK(cudaMemcpy(data.data(), ptr, kSize, cudaMemcpyDefault));
-    EXPECT_THAT(data, ::testing::Each(0x42));
-    TP_CUDA_CHECK(cudaFree(ptr));
+    {
+      CudaDeviceGuard guard(0);
+      std::array<uint8_t, kSize> data;
+      TP_CUDA_CHECK(cudaStreamSynchronize(recvStream));
+      TP_CUDA_CHECK(cudaMemcpy(data.data(), ptr, kSize, cudaMemcpyDefault));
+      EXPECT_THAT(data, ::testing::Each(0x42));
+      TP_CUDA_CHECK(cudaFree(ptr));
+      TP_CUDA_CHECK(cudaStreamDestroy(recvStream));
+    }
 
     this->peers_->done(PeerGroup::kClient);
     this->peers_->join(PeerGroup::kClient);
+  }
+
+  void afterClient() override {
+    if (this->peers_->endpointsInSameProcess()) {
+      EXPECT_TRUE(initializedCudaContexts({0, 1}));
+    } else {
+      EXPECT_TRUE(initializedCudaContexts({0}));
+    }
   }
 };
 
@@ -239,16 +298,18 @@ class SendAcrossNonDefaultDevicesTest
 
  private:
   void server(std::shared_ptr<CudaChannel> channel) override {
-    // Send happens from device #1.
-    TP_CUDA_CHECK(cudaSetDevice(1));
     cudaStream_t sendStream;
-    TP_CUDA_CHECK(
-        cudaStreamCreateWithFlags(&sendStream, cudaStreamNonBlocking));
     void* ptr;
-    TP_CUDA_CHECK(cudaMalloc(&ptr, kSize));
+    {
+      // Send happens from device #1.
+      CudaDeviceGuard guard(1);
+      TP_CUDA_CHECK(
+          cudaStreamCreateWithFlags(&sendStream, cudaStreamNonBlocking));
+      TP_CUDA_CHECK(cudaMalloc(&ptr, kSize));
 
-    // Set buffer to target value.
-    TP_CUDA_CHECK(cudaMemsetAsync(ptr, 0x42, kSize, sendStream));
+      // Set buffer to target value.
+      TP_CUDA_CHECK(cudaMemsetAsync(ptr, 0x42, kSize, sendStream));
+    }
 
     // Perform send and wait for completion.
     auto descriptorPromise = std::make_shared<
@@ -280,20 +341,31 @@ class SendAcrossNonDefaultDevicesTest
     this->peers_->send(PeerGroup::kClient, descriptor);
     Error sendError = sendFuture.get();
     EXPECT_FALSE(sendError) << sendError.what();
-    TP_CUDA_CHECK(cudaFree(ptr));
+
+    {
+      CudaDeviceGuard guard(1);
+      TP_CUDA_CHECK(cudaFree(ptr));
+      TP_CUDA_CHECK(cudaStreamDestroy(sendStream));
+    }
 
     this->peers_->done(PeerGroup::kServer);
     this->peers_->join(PeerGroup::kServer);
   }
 
+  void afterServer() override {
+    EXPECT_TRUE(initializedCudaContexts({1}));
+  }
+
   void client(std::shared_ptr<CudaChannel> channel) override {
-    // Recv happens on device #1.
-    TP_CUDA_CHECK(cudaSetDevice(1));
     cudaStream_t recvStream;
-    TP_CUDA_CHECK(
-        cudaStreamCreateWithFlags(&recvStream, cudaStreamNonBlocking));
     void* ptr;
-    TP_CUDA_CHECK(cudaMalloc(&ptr, kSize));
+    {
+      // Recv happens on device #1.
+      CudaDeviceGuard guard(1);
+      TP_CUDA_CHECK(
+          cudaStreamCreateWithFlags(&recvStream, cudaStreamNonBlocking));
+      TP_CUDA_CHECK(cudaMalloc(&ptr, kSize));
+    }
 
     auto descriptor = this->peers_->recv(PeerGroup::kClient);
 
@@ -315,14 +387,22 @@ class SendAcrossNonDefaultDevicesTest
     Error recvError = recvFuture.get();
     EXPECT_FALSE(recvError) << recvError.what();
 
-    std::array<uint8_t, kSize> data;
-    TP_CUDA_CHECK(cudaStreamSynchronize(recvStream));
-    TP_CUDA_CHECK(cudaMemcpy(data.data(), ptr, kSize, cudaMemcpyDefault));
-    EXPECT_THAT(data, ::testing::Each(0x42));
-    TP_CUDA_CHECK(cudaFree(ptr));
+    {
+      CudaDeviceGuard guard(1);
+      std::array<uint8_t, kSize> data;
+      TP_CUDA_CHECK(cudaStreamSynchronize(recvStream));
+      TP_CUDA_CHECK(cudaMemcpy(data.data(), ptr, kSize, cudaMemcpyDefault));
+      EXPECT_THAT(data, ::testing::Each(0x42));
+      TP_CUDA_CHECK(cudaFree(ptr));
+      TP_CUDA_CHECK(cudaStreamDestroy(recvStream));
+    }
 
     this->peers_->done(PeerGroup::kClient);
     this->peers_->join(PeerGroup::kClient);
+  }
+
+  void afterClient() override {
+    EXPECT_TRUE(initializedCudaContexts({1}));
   }
 };
 
