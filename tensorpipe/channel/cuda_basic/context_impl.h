@@ -12,6 +12,7 @@
 #include <tensorpipe/channel/cpu_context.h>
 #include <tensorpipe/channel/cuda_context.h>
 #include <tensorpipe/common/cuda_buffer.h>
+#include <tensorpipe/common/cuda_host_allocator.h>
 #include <tensorpipe/common/cuda_lib.h>
 #include <tensorpipe/common/cuda_loop.h>
 #include <tensorpipe/common/deferred_executor.h>
@@ -58,6 +59,7 @@ class ContextImpl final
   const std::shared_ptr<CpuContext> cpuContext_;
   // TODO: Lazy initialization of cuda loop.
   CudaLoop cudaLoop_;
+  CudaHostAllocator cudaHostAllocator_;
 };
 
 } // namespace cuda_basic

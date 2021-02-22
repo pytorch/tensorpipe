@@ -61,7 +61,7 @@ std::shared_ptr<CudaChannel> ContextImpl::createChannel(
   auto cpuChannel =
       cpuContext_->createChannel(std::move(connections), endpoint);
   return createChannelInternal(
-      std::move(conn), std::move(cpuChannel), cudaLoop_);
+      std::move(conn), std::move(cpuChannel), cudaLoop_, cudaHostAllocator_);
 }
 
 size_t ContextImpl::numConnectionsNeeded() const {
@@ -77,6 +77,7 @@ void ContextImpl::handleErrorImpl() {
     cpuContext_->close();
   }
   cudaLoop_.close();
+  cudaHostAllocator_.close();
 }
 
 void ContextImpl::joinImpl() {
@@ -84,6 +85,7 @@ void ContextImpl::joinImpl() {
     cpuContext_->join();
   }
   cudaLoop_.join();
+  cudaHostAllocator_.join();
 }
 
 bool ContextImpl::inLoop() const {

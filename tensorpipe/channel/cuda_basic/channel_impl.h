@@ -16,6 +16,7 @@
 #include <tensorpipe/channel/cpu_context.h>
 #include <tensorpipe/common/cuda.h>
 #include <tensorpipe/common/cuda_buffer.h>
+#include <tensorpipe/common/cuda_host_allocator.h>
 #include <tensorpipe/common/cuda_loop.h>
 
 namespace tensorpipe {
@@ -24,12 +25,16 @@ namespace cuda_basic {
 
 class ContextImpl;
 
-struct SendOperation {
+struct Operation {
   uint64_t sequenceNumber{0};
-  CudaPinnedBuffer tmpBuffer;
+  size_t chunkId{0};
+  size_t numChunks{0};
+  cudaStream_t stream{cudaStreamDefault};
+  void* cudaPtr{nullptr};
   size_t length{0};
-  TDescriptorCallback descriptorCallback;
-  bool ready{false};
+  std::shared_ptr<uint8_t[]> tmpBuffer;
+  std::function<void(const Error&)> callback;
+  bool done{false};
 };
 
 class ChannelImpl final
@@ -41,7 +46,8 @@ class ChannelImpl final
       std::string id,
       std::shared_ptr<transport::Connection> connection,
       std::shared_ptr<CpuChannel> cpuChannel,
-      CudaLoop& cudaLoop);
+      CudaLoop& cudaLoop,
+      CudaHostAllocator& cudaHostAllocator);
 
  protected:
   // Implement the entry points called by ChannelImplBoilerplate.
@@ -63,16 +69,30 @@ class ChannelImpl final
   const std::shared_ptr<transport::Connection> connection_;
   const std::shared_ptr<CpuChannel> cpuChannel_;
   CudaLoop& cudaLoop_;
-  std::deque<SendOperation> sendOperations_;
+  CudaHostAllocator& cudaHostAllocator_;
+  std::deque<Operation> sendOperations_;
+  std::deque<Operation> recvOperations_;
 
-  void onTempBufferReadyForSend();
+  void cudaCopy(
+      void* dst,
+      const void* src,
+      size_t length,
+      int devicdIdx,
+      cudaStream_t stream,
+      std::function<void(const Error&)> callback);
 
-  void onCpuChannelRecv(
-      uint64_t sequenceNumber,
-      CudaBuffer buffer,
-      int deviceIdx,
-      CudaPinnedBuffer tmpBuffer,
-      TRecvCallback callback);
+  void onSendOpReadyForCopy(Operation& op);
+  void onSendOpDone();
+  void sendChunkDescriptor(Operation op, std::string descriptor);
+  void sendChunkThroughCpuChannel(Operation op);
+
+  void onRecvOpReadDescriptor(Operation& op, std::string descriptor);
+  void onRecvOpReadyForRecv(Operation& op, std::string descriptor);
+  void onRecvOpReadyForCopy(Operation& op);
+  void onRecvOpDone();
+
+  void tryCleanup();
+  void cleanup();
 };
 
 } // namespace cuda_basic

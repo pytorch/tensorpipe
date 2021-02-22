@@ -85,6 +85,7 @@ if(TP_USE_CUDA)
     channel/cuda_basic/channel_impl.cc
     channel/cuda_basic/context_impl.cc
     channel/cuda_basic/factory.cc
+    common/cuda_host_allocator.cc
     common/cuda_loop.cc)
 
   ### cuda_ipc
