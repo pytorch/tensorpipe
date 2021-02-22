@@ -83,7 +83,7 @@ void ChannelImpl::sendImplFromLoop(
       op.callback = std::move(callback);
     }
 
-    TP_VLOG(6) << "Channel " << id_
+    TP_VLOG(5) << "Channel " << id_
                << " is allocating temporary memory for chunk #" << op.chunkId
                << " of " << op.numChunks << " for buffer #"
                << op.sequenceNumber;
@@ -91,7 +91,7 @@ void ChannelImpl::sendImplFromLoop(
         op.length,
         callbackWrapper_(
             [&op](ChannelImpl& impl, std::shared_ptr<uint8_t[]> tmpBuffer) {
-              TP_VLOG(6) << "Channel " << impl.id_
+              TP_VLOG(5) << "Channel " << impl.id_
                          << " is done allocating temporary memory for chunk #"
                          << op.chunkId << " of " << op.numChunks
                          << " for buffer #" << op.sequenceNumber;
@@ -110,7 +110,7 @@ void ChannelImpl::onSendOpReadyForCopy(Operation& op) {
     return;
   }
 
-  TP_VLOG(6) << "Channel " << id_ << " is copying chunk #" << op.chunkId
+  TP_VLOG(5) << "Channel " << id_ << " is copying chunk #" << op.chunkId
              << " of " << op.numChunks << " for buffer #" << op.sequenceNumber
              << " from CUDA device to CPU";
   int deviceIdx = cudaDeviceForPointer(context_->getCudaLib(), op.cudaPtr);
@@ -121,7 +121,7 @@ void ChannelImpl::onSendOpReadyForCopy(Operation& op) {
       deviceIdx,
       op.stream,
       callbackWrapper_([&op](ChannelImpl& impl) {
-        TP_VLOG(6) << "Channel " << impl.id_ << " is done copying chunk #"
+        TP_VLOG(5) << "Channel " << impl.id_ << " is done copying chunk #"
                    << op.chunkId << " of " << op.numChunks << " for buffer #"
                    << op.sequenceNumber << " from CUDA device to CPU";
         op.done = true;
@@ -234,7 +234,7 @@ void ChannelImpl::onRecvOpReadDescriptor(
     return;
   }
 
-  TP_VLOG(6) << "Channel " << id_
+  TP_VLOG(5) << "Channel " << id_
              << " is allocating temporary memory for chunk #" << op.chunkId
              << " of " << op.numChunks << " for buffer #" << op.sequenceNumber;
   cudaHostAllocator_.alloc(
@@ -242,7 +242,7 @@ void ChannelImpl::onRecvOpReadDescriptor(
       callbackWrapper_(
           [&op, descriptor{std::move(descriptor)}](
               ChannelImpl& impl, std::shared_ptr<uint8_t[]> tmpBuffer) mutable {
-            TP_VLOG(6) << "Channel " << impl.id_
+            TP_VLOG(5) << "Channel " << impl.id_
                        << " is done allocating temporary memory for chunk #"
                        << op.chunkId << " of " << op.numChunks
                        << " for buffer #" << op.sequenceNumber;
@@ -279,7 +279,7 @@ void ChannelImpl::onRecvOpReadyForCopy(Operation& op) {
     return;
   }
 
-  TP_VLOG(6) << "Channel " << id_ << " is copying chunk #" << op.chunkId
+  TP_VLOG(5) << "Channel " << id_ << " is copying chunk #" << op.chunkId
              << " of " << op.numChunks << " for buffer #" << op.sequenceNumber
              << " from CPU to CUDA device";
   int deviceIdx = cudaDeviceForPointer(context_->getCudaLib(), op.cudaPtr);
@@ -290,7 +290,7 @@ void ChannelImpl::onRecvOpReadyForCopy(Operation& op) {
       deviceIdx,
       op.stream,
       callbackWrapper_([&op](ChannelImpl& impl) {
-        TP_VLOG(6) << "Channel " << impl.id_ << " is done copying chunk #"
+        TP_VLOG(5) << "Channel " << impl.id_ << " is done copying chunk #"
                    << op.chunkId << " of " << op.numChunks << " for buffer #"
                    << op.sequenceNumber << " from CPU to CUDA device";
         op.done = true;
@@ -326,7 +326,7 @@ void ChannelImpl::tryCleanup() {
   if (sendOperations_.empty() && recvOperations_.empty()) {
     cleanup();
   } else {
-    TP_VLOG(6) << "Channel " << id_
+    TP_VLOG(5) << "Channel " << id_
                << " cannot proceed with cleanup because it has "
                << sendOperations_.size() << " pending send operations and "
                << recvOperations_.size() << " pending recv operations";
@@ -335,7 +335,7 @@ void ChannelImpl::tryCleanup() {
 
 void ChannelImpl::cleanup() {
   TP_DCHECK(context_->inLoop());
-  TP_VLOG(6) << "Channel " << id_ << " is cleaning up";
+  TP_VLOG(5) << "Channel " << id_ << " is cleaning up";
 
   context_->unenroll(*this);
 }
