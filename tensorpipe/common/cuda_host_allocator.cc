@@ -17,8 +17,8 @@ namespace tensorpipe {
 CudaHostAllocator::CudaHostAllocator(size_t numChunks, size_t chunkSize)
     : numChunks_(numChunks),
       chunkSize_(chunkSize),
-      chunkAvailable_(numChunks, true),
-      data_(allocPinnedBuffer(numChunks * chunkSize)) {
+      data_(allocPinnedBuffer(numChunks * chunkSize)),
+      chunkAvailable_(numChunks, true) {
   std::unique_lock<std::mutex> lock(mutex_);
   thread_ = std::thread([this, lock{std::move(lock)}]() mutable {
     setThreadName("TP_CUDA_host_allocator_loop");
