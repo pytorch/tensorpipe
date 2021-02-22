@@ -39,6 +39,7 @@ class ChannelImpl final
       ConstructorToken token,
       std::shared_ptr<ContextImpl> context,
       std::string id,
+      std::shared_ptr<transport::Connection> connection,
       std::shared_ptr<CpuChannel> cpuChannel,
       CudaLoop& cudaLoop);
 
@@ -59,6 +60,7 @@ class ChannelImpl final
   void setIdImpl() override;
 
  private:
+  const std::shared_ptr<transport::Connection> connection_;
   const std::shared_ptr<CpuChannel> cpuChannel_;
   CudaLoop& cudaLoop_;
   std::deque<SendOperation> sendOperations_;

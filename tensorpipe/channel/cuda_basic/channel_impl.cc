@@ -28,12 +28,14 @@ ChannelImpl::ChannelImpl(
     ConstructorToken token,
     std::shared_ptr<ContextImpl> context,
     std::string id,
+    std::shared_ptr<transport::Connection> connection,
     std::shared_ptr<CpuChannel> cpuChannel,
     CudaLoop& cudaLoop)
     : ChannelImplBoilerplate<CudaBuffer, ContextImpl, ChannelImpl>(
           token,
           std::move(context),
           std::move(id)),
+      connection_(std::move(connection)),
       cpuChannel_(std::move(cpuChannel)),
       cudaLoop_(cudaLoop) {}
 
