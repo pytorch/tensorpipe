@@ -17,23 +17,21 @@ using namespace tensorpipe::channel;
 // because we need this test case to run in a subprocess as in some cases it may
 // initialize CUDA and thus would otherwise "pollute" the parent process.
 template <typename TBuffer>
-class DomainDescriptorTest : public ClientServerChannelTestCase<TBuffer> {
+class DomainDescriptorTest : public ChannelTestCase<TBuffer> {
  public:
-  void server(std::shared_ptr<transport::Connection> /* unused */) override {
-    this->peers_->done(PeerGroup::kServer);
-    this->peers_->join(PeerGroup::kServer);
-  }
-
-  void client(std::shared_ptr<transport::Connection> /* unused */) override {
-    std::shared_ptr<Context<TBuffer>> context1 =
-        this->helper_->makeContext("ctx1");
-    std::shared_ptr<Context<TBuffer>> context2 =
-        this->helper_->makeContext("ctx2");
-    EXPECT_FALSE(context1->domainDescriptor().empty());
-    EXPECT_FALSE(context2->domainDescriptor().empty());
-    EXPECT_EQ(context1->domainDescriptor(), context2->domainDescriptor());
-    this->peers_->done(PeerGroup::kClient);
-    this->peers_->join(PeerGroup::kClient);
+  void run(ChannelTestHelper<TBuffer>* helper) override {
+    auto peerGroup = helper->makePeerGroup();
+    peerGroup->spawn(
+        [&] {
+          std::shared_ptr<Context<TBuffer>> context1 =
+              helper->makeContext("ctx1");
+          std::shared_ptr<Context<TBuffer>> context2 =
+              helper->makeContext("ctx2");
+          EXPECT_FALSE(context1->domainDescriptor().empty());
+          EXPECT_FALSE(context2->domainDescriptor().empty());
+          EXPECT_EQ(context1->domainDescriptor(), context2->domainDescriptor());
+        },
+        [] {});
   }
 };
 
