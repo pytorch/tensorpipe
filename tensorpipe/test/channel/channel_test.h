@@ -74,7 +74,8 @@ class DataWrapper<tensorpipe::CudaBuffer> {
 
   explicit DataWrapper(std::vector<uint8_t> v) : DataWrapper(v.size()) {
     if (length_ > 0) {
-      TP_CUDA_CHECK(cudaMemcpy(cudaPtr_, v.data(), length_, cudaMemcpyDefault));
+      TP_CUDA_CHECK(cudaMemcpyAsync(
+          cudaPtr_, v.data(), length_, cudaMemcpyDefault, stream_));
     }
   }
 
