@@ -77,7 +77,7 @@ class ChannelImpl final
       void* dst,
       const void* src,
       size_t length,
-      int devicdIdx,
+      int deviceIdx,
       cudaStream_t stream,
       std::function<void(const Error&)> callback);
 
