@@ -137,7 +137,7 @@ void ChannelImpl::sendChunkThroughCpuChannel(Operation op) {
   // FIXME: Avoid copying the op twice.
   cpuChannel_->send(
       cpuBuffer,
-      callbackWrapper_([op](ChannelImpl& impl, std::string descriptor) {
+      callbackWrapper_([op](ChannelImpl& impl, std::string descriptor) mutable {
         if (impl.error_) {
           return;
         }
