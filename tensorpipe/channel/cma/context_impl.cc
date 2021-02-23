@@ -63,6 +63,37 @@ std::string joinStrs(const std::vector<std::string>& strs) {
   return oss.str();
 }
 
+// According to read(2):
+// > On Linux, read() (and similar system calls) will transfer at most
+// > 0x7ffff000 (2,147,479,552) bytes, returning the number of bytes actually
+// > transferred. (This is true on both 32-bit and 64-bit systems.)
+constexpr size_t kMaxBytesReadableAtOnce = 0x7ffff000;
+
+Error performCopy(
+    void* localPtr,
+    void* remotePtr,
+    size_t length,
+    pid_t remotePid) {
+  for (size_t offset = 0; offset < length; offset += kMaxBytesReadableAtOnce) {
+    size_t chunkLength = std::min(length - offset, kMaxBytesReadableAtOnce);
+    struct iovec local {
+      .iov_base = reinterpret_cast<uint8_t*>(localPtr) + offset,
+      .iov_len = chunkLength
+    };
+    struct iovec remote {
+      .iov_base = reinterpret_cast<uint8_t*>(remotePtr) + offset,
+      .iov_len = chunkLength
+    };
+    auto nread = ::process_vm_readv(remotePid, &local, 1, &remote, 1, 0);
+    if (nread == -1) {
+      return TP_CREATE_ERROR(SystemError, "process_vm_readv", errno);
+    } else if (nread != chunkLength) {
+      return TP_CREATE_ERROR(ShortReadError, chunkLength, nread);
+    }
+  }
+  return Error::kSuccess;
+}
+
 } // namespace
 
 std::shared_ptr<ContextImpl> ContextImpl::create() {
@@ -285,22 +316,11 @@ void ContextImpl::handleCopyRequests() {
     }
     CopyRequest request = std::move(maybeRequest).value();
 
-    // Perform copy.
-    struct iovec local {
-      .iov_base = request.localPtr, .iov_len = request.length
-    };
-    struct iovec remote {
-      .iov_base = request.remotePtr, .iov_len = request.length
-    };
-    auto nread =
-        ::process_vm_readv(request.remotePid, &local, 1, &remote, 1, 0);
-    if (nread == -1) {
-      request.callback(TP_CREATE_ERROR(SystemError, "cma", errno));
-    } else if (nread != request.length) {
-      request.callback(TP_CREATE_ERROR(ShortReadError, request.length, nread));
-    } else {
-      request.callback(Error::kSuccess);
-    }
+    request.callback(performCopy(
+        request.localPtr,
+        request.remotePtr,
+        request.length,
+        request.remotePid));
   }
 }
 
