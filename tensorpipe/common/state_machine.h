@@ -17,24 +17,43 @@ namespace tensorpipe {
 template <typename TSubject, typename TOp>
 class OpsStateMachine {
  public:
-  using Transitioner = void (TSubject::*)(TOp&, typename TOp::State);
+  class Iter {
+   public:
+    TOp& operator*() const {
+      return *opPtr_;
+    }
+
+    TOp* operator->() const {
+      return opPtr_;
+    }
+
+   private:
+    explicit Iter(TOp* opPtr) : opPtr_(opPtr) {}
+
+    TOp* opPtr_{nullptr};
+
+    friend OpsStateMachine;
+  };
+
+  using Transitioner = void (TSubject::*)(Iter, typename TOp::State);
 
   OpsStateMachine(TSubject& subject, Transitioner transitioner)
       : subject_(subject), transitioner_(transitioner) {}
 
   template <typename... TArgs>
-  TOp& emplaceBack(uint64_t sequenceNumber, TArgs&&... args) {
+  Iter emplaceBack(uint64_t sequenceNumber, TArgs&&... args) {
     ops_.emplace_back(std::forward<TArgs>(args)...);
     TOp& op = ops_.back();
     op.sequenceNumber = sequenceNumber;
-    return op;
+    return Iter(&op);
   }
 
-  void advanceOperation(TOp& initialOp) {
+  void advanceOperation(Iter initialOpIter) {
     // Advancing one operation may unblock later ones that could have progressed
     // but were prevented from overtaking. Thus each time an operation manages
     // to advance we'll try to also advance the one after.
-    for (int64_t sequenceNumber = initialOp.sequenceNumber;; ++sequenceNumber) {
+    for (int64_t sequenceNumber = initialOpIter->sequenceNumber;;
+         ++sequenceNumber) {
       TOp* opPtr = findOperation(sequenceNumber);
       if (opPtr == nullptr || opPtr->state == TOp::FINISHED ||
           !advanceOneOperation(*opPtr)) {
@@ -57,14 +76,14 @@ class OpsStateMachine {
   }
 
   void attemptTransition(
-      TOp& op,
+      Iter opIter,
       typename TOp::State from,
       typename TOp::State to,
       bool cond,
-      void (TSubject::*action)(TOp&)) {
-    if (op.state == from && cond) {
-      (subject_.*action)(op);
-      TP_DCHECK_EQ(op.state, to);
+      void (TSubject::*action)(Iter)) {
+    if (opIter->state == from && cond) {
+      (subject_.*action)(opIter);
+      TP_DCHECK_EQ(opIter->state, to);
     }
   }
 
@@ -97,7 +116,7 @@ class OpsStateMachine {
     typename TOp::State prevOpState =
         prevOpPtr != nullptr ? prevOpPtr->state : TOp::FINISHED;
 
-    (subject_.*transitioner_)(op, prevOpState);
+    (subject_.*transitioner_)(Iter(&op), prevOpState);
 
     // Compute return value now in case we next delete the operation.
     bool hasAdvanced = op.state != initialState;
