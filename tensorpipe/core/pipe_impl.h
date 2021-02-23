@@ -196,9 +196,11 @@ class PipeImpl final : public std::enable_shared_from_this<PipeImpl> {
   OpsStateMachine<PipeImpl, ReadOperation> readOps_{
       *this,
       &PipeImpl::advanceReadOperation};
+  using ReadOpIter = decltype(readOps_)::Iter;
   OpsStateMachine<PipeImpl, WriteOperation> writeOps_{
       *this,
       &PipeImpl::advanceWriteOperation};
+  using WriteOpIter = decltype(writeOps_)::Iter;
 
   // A sequence number for the calls to read and write.
   uint64_t nextMessageBeingRead_{0};
@@ -227,8 +229,8 @@ class PipeImpl final : public std::enable_shared_from_this<PipeImpl> {
   // we're waiting for allocation in order to match calls to read to the right
   // message and for sanity checks. We do so by using a special state in the
   // state machine to identify the next operation that will receive a read call,
-  // and store its pointer in this field.
-  ReadOperation* nextMessageGettingAllocation_{nullptr};
+  // and store its iterator in this field.
+  optional<ReadOpIter> nextMessageGettingAllocation_;
 
   Error error_{Error::kSuccess};
 
@@ -242,9 +244,9 @@ class PipeImpl final : public std::enable_shared_from_this<PipeImpl> {
   // Helpers to schedule our callbacks into user code
   //
 
-  void callReadDescriptorCallback(ReadOperation& op);
-  void callReadCallback(ReadOperation& op);
-  void callWriteCallback(WriteOperation& op);
+  void callReadDescriptorCallback(ReadOpIter opIter);
+  void callReadCallback(ReadOpIter opIter);
+  void callWriteCallback(WriteOpIter opIter);
 
   //
   // Error handling
@@ -262,17 +264,17 @@ class PipeImpl final : public std::enable_shared_from_this<PipeImpl> {
   void startWritingUponEstablishingPipe();
 
   void advanceReadOperation(
-      ReadOperation& op,
+      ReadOpIter opIter,
       ReadOperation::State prevOpState);
   void advanceWriteOperation(
-      WriteOperation& op,
+      WriteOpIter opIter,
       WriteOperation::State prevOpState);
 
-  void readDescriptorOfMessage(ReadOperation& op);
-  void expectReadCall(ReadOperation& op);
-  void readPayloadsAndReceiveTensorsOfMessage(ReadOperation& op);
-  void sendTensorsOfMessage(WriteOperation& op);
-  void writeDescriptorAndPayloadsOfMessage(WriteOperation& op);
+  void readDescriptorOfMessage(ReadOpIter opIter);
+  void expectReadCall(ReadOpIter opIter);
+  void readPayloadsAndReceiveTensorsOfMessage(ReadOpIter opIter);
+  void sendTensorsOfMessage(WriteOpIter opIter);
+  void writeDescriptorAndPayloadsOfMessage(WriteOpIter opIter);
   void onReadWhileServerWaitingForBrochure(const Packet& nopPacketIn);
   void onReadWhileClientWaitingForBrochureAnswer(const Packet& nopPacketIn);
   void onAcceptWhileServerWaitingForConnection(
@@ -284,15 +286,15 @@ class PipeImpl final : public std::enable_shared_from_this<PipeImpl> {
       size_t connId,
       std::string receivedTransport,
       std::shared_ptr<transport::Connection> receivedConnection);
-  void onReadOfMessageDescriptor(ReadOperation& op, const Packet& nopPacketIn);
+  void onReadOfMessageDescriptor(ReadOpIter opIter, const Packet& nopPacketIn);
   void onDescriptorOfTensor(
-      WriteOperation& op,
+      WriteOpIter opIter,
       int64_t tensorIdx,
       channel::TDescriptor descriptor);
-  void onReadOfPayload(ReadOperation& op);
-  void onRecvOfTensor(ReadOperation& op);
-  void onWriteOfPayload(WriteOperation& op);
-  void onSendOfTensor(WriteOperation& op);
+  void onReadOfPayload(ReadOpIter opIter);
+  void onRecvOfTensor(ReadOpIter opIter);
+  void onWriteOfPayload(WriteOpIter opIter);
+  void onSendOfTensor(WriteOpIter opIter);
 
   template <typename TBuffer>
   const std::map<
