@@ -1,0 +1,116 @@
+/*
+ * Copyright (c) Facebook, Inc. and its affiliates.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+#pragma once
+
+#include <cstdint>
+#include <deque>
+#include <utility>
+
+namespace tensorpipe {
+
+template <typename TSubject, typename TOp>
+class OpsStateMachine {
+ public:
+  using Transitioner = void (TSubject::*)(TOp&, typename TOp::State);
+
+  OpsStateMachine(TSubject& subject, Transitioner transitioner)
+      : subject_(subject), transitioner_(transitioner) {}
+
+  template <typename... TArgs>
+  TOp& emplaceBack(uint64_t sequenceNumber, TArgs&&... args) {
+    ops_.emplace_back(std::forward<TArgs>(args)...);
+    TOp& op = ops_.back();
+    op.sequenceNumber = sequenceNumber;
+    return op;
+  }
+
+  void advanceOperation(TOp& initialOp) {
+    // Advancing one operation may unblock later ones that could have progressed
+    // but were prevented from overtaking. Thus each time an operation manages
+    // to advance we'll try to also advance the one after.
+    for (int64_t sequenceNumber = initialOp.sequenceNumber;; ++sequenceNumber) {
+      TOp* opPtr = findOperation(sequenceNumber);
+      if (opPtr == nullptr || !advanceOneOperation(*opPtr)) {
+        break;
+      }
+    }
+  }
+
+  void advanceAllOperations() {
+    if (!ops_.empty()) {
+      advanceOperation(ops_.front());
+    }
+  }
+
+  void attemptTransition(
+      TOp& op,
+      typename TOp::State from,
+      typename TOp::State to,
+      bool cond,
+      void (TSubject::*action)(TOp&)) {
+    // FIXME Avoid duplication with the same code below.
+    TOp* prevOpPtr = findOperation(op.sequenceNumber - 1);
+    typename TOp::State prevOpState =
+        prevOpPtr != nullptr ? prevOpPtr->state : TOp::FINISHED;
+
+    if (op.state == from && cond && to <= prevOpState) {
+      (subject_.*action)(op);
+      TP_DCHECK_EQ(op.state, to);
+    }
+  }
+
+  // FIXME Make this private
+  TOp* findOperation(int64_t sequenceNumber) {
+    if (ops_.empty()) {
+      return nullptr;
+    }
+    int64_t offset = sequenceNumber - ops_.front().sequenceNumber;
+    if (offset < 0 || offset >= ops_.size()) {
+      return nullptr;
+    }
+    TOp& op = ops_[offset];
+    TP_DCHECK_EQ(op.sequenceNumber, sequenceNumber);
+    return &op;
+  }
+
+ private:
+  bool advanceOneOperation(TOp& op) {
+    // Due to the check in attemptTransition, each time that an operation
+    // advances its state we must check whether this unblocks some later
+    // operations that could progress but weren't allowed to overtake. In order
+    // to detect whether this operation is advancing we store its state at the
+    // beginning and then compare it with the state at the end.
+    typename TOp::State initialState = op.state;
+
+    // The operations must advance in order: later operations cannot "overtake"
+    // earlier ones. Thus if this operation would reach a more advanced state
+    // than previous operation we won't perform the transition.
+    TOp* prevOpPtr = findOperation(op.sequenceNumber - 1);
+    typename TOp::State prevOpState =
+        prevOpPtr != nullptr ? prevOpPtr->state : TOp::FINISHED;
+
+    (subject_.*transitioner_)(op, prevOpState);
+
+    // Compute return value now in case we next delete the operation.
+    bool hasAdvanced = op.state != initialState;
+
+    if (op.state == TOp::FINISHED) {
+      TP_DCHECK_EQ(ops_.front().sequenceNumber, op.sequenceNumber);
+      ops_.pop_front();
+    }
+
+    return hasAdvanced;
+  }
+
+  TSubject& subject_;
+  const Transitioner transitioner_;
+  std::deque<TOp> ops_;
+};
+
+} // namespace tensorpipe

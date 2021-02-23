@@ -21,6 +21,7 @@
 #include <tensorpipe/common/deferred_executor.h>
 #include <tensorpipe/common/error.h>
 #include <tensorpipe/common/optional.h>
+#include <tensorpipe/common/state_machine.h>
 #include <tensorpipe/core/buffer.h>
 #include <tensorpipe/core/buffer_helpers.h>
 #include <tensorpipe/core/context_impl.h>
@@ -191,8 +192,12 @@ class PipeImpl final : public std::enable_shared_from_this<PipeImpl> {
   TP_DEVICE_FIELD(TChannelConnectionsMap, TChannelConnectionsMap)
   channelReceivedConnections_;
 
-  std::deque<ReadOperation> readOperations_;
-  std::deque<WriteOperation> writeOperations_;
+  OpsStateMachine<PipeImpl, ReadOperation> readOps_{
+      *this,
+      &PipeImpl::advanceReadOperation};
+  OpsStateMachine<PipeImpl, WriteOperation> writeOps_{
+      *this,
+      &PipeImpl::advanceWriteOperation};
 
   // A sequence number for the calls to read and write.
   uint64_t nextMessageBeingRead_{0};
@@ -254,11 +259,12 @@ class PipeImpl final : public std::enable_shared_from_this<PipeImpl> {
   void startReadingUponEstablishingPipe();
   void startWritingUponEstablishingPipe();
 
-  void advanceReadOperation(ReadOperation& op);
-  void advanceWriteOperation(WriteOperation& op);
-
-  bool advanceOneReadOperation(ReadOperation& op);
-  bool advanceOneWriteOperation(WriteOperation& op);
+  void advanceReadOperation(
+      ReadOperation& op,
+      ReadOperation::State prevOpState);
+  void advanceWriteOperation(
+      WriteOperation& op,
+      WriteOperation::State prevOpState);
 
   void readDescriptorOfMessage(ReadOperation& op);
   void readPayloadsAndReceiveTensorsOfMessage(ReadOperation& op);
@@ -284,9 +290,6 @@ class PipeImpl final : public std::enable_shared_from_this<PipeImpl> {
   void onRecvOfTensor(ReadOperation& op);
   void onWriteOfPayload(WriteOperation& op);
   void onSendOfTensor(WriteOperation& op);
-
-  ReadOperation* findReadOperation(int64_t sequenceNumber);
-  WriteOperation* findWriteOperation(int64_t sequenceNumber);
 
   template <typename TBuffer>
   const std::map<
