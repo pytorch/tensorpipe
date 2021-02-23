@@ -224,9 +224,10 @@ class PipeImpl final : public std::enable_shared_from_this<PipeImpl> {
   // pending, but there could be more after an error occurs, as we'll flush all
   // callbacks. We need to remember the interval of messages for which we're
   // waiting for allocation in order to match calls to read to the right message
-  // and for sanity checks. We do so by storing the lower and upper bounds.
+  // and for sanity checks. We do so by storing the lower and upper bounds. This
+  // field is the lower bound, whereas the upper bound is
+  // nextReadDescriptorCallbackToCall_.
   int64_t nextMessageGettingAllocation_{0};
-  int64_t nextMessageAskingForAllocation_{0};
 
   Error error_{Error::kSuccess};
 
