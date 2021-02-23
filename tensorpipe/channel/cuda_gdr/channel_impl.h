@@ -24,64 +24,19 @@
 #include <tensorpipe/transport/context.h>
 
 namespace tensorpipe {
+
+NOP_EXTERNAL_STRUCTURE(IbvLib::gid, raw);
+NOP_EXTERNAL_STRUCTURE(
+    IbvSetupInformation,
+    localIdentifier,
+    globalIdentifier,
+    queuePairNumber,
+    maximumTransmissionUnit);
+
 namespace channel {
 namespace cuda_gdr {
 
 class ContextImpl;
-
-// Replicate the IbvLib::gid struct so we can serialize it with libnop.
-struct NopIbvGid {
-  uint64_t subnetPrefix;
-  uint64_t interfaceId;
-  NOP_STRUCTURE(NopIbvGid, subnetPrefix, interfaceId);
-
-  void fromIbvGid(const IbvLib::gid& globalIdentifier) {
-    subnetPrefix = globalIdentifier.global.subnet_prefix;
-    interfaceId = globalIdentifier.global.interface_id;
-  }
-
-  IbvLib::gid toIbvGid() const {
-    IbvLib::gid globalIdentifier;
-    globalIdentifier.global.subnet_prefix = subnetPrefix;
-    globalIdentifier.global.interface_id = interfaceId;
-    return globalIdentifier;
-  }
-};
-
-// Replicate the IbvSetupInformation struct so we can serialize it with libnop.
-struct NopIbvSetupInformation {
-  // This pointless constructor is needed to work around a bug in GCC 5.5 (and
-  // possibly other versions). It appears to be needed in the nop types that
-  // are used inside std::vectors.
-  NopIbvSetupInformation() {}
-
-  uint32_t localIdentifier;
-  NopIbvGid globalIdentifier;
-  uint32_t queuePairNumber;
-  IbvLib::mtu maximumTransmissionUnit;
-  NOP_STRUCTURE(
-      NopIbvSetupInformation,
-      localIdentifier,
-      globalIdentifier,
-      queuePairNumber,
-      maximumTransmissionUnit);
-
-  void fromIbvSetupInformation(const IbvSetupInformation& setupInfo) {
-    localIdentifier = setupInfo.localIdentifier;
-    globalIdentifier.fromIbvGid(setupInfo.globalIdentifier);
-    queuePairNumber = setupInfo.queuePairNumber;
-    maximumTransmissionUnit = setupInfo.maximumTransmissionUnit;
-  }
-
-  IbvSetupInformation toIbvSetupInformation() const {
-    IbvSetupInformation setupInfo;
-    setupInfo.localIdentifier = localIdentifier;
-    setupInfo.globalIdentifier = globalIdentifier.toIbvGid();
-    setupInfo.queuePairNumber = queuePairNumber;
-    setupInfo.maximumTransmissionUnit = maximumTransmissionUnit;
-    return setupInfo;
-  }
-};
 
 struct SendOperation {
   // Provide a constructor so we can create the CudaEvent in-place.
@@ -137,7 +92,7 @@ struct HandshakeNumNics {
 
 // Second "round" of handshake.
 struct HandshakeSetupInfo {
-  std::vector<std::vector<NopIbvSetupInformation>> setupInfo;
+  std::vector<std::vector<IbvSetupInformation>> setupInfo;
   NOP_STRUCTURE(HandshakeSetupInfo, setupInfo);
 };
 
