@@ -12,6 +12,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include <cstring>
 #include <ctime>
 #include <functional>
 #include <iomanip>
@@ -61,8 +62,23 @@ class ExceptionThrower final {
 #define TP_STRINGIFY(s) #s
 #define TP_EXPAND_TO_STR(s) TP_STRINGIFY(s)
 
-#define TP_LOG_LOC __FILE__ ":" TP_EXPAND_TO_STR(__LINE__)
-#define TP_LOG_PREFFIX "In " << __func__ << " at " TP_LOG_LOC
+// Strip all leading components up to the *last* occurrence of "tensorpipe/".
+// This removes all the system-specific prefixes added by the compiler.
+#define TP_TRIM_FILENAME(s)                                         \
+  [](const char* filename) -> const char* {                         \
+    while (true) {                                                  \
+      const char* match = std::strstr(filename + 1, "tensorpipe/"); \
+      if (match == nullptr) {                                       \
+        break;                                                      \
+      }                                                             \
+      filename = match;                                             \
+    }                                                               \
+    return filename;                                                \
+  }(s)
+
+#define TP_LOG_LOC \
+  TP_TRIM_FILENAME(__FILE__) << ":" << TP_EXPAND_TO_STR(__LINE__)
+#define TP_LOG_PREFFIX "In " << __func__ << " at " << TP_LOG_LOC
 
 #define TP_THROW(ex_type, ...) \
   ExceptionThrower<ex_type>(__VA_ARGS__).getStream() << TP_LOG_PREFFIX << " \""
