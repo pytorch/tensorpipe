@@ -10,4 +10,5 @@
 
 #include <tensorpipe/common/error.h>
 
-#define TP_CREATE_ERROR(typ, ...) (Error(std::make_shared<typ>(__VA_ARGS__)))
+#define TP_CREATE_ERROR(typ, ...) \
+  (Error(std::make_shared<typ>(__VA_ARGS__), __FILE__, __LINE__))

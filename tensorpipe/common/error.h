@@ -43,7 +43,8 @@ class Error final {
   // Default constructor for error that is not an error.
   Error() {}
 
-  explicit Error(std::shared_ptr<BaseError> error) : error_(std::move(error)) {}
+  Error(std::shared_ptr<BaseError> error, std::string file, int line)
+      : error_(std::move(error)), file_(std::move(file)), line_(line) {}
 
   virtual ~Error() = default;
 
@@ -74,6 +75,8 @@ class Error final {
 
  private:
   std::shared_ptr<BaseError> error_;
+  std::string file_;
+  int line_;
 };
 
 class SystemError final : public BaseError {
