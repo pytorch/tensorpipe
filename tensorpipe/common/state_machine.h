@@ -68,7 +68,7 @@ class OpsStateMachine {
     }
   }
 
-  // FIXME Make this private
+ private:
   TOp* findOperation(int64_t sequenceNumber) {
     if (ops_.empty()) {
       return nullptr;
@@ -82,7 +82,6 @@ class OpsStateMachine {
     return &op;
   }
 
- private:
   bool advanceOneOperation(TOp& op) {
     // Due to the check in attemptTransition, each time that an operation
     // advances its state we must check whether this unblocks some later
