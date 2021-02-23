@@ -479,13 +479,9 @@ void PipeImpl::readFromLoop(Message message, read_callback_fn fn) {
   // to pass through the channel for "expected errors" (i.e., the callback).
   // This check fails when there is no message for which we are expecting an
   // allocation.
-  TP_THROW_ASSERT_IF(
-      nextMessageGettingAllocation_ == nextReadDescriptorCallbackToCall_);
-
-  ReadOperation* opPtr = readOps_.findOperation(nextMessageGettingAllocation_);
-  TP_DCHECK(opPtr != nullptr);
-  ++nextMessageGettingAllocation_;
-  ReadOperation& op = *opPtr;
+  TP_THROW_ASSERT_IF(nextMessageGettingAllocation_ == nullptr);
+  ReadOperation& op = *nextMessageGettingAllocation_;
+  nextMessageGettingAllocation_ = nullptr;
 
   checkAllocationCompatibility(op, message);
 
@@ -499,7 +495,7 @@ void PipeImpl::readFromLoop(Message message, read_callback_fn fn) {
                << sequenceNumber << ")";
   };
 
-  TP_DCHECK_EQ(op.state, ReadOperation::ASKING_FOR_ALLOCATION);
+  TP_DCHECK_EQ(op.state, ReadOperation::ASKING_FOR_ALLOCATION_FIRST_IN_LINE);
   op.message = std::move(message);
   op.readCallback = std::move(fn);
   op.doneGettingAllocation = true;
@@ -516,7 +512,7 @@ void PipeImpl::readPayloadsAndReceiveTensorsOfMessage(ReadOperation& op) {
   TP_DCHECK(context_->inLoop());
   TP_DCHECK_EQ(state_, ESTABLISHED);
 
-  TP_DCHECK_EQ(op.state, ReadOperation::ASKING_FOR_ALLOCATION);
+  TP_DCHECK_EQ(op.state, ReadOperation::ASKING_FOR_ALLOCATION_FIRST_IN_LINE);
   op.state = ReadOperation::READING_PAYLOADS_AND_RECEIVING_TENSORS;
 
   TP_VLOG(2) << "Pipe " << id_
@@ -629,7 +625,7 @@ void PipeImpl::callReadCallback(ReadOperation& op) {
   // Don't check state_ == ESTABLISHED: it can be called after failed handshake
 
   TP_DCHECK(
-      op.state == ReadOperation::ASKING_FOR_ALLOCATION ||
+      op.state == ReadOperation::ASKING_FOR_ALLOCATION_FIRST_IN_LINE ||
       op.state == ReadOperation::READING_PAYLOADS_AND_RECEIVING_TENSORS);
   op.state = ReadOperation::FINISHED;
 
@@ -752,10 +748,20 @@ void PipeImpl::advanceReadOperation(
           prevOpState >= ReadOperation::ASKING_FOR_ALLOCATION,
       /*action=*/&PipeImpl::callReadDescriptorCallback);
 
-  // Needs to go after previous op to ensure ordering of callback invocations.
+  // Needs to wait for previous op to have _received_ the read call, as we can
+  // only have exactly one operation at a time for which we expect a read call.
   readOps_.attemptTransition(
       op,
       /*from=*/ReadOperation::ASKING_FOR_ALLOCATION,
+      /*to=*/ReadOperation::ASKING_FOR_ALLOCATION_FIRST_IN_LINE,
+      /*cond=*/(error_ || op.doneReadingDescriptor) &&
+          prevOpState >= ReadOperation::READING_PAYLOADS_AND_RECEIVING_TENSORS,
+      /*action=*/&PipeImpl::expectReadCall);
+
+  // Needs to go after previous op to ensure ordering of callback invocations.
+  readOps_.attemptTransition(
+      op,
+      /*from=*/ReadOperation::ASKING_FOR_ALLOCATION_FIRST_IN_LINE,
       /*to=*/ReadOperation::FINISHED,
       /*cond=*/error_ && op.doneGettingAllocation &&
           prevOpState >= ReadOperation::FINISHED,
@@ -765,7 +771,7 @@ void PipeImpl::advanceReadOperation(
   // to come after this own op's descriptor read.
   readOps_.attemptTransition(
       op,
-      /*from=*/ReadOperation::ASKING_FOR_ALLOCATION,
+      /*from=*/ReadOperation::ASKING_FOR_ALLOCATION_FIRST_IN_LINE,
       /*to=*/ReadOperation::READING_PAYLOADS_AND_RECEIVING_TENSORS,
       /*cond=*/!error_ && op.doneGettingAllocation,
       /*action=*/&PipeImpl::readPayloadsAndReceiveTensorsOfMessage);
@@ -861,6 +867,17 @@ void PipeImpl::readDescriptorOfMessage(ReadOperation& op) {
         }
       }));
   connectionState_ = AWAITING_PAYLOADS;
+}
+
+void PipeImpl::expectReadCall(ReadOperation& op) {
+  TP_DCHECK(context_->inLoop());
+  TP_DCHECK_EQ(state_, ESTABLISHED);
+
+  TP_DCHECK_EQ(op.state, ReadOperation::ASKING_FOR_ALLOCATION);
+  op.state = ReadOperation::ASKING_FOR_ALLOCATION_FIRST_IN_LINE;
+
+  TP_DCHECK(nextMessageGettingAllocation_ == nullptr);
+  nextMessageGettingAllocation_ = &op;
 }
 
 void PipeImpl::sendTensorsOfMessage(WriteOperation& op) {
