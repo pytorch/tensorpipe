@@ -193,7 +193,7 @@ void ChannelImpl::sendImplFromLoop(
 
 void ChannelImpl::advanceSendOperation(
     SendOpIter opIter,
-    SendOperation::State /* unused */) {
+    SendOperation::State prevOpState) {
   TP_DCHECK(context_->inLoop());
   // Don't check state_ == ESTABLISHED: it can be called after failed handshake.
 
@@ -204,11 +204,14 @@ void ChannelImpl::advanceSendOperation(
       /*cond=*/error_,
       /*action=*/&ChannelImpl::callSendCallback);
 
+  // Needs to go after previous op to ensure predictable and consistent ordering
+  // of read calls on control connection.
   sendOps_.attemptTransition(
       opIter,
       /*from=*/SendOperation::UNINITIALIZED,
       /*to=*/SendOperation::READING_READY_TO_RECEIVE,
-      /*cond=*/!error_ && state_ == ESTABLISHED,
+      /*cond=*/!error_ && state_ == ESTABLISHED &&
+          prevOpState >= SendOperation::READING_READY_TO_RECEIVE,
       /*action=*/&ChannelImpl::writeReadyToSendAndReadReadyToReceive);
 
   sendOps_.attemptTransition(
@@ -232,11 +235,14 @@ void ChannelImpl::advanceSendOperation(
       /*cond=*/error_ && opIter->sendEventReady,
       /*action=*/&ChannelImpl::callSendCallback);
 
+  // Needs to go after previous op to ensure predictable and consistent ordering
+  // of send calls on InfiniBand queue pair.
   sendOps_.attemptTransition(
       opIter,
       /*from=*/SendOperation::WAITING_FOR_CUDA_EVENT,
       /*to=*/SendOperation::SENDING_OVER_IB,
-      /*cond=*/!error_ && opIter->sendEventReady,
+      /*cond=*/!error_ && opIter->sendEventReady &&
+          prevOpState >= SendOperation::SENDING_OVER_IB,
       /*action=*/&ChannelImpl::sendOverIb);
 
   sendOps_.attemptTransition(
@@ -294,11 +300,6 @@ void ChannelImpl::waitForSendCudaEvent(SendOpIter opIter) {
 
   TP_VLOG(6) << "Channel " << id_ << " is waiting for CUDA event to send (#"
              << op.sequenceNumber << ")";
-  // FIXME There is no guarantee that two CUDA events will complete in the order
-  // in which we add them (if they are on different streams). This could mean
-  // that a later tensor might overtake an earlier one and issue its ibverbs
-  // send earlier, thus messing up the order and causing a mismatch with the
-  // receiver. The proper fix for this is a state machine, like the pipe has.
   context_->waitForCudaEvent(
       op.event, callbackWrapper_([opIter](ChannelImpl& impl) {
         TP_VLOG(6) << "Channel " << impl.id_
@@ -414,7 +415,7 @@ void ChannelImpl::recvImplFromLoop(
 
 void ChannelImpl::advanceRecvOperation(
     RecvOpIter opIter,
-    RecvOperation::State /* unused */) {
+    RecvOperation::State prevOpState) {
   TP_DCHECK(context_->inLoop());
   // Don't check state_ == ESTABLISHED: it can be called after failed handshake.
 
@@ -439,11 +440,16 @@ void ChannelImpl::advanceRecvOperation(
       /*cond=*/error_ && opIter->recvEventReady,
       /*action=*/&ChannelImpl::callRecvCallback);
 
+  // Needs to go after previous op to ensure predictable and consistent ordering
+  // of recv calls on InfiniBand queue pair and write calls on control
+  // connection.
   recvOps_.attemptTransition(
       opIter,
       /*from=*/RecvOperation::WAITING_FOR_CUDA_EVENT,
       /*to=*/RecvOperation::RECEIVING_OVER_IB_AND_WRITING_READY_TO_RECEIVE,
-      /*cond=*/!error_ && opIter->recvEventReady,
+      /*cond=*/!error_ && opIter->recvEventReady &&
+          prevOpState >=
+              RecvOperation::RECEIVING_OVER_IB_AND_WRITING_READY_TO_RECEIVE,
       /*action=*/&ChannelImpl::recvOverIbAndWriteReadyToRecive);
 
   recvOps_.attemptTransition(
@@ -465,11 +471,6 @@ void ChannelImpl::waitForRecvCudaEvent(RecvOpIter opIter) {
 
   TP_VLOG(6) << "Channel " << id_ << " is waiting for CUDA event to recv (#"
              << op.sequenceNumber << ")";
-  // FIXME There is no guarantee that two CUDA events will complete in the order
-  // in which we add them (if they are on different streams). This could mean
-  // that a later tensor might overtake an earlier one and issue its ibverbs
-  // recv earlier, thus messing up the order and causing a mismatch with the
-  // sender. The proper fix for this is a state machine, like the pipe has.
   context_->waitForCudaEvent(
       op.event, callbackWrapper_([opIter](ChannelImpl& impl) {
         TP_VLOG(6) << "Channel " << impl.id_
