@@ -21,6 +21,7 @@
 #include <tensorpipe/common/cuda.h>
 #include <tensorpipe/common/cuda_buffer.h>
 #include <tensorpipe/common/ibv.h>
+#include <tensorpipe/common/state_machine.h>
 #include <tensorpipe/transport/context.h>
 
 namespace tensorpipe {
@@ -39,49 +40,69 @@ namespace cuda_gdr {
 class ContextImpl;
 
 struct SendOperation {
+  enum State {
+    UNINITIALIZED,
+    READING_READY_TO_RECEIVE,
+    WAITING_FOR_CUDA_EVENT,
+    SENDING_OVER_IB,
+    FINISHED
+  };
+
   // Provide a constructor so we can create the CudaEvent in-place.
   SendOperation(
-      size_t sequenceNumber,
       CudaBuffer buffer,
-      TRecvCallback callback,
+      TSendCallback callback,
       size_t localGpuIdx,
       size_t localNicIdx)
-      : sequenceNumber(sequenceNumber),
-        buffer(buffer),
+      : buffer(buffer),
         callback(std::move(callback)),
         event(localGpuIdx),
         localNicIdx(localNicIdx) {}
 
   size_t sequenceNumber;
+  State state{UNINITIALIZED};
   CudaBuffer buffer;
   TSendCallback callback;
   CudaEvent event;
   size_t localNicIdx;
-  size_t remoteNicIdx;
+  ssize_t remoteNicIdx;
+
+  bool readReadyToReceive{false};
+  bool sendEventReady{false};
+  bool sentOverIb{false};
 };
 
 struct RecvOperation {
+  enum State {
+    UNINITIALIZED,
+    WAITING_FOR_CUDA_EVENT,
+    RECEIVING_OVER_IB_AND_WRITING_READY_TO_RECEIVE,
+    FINISHED
+  };
+
   // Provide a constructor so we can create the CudaEvent in-place.
   RecvOperation(
-      size_t sequenceNumber,
       CudaBuffer buffer,
       TSendCallback callback,
       size_t deviceIdx,
       size_t localNicIdx,
       size_t remoteNicIdx)
-      : sequenceNumber(sequenceNumber),
-        buffer(buffer),
+      : buffer(buffer),
         callback(std::move(callback)),
         event(deviceIdx),
         localNicIdx(localNicIdx),
         remoteNicIdx(remoteNicIdx) {}
 
   size_t sequenceNumber;
+  State state{UNINITIALIZED};
   CudaBuffer buffer;
   TSendCallback callback;
   CudaEvent event;
   size_t localNicIdx;
   size_t remoteNicIdx;
+
+  bool recvEventReady{false};
+  bool receivedOverIb{false};
 };
 
 // First "round" of handshake.
@@ -143,37 +164,62 @@ class ChannelImpl final
   };
   State state_{INITIALIZING};
 
-  void onReadHandshakeNumNics(const HandshakeNumNics& nopHandshakeNumNics);
-  void onReadHandshakeSetupInfo(
-      const HandshakeSetupInfo& nopHandshakeSetupInfo);
-
   std::vector<size_t> localGpuToNic_;
   size_t numLocalNics_{0};
   size_t numRemoteNics_{0};
 
   std::vector<std::vector<IbvQueuePair>> queuePairs_;
 
-  std::list<SendOperation> sendOps_;
-  std::list<RecvOperation> recvOps_;
+  OpsStateMachine<ChannelImpl, SendOperation> sendOps_{
+      *this,
+      &ChannelImpl::advanceSendOperation};
+  using SendOpIter = decltype(sendOps_)::Iter;
+  OpsStateMachine<ChannelImpl, RecvOperation> recvOps_{
+      *this,
+      &ChannelImpl::advanceRecvOperation};
+  using RecvOpIter = decltype(recvOps_)::Iter;
 
   uint32_t numSendsInFlight_{0};
   uint32_t numRecvsInFlight_{0};
 
-  void processSendOperationFromLoop(SendOperation& op);
-  void onReadReadyToReceive(
-      SendOperation& op,
-      const ReadyToReceive& readyToReceive);
-  void onSendEventReady(SendOperation& op);
-  void onIbvSendDone(SendOperation& op);
-  void eraseOp(const SendOperation& op);
+  // Callbacks for the initial handshake phase.
+  void onReadHandshakeNumNics(const HandshakeNumNics& nopHandshakeNumNics);
+  void onReadHandshakeSetupInfo(
+      const HandshakeSetupInfo& nopHandshakeSetupInfo);
 
-  void processRecvOperationFromLoop(RecvOperation& op);
-  void onRecvEventReady(RecvOperation& op);
-  void onIbvRecvDone(RecvOperation& op);
-  void eraseOp(const RecvOperation& op);
-
+  // Cleanup methods for teardown.
   void tryCleanup();
   void cleanup();
+
+  // State machines for send and recv ops.
+  void advanceSendOperation(
+      SendOpIter opIter,
+      SendOperation::State prevOpState);
+  void advanceRecvOperation(
+      RecvOpIter opIter,
+      RecvOperation::State prevOpState);
+
+  // Actions (i.e., methods that begin a state transition).
+  // For send operations:
+  void writeReadyToSendAndReadReadyToReceive(SendOpIter opIter);
+  void waitForSendCudaEvent(SendOpIter opIter);
+  void sendOverIb(SendOpIter opIter);
+  void callSendCallback(SendOpIter opIter);
+  // For recv operations:
+  void waitForRecvCudaEvent(RecvOpIter opIter);
+  void recvOverIbAndWriteReadyToRecive(RecvOpIter opIter);
+  void callRecvCallback(RecvOpIter opIter);
+
+  // Reactions (i.e., callbacks that contribute to complete a state transition).
+  // For send operations:
+  void onReadReadyToReceive(
+      SendOpIter opIter,
+      const ReadyToReceive& readyToReceive);
+  void onSendEventReady(SendOpIter opIter);
+  void onIbvSendDone(SendOpIter opIter);
+  // For recv operations:
+  void onRecvEventReady(RecvOpIter opIter);
+  void onReceivedOverIb(RecvOpIter opIter);
 };
 
 } // namespace cuda_gdr
