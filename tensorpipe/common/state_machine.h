@@ -36,15 +36,23 @@ class OpsStateMachine {
     // to advance we'll try to also advance the one after.
     for (int64_t sequenceNumber = initialOp.sequenceNumber;; ++sequenceNumber) {
       TOp* opPtr = findOperation(sequenceNumber);
-      if (opPtr == nullptr || !advanceOneOperation(*opPtr)) {
+      if (opPtr == nullptr || opPtr->state == TOp::FINISHED ||
+          !advanceOneOperation(*opPtr)) {
         break;
       }
     }
   }
 
   void advanceAllOperations() {
-    if (!ops_.empty()) {
-      advanceOperation(ops_.front());
+    // We cannot just iterate over the operations here as advanceOneOperation
+    // could potentially erase some of them, thus invalidating references and/or
+    // iterators.
+    for (int64_t sequenceNumber = 0;; ++sequenceNumber) {
+      TOp* opPtr = findOperation(sequenceNumber);
+      if (opPtr == nullptr) {
+        break;
+      }
+      advanceOneOperation(*opPtr);
     }
   }
 
@@ -54,12 +62,7 @@ class OpsStateMachine {
       typename TOp::State to,
       bool cond,
       void (TSubject::*action)(TOp&)) {
-    // FIXME Avoid duplication with the same code below.
-    TOp* prevOpPtr = findOperation(op.sequenceNumber - 1);
-    typename TOp::State prevOpState =
-        prevOpPtr != nullptr ? prevOpPtr->state : TOp::FINISHED;
-
-    if (op.state == from && cond && to <= prevOpState) {
+    if (op.state == from && cond) {
       (subject_.*action)(op);
       TP_DCHECK_EQ(op.state, to);
     }
@@ -101,8 +104,13 @@ class OpsStateMachine {
     bool hasAdvanced = op.state != initialState;
 
     if (op.state == TOp::FINISHED) {
-      TP_DCHECK_EQ(ops_.front().sequenceNumber, op.sequenceNumber);
-      ops_.pop_front();
+      // We can't remove the op if it's "in the middle". And, therefore, once we
+      // remove the op at the front, we must check if other ops now also get
+      // "unblocked". In other words, we always remove as much as we can from
+      // the front.
+      while (!ops_.empty() && ops_.front().state == TOp::FINISHED) {
+        ops_.pop_front();
+      }
     }
 
     return hasAdvanced;

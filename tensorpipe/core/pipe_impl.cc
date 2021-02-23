@@ -726,13 +726,18 @@ void PipeImpl::advanceReadOperation(
   TP_DCHECK(context_->inLoop());
   // Don't check state_ == ESTABLISHED: it can be called after failed handshake
 
+  // Needs to go after previous op to ensure ordering of callback invocations.
   readOps_.attemptTransition(
       op,
       /*from=*/ReadOperation::UNINITIALIZED,
       /*to=*/ReadOperation::ASKING_FOR_ALLOCATION,
-      /*cond=*/error_,
+      /*cond=*/error_ && prevOpState >= ReadOperation::ASKING_FOR_ALLOCATION,
       /*action=*/&PipeImpl::callReadDescriptorCallback);
 
+  // The ordering on the "wire" (the primary connection) is descriptor of op N,
+  // then payloads of op N, then descriptor of op N+1. Hence this transition
+  // must happen after the previous op scheduled its payload read, not just its
+  // descriptor read.
   readOps_.attemptTransition(
       op,
       /*from=*/ReadOperation::UNINITIALIZED,
@@ -741,20 +746,26 @@ void PipeImpl::advanceReadOperation(
           prevOpState >= ReadOperation::READING_PAYLOADS_AND_RECEIVING_TENSORS,
       /*action=*/&PipeImpl::readDescriptorOfMessage);
 
+  // Needs to go after previous op to ensure ordering of callback invocations.
   readOps_.attemptTransition(
       op,
       /*from=*/ReadOperation::READING_DESCRIPTOR,
       /*to=*/ReadOperation::ASKING_FOR_ALLOCATION,
-      /*cond=*/error_ || op.doneReadingDescriptor,
+      /*cond=*/(error_ || op.doneReadingDescriptor) &&
+          prevOpState >= ReadOperation::ASKING_FOR_ALLOCATION,
       /*action=*/&PipeImpl::callReadDescriptorCallback);
 
+  // Needs to go after previous op to ensure ordering of callback invocations.
   readOps_.attemptTransition(
       op,
       /*from=*/ReadOperation::ASKING_FOR_ALLOCATION,
       /*to=*/ReadOperation::FINISHED,
-      /*cond=*/error_ && op.doneGettingAllocation,
+      /*cond=*/error_ && op.doneGettingAllocation &&
+          prevOpState >= ReadOperation::FINISHED,
       /*action=*/&PipeImpl::callReadCallback);
 
+  // No need to order this with the previous operation, since all it needs is
+  // to come after this own op's descriptor read.
   readOps_.attemptTransition(
       op,
       /*from=*/ReadOperation::ASKING_FOR_ALLOCATION,
@@ -762,54 +773,69 @@ void PipeImpl::advanceReadOperation(
       /*cond=*/!error_ && op.doneGettingAllocation,
       /*action=*/&PipeImpl::readPayloadsAndReceiveTensorsOfMessage);
 
+  // Needs to go after previous op to ensure ordering of callback invocations.
   readOps_.attemptTransition(
       op,
       /*from=*/ReadOperation::READING_PAYLOADS_AND_RECEIVING_TENSORS,
       /*to=*/ReadOperation::FINISHED,
-      /*cond=*/op.numPayloadsBeingRead == 0 && op.numTensorsBeingReceived == 0,
+      /*cond=*/op.numPayloadsBeingRead == 0 &&
+          op.numTensorsBeingReceived == 0 &&
+          prevOpState >= ReadOperation::FINISHED,
       /*action=*/&PipeImpl::callReadCallback);
 }
 
 void PipeImpl::advanceWriteOperation(
     WriteOperation& op,
-    WriteOperation::State /* unused */) {
+    WriteOperation::State prevOpState) {
   TP_DCHECK(context_->inLoop());
   // Don't check state_ == ESTABLISHED: it can be called after failed handshake
 
+  // Needs to go after previous op to ensure ordering of callback invocations.
   writeOps_.attemptTransition(
       op,
       /*from=*/WriteOperation::UNINITIALIZED,
       /*to=*/WriteOperation::FINISHED,
-      /*cond=*/error_,
+      /*cond=*/error_ && prevOpState >= WriteOperation::FINISHED,
       /*action=*/&PipeImpl::callWriteCallback);
 
+  // Needs to go after previous op to ensure predictable and consistent ordering
+  // of send calls on channels.
   writeOps_.attemptTransition(
       op,
       /*from=*/WriteOperation::UNINITIALIZED,
       /*to=*/WriteOperation::SENDING_TENSORS_AND_COLLECTING_DESCRIPTORS,
-      /*cond=*/!error_ && state_ == ESTABLISHED,
+      /*cond=*/!error_ && state_ == ESTABLISHED &&
+          prevOpState >=
+              WriteOperation::SENDING_TENSORS_AND_COLLECTING_DESCRIPTORS,
       /*action=*/&PipeImpl::sendTensorsOfMessage);
 
+  // Needs to go after previous op to ensure ordering of callback invocations.
   writeOps_.attemptTransition(
       op,
       /*from=*/WriteOperation::SENDING_TENSORS_AND_COLLECTING_DESCRIPTORS,
       /*to=*/WriteOperation::FINISHED,
       /*cond=*/error_ && op.numTensorDescriptorsBeingCollected == 0 &&
-          op.numTensorsBeingSent == 0,
+          op.numTensorsBeingSent == 0 &&
+          prevOpState >= WriteOperation::FINISHED,
       /*action=*/&PipeImpl::callWriteCallback);
 
+  // Needs to go after previous op to ensure predictable and consistent ordering
+  // of write calls on the connection.
   writeOps_.attemptTransition(
       op,
       /*from=*/WriteOperation::SENDING_TENSORS_AND_COLLECTING_DESCRIPTORS,
       /*to=*/WriteOperation::WRITING_PAYLOADS_AND_SENDING_TENSORS,
-      /*cond=*/!error_ && op.numTensorDescriptorsBeingCollected == 0,
+      /*cond=*/!error_ && op.numTensorDescriptorsBeingCollected == 0 &&
+          prevOpState >= WriteOperation::WRITING_PAYLOADS_AND_SENDING_TENSORS,
       /*action=*/&PipeImpl::writeDescriptorAndPayloadsOfMessage);
 
+  // Needs to go after previous op to ensure ordering of callback invocations.
   writeOps_.attemptTransition(
       op,
       /*from=*/WriteOperation::WRITING_PAYLOADS_AND_SENDING_TENSORS,
       /*to=*/WriteOperation::FINISHED,
-      /*cond=*/op.numPayloadsBeingWritten == 0 && op.numTensorsBeingSent == 0,
+      /*cond=*/op.numPayloadsBeingWritten == 0 && op.numTensorsBeingSent == 0 &&
+          prevOpState >= WriteOperation::FINISHED,
       /*action=*/&PipeImpl::callWriteCallback);
 }
 
