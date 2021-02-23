@@ -480,7 +480,7 @@ void PipeImpl::readFromLoop(Message message, read_callback_fn fn) {
   // This check fails when there is no message for which we are expecting an
   // allocation.
   TP_THROW_ASSERT_IF(
-      nextMessageGettingAllocation_ == nextMessageAskingForAllocation_);
+      nextMessageGettingAllocation_ == nextReadDescriptorCallbackToCall_);
 
   ReadOperation* opPtr = readOps_.findOperation(nextMessageGettingAllocation_);
   TP_DCHECK(opPtr != nullptr);
@@ -618,9 +618,6 @@ void PipeImpl::callReadDescriptorCallback(ReadOperation& op) {
       op.state == ReadOperation::UNINITIALIZED ||
       op.state == ReadOperation::READING_DESCRIPTOR);
   op.state = ReadOperation::ASKING_FOR_ALLOCATION;
-
-  TP_DCHECK_EQ(op.sequenceNumber, nextMessageAskingForAllocation_);
-  ++nextMessageAskingForAllocation_;
 
   op.readDescriptorCallback(error_, std::move(op.message));
   // Reset callback to release the resources it was holding.
