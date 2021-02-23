@@ -535,10 +535,11 @@ void ChannelImpl::recvOverIbAndWriteReadyToRecive(RecvOpIter opIter) {
              << op.sequenceNumber << ")";
   connection_->write(
       *nopHolderOut,
-      callbackWrapper_([opIter, nopHolderOut](ChannelImpl& impl) {
+      callbackWrapper_([sequenceNumber{opIter->sequenceNumber},
+                        nopHolderOut](ChannelImpl& impl) {
         TP_VLOG(6) << "Channel " << impl.id_
-                   << " done writing ready-to-receive (#"
-                   << opIter->sequenceNumber << ")";
+                   << " done writing ready-to-receive (#" << sequenceNumber
+                   << ")";
       }));
 }
 
