@@ -81,7 +81,7 @@ void ChannelImpl::onReadHandshakeNumNics(
 
   numRemoteNics_ = nopHandshakeNumNics.numNics;
 
-  std::vector<std::vector<IbvSetupInformation>> allSetupInfo;
+  std::vector<std::vector<NopIbvSetupInformation>> allSetupInfo;
 
   queuePairs_.resize(numLocalNics_);
   allSetupInfo.resize(numLocalNics_);
@@ -111,7 +111,8 @@ void ChannelImpl::onReadHandshakeNumNics(
           makeIbvSetupInformation(localNic.getIbvAddress(), qp);
 
       queuePairs_[localNicIdx][remoteNicIdx] = std::move(qp);
-      allSetupInfo[localNicIdx][remoteNicIdx] = setupInfo;
+      allSetupInfo[localNicIdx][remoteNicIdx].fromIbvSetupInformation(
+          setupInfo);
     }
   }
 
@@ -145,7 +146,7 @@ void ChannelImpl::onReadHandshakeSetupInfo(
   TP_DCHECK_EQ(state_, WAITING_FOR_HANDSHAKE_SETUP_INFO);
   TP_DCHECK(!error_);
 
-  const std::vector<std::vector<IbvSetupInformation>>& remoteSetupInfo =
+  const std::vector<std::vector<NopIbvSetupInformation>>& remoteSetupInfo =
       nopHandshakeSetupInfo.setupInfo;
 
   TP_DCHECK_EQ(remoteSetupInfo.size(), numRemoteNics_);
@@ -154,7 +155,7 @@ void ChannelImpl::onReadHandshakeSetupInfo(
     for (size_t localNicIdx = 0; localNicIdx < numLocalNics_; localNicIdx++) {
       IbvNic& localNic = context_->getIbvNic(localNicIdx);
       IbvSetupInformation setupInfo =
-          remoteSetupInfo[remoteNicIdx][localNicIdx];
+          remoteSetupInfo[remoteNicIdx][localNicIdx].toIbvSetupInformation();
 
       transitionIbvQueuePairToReadyToReceive(
           context_->getIbvLib(),
