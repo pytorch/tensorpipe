@@ -221,11 +221,15 @@ void ChannelImpl::advanceSendOperation(
       /*cond=*/error_ && opIter->readReadyToReceive,
       /*action=*/&ChannelImpl::callSendCallback);
 
+  // This doesn't strictly need to go after the previous op, but it doesn't make
+  // sense to busy poll multiple events if only one of them is actually able to
+  // then make progress.
   sendOps_.attemptTransition(
       opIter,
       /*from=*/SendOperation::READING_READY_TO_RECEIVE,
       /*to=*/SendOperation::WAITING_FOR_CUDA_EVENT,
-      /*cond=*/!error_ && opIter->readReadyToReceive,
+      /*cond=*/!error_ && opIter->readReadyToReceive &&
+          prevOpState >= SendOperation::SENDING_OVER_IB,
       /*action=*/&ChannelImpl::waitForSendCudaEvent);
 
   sendOps_.attemptTransition(
@@ -426,11 +430,16 @@ void ChannelImpl::advanceRecvOperation(
       /*cond=*/error_,
       /*action=*/&ChannelImpl::callRecvCallback);
 
+  // This doesn't strictly need to go after the previous op, but it doesn't make
+  // sense to busy poll multiple events if only one of them is actually able to
+  // then make progress.
   recvOps_.attemptTransition(
       opIter,
       /*from=*/RecvOperation::UNINITIALIZED,
       /*to=*/RecvOperation::WAITING_FOR_CUDA_EVENT,
-      /*cond=*/!error_ && state_ == ESTABLISHED,
+      /*cond=*/!error_ && state_ == ESTABLISHED &&
+          prevOpState >=
+              RecvOperation::RECEIVING_OVER_IB_AND_WRITING_READY_TO_RECEIVE,
       /*action=*/&ChannelImpl::waitForRecvCudaEvent);
 
   recvOps_.attemptTransition(
