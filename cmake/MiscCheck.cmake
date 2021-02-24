@@ -9,7 +9,7 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   endif()
 endif()
 
-if(LINUX)
+if(LINUX AND TP_ENABLE_CMA)
   # Check libc contains process_vm_readv
   CMAKE_PUSH_CHECK_STATE(RESET)
   set(CMAKE_REQUIRED_FLAGS "${CMAKE_CXX_FLAGS}")
@@ -39,10 +39,11 @@ if(LINUX)
     }" SUPPORT_GLIBCXX_USE_PROCESS_VM_READV)
   if(NOT SUPPORT_GLIBCXX_USE_PROCESS_VM_READV)
     unset(SUPPORT_GLIBCXX_USE_PROCESS_VM_READV CACHE)
-    message(FATAL_ERROR
+    message(WARNING
         "The C++ compiler does not support required functions. "
         "This likely due to an old version of libc.so is used. "
         "Please check your system linker setting.")
+    set(TP_ENABLE_CMA OFF)
   endif()
   CMAKE_POP_CHECK_STATE()
 endif()
