@@ -212,7 +212,7 @@ void ChannelImpl::recvImplFromLoop(
                << op.chunkId << " of " << op.numChunks << " for buffer #"
                << op.sequenceNumber;
     connection_->read(callbackWrapper_(
-        [&op](ChannelImpl& impl const void* ptr, size_t length) {
+        [&op](ChannelImpl& impl, const void* ptr, size_t length) {
           TP_VLOG(6) << "Channel " << impl.id_
                      << " is done reading descriptor for chunk #" << op.chunkId
                      << " of " << op.numChunks << " for buffer #"
