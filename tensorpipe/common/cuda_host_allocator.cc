@@ -16,13 +16,13 @@ namespace tensorpipe {
 
 namespace {
 
-uint8_t* CudaHostAllocator::allocPinnedBuffer(size_t size) {
+uint8_t* allocPinnedBuffer(size_t size) {
   uint8_t* ptr;
   TP_CUDA_CHECK(cudaMallocHost(&ptr, size));
   return ptr;
 }
 
-void CudaHostAllocator::freePinnedBuffer(uint8_t* ptr) {
+void freePinnedBuffer(uint8_t* ptr) {
   TP_CUDA_CHECK(cudaFreeHost(ptr));
 }
 
