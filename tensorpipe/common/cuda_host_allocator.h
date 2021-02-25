@@ -28,8 +28,18 @@ class CudaHostAllocatorClosedError final : public BaseError {
 };
 
 class CudaHostAllocator {
+ private:
+  class HostPtrDeleter {
+   public:
+    HostPtrDeleter(CudaHostAllocator& allocator);
+    void operator()(uint8_t* ptr);
+
+   private:
+    CudaHostAllocator& allocator_;
+  };
+
  public:
-  using THostPtr = std::shared_ptr<uint8_t[]>;
+  using THostPtr = std::unique_ptr<uint8_t[], HostPtrDeleter>;
   using TAllocCallback = std::function<void(const Error&, THostPtr)>;
 
   explicit CudaHostAllocator(

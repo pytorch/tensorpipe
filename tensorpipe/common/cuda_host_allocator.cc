@@ -90,21 +90,27 @@ CudaHostAllocator::THostPtr CudaHostAllocator::getAvailableChunk() {
       chunkAvailable_[curChunk] = false;
       ++allocatedChunks_;
       return THostPtr(
-          data_.get() + curChunk * chunkSize_,
-          [this](uint8_t* ptr) { hostPtrDeleter(ptr); });
+          data_.get() + curChunk * chunkSize_, HostPtrDeleter(*this));
     }
   }
 
   return nullptr;
 }
 
-void CudaHostAllocator::hostPtrDeleter(uint8_t* ptr) {
+void CudaHostAllocator::releaseChunk(uint8_t* ptr) {
   size_t chunkId = (ptr - data_.get()) / chunkSize_;
   std::unique_lock<std::mutex> lock(mutex_);
   chunkAvailable_[chunkId] = true;
   --allocatedChunks_;
   processAllocations(std::move(lock));
   cv_.notify_all();
+}
+
+CudaHostAllocator::HostPtrDeleter(CudaHostAllocator& allocator)
+    : allocator_(allocator) {}
+
+void CudaHostAllocator::operator()(uint8_t* ptr) {
+  allocator_.releaseChunk(ptr);
 }
 
 } // namespace tensorpipe
