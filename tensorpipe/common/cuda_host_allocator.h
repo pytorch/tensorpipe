@@ -61,8 +61,8 @@ class CudaHostAllocator {
   void processAllocations(std::deque<TAllocCallback>& allocations);
 
   void hostPtrDeleter(uint8_t* ptr);
-  static std::unique_ptr<uint8_t[], std::function<void(uint8_t*)>> allocPinnedBuffer(
-      size_t size);
+  static void* allocPinnedBuffer(size_t size);
+  static void freePinnedBuffer(uint8_t* ptr);
 };
 
 } // namespace tensorpipe
