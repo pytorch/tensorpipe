@@ -108,7 +108,7 @@ void CudaHostAllocator::hostPtrDeleter(uint8_t* ptr) {
   cv_.notify_all();
 }
 
-std::unique_ptr<uint8_t[], std::function<void(uint8_t*)>> CudaHostAllocator::
+static std::unique_ptr<uint8_t[], std::function<void(uint8_t*)>> CudaHostAllocator::
     allocPinnedBuffer(size_t size) {
   void* ptr;
   TP_CUDA_CHECK(cudaMallocHost(&ptr, size));

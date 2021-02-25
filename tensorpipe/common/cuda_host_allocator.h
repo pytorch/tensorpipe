@@ -61,7 +61,7 @@ class CudaHostAllocator {
   void processAllocations(std::deque<TAllocCallback>& allocations);
 
   void hostPtrDeleter(uint8_t* ptr);
-  std::unique_ptr<uint8_t[], std::function<void(uint8_t*)>> allocPinnedBuffer(
+  static std::unique_ptr<uint8_t[], std::function<void(uint8_t*)>> allocPinnedBuffer(
       size_t size);
 };
 
