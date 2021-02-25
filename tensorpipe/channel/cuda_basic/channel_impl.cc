@@ -217,7 +217,7 @@ void ChannelImpl::recvImplFromLoop(
                      << " is done reading descriptor for chunk #" << op.chunkId
                      << " of " << op.numChunks << " for buffer #"
                      << op.sequenceNumber;
-          std::string descriptor(ptr, length);
+          std::string descriptor(static_cast<char*>(ptr), length);
           impl.onRecvOpReadDescriptor(op, std::move(descriptor));
         }));
   }
