@@ -25,6 +25,14 @@ namespace tensorpipe {
 namespace channel {
 namespace cuda_basic {
 
+namespace {
+
+size_t ceilOfRatio(size_t n, size_t d) {
+  return (n + d - 1) / d;
+}
+
+} // namespace
+
 ChannelImpl::ChannelImpl(
     ConstructorToken token,
     std::shared_ptr<ContextImpl> context,
@@ -67,7 +75,7 @@ void ChannelImpl::sendImplFromLoop(
     TDescriptorCallback descriptorCallback,
     TSendCallback callback) {
   const size_t chunkLength = cudaHostAllocator_.getChunkLength();
-  const size_t numChunks = (buffer.length + chunkLength - 1) / chunkLength;
+  const size_t numChunks = ceilOfRatio(buffer.length, chunkLength);
   for (size_t offset = 0; offset < buffer.length; offset += chunkLength) {
     sendOperations_.emplace_back();
     Operation& op = sendOperations_.back();
@@ -188,7 +196,7 @@ void ChannelImpl::recvImplFromLoop(
     CudaBuffer buffer,
     TRecvCallback callback) {
   const size_t chunkLength = cudaHostAllocator_.getChunkLength();
-  const size_t numChunks = (buffer.length + chunkLength - 1) / chunkLength;
+  const size_t numChunks = ceilOfRatio(buffer.length, chunkLength);
   for (size_t offset = 0; offset < buffer.length; offset += chunkLength) {
     recvOperations_.emplace_back();
     Operation& op = recvOperations_.back();
