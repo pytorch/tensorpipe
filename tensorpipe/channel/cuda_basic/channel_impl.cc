@@ -180,10 +180,6 @@ void ChannelImpl::onSendOpDone() {
     }
     sendOperations_.pop_front();
   }
-
-  if (error_) {
-    tryCleanup();
-  }
 }
 
 void ChannelImpl::recvImplFromLoop(
@@ -307,41 +303,16 @@ void ChannelImpl::onRecvOpDone() {
     }
     recvOperations_.pop_front();
   }
-
-  if (error_) {
-    tryCleanup();
-  }
 }
 
 void ChannelImpl::setIdImpl() {
   cpuChannel_->setId(id_ + ".cpu");
 }
 
-void ChannelImpl::tryCleanup() {
-  TP_DCHECK(context_->inLoop());
-  TP_DCHECK(error_);
-
-  if (sendOperations_.empty() && recvOperations_.empty()) {
-    cleanup();
-  } else {
-    TP_VLOG(5) << "Channel " << id_
-               << " cannot proceed with cleanup because it has "
-               << sendOperations_.size() << " pending send operations and "
-               << recvOperations_.size() << " pending recv operations";
-  }
-}
-
-void ChannelImpl::cleanup() {
-  TP_DCHECK(context_->inLoop());
-  TP_VLOG(5) << "Channel " << id_ << " is cleaning up";
-
-  context_->unenroll(*this);
-}
-
 void ChannelImpl::handleErrorImpl() {
   cpuChannel_->close();
 
-  tryCleanup();
+  context_->unenroll(*this);
 }
 
 } // namespace cuda_basic
