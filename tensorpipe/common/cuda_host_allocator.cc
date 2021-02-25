@@ -71,8 +71,8 @@ void CudaHostAllocator::join() {
 void CudaHostAllocator::processAllocations(std::unique_lock<std::mutex> lock) {
   while (!pendingAllocations_.empty()) {
     auto& callback = pendingAllocations_.front();
-    if (error_) {
-      callback(error_);
+    if (closed_) {
+      callback(TP_CREATE_ERROR(CudaHostAllocatorClosedError), nullptr);
     } else {
       THostPtr ptr = getAvailableChunk();
       if (!ptr) {
