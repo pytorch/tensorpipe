@@ -33,7 +33,7 @@ class CudaHostAllocator {
   using TAllocCallback = std::function<void(const Error&, THostPtr)>;
 
   explicit CudaHostAllocator(
-      size_t numChunks = 1024,
+      size_t numChunks = 16,
       size_t chunkSize = 1024 * 1024);
 
   ~CudaHostAllocator();
@@ -45,8 +45,8 @@ class CudaHostAllocator {
   void join();
 
  private:
-  const size_t numChunks_{0};
-  const size_t chunkSize_{0};
+  const size_t numChunks_;
+  const size_t chunkSize_;
   const std::unique_ptr<uint8_t[], std::function<void(uint8_t*)>> data_{
       nullptr};
   std::vector<bool> chunkAvailable_;

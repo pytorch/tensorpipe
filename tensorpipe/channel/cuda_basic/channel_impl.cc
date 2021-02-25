@@ -151,14 +151,13 @@ void ChannelImpl::sendChunkThroughCpuChannel(Operation op) {
 }
 
 void ChannelImpl::sendChunkDescriptor(Operation op, std::string descriptor) {
-  auto nopHolderOut = std::make_shared<NopHolder<std::string>>();
-  nopHolderOut->getObject() = std::move(descriptor);
   TP_VLOG(6) << "Channel " << id_ << " is sending descriptor for chunk #"
              << op.chunkId << " of " << op.numChunks << " for buffer #"
              << op.sequenceNumber;
   connection_->write(
-      *nopHolderOut,
-      callbackWrapper_([op{std::move(op)}, nopHolderOut](ChannelImpl& impl) {
+      &descriptor[0],
+      callbackWrapper_([op{std::move(op)},
+                        descriptor{std::move(descriptor)}](ChannelImpl& impl) {
         TP_VLOG(6) << "Channel " << impl.id_
                    << " is done sending descriptor for chunk #" << op.chunkId
                    << " of " << op.numChunks << " for buffer #"
@@ -211,15 +210,13 @@ void ChannelImpl::recvImplFromLoop(
     TP_VLOG(6) << "Channel " << id_ << " is reading descriptor for chunk #"
                << op.chunkId << " of " << op.numChunks << " for buffer #"
                << op.sequenceNumber;
-    auto nopHolderIn = std::make_shared<NopHolder<std::string>>();
-    connection_->read(
-        *nopHolderIn,
-        callbackWrapper_([nopHolderIn, &op](ChannelImpl& impl) mutable {
+    connection_->read(callbackWrapper_(
+        [&op](ChannelImpl& impl const void* ptr, size_t length) {
           TP_VLOG(6) << "Channel " << impl.id_
                      << " is done reading descriptor for chunk #" << op.chunkId
                      << " of " << op.numChunks << " for buffer #"
                      << op.sequenceNumber;
-          std::string& descriptor = nopHolderIn->getObject();
+          std::string descriptor(ptr, length);
           impl.onRecvOpReadDescriptor(op, std::move(descriptor));
         }));
   }
