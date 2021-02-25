@@ -156,6 +156,7 @@ void ChannelImpl::sendChunkDescriptor(Operation op, std::string descriptor) {
              << op.sequenceNumber;
   connection_->write(
       &descriptor[0],
+      descriptor.length(),
       callbackWrapper_([op{std::move(op)},
                         descriptor{std::move(descriptor)}](ChannelImpl& impl) {
         TP_VLOG(6) << "Channel " << impl.id_
