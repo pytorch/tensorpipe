@@ -14,6 +14,20 @@
 
 namespace tensorpipe {
 
+namespace {
+
+uint8_t* CudaHostAllocator::allocPinnedBuffer(size_t size) {
+  uint8_t* ptr;
+  TP_CUDA_CHECK(cudaMallocHost(&ptr, size));
+  return ptr;
+}
+
+void CudaHostAllocator::freePinnedBuffer(uint8_t* ptr) {
+  TP_CUDA_CHECK(cudaFreeHost(ptr));
+}
+
+} // namespace
+
 CudaHostAllocator::CudaHostAllocator(size_t numChunks, size_t chunkSize)
     : numChunks_(numChunks),
       chunkSize_(chunkSize),
@@ -106,16 +120,6 @@ void CudaHostAllocator::hostPtrDeleter(uint8_t* ptr) {
   std::unique_lock<std::mutex> lock(mutex_);
   chunkAvailable_[chunkId] = true;
   cv_.notify_all();
-}
-
-static void* CudaHostAllocator::allocPinnedBuffer(size_t size) {
-  void* ptr;
-  TP_CUDA_CHECK(cudaMallocHost(&ptr, size));
-  return ptr;
-}
-
-static void CudaHostAllocator::freePinnedBuffer(void* ptr) {
-  TP_CUDA_CHECK(cudaFreeHost(ptr));
 }
 
 } // namespace tensorpipe
