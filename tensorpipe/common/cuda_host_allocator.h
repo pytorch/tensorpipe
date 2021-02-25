@@ -47,8 +47,7 @@ class CudaHostAllocator {
  private:
   const size_t numChunks_;
   const size_t chunkSize_;
-  const std::unique_ptr<uint8_t[], std::function<void(uint8_t*)>> data_{
-      nullptr};
+  const std::unique_ptr<uint8_t[], decltype(&freePinnedBuffer)> data_;
   std::vector<bool> chunkAvailable_;
   std::thread thread_;
   std::mutex mutex_;
@@ -62,7 +61,7 @@ class CudaHostAllocator {
 
   void hostPtrDeleter(uint8_t* ptr);
   static void* allocPinnedBuffer(size_t size);
-  static void freePinnedBuffer(uint8_t* ptr);
+  static void freePinnedBuffer(void* ptr);
 };
 
 } // namespace tensorpipe

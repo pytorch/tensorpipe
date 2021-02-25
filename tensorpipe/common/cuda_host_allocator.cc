@@ -114,7 +114,7 @@ static void* CudaHostAllocator::allocPinnedBuffer(size_t size) {
   return ptr;
 }
 
-static void CudaHostAllocator::freePinnedBuffer(uint8_t* ptr) {
+static void CudaHostAllocator::freePinnedBuffer(void* ptr) {
   TP_CUDA_CHECK(cudaFreeHost(ptr));
 }
 
