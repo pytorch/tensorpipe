@@ -32,13 +32,7 @@ CudaHostAllocator::CudaHostAllocator(size_t numChunks, size_t chunkSize)
     : numChunks_(numChunks),
       chunkSize_(chunkSize),
       data_(allocPinnedBuffer(numChunks * chunkSize), freePinnedBuffer),
-      chunkAvailable_(numChunks, true) {
-  std::unique_lock<std::mutex> lock(mutex_);
-  thread_ = std::thread([this, lock{std::move(lock)}]() mutable {
-    setThreadName("TP_CUDA_host_allocator_loop");
-    allocLoop(std::move(lock));
-  });
-}
+      chunkAvailable_(numChunks, true) {}
 
 CudaHostAllocator::~CudaHostAllocator() {
   join();
@@ -46,13 +40,9 @@ CudaHostAllocator::~CudaHostAllocator() {
 
 void CudaHostAllocator::alloc(size_t size, TAllocCallback callback) {
   std::unique_lock<std::mutex> lock(mutex_);
-  if (closed_) {
-    callback(TP_CREATE_ERROR(CudaHostAllocatorClosedError), THostPtr());
-    return;
-  }
   TP_DCHECK(size <= chunkSize_);
   pendingAllocations_.push_back(std::move(callback));
-  cv_.notify_all();
+  processAllocations(std::move(lock));
 }
 
 size_t CudaHostAllocator::getChunkLength() const {
@@ -65,60 +55,55 @@ void CudaHostAllocator::close() {
     return;
   }
   closed_ = true;
-  cv_.notify_all();
+  processAllocations(std::move(lock));
 }
 
 void CudaHostAllocator::join() {
   close();
   if (!joined_.exchange(true)) {
-    thread_.join();
+    std::unique_lock<std::mutex> lock(mutex_);
+    cv_.wait(lock, [this]() {
+      return pendingAllocations_.empty() && (allocatedChunks_ == 0);
+    });
   }
 }
 
-void CudaHostAllocator::allocLoop(std::unique_lock<std::mutex> lock) {
-  for (;;) {
-    if (closed_ && pendingAllocations_.empty()) {
-      break;
+void CudaHostAllocator::processAllocations(std::unique_lock<std::mutex> lock) {
+  while (!pendingAllocations_.empty()) {
+    auto& callback = pendingAllocations_.front();
+    if (error_) {
+      callback(error_);
     } else {
-      cv_.wait(lock);
+      THostPtr ptr = getAvailableChunk();
+      if (!ptr) {
+        break;
+      }
+      callback(Error::kSuccess, std::move(ptr));
     }
-
-    std::deque<TAllocCallback> allocations;
-    std::swap(allocations, pendingAllocations_);
-    lock.unlock();
-    processAllocations(allocations);
-    lock.lock();
-    pendingAllocations_.insert(
-        pendingAllocations_.begin(), allocations.begin(), allocations.end());
+    pendingAllocations_.pop_front();
   }
 }
 
-void CudaHostAllocator::processAllocations(
-    std::deque<TAllocCallback>& allocations) {
+THostPtr CudaHostAllocator::getAvailableChunk() {
   for (size_t curChunk = 0; curChunk < numChunks_; ++curChunk) {
-    if (allocations.empty()) {
-      return;
-    }
     if (chunkAvailable_[curChunk]) {
       chunkAvailable_[curChunk] = false;
-
-      // FIXME: Ensure object remains alive until all chunks have been
-      // reclaimed.
-      THostPtr ptr(data_.get() + curChunk * chunkSize_, [this](uint8_t* ptr) {
-        hostPtrDeleter(ptr);
-      });
-      auto& callback = allocations.front();
-      callback(Error::kSuccess, std::move(ptr));
-
-      allocations.pop_front();
+      ++allocatedChunks_;
+      return THostPtr(
+          data_.get() + curChunk * chunkSize_,
+          [this](uint8_t* ptr) { hostPtrDeleter(ptr); });
     }
   }
+
+  return nullptr;
 }
 
 void CudaHostAllocator::hostPtrDeleter(uint8_t* ptr) {
   size_t chunkId = (ptr - data_.get()) / chunkSize_;
   std::unique_lock<std::mutex> lock(mutex_);
   chunkAvailable_[chunkId] = true;
+  --allocatedChunks_;
+  processAllocations(std::move(lock));
   cv_.notify_all();
 }
 
