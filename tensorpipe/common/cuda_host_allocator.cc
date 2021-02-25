@@ -84,7 +84,7 @@ void CudaHostAllocator::processAllocations(std::unique_lock<std::mutex> lock) {
   }
 }
 
-THostPtr CudaHostAllocator::getAvailableChunk() {
+CudaHostAllocator::THostPtr CudaHostAllocator::getAvailableChunk() {
   for (size_t curChunk = 0; curChunk < numChunks_; ++curChunk) {
     if (chunkAvailable_[curChunk]) {
       chunkAvailable_[curChunk] = false;
