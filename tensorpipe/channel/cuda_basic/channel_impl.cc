@@ -291,7 +291,8 @@ void ChannelImpl::onRecvOpReadyForCopy(Operation& op) {
       op.length,
       deviceIdx,
       op.stream,
-      callbackWrapper_([&op](ChannelImpl& impl) {
+      // TODO: Avoid copying op.
+      callbackWrapper_([op](ChannelImpl& impl) {
         TP_VLOG(5) << "Channel " << impl.id_ << " is done copying chunk #"
                    << op.chunkId << " of " << op.numChunks << " for buffer #"
                    << op.sequenceNumber << " from CPU to CUDA device";
