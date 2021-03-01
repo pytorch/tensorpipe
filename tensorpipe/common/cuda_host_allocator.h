@@ -39,7 +39,7 @@ class CudaHostAllocator {
   };
 
  public:
-  using THostPtr = std::unique_ptr<uint8_t[], HostPtrDeleter>;
+  using THostPtr = std::shared_ptr<uint8_t[]>;
   using TAllocCallback = std::function<void(const Error&, THostPtr)>;
 
   explicit CudaHostAllocator(
