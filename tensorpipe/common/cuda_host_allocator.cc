@@ -109,7 +109,7 @@ void CudaHostAllocator::releaseChunk(uint8_t* ptr) {
 CudaHostAllocator::HostPtrDeleter(CudaHostAllocator& allocator)
     : allocator_(allocator) {}
 
-void CudaHostAllocator::operator()(uint8_t* ptr) {
+void CudaHostAllocator::HostPtrDeleter::operator()(uint8_t* ptr) {
   allocator_.releaseChunk(ptr);
 }
 

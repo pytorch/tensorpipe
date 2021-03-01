@@ -68,6 +68,7 @@ class CudaHostAllocator {
 
   void processAllocations(std::unique_lock<std::mutex> lock);
   THostPtr getAvailableChunk();
+  void releaseChunk(uint8_t* ptr);
 
   void hostPtrDeleter(uint8_t* ptr);
 };
