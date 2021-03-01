@@ -31,7 +31,7 @@ class CudaHostAllocator {
  private:
   class HostPtrDeleter {
    public:
-    HostPtrDeleter(CudaHostAllocator& allocator);
+    explicit HostPtrDeleter(CudaHostAllocator& allocator);
     void operator()(uint8_t* ptr);
 
    private:
