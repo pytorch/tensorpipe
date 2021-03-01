@@ -295,9 +295,10 @@ void ChannelImpl::onRecvOpReadyForCopy(Operation& op) {
         TP_VLOG(5) << "Channel " << impl.id_ << " is done copying chunk #"
                    << op.chunkId << " of " << op.numChunks << " for buffer #"
                    << op.sequenceNumber << " from CPU to CUDA device";
-        op.done = true;
-        impl.onRecvOpDone();
       }));
+
+  op.done = true;
+  impl.onRecvOpDone();
 }
 
 void ChannelImpl::onRecvOpDone() {
