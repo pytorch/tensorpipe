@@ -450,7 +450,6 @@ ContextImpl::ContextImpl(
   startThread("TP_CUDA_GDR_loop");
 }
 
-
 const CudaLib& ContextImpl::getCudaLib() {
   return cudaLib_;
 }
