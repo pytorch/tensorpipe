@@ -299,7 +299,7 @@ void ChannelImpl::onRecvOpReadyForCopy(Operation& op) {
       }));
 
   op.done = true;
-  impl.onRecvOpDone();
+  onRecvOpDone();
 }
 
 void ChannelImpl::onRecvOpDone() {
