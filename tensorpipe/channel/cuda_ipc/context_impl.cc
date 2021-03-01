@@ -234,7 +234,15 @@ std::shared_ptr<CudaChannel> ContextImpl::createChannel(
     std::vector<std::shared_ptr<transport::Connection>> connections,
     Endpoint /* unused */) {
   TP_DCHECK_EQ(numConnectionsNeeded(), connections.size());
-  return createChannelInternal(std::move(connections[0]));
+  return createChannelInternal(
+      std::move(connections[0]), std::move(connections[1]));
+}
+
+size_t ContextImpl::numConnectionsNeeded() const {
+  // The control connection needs to carry two unrelated streams in each
+  // direction (the replies and the acks), and it's thus simpler to just use two
+  // such connections.
+  return 2;
 }
 
 bool ContextImpl::canCommunicateWithRemote(

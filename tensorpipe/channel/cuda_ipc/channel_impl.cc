@@ -45,8 +45,6 @@ struct Ack {
   NOP_STRUCTURE(Ack);
 };
 
-using Packet = nop::Variant<Reply, Ack>;
-
 SendOperation::SendOperation(
     uint64_t sequenceNumber,
     TSendCallback callback,
@@ -129,17 +127,17 @@ ChannelImpl::ChannelImpl(
     ConstructorToken token,
     std::shared_ptr<ContextImpl> context,
     std::string id,
-    std::shared_ptr<transport::Connection> connection)
+    std::shared_ptr<transport::Connection> replyConnection,
+    std::shared_ptr<transport::Connection> ackConnection)
     : ChannelImplBoilerplate<CudaBuffer, ContextImpl, ChannelImpl>(
           token,
           std::move(context),
           std::move(id)),
-      connection_(std::move(connection)) {}
+      replyConnection_(std::move(replyConnection)),
+      ackConnection_(std::move(ackConnection)) {}
 
 void ChannelImpl::initImplFromLoop() {
   context_->enroll(*this);
-
-  readPackets();
 }
 
 void ChannelImpl::sendImplFromLoop(
@@ -159,6 +157,20 @@ void ChannelImpl::sendImplFromLoop(
   NopHolder<Descriptor> nopHolder;
   nopHolder.getObject() = op.descriptor(context_->getCudaLib());
   descriptorCallback(Error::kSuccess, saveDescriptor(nopHolder));
+
+  auto nopReplyHolder = std::make_shared<NopHolder<Reply>>();
+  TP_VLOG(6) << "Channel " << id_ << " is reading nop object (reply #"
+             << sequenceNumber << ")";
+  replyConnection_->read(
+      *nopReplyHolder,
+      callbackWrapper_([&op, nopReplyHolder](ChannelImpl& impl) {
+        TP_VLOG(6) << "Channel " << impl.id_
+                   << " done reading nop object (reply #" << op.sequenceNumber
+                   << ")";
+        if (!impl.error_) {
+          impl.onReply(op, nopReplyHolder->getObject());
+        }
+      }));
 }
 
 void ChannelImpl::recvImplFromLoop(
@@ -194,43 +206,33 @@ void ChannelImpl::recvImplFromLoop(
   // Let peer know we've completed the copy.
   TP_VLOG(6) << "Channel " << id_ << " is writing reply notification (#"
              << op.sequenceNumber << ")";
-  auto nopPacketHolder = std::make_shared<NopHolder<Packet>>();
-  nopPacketHolder->getObject() = op.reply();
+  auto nopReplyHolder = std::make_shared<NopHolder<Reply>>();
+  nopReplyHolder->getObject() = op.reply();
 
-  connection_->write(
-      *nopPacketHolder,
-      callbackWrapper_([nopPacketHolder,
+  replyConnection_->write(
+      *nopReplyHolder,
+      callbackWrapper_([nopReplyHolder,
                         sequenceNumber{op.sequenceNumber}](ChannelImpl& impl) {
         TP_VLOG(6) << "Channel " << impl.id_
                    << " done writing reply notification (#" << sequenceNumber
                    << ")";
       }));
-}
 
-void ChannelImpl::readPackets() {
-  auto nopPacketHolder = std::make_shared<NopHolder<Packet>>();
-  connection_->read(
-      *nopPacketHolder, callbackWrapper_([nopPacketHolder](ChannelImpl& impl) {
-        if (impl.error_) {
-          return;
+  TP_VLOG(6) << "Channel " << id_ << " is reading ACK notification (#"
+             << op.sequenceNumber << ")";
+  auto nopAckHolder = std::make_shared<NopHolder<Ack>>();
+  ackConnection_->read(
+      *nopAckHolder, callbackWrapper_([&op, nopAckHolder](ChannelImpl& impl) {
+        TP_VLOG(6) << "Channel " << impl.id_
+                   << " done reading ACK notification (#" << op.sequenceNumber
+                   << ")";
+        if (!impl.error_) {
+          impl.onAck(op);
         }
-
-        const Packet& nopPacket = nopPacketHolder->getObject();
-        if (nopPacket.is<Reply>()) {
-          impl.onReply(*nopPacket.get<Reply>());
-        } else if (nopPacket.is<Ack>()) {
-          impl.onAck();
-        } else {
-          TP_THROW_ASSERT() << "Unexpected packet type: " << nopPacket.index();
-        }
-
-        impl.readPackets();
       }));
 }
 
-void ChannelImpl::onReply(const Reply& nopReply) {
-  auto& op = sendOperations_.front();
-
+void ChannelImpl::onReply(SendOperation& op, const Reply& nopReply) {
   TP_VLOG(6) << "Channel " << id_ << " received reply notification (#"
              << op.sequenceNumber << ")";
 
@@ -242,27 +244,23 @@ void ChannelImpl::onReply(const Reply& nopReply) {
 
   TP_VLOG(6) << "Channel " << id_ << " is writing ACK notification (#"
              << op.sequenceNumber << ")";
-  auto nopPacketHolder = std::make_shared<NopHolder<Packet>>();
-  Packet& nopPacket = nopPacketHolder->getObject();
-  nopPacket.Become(nopPacket.index_of<Ack>());
+  auto nopAckHolder = std::make_shared<NopHolder<Ack>>();
 
   op.callback(error_);
 
-  connection_->write(
-      *nopPacketHolder,
-      callbackWrapper_([nopPacketHolder,
-                        sequenceNumber{op.sequenceNumber}](ChannelImpl& impl) {
-        TP_VLOG(6) << "Channel " << impl.id_
-                   << " done writing ACK notification (#" << sequenceNumber
-                   << ")";
-      }));
+  ackConnection_->write(
+      *nopAckHolder,
+      callbackWrapper_(
+          [nopAckHolder, sequenceNumber{op.sequenceNumber}](ChannelImpl& impl) {
+            TP_VLOG(6) << "Channel " << impl.id_
+                       << " done writing ACK notification (#" << sequenceNumber
+                       << ")";
+          }));
 
   sendOperations_.pop_front();
 }
 
-void ChannelImpl::onAck() {
-  auto& op = recvOperations_.front();
-
+void ChannelImpl::onAck(RecvOperation& op) {
   TP_VLOG(6) << "Channel " << id_ << " received ACK notification (#"
              << op.sequenceNumber << ")";
 
@@ -270,7 +268,8 @@ void ChannelImpl::onAck() {
 }
 
 void ChannelImpl::handleErrorImpl() {
-  connection_->close();
+  replyConnection_->close();
+  ackConnection_->close();
 
   for (auto& op : sendOperations_) {
     op.callback(error_);
