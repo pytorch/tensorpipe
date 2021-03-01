@@ -106,7 +106,7 @@ void CudaHostAllocator::releaseChunk(uint8_t* ptr) {
   cv_.notify_all();
 }
 
-CudaHostAllocator::HostPtrDeleter(CudaHostAllocator& allocator)
+CudaHostAllocator::HostPtrDeleter::HostPtrDeleter(CudaHostAllocator& allocator)
     : allocator_(allocator) {}
 
 void CudaHostAllocator::HostPtrDeleter::operator()(uint8_t* ptr) {
