@@ -84,7 +84,7 @@ void ContextImpl::handleErrorImpl() {
   cudaLoop_.close();
 
   if (cudaHostAllocator_.has_value()) {
-    cudaHostAllocator_.close();
+    cudaHostAllocator_->close();
   }
 }
 
