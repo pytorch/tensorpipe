@@ -12,7 +12,6 @@
 #include <tensorpipe/channel/cuda_context.h>
 #include <tensorpipe/common/cuda.h>
 #include <tensorpipe/test/channel/channel_test.h>
-#include <tensorpipe/test/test_environment.h>
 #include <tensorpipe/test/channel/kernel.cuh>
 
 using namespace tensorpipe;

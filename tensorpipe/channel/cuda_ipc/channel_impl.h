@@ -41,7 +41,9 @@ class SendOperation {
       const void* ptr,
       cudaStream_t stream);
 
-  Descriptor descriptor(const CudaLib& cudaLib);
+  Descriptor descriptor(
+      const CudaLib& cudaLib,
+      const std::string& processIdentifier);
 
   void process(const cudaIpcEventHandle_t& stopEvHandle);
 
@@ -67,7 +69,7 @@ struct RecvOperation {
 
   void process(
       const cudaIpcEventHandle_t& startEvHandle,
-      const cudaIpcMemHandle_t& remoteHandle,
+      void* remotePtr,
       size_t offset);
 
  private:
@@ -85,7 +87,8 @@ class ChannelImpl final
       ConstructorToken token,
       std::shared_ptr<ContextImpl> context,
       std::string id,
-      std::shared_ptr<transport::Connection> connection);
+      std::shared_ptr<transport::Connection> replyConnection,
+      std::shared_ptr<transport::Connection> ackConnection);
 
  protected:
   // Implement the entry points called by ChannelImplBoilerplate.
@@ -103,7 +106,8 @@ class ChannelImpl final
   void handleErrorImpl() override;
 
  private:
-  const std::shared_ptr<transport::Connection> connection_;
+  const std::shared_ptr<transport::Connection> replyConnection_;
+  const std::shared_ptr<transport::Connection> ackConnection_;
 
   // List of alive send operations.
   std::list<SendOperation> sendOperations_;
@@ -111,9 +115,8 @@ class ChannelImpl final
   // List of alive recv operations.
   std::list<RecvOperation> recvOperations_;
 
-  void readPackets();
-  void onReply(const Reply& nopReply);
-  void onAck();
+  void onReply(SendOperation& op, const Reply& nopReply);
+  void onAck(RecvOperation& op);
 };
 
 } // namespace cuda_ipc

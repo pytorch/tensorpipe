@@ -377,6 +377,28 @@ std::shared_ptr<ContextImpl> ContextImpl::create(
     return std::make_shared<ContextImpl>();
   }
 
+  return std::make_shared<ContextImpl>(
+      std::move(cudaLib),
+      std::move(ibvLib),
+      std::move(deviceList),
+      std::move(gpuIdxToNicName));
+}
+
+ContextImpl::ContextImpl()
+    : ContextImplBoilerplate<CudaBuffer, ContextImpl, ChannelImpl>(
+          /*isViable=*/false,
+          /*domainDescriptor=*/"") {}
+
+ContextImpl::ContextImpl(
+    CudaLib cudaLib,
+    IbvLib ibvLib,
+    IbvDeviceList deviceList,
+    optional<std::vector<std::string>> gpuIdxToNicName)
+    : ContextImplBoilerplate<CudaBuffer, ContextImpl, ChannelImpl>(
+          /*isViable=*/true,
+          /*domainDescriptor=*/"*"),
+      cudaLib_(std::move(cudaLib)),
+      ibvLib_(std::move(ibvLib)) {
   std::vector<std::string> actualGpuIdxToNicName;
   if (gpuIdxToNicName.has_value()) {
     int numGpus;
@@ -402,7 +424,6 @@ std::shared_ptr<ContextImpl> ContextImpl::create(
   }
 
   std::unordered_map<std::string, size_t> nicNameToNicIdx;
-  std::vector<IbvNic> ibvNics;
   // The device index is among all available devices, the NIC index is among the
   // ones we will use.
   size_t nicIdx = 0;
@@ -413,7 +434,7 @@ std::shared_ptr<ContextImpl> ContextImpl::create(
     if (iter != nicNames.end()) {
       TP_VLOG(5) << "CUDA GDR channel is using InfiniBand NIC " << deviceName
                  << " as device #" << nicIdx;
-      ibvNics.emplace_back(*iter, device, ibvLib, cudaLib);
+      ibvNics_.emplace_back(*iter, device, ibvLib_, cudaLib_);
       nicNameToNicIdx[*iter] = nicIdx;
       nicIdx++;
       nicNames.erase(iter);
@@ -422,35 +443,10 @@ std::shared_ptr<ContextImpl> ContextImpl::create(
   TP_THROW_ASSERT_IF(!nicNames.empty())
       << "Couldn't find all the devices I was supposed to use";
 
-  std::vector<size_t> gpuToNic;
   for (size_t gpuIdx = 0; gpuIdx < actualGpuIdxToNicName.size(); gpuIdx++) {
-    gpuToNic.push_back(nicNameToNicIdx[actualGpuIdxToNicName[gpuIdx]]);
+    gpuToNic_.push_back(nicNameToNicIdx[actualGpuIdxToNicName[gpuIdx]]);
   }
 
-  return std::make_shared<ContextImpl>(
-      std::move(cudaLib),
-      std::move(ibvLib),
-      std::move(ibvNics),
-      std::move(gpuToNic));
-}
-
-ContextImpl::ContextImpl()
-    : ContextImplBoilerplate<CudaBuffer, ContextImpl, ChannelImpl>(
-          /*isViable=*/false,
-          /*domainDescriptor=*/"") {}
-
-ContextImpl::ContextImpl(
-    CudaLib cudaLib,
-    IbvLib ibvLib,
-    std::vector<IbvNic> ibvNics,
-    std::vector<size_t> gpuToNic)
-    : ContextImplBoilerplate<CudaBuffer, ContextImpl, ChannelImpl>(
-          /*isViable=*/true,
-          /*domainDescriptor=*/"*"),
-      cudaLib_(std::move(cudaLib)),
-      ibvLib_(std::move(ibvLib)),
-      ibvNics_(std::move(ibvNics)),
-      gpuToNic_(std::move(gpuToNic)) {
   startThread("TP_CUDA_GDR_loop");
 }
 

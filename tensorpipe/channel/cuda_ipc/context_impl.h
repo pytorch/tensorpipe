@@ -9,6 +9,7 @@
 #pragma once
 
 #include <functional>
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -46,10 +47,19 @@ class ContextImpl final
       std::vector<std::shared_ptr<transport::Connection>> connections,
       Endpoint endpoint);
 
+  size_t numConnectionsNeeded() const override;
+
   bool canCommunicateWithRemote(
       const std::string& remoteDomainDescriptor) const override;
 
   const CudaLib& getCudaLib();
+
+  const std::string& getProcessIdentifier();
+
+  void* openIpcHandle(
+      std::string allocationId,
+      const cudaIpcMemHandle_t& remoteHandle,
+      int deviceIdx);
 
   // Implement the DeferredExecutor interface.
   bool inLoop() const override;
@@ -70,6 +80,21 @@ class ContextImpl final
   const std::vector<std::string> globalUuids_;
   const std::vector<std::vector<bool>> p2pSupport_;
   const std::vector<int> globalIdxOfVisibleDevices_;
+
+  // A combination of the process's PID namespace and its PID, which combined
+  // with CUDA's buffer ID should allow us to uniquely identify each allocation
+  // on the current machine.
+  std::string processIdentifier_;
+
+  // Map from device pointer and device index, to the number of times that
+  // handle has been opened. Needed to keep track of what cudaIpcCloseMemHandle
+  // calls we need to make at closing.
+  // FIXME Turn this into an unordered_map.
+  // FIXME It may make sense to break the string into the process identifier
+  // which indexes a nested map which is keyed by the buffer ID (+ the device
+  // index), because each channel will only ever look up handles for the same
+  // process identifier, hence we could do that first loopup once and cache it.
+  std::map<std::tuple<std::string, int>, void*> openIpcHandles_;
 };
 
 } // namespace cuda_ipc
