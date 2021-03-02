@@ -168,12 +168,8 @@ void ChannelImpl::onReadHandshakeSetupInfo(
   }
 
   state_ = ESTABLISHED;
-  for (auto& sendOp : sendOps_) {
-    processSendOperationFromLoop(sendOp);
-  }
-  for (auto& recvOp : recvOps_) {
-    processRecvOperationFromLoop(recvOp);
-  }
+  sendOps_.advanceAllOperations();
+  recvOps_.advanceAllOperations();
 }
 
 void ChannelImpl::sendImplFromLoop(
@@ -184,13 +180,11 @@ void ChannelImpl::sendImplFromLoop(
   size_t localGpuIdx = cudaDeviceForPointer(context_->getCudaLib(), buffer.ptr);
   size_t localNicIdx = context_->getGpuToNicMapping()[localGpuIdx];
 
-  sendOps_.emplace_back(
+  SendOpIter opIter = sendOps_.emplaceBack(
       sequenceNumber, buffer, std::move(callback), localGpuIdx, localNicIdx);
-  SendOperation& op = sendOps_.back();
-  op.event.record(op.buffer.stream);
-  if (state_ == ESTABLISHED) {
-    processSendOperationFromLoop(op);
-  }
+  opIter->event.record(buffer.stream);
+
+  sendOps_.advanceOperation(opIter);
 
   NopHolder<Descriptor> nopHolder;
   Descriptor& nopDescriptor = nopHolder.getObject();
@@ -198,62 +192,148 @@ void ChannelImpl::sendImplFromLoop(
   descriptorCallback(Error::kSuccess, saveDescriptor(nopHolder));
 }
 
-void ChannelImpl::processSendOperationFromLoop(SendOperation& op) {
+void ChannelImpl::advanceSendOperation(
+    SendOpIter opIter,
+    SendOperation::State prevOpState) {
+  TP_DCHECK(context_->inLoop());
+  // Don't check state_ == ESTABLISHED: it can be called after failed handshake.
+
+  sendOps_.attemptTransition(
+      opIter,
+      /*from=*/SendOperation::UNINITIALIZED,
+      /*to=*/SendOperation::FINISHED,
+      /*cond=*/error_,
+      /*action=*/&ChannelImpl::callSendCallback);
+
+  // Needs to go after previous op to ensure predictable and consistent ordering
+  // of read calls on control connection.
+  sendOps_.attemptTransition(
+      opIter,
+      /*from=*/SendOperation::UNINITIALIZED,
+      /*to=*/SendOperation::READING_READY_TO_RECEIVE,
+      /*cond=*/!error_ && state_ == ESTABLISHED &&
+          prevOpState >= SendOperation::READING_READY_TO_RECEIVE,
+      /*action=*/&ChannelImpl::writeReadyToSendAndReadReadyToReceive);
+
+  sendOps_.attemptTransition(
+      opIter,
+      /*from=*/SendOperation::READING_READY_TO_RECEIVE,
+      /*to=*/SendOperation::FINISHED,
+      /*cond=*/error_ && opIter->readReadyToReceive,
+      /*action=*/&ChannelImpl::callSendCallback);
+
+  // This doesn't strictly need to go after the previous op, but it doesn't make
+  // sense to busy poll multiple events if only one of them is actually able to
+  // then make progress.
+  sendOps_.attemptTransition(
+      opIter,
+      /*from=*/SendOperation::READING_READY_TO_RECEIVE,
+      /*to=*/SendOperation::WAITING_FOR_CUDA_EVENT,
+      /*cond=*/!error_ && opIter->readReadyToReceive &&
+          prevOpState >= SendOperation::SENDING_OVER_IB,
+      /*action=*/&ChannelImpl::waitForSendCudaEvent);
+
+  sendOps_.attemptTransition(
+      opIter,
+      /*from=*/SendOperation::WAITING_FOR_CUDA_EVENT,
+      /*to=*/SendOperation::FINISHED,
+      /*cond=*/error_ && opIter->sendEventReady,
+      /*action=*/&ChannelImpl::callSendCallback);
+
+  // Needs to go after previous op to ensure predictable and consistent ordering
+  // of send calls on InfiniBand queue pair.
+  sendOps_.attemptTransition(
+      opIter,
+      /*from=*/SendOperation::WAITING_FOR_CUDA_EVENT,
+      /*to=*/SendOperation::SENDING_OVER_IB,
+      /*cond=*/!error_ && opIter->sendEventReady &&
+          prevOpState >= SendOperation::SENDING_OVER_IB,
+      /*action=*/&ChannelImpl::sendOverIb);
+
+  sendOps_.attemptTransition(
+      opIter,
+      /*from=*/SendOperation::SENDING_OVER_IB,
+      /*to=*/SendOperation::FINISHED,
+      /*cond=*/opIter->sentOverIb,
+      /*action=*/&ChannelImpl::callSendCallback);
+}
+
+void ChannelImpl::writeReadyToSendAndReadReadyToReceive(SendOpIter opIter) {
   TP_DCHECK(context_->inLoop());
   TP_DCHECK_EQ(state_, ESTABLISHED);
   TP_DCHECK(!error_);
+
+  SendOperation& op = *opIter;
+  TP_DCHECK_EQ(op.state, SendOperation::UNINITIALIZED);
+  op.state = SendOperation::READING_READY_TO_RECEIVE;
 
   auto nopHolderIn = std::make_shared<NopHolder<ReadyToReceive>>();
   TP_VLOG(6) << "Channel " << id_ << " is reading ready-to-receive (#"
              << op.sequenceNumber << ")";
   connection_->read(
-      *nopHolderIn, callbackWrapper_([&op, nopHolderIn](ChannelImpl& impl) {
+      *nopHolderIn, callbackWrapper_([opIter, nopHolderIn](ChannelImpl& impl) {
         TP_VLOG(6) << "Channel " << impl.id_
-                   << " done reading ready-to-receive (# " << op.sequenceNumber
-                   << ")";
-        impl.onReadReadyToReceive(op, nopHolderIn->getObject());
+                   << " done reading ready-to-receive (# "
+                   << opIter->sequenceNumber << ")";
+        impl.onReadReadyToReceive(opIter, nopHolderIn->getObject());
       }));
 }
 
 void ChannelImpl::onReadReadyToReceive(
-    SendOperation& op,
+    SendOpIter opIter,
     const ReadyToReceive& readyToReceive) {
   TP_DCHECK(context_->inLoop());
   TP_DCHECK_EQ(state_, ESTABLISHED);
 
-  if (error_) {
-    op.callback(error_);
-    eraseOp(op);
-    return;
-  }
+  SendOperation& op = *opIter;
+  TP_DCHECK_EQ(op.state, SendOperation::READING_READY_TO_RECEIVE);
 
+  op.readReadyToReceive = true;
   op.remoteNicIdx = readyToReceive.destinationNicIdx;
+
+  sendOps_.advanceOperation(opIter);
+}
+
+void ChannelImpl::waitForSendCudaEvent(SendOpIter opIter) {
+  TP_DCHECK(context_->inLoop());
+  TP_DCHECK_EQ(state_, ESTABLISHED);
+  TP_DCHECK(!error_);
+
+  SendOperation& op = *opIter;
+  TP_DCHECK_EQ(op.state, SendOperation::READING_READY_TO_RECEIVE);
+  op.state = SendOperation::WAITING_FOR_CUDA_EVENT;
 
   TP_VLOG(6) << "Channel " << id_ << " is waiting for CUDA event to send (#"
              << op.sequenceNumber << ")";
-  // FIXME There is no guarantee that two CUDA events will complete in the order
-  // in which we add them (if they are on different streams). This could mean
-  // that a later tensor might overtake an earlier one and issue its ibverbs
-  // send earlier, thus messing up the order and causing a mismatch with the
-  // receiver. The proper fix for this is a state machine, like the pipe has.
   context_->waitForCudaEvent(
-      op.event, callbackWrapper_([&op](ChannelImpl& impl) {
+      op.event, callbackWrapper_([opIter](ChannelImpl& impl) {
         TP_VLOG(6) << "Channel " << impl.id_
                    << " done waiting for CUDA event to send (# "
-                   << op.sequenceNumber << ")";
-        impl.onSendEventReady(op);
+                   << opIter->sequenceNumber << ")";
+        impl.onSendEventReady(opIter);
       }));
 }
 
-void ChannelImpl::onSendEventReady(SendOperation& op) {
+void ChannelImpl::onSendEventReady(SendOpIter opIter) {
   TP_DCHECK(context_->inLoop());
   TP_DCHECK_EQ(state_, ESTABLISHED);
 
-  if (error_) {
-    op.callback(error_);
-    eraseOp(op);
-    return;
-  }
+  SendOperation& op = *opIter;
+  TP_DCHECK_EQ(op.state, SendOperation::WAITING_FOR_CUDA_EVENT);
+
+  op.sendEventReady = true;
+
+  sendOps_.advanceOperation(opIter);
+}
+
+void ChannelImpl::sendOverIb(SendOpIter opIter) {
+  TP_DCHECK(context_->inLoop());
+  TP_DCHECK_EQ(state_, ESTABLISHED);
+  TP_DCHECK(!error_);
+
+  SendOperation& op = *opIter;
+  TP_DCHECK_EQ(op.state, SendOperation::WAITING_FOR_CUDA_EVENT);
+  op.state = SendOperation::SENDING_OVER_IB;
 
   IbvNic& localNic = context_->getIbvNic(op.localNicIdx);
   IbvQueuePair& qp = queuePairs_[op.localNicIdx][op.remoteNicIdx];
@@ -275,34 +355,42 @@ void ChannelImpl::onSendEventReady(SendOperation& op) {
 
   TP_VLOG(6) << "Channel " << id_ << " is sending tensor (#"
              << op.sequenceNumber << ") on QP " << qp->qp_num;
-  localNic.postSend(qp, wr, callbackWrapper_([&op](ChannelImpl& impl) {
+  localNic.postSend(qp, wr, callbackWrapper_([opIter](ChannelImpl& impl) {
                       TP_VLOG(6) << "Channel " << impl.id_
                                  << " done sending tensor (# "
-                                 << op.sequenceNumber << ")";
-                      impl.onIbvSendDone(op);
+                                 << opIter->sequenceNumber << ")";
+                      impl.onIbvSendDone(opIter);
                     }));
   numSendsInFlight_++;
 }
 
-void ChannelImpl::onIbvSendDone(SendOperation& op) {
+void ChannelImpl::onIbvSendDone(SendOpIter opIter) {
   TP_DCHECK(context_->inLoop());
   TP_DCHECK_EQ(state_, ESTABLISHED);
 
+  SendOperation& op = *opIter;
+  TP_DCHECK_EQ(op.state, SendOperation::SENDING_OVER_IB);
+
+  op.sentOverIb = true;
+
+  sendOps_.advanceOperation(opIter);
+
   numSendsInFlight_--;
-
-  op.callback(error_);
-  eraseOp(op);
-
   tryCleanup();
 }
 
-void ChannelImpl::eraseOp(const SendOperation& op) {
-  auto iter = std::find_if(
-      sendOps_.begin(), sendOps_.end(), [&](const SendOperation& otherOp) {
-        return otherOp.sequenceNumber == op.sequenceNumber;
-      });
-  TP_DCHECK(iter != sendOps_.end());
-  sendOps_.erase(iter);
+void ChannelImpl::callSendCallback(SendOpIter opIter) {
+  TP_DCHECK(context_->inLoop());
+  // Don't check state_ == ESTABLISHED: it can be called after failed handshake.
+  // Similarly, don't check for !error_.
+
+  SendOperation& op = *opIter;
+  // Don't check op.state: it can be called for many previous states.
+  op.state = SendOperation::FINISHED;
+
+  op.callback(error_);
+  // Reset callback to release the resources it was holding.
+  op.callback = nullptr;
 }
 
 void ChannelImpl::recvImplFromLoop(
@@ -318,50 +406,110 @@ void ChannelImpl::recvImplFromLoop(
   Descriptor& nopDescriptor = nopHolder.getObject();
   size_t remoteNicIdx = nopDescriptor.originNicIdx;
 
-  recvOps_.emplace_back(
+  RecvOpIter opIter = recvOps_.emplaceBack(
       sequenceNumber,
       buffer,
       std::move(callback),
       localGpuIdx,
       localNicIdx,
       remoteNicIdx);
-  RecvOperation& op = recvOps_.back();
-  op.event.record(op.buffer.stream);
-  if (state_ == ESTABLISHED) {
-    processRecvOperationFromLoop(op);
-  }
+  opIter->event.record(buffer.stream);
+
+  recvOps_.advanceOperation(opIter);
 }
 
-void ChannelImpl::processRecvOperationFromLoop(RecvOperation& op) {
+void ChannelImpl::advanceRecvOperation(
+    RecvOpIter opIter,
+    RecvOperation::State prevOpState) {
+  TP_DCHECK(context_->inLoop());
+  // Don't check state_ == ESTABLISHED: it can be called after failed handshake.
+
+  recvOps_.attemptTransition(
+      opIter,
+      /*from=*/RecvOperation::UNINITIALIZED,
+      /*to=*/RecvOperation::FINISHED,
+      /*cond=*/error_,
+      /*action=*/&ChannelImpl::callRecvCallback);
+
+  // This doesn't strictly need to go after the previous op, but it doesn't make
+  // sense to busy poll multiple events if only one of them is actually able to
+  // then make progress.
+  recvOps_.attemptTransition(
+      opIter,
+      /*from=*/RecvOperation::UNINITIALIZED,
+      /*to=*/RecvOperation::WAITING_FOR_CUDA_EVENT,
+      /*cond=*/!error_ && state_ == ESTABLISHED &&
+          prevOpState >=
+              RecvOperation::RECEIVING_OVER_IB_AND_WRITING_READY_TO_RECEIVE,
+      /*action=*/&ChannelImpl::waitForRecvCudaEvent);
+
+  recvOps_.attemptTransition(
+      opIter,
+      /*from=*/RecvOperation::WAITING_FOR_CUDA_EVENT,
+      /*to=*/RecvOperation::FINISHED,
+      /*cond=*/error_ && opIter->recvEventReady,
+      /*action=*/&ChannelImpl::callRecvCallback);
+
+  // Needs to go after previous op to ensure predictable and consistent ordering
+  // of recv calls on InfiniBand queue pair and write calls on control
+  // connection.
+  recvOps_.attemptTransition(
+      opIter,
+      /*from=*/RecvOperation::WAITING_FOR_CUDA_EVENT,
+      /*to=*/RecvOperation::RECEIVING_OVER_IB_AND_WRITING_READY_TO_RECEIVE,
+      /*cond=*/!error_ && opIter->recvEventReady &&
+          prevOpState >=
+              RecvOperation::RECEIVING_OVER_IB_AND_WRITING_READY_TO_RECEIVE,
+      /*action=*/&ChannelImpl::recvOverIbAndWriteReadyToRecive);
+
+  recvOps_.attemptTransition(
+      opIter,
+      /*from=*/RecvOperation::RECEIVING_OVER_IB_AND_WRITING_READY_TO_RECEIVE,
+      /*to=*/RecvOperation::FINISHED,
+      /*cond=*/opIter->receivedOverIb,
+      /*action=*/&ChannelImpl::callRecvCallback);
+}
+
+void ChannelImpl::waitForRecvCudaEvent(RecvOpIter opIter) {
   TP_DCHECK(context_->inLoop());
   TP_DCHECK_EQ(state_, ESTABLISHED);
   TP_DCHECK(!error_);
 
+  RecvOperation& op = *opIter;
+  TP_DCHECK_EQ(op.state, RecvOperation::UNINITIALIZED);
+  op.state = RecvOperation::WAITING_FOR_CUDA_EVENT;
+
   TP_VLOG(6) << "Channel " << id_ << " is waiting for CUDA event to recv (#"
              << op.sequenceNumber << ")";
-  // FIXME There is no guarantee that two CUDA events will complete in the order
-  // in which we add them (if they are on different streams). This could mean
-  // that a later tensor might overtake an earlier one and issue its ibverbs
-  // recv earlier, thus messing up the order and causing a mismatch with the
-  // sender. The proper fix for this is a state machine, like the pipe has.
   context_->waitForCudaEvent(
-      op.event, callbackWrapper_([&op](ChannelImpl& impl) {
+      op.event, callbackWrapper_([opIter](ChannelImpl& impl) {
         TP_VLOG(6) << "Channel " << impl.id_
                    << " done waiting for CUDA event to recv (# "
-                   << op.sequenceNumber << ")";
-        impl.onRecvEventReady(op);
+                   << opIter->sequenceNumber << ")";
+        impl.onRecvEventReady(opIter);
       }));
 }
 
-void ChannelImpl::onRecvEventReady(RecvOperation& op) {
+void ChannelImpl::onRecvEventReady(RecvOpIter opIter) {
   TP_DCHECK(context_->inLoop());
   TP_DCHECK_EQ(state_, ESTABLISHED);
 
-  if (error_) {
-    op.callback(error_);
-    eraseOp(op);
-    return;
-  }
+  RecvOperation& op = *opIter;
+  TP_DCHECK_EQ(op.state, RecvOperation::WAITING_FOR_CUDA_EVENT);
+
+  op.recvEventReady = true;
+
+  recvOps_.advanceOperation(opIter);
+}
+
+void ChannelImpl::recvOverIbAndWriteReadyToRecive(RecvOpIter opIter) {
+  TP_DCHECK(context_->inLoop());
+  TP_DCHECK_EQ(state_, ESTABLISHED);
+  TP_DCHECK(!error_);
+
+  RecvOperation& op = *opIter;
+  TP_DCHECK_EQ(op.state, RecvOperation::WAITING_FOR_CUDA_EVENT);
+  op.state = RecvOperation::RECEIVING_OVER_IB_AND_WRITING_READY_TO_RECEIVE;
 
   IbvNic& localNic = context_->getIbvNic(op.localNicIdx);
   IbvQueuePair& qp = queuePairs_[op.localNicIdx][op.remoteNicIdx];
@@ -382,11 +530,11 @@ void ChannelImpl::onRecvEventReady(RecvOperation& op) {
 
   TP_VLOG(6) << "Channel " << id_ << " is receiving tensor (#"
              << op.sequenceNumber << ") on QP " << qp->qp_num;
-  localNic.postRecv(qp, wr, callbackWrapper_([&op](ChannelImpl& impl) {
+  localNic.postRecv(qp, wr, callbackWrapper_([opIter](ChannelImpl& impl) {
                       TP_VLOG(6) << "Channel " << impl.id_
                                  << " done receiving tensor (# "
-                                 << op.sequenceNumber << ")";
-                      impl.onIbvRecvDone(op);
+                                 << opIter->sequenceNumber << ")";
+                      impl.onReceivedOverIb(opIter);
                     }));
   numRecvsInFlight_++;
 
@@ -397,52 +545,47 @@ void ChannelImpl::onRecvEventReady(RecvOperation& op) {
              << op.sequenceNumber << ")";
   connection_->write(
       *nopHolderOut,
-      callbackWrapper_(
-          [sequenceNumber{op.sequenceNumber}, nopHolderOut](ChannelImpl& impl) {
-            TP_VLOG(6) << "Channel " << impl.id_
-                       << " done writing ready-to-receive (#" << sequenceNumber
-                       << ")";
-          }));
+      callbackWrapper_([sequenceNumber{opIter->sequenceNumber},
+                        nopHolderOut](ChannelImpl& impl) {
+        TP_VLOG(6) << "Channel " << impl.id_
+                   << " done writing ready-to-receive (#" << sequenceNumber
+                   << ")";
+      }));
 }
 
-void ChannelImpl::onIbvRecvDone(RecvOperation& op) {
+void ChannelImpl::onReceivedOverIb(RecvOpIter opIter) {
   TP_DCHECK(context_->inLoop());
   TP_DCHECK_EQ(state_, ESTABLISHED);
 
+  RecvOperation& op = *opIter;
+  TP_DCHECK_EQ(
+      op.state, RecvOperation::RECEIVING_OVER_IB_AND_WRITING_READY_TO_RECEIVE);
+
+  op.receivedOverIb = true;
+
+  recvOps_.advanceOperation(opIter);
+
   numRecvsInFlight_--;
-
-  op.callback(error_);
-  eraseOp(op);
-
   tryCleanup();
 }
 
-void ChannelImpl::eraseOp(const RecvOperation& op) {
-  auto iter = std::find_if(
-      recvOps_.begin(), recvOps_.end(), [&](const RecvOperation& otherOp) {
-        return otherOp.sequenceNumber == op.sequenceNumber;
-      });
-  TP_DCHECK(iter != recvOps_.end());
-  recvOps_.erase(iter);
+void ChannelImpl::callRecvCallback(RecvOpIter opIter) {
+  TP_DCHECK(context_->inLoop());
+  // Don't check state_ == ESTABLISHED: it can be called after failed handshake.
+  // Similarly, don't check for !error_.
+
+  RecvOperation& op = *opIter;
+  // Don't check op.state: it can be called for many previous states.
+  op.state = RecvOperation::FINISHED;
+
+  op.callback(error_);
+  // Reset callback to release the resources it was holding.
+  op.callback = nullptr;
 }
 
 void ChannelImpl::handleErrorImpl() {
-  if (state_ != ESTABLISHED) {
-    // No operation has yet started being served, hence they can all be safely
-    // aborted.
-    for (auto& sendOp : sendOps_) {
-      sendOp.callback(error_);
-    }
-    sendOps_.clear();
-    for (auto& recvOp : recvOps_) {
-      recvOp.callback(error_);
-    }
-    recvOps_.clear();
-  } else {
-    // All operations are currently waiting for some lower-level operation to
-    // return. We will take care of calling the callback and easing each of them
-    // once their current operation terminates.
-  }
+  sendOps_.advanceAllOperations();
+  recvOps_.advanceAllOperations();
 
   for (size_t localNicIdx = 0; localNicIdx < numLocalNics_; localNicIdx++) {
     for (size_t remoteNicIdx = 0; remoteNicIdx < numRemoteNics_;

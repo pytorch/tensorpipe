@@ -19,7 +19,10 @@ const Error Error::kSuccess = Error();
 
 std::string Error::what() const {
   TP_DCHECK(error_);
-  return error_->what();
+  std::ostringstream ss;
+  ss << error_->what() << " (this error originated at " << file_ << ":" << line_
+     << ")";
+  return ss.str();
 }
 
 std::string SystemError::what() const {
