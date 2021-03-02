@@ -85,7 +85,6 @@ void ContextImpl::joinImpl() {
     cpuContext_->join();
   }
   cudaLoop_.join();
-  cudaHostAllocator_.join();
 }
 
 bool ContextImpl::inLoop() const {

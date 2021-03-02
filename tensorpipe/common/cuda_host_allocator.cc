@@ -35,14 +35,13 @@ CudaHostAllocator::CudaHostAllocator(size_t numChunks, size_t chunkSize)
       chunkAvailable_(numChunks, true) {}
 
 CudaHostAllocator::~CudaHostAllocator() {
-  join();
+  close();
 }
 
 void CudaHostAllocator::alloc(size_t size, TAllocCallback callback) {
-  std::unique_lock<std::mutex> lock(mutex_);
   TP_DCHECK(size <= chunkSize_);
   pendingAllocations_.push_back(std::move(callback));
-  processAllocations(std::move(lock));
+  processAllocations();
 }
 
 size_t CudaHostAllocator::getChunkLength() const {
@@ -50,25 +49,14 @@ size_t CudaHostAllocator::getChunkLength() const {
 }
 
 void CudaHostAllocator::close() {
-  std::unique_lock<std::mutex> lock(mutex_);
   if (closed_) {
     return;
   }
   closed_ = true;
-  processAllocations(std::move(lock));
+  processAllocations();
 }
 
-void CudaHostAllocator::join() {
-  close();
-  if (!joined_.exchange(true)) {
-    std::unique_lock<std::mutex> lock(mutex_);
-    cv_.wait(lock, [this]() {
-      return pendingAllocations_.empty() && (allocatedChunks_ == 0);
-    });
-  }
-}
-
-void CudaHostAllocator::processAllocations(std::unique_lock<std::mutex> lock) {
+void CudaHostAllocator::processAllocations() {
   while (!pendingAllocations_.empty()) {
     auto& callback = pendingAllocations_.front();
     if (closed_) {
@@ -90,7 +78,8 @@ CudaHostAllocator::THostPtr CudaHostAllocator::getAvailableChunk() {
       chunkAvailable_[curChunk] = false;
       ++allocatedChunks_;
       return THostPtr(
-          data_.get() + curChunk * chunkSize_, HostPtrDeleter(*this));
+          data_.get() + curChunk * chunkSize_,
+          [this](uint8_t* ptr) { releaseChunk(ptr); });
     }
   }
 
@@ -99,18 +88,9 @@ CudaHostAllocator::THostPtr CudaHostAllocator::getAvailableChunk() {
 
 void CudaHostAllocator::releaseChunk(uint8_t* ptr) {
   size_t chunkId = (ptr - data_.get()) / chunkSize_;
-  std::unique_lock<std::mutex> lock(mutex_);
   chunkAvailable_[chunkId] = true;
   --allocatedChunks_;
-  processAllocations(std::move(lock));
-  cv_.notify_all();
-}
-
-CudaHostAllocator::HostPtrDeleter::HostPtrDeleter(CudaHostAllocator& allocator)
-    : allocator_(allocator) {}
-
-void CudaHostAllocator::HostPtrDeleter::operator()(uint8_t* ptr) {
-  allocator_.releaseChunk(ptr);
+  processAllocations();
 }
 
 } // namespace tensorpipe

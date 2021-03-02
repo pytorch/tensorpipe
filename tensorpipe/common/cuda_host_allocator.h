@@ -8,16 +8,12 @@
 
 #pragma once
 
-#include <atomic>
-#include <condition_variable>
 #include <cstddef>
 #include <deque>
 #include <functional>
 #include <memory>
-#include <thread>
 
 #include <tensorpipe/common/error.h>
-#include <tensorpipe/common/system.h>
 
 namespace tensorpipe {
 
@@ -28,16 +24,6 @@ class CudaHostAllocatorClosedError final : public BaseError {
 };
 
 class CudaHostAllocator {
- private:
-  class HostPtrDeleter {
-   public:
-    explicit HostPtrDeleter(CudaHostAllocator& allocator);
-    void operator()(uint8_t* ptr);
-
-   private:
-    CudaHostAllocator& allocator_;
-  };
-
  public:
   using THostPtr = std::shared_ptr<uint8_t[]>;
   using TAllocCallback = std::function<void(const Error&, THostPtr)>;
@@ -52,7 +38,6 @@ class CudaHostAllocator {
   size_t getChunkLength() const;
 
   void close();
-  void join();
 
  private:
   const size_t numChunks_;
@@ -60,13 +45,10 @@ class CudaHostAllocator {
   const std::unique_ptr<uint8_t[], void (*)(uint8_t*)> data_;
   std::vector<bool> chunkAvailable_;
   size_t allocatedChunks_{0};
-  std::mutex mutex_;
-  std::condition_variable cv_;
   std::deque<TAllocCallback> pendingAllocations_;
   bool closed_{false};
-  std::atomic<bool> joined_{false};
 
-  void processAllocations(std::unique_lock<std::mutex> lock);
+  void processAllocations();
   THostPtr getAvailableChunk();
   void releaseChunk(uint8_t* ptr);
 
