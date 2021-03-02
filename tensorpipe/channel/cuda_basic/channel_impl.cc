@@ -162,9 +162,11 @@ void ChannelImpl::sendChunkDescriptor(Operation op, std::string descriptor) {
   TP_VLOG(6) << "Channel " << id_ << " is sending descriptor for chunk #"
              << op.chunkId << " of " << op.numChunks << " for buffer #"
              << op.sequenceNumber;
+  const void* descriptorPtr = &descriptor[0];
+  size_t descriptorLength = descriptor.length();
   connection_->write(
-      &descriptor[0],
-      descriptor.length(),
+      descriptorPtr,
+      descriptorLength,
       callbackWrapper_([op{std::move(op)},
                         descriptor{std::move(descriptor)}](ChannelImpl& impl) {
         TP_VLOG(6) << "Channel " << impl.id_
