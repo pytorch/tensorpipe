@@ -130,6 +130,14 @@ std::vector<int> mapUuidsToGlobalIndices(
   return res;
 }
 
+std::string genProcessIdentifier() {
+  std::ostringstream oss;
+  optional<std::string> nsId = getLinuxNamespaceId(LinuxNamespace::kPid);
+  TP_DCHECK(nsId.has_value());
+  oss << nsId.value() << "_" << ::getpid();
+  return oss.str();
+}
+
 } // namespace
 
 std::shared_ptr<ContextImpl> ContextImpl::create() {
@@ -228,7 +236,8 @@ ContextImpl::ContextImpl(
       bootId_(std::move(bootId)),
       globalUuids_(std::move(globalUuids)),
       p2pSupport_(std::move(p2pSupport)),
-      globalIdxOfVisibleDevices_(std::move(globalIdxOfVisibleDevices)) {}
+      globalIdxOfVisibleDevices_(std::move(globalIdxOfVisibleDevices)),
+      processIdentifier_(genProcessIdentifier()) {}
 
 std::shared_ptr<CudaChannel> ContextImpl::createChannel(
     std::vector<std::shared_ptr<transport::Connection>> connections,
@@ -278,9 +287,37 @@ const CudaLib& ContextImpl::getCudaLib() {
   return cudaLib_;
 }
 
+const std::string& ContextImpl::getProcessIdentifier() {
+  return processIdentifier_;
+}
+
+void* ContextImpl::openIpcHandle(
+    std::string allocationId,
+    const cudaIpcMemHandle_t& remoteHandle,
+    int deviceIdx) {
+  auto iter = openIpcHandles_.find(std::make_tuple(allocationId, deviceIdx));
+  if (iter != openIpcHandles_.end()) {
+    return iter->second;
+  }
+  CudaDeviceGuard guard(deviceIdx);
+  void* remotePtr;
+  TP_CUDA_CHECK(cudaIpcOpenMemHandle(
+      &remotePtr, remoteHandle, cudaIpcMemLazyEnablePeerAccess));
+  openIpcHandles_[std::make_tuple(allocationId, deviceIdx)] = remotePtr;
+  return remotePtr;
+}
+
 void ContextImpl::handleErrorImpl() {}
 
-void ContextImpl::joinImpl() {}
+void ContextImpl::joinImpl() {
+  for (const auto& handle : openIpcHandles_) {
+    int deviceIdx = std::get<1>(handle.first);
+    void* remotePtr = handle.second;
+
+    CudaDeviceGuard guard(deviceIdx);
+    TP_CUDA_CHECK(cudaIpcCloseMemHandle(remotePtr));
+  }
+}
 
 bool ContextImpl::inLoop() const {
   return loop_.inLoop();

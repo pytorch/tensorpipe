@@ -30,10 +30,11 @@ namespace channel {
 namespace cuda_ipc {
 
 struct Descriptor {
+  std::string allocationId;
   std::string handle;
   size_t offset;
   std::string startEvHandle;
-  NOP_STRUCTURE(Descriptor, handle, offset, startEvHandle);
+  NOP_STRUCTURE(Descriptor, allocationId, handle, offset, startEvHandle);
 };
 
 struct Reply {
@@ -60,7 +61,9 @@ SendOperation::SendOperation(
   startEv_.record(stream_);
 }
 
-Descriptor SendOperation::descriptor(const CudaLib& cudaLib) {
+Descriptor SendOperation::descriptor(
+    const CudaLib& cudaLib,
+    const std::string& processIdentifier) {
   CudaDeviceGuard guard(deviceIdx_);
   cudaIpcMemHandle_t handle;
   TP_CUDA_CHECK(cudaIpcGetMemHandle(&handle, const_cast<void*>(ptr_)));
@@ -71,7 +74,17 @@ Descriptor SendOperation::descriptor(const CudaLib& cudaLib) {
           &basePtr, nullptr, reinterpret_cast<CUdeviceptr>(ptr_)));
   size_t offset = reinterpret_cast<const uint8_t*>(ptr_) -
       reinterpret_cast<uint8_t*>(basePtr);
+
+  unsigned long long bufferId;
+  TP_CUDA_DRIVER_CHECK(
+      cudaLib,
+      cudaLib.pointerGetAttribute(
+          &bufferId, CU_POINTER_ATTRIBUTE_BUFFER_ID, basePtr));
+
   return Descriptor{
+      // FIXME The process identifier will be the same each time, hence we could
+      // just send it once during the setup of the channel and omit it later.
+      processIdentifier + "_" + std::to_string(bufferId),
       std::string(reinterpret_cast<const char*>(&handle), sizeof(handle)),
       offset,
       startEv_.serializedHandle()};
@@ -101,23 +114,19 @@ Reply RecvOperation::reply() {
 
 void RecvOperation::process(
     const cudaIpcEventHandle_t& startEvHandle,
-    const cudaIpcMemHandle_t& remoteHandle,
+    void* remotePtr,
     size_t offset) {
   CudaEvent startEv(deviceIdx_, startEvHandle);
   startEv.wait(stream_, deviceIdx_);
 
   {
     CudaDeviceGuard guard(deviceIdx_);
-    void* remotePtr;
-    TP_CUDA_CHECK(cudaIpcOpenMemHandle(
-        &remotePtr, remoteHandle, cudaIpcMemLazyEnablePeerAccess));
     TP_CUDA_CHECK(cudaMemcpyAsync(
         ptr_,
         static_cast<uint8_t*>(remotePtr) + offset,
         length_,
         cudaMemcpyDeviceToDevice,
         stream_));
-    TP_CUDA_CHECK(cudaIpcCloseMemHandle(remotePtr));
   }
 
   stopEv_.record(stream_);
@@ -155,7 +164,8 @@ void ChannelImpl::sendImplFromLoop(
   auto& op = sendOperations_.back();
 
   NopHolder<Descriptor> nopHolder;
-  nopHolder.getObject() = op.descriptor(context_->getCudaLib());
+  nopHolder.getObject() =
+      op.descriptor(context_->getCudaLib(), context_->getProcessIdentifier());
   descriptorCallback(Error::kSuccess, saveDescriptor(nopHolder));
 
   auto nopReplyHolder = std::make_shared<NopHolder<Reply>>();
@@ -196,7 +206,9 @@ void ChannelImpl::recvImplFromLoop(
   TP_VLOG(6) << "Channel " << id_ << " is copying payload (#" << sequenceNumber
              << ")";
 
-  op.process(*startEvHandle, *remoteHandle, nopDescriptor.offset);
+  void* remoteBasePtr = context_->openIpcHandle(
+      nopDescriptor.allocationId, *remoteHandle, deviceIdx);
+  op.process(*startEvHandle, remoteBasePtr, nopDescriptor.offset);
 
   TP_VLOG(6) << "Channel " << id_ << " done copying payload (#"
              << op.sequenceNumber << ")";

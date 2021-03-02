@@ -41,7 +41,9 @@ class SendOperation {
       const void* ptr,
       cudaStream_t stream);
 
-  Descriptor descriptor(const CudaLib& cudaLib);
+  Descriptor descriptor(
+      const CudaLib& cudaLib,
+      const std::string& processIdentifier);
 
   void process(const cudaIpcEventHandle_t& stopEvHandle);
 
@@ -67,7 +69,7 @@ struct RecvOperation {
 
   void process(
       const cudaIpcEventHandle_t& startEvHandle,
-      const cudaIpcMemHandle_t& remoteHandle,
+      void* remotePtr,
       size_t offset);
 
  private:
