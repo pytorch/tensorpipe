@@ -131,8 +131,8 @@ class ContextImpl final
   ContextImpl(
       CudaLib cudaLib,
       IbvLib ibvLib,
-      std::vector<IbvNic> ibvNics,
-      std::vector<size_t> gpuToNic);
+      IbvDeviceList deviceList,
+      optional<std::vector<std::string>> gpuIdxToNicName);
 
   std::shared_ptr<CudaChannel> createChannel(
       std::vector<std::shared_ptr<transport::Connection>> connections,
@@ -165,7 +165,7 @@ class ContextImpl final
   const IbvLib ibvLib_;
 
   std::vector<IbvNic> ibvNics_;
-  const std::vector<size_t> gpuToNic_;
+  std::vector<size_t> gpuToNic_;
 
   std::list<std::tuple<const CudaEvent&, std::function<void(const Error&)>>>
       pendingCudaEvents_;
