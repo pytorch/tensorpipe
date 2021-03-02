@@ -12,6 +12,7 @@
 #include <deque>
 #include <functional>
 #include <memory>
+#include <vector>
 
 #include <tensorpipe/common/error.h>
 
