@@ -47,8 +47,7 @@ class ChannelImpl final
       std::string id,
       std::shared_ptr<transport::Connection> connection,
       std::shared_ptr<CpuChannel> cpuChannel,
-      CudaLoop& cudaLoop,
-      CudaHostAllocator& cudaHostAllocator);
+      CudaLoop& cudaLoop);
 
  protected:
   // Implement the entry points called by ChannelImplBoilerplate.
@@ -70,7 +69,6 @@ class ChannelImpl final
   const std::shared_ptr<transport::Connection> connection_;
   const std::shared_ptr<CpuChannel> cpuChannel_;
   CudaLoop& cudaLoop_;
-  CudaHostAllocator& cudaHostAllocator_;
   std::deque<Operation> sendOperations_;
   std::deque<Operation> recvOperations_;
 

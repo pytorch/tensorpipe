@@ -39,16 +39,14 @@ ChannelImpl::ChannelImpl(
     std::string id,
     std::shared_ptr<transport::Connection> connection,
     std::shared_ptr<CpuChannel> cpuChannel,
-    CudaLoop& cudaLoop,
-    CudaHostAllocator& cudaHostAllocator)
+    CudaLoop& cudaLoop)
     : ChannelImplBoilerplate<CudaBuffer, ContextImpl, ChannelImpl>(
           token,
           std::move(context),
           std::move(id)),
       connection_(std::move(connection)),
       cpuChannel_(std::move(cpuChannel)),
-      cudaLoop_(cudaLoop),
-      cudaHostAllocator_(cudaHostAllocator) {}
+      cudaLoop_(cudaLoop) {}
 
 void ChannelImpl::initImplFromLoop() {
   context_->enroll(*this);
@@ -74,7 +72,8 @@ void ChannelImpl::sendImplFromLoop(
     CudaBuffer buffer,
     TDescriptorCallback descriptorCallback,
     TSendCallback callback) {
-  const size_t chunkLength = cudaHostAllocator_.getChunkLength();
+  CudaHostAllocator& cudaHostAllocator = context_->getCudaHostAllocator();
+  const size_t chunkLength = cudaHostAllocator.getChunkLength();
   const size_t numChunks = ceilOfRatio(buffer.length, chunkLength);
   for (size_t offset = 0; offset < buffer.length; offset += chunkLength) {
     sendOperations_.emplace_back();
@@ -96,8 +95,7 @@ void ChannelImpl::sendImplFromLoop(
                << " is allocating temporary memory for chunk #" << op.chunkId
                << " of " << op.numChunks << " for buffer #"
                << op.sequenceNumber;
-    CudaDeviceGuard guard(op.deviceIdx);
-    cudaHostAllocator_.alloc(
+    cudaHostAllocator.alloc(
         op.length,
         callbackWrapper_(
             [&op](ChannelImpl& impl, std::shared_ptr<uint8_t[]> tmpBuffer) {
@@ -198,7 +196,8 @@ void ChannelImpl::recvImplFromLoop(
     TDescriptor descriptor,
     CudaBuffer buffer,
     TRecvCallback callback) {
-  const size_t chunkLength = cudaHostAllocator_.getChunkLength();
+  CudaHostAllocator& cudaHostAllocator = context_->getCudaHostAllocator();
+  const size_t chunkLength = cudaHostAllocator.getChunkLength();
   const size_t numChunks = ceilOfRatio(buffer.length, chunkLength);
   for (size_t offset = 0; offset < buffer.length; offset += chunkLength) {
     recvOperations_.emplace_back();
@@ -243,8 +242,8 @@ void ChannelImpl::onRecvOpReadDescriptor(
   TP_VLOG(5) << "Channel " << id_
              << " is allocating temporary memory for chunk #" << op.chunkId
              << " of " << op.numChunks << " for buffer #" << op.sequenceNumber;
-  CudaDeviceGuard guard(op.deviceIdx);
-  cudaHostAllocator_.alloc(
+  CudaHostAllocator& cudaHostAllocator = context_->getCudaHostAllocator();
+  cudaHostAllocator.alloc(
       op.length,
       callbackWrapper_(
           [&op, descriptor{std::move(descriptor)}](

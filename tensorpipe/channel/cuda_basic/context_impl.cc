@@ -50,8 +50,7 @@ ContextImpl::ContextImpl(
           /*isViable=*/true,
           cpuContext->domainDescriptor()),
       cudaLib_(std::move(cudaLib)),
-      cpuContext_(std::move(cpuContext)),
-      cudaHostAllocator_(in_place) {}
+      cpuContext_(std::move(cpuContext)) {}
 
 std::shared_ptr<CudaChannel> ContextImpl::createChannel(
     std::vector<std::shared_ptr<transport::Connection>> connections,
@@ -61,12 +60,10 @@ std::shared_ptr<CudaChannel> ContextImpl::createChannel(
   connections.pop_back();
   auto cpuChannel =
       cpuContext_->createChannel(std::move(connections), endpoint);
-  TP_DCHECK(cudaHostAllocator_.has_value());
   return createChannelInternal(
       std::move(conn),
       std::move(cpuChannel),
-      cudaLoop_,
-      cudaHostAllocator_.value());
+      cudaLoop_);
 }
 
 size_t ContextImpl::numConnectionsNeeded() const {
@@ -75,6 +72,14 @@ size_t ContextImpl::numConnectionsNeeded() const {
 
 const CudaLib& ContextImpl::getCudaLib() {
   return cudaLib_;
+}
+
+CudaHostAllocator& ContextImpl::getCudaHostAllocator() {
+  if (!cudaHostAllocator_.has_value()) {
+    cudaHostAllocator_.emplace();
+  }
+
+  return cudaHostAllocator_.value();
 }
 
 void ContextImpl::handleErrorImpl() {
