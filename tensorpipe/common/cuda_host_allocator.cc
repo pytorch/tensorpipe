@@ -14,32 +14,26 @@
 
 namespace tensorpipe {
 
-namespace {
-
-uint8_t* allocPinnedBuffer(size_t size) {
-  uint8_t* ptr;
-  TP_CUDA_CHECK(cudaMallocHost(&ptr, size));
-  return ptr;
-}
-
-void freePinnedBuffer(uint8_t* ptr) {
-  TP_CUDA_CHECK(cudaFreeHost(ptr));
-}
-
-} // namespace
-
 CudaHostAllocator::CudaHostAllocator(size_t numChunks, size_t chunkSize)
     : numChunks_(numChunks),
       chunkSize_(chunkSize),
-      data_(allocPinnedBuffer(numChunks * chunkSize), freePinnedBuffer),
+      data_(numChunks * chunkSize),
       chunkAvailable_(numChunks, true) {}
 
 CudaHostAllocator::~CudaHostAllocator() {
   close();
+  if (dataIsRegistered_) {
+    TP_CUDA_CHECK(cudaHostUnregister(data_.data()));
+  }
 }
 
 void CudaHostAllocator::alloc(size_t size, TAllocCallback callback) {
   TP_DCHECK(size <= chunkSize_);
+  if (!dataIsRegistered_) {
+    TP_CUDA_CHECK(
+        cudaHostRegister(data_.data(), data_.size(), cudaHostRegisterDefault));
+    dataIsRegistered_ = true;
+  }
   pendingAllocations_.push_back(std::move(callback));
   processAllocations();
 }
@@ -78,7 +72,7 @@ CudaHostAllocator::THostPtr CudaHostAllocator::getAvailableChunk() {
       chunkAvailable_[curChunk] = false;
       ++allocatedChunks_;
       return THostPtr(
-          data_.get() + curChunk * chunkSize_,
+          data_.data() + curChunk * chunkSize_,
           [this](uint8_t* ptr) { releaseChunk(ptr); });
     }
   }
@@ -87,7 +81,7 @@ CudaHostAllocator::THostPtr CudaHostAllocator::getAvailableChunk() {
 }
 
 void CudaHostAllocator::releaseChunk(uint8_t* ptr) {
-  size_t chunkId = (ptr - data_.get()) / chunkSize_;
+  size_t chunkId = (ptr - data_.data()) / chunkSize_;
   chunkAvailable_[chunkId] = true;
   --allocatedChunks_;
   processAllocations();

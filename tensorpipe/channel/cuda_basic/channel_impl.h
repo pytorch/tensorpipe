@@ -30,6 +30,7 @@ struct Operation {
   size_t chunkId{0};
   size_t numChunks{0};
   cudaStream_t stream{cudaStreamDefault};
+  int deviceIdx{0};
   void* cudaPtr{nullptr};
   size_t length{0};
   std::shared_ptr<uint8_t[]> tmpBuffer;

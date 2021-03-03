@@ -83,6 +83,7 @@ void ChannelImpl::sendImplFromLoop(
     op.chunkId = offset / chunkLength;
     op.numChunks = numChunks;
     op.stream = buffer.stream;
+    op.deviceIdx = cudaDeviceForPointer(context_->getCudaLib(), buffer.ptr);
     op.cudaPtr = static_cast<uint8_t*>(buffer.ptr) + offset;
     op.length = std::min(buffer.length - offset, chunkLength);
     // Operations are processed in order, so we can afford to trigger the
@@ -95,6 +96,7 @@ void ChannelImpl::sendImplFromLoop(
                << " is allocating temporary memory for chunk #" << op.chunkId
                << " of " << op.numChunks << " for buffer #"
                << op.sequenceNumber;
+    CudaDeviceGuard guard(op.deviceIdx);
     cudaHostAllocator_.alloc(
         op.length,
         callbackWrapper_(
@@ -121,12 +123,11 @@ void ChannelImpl::onSendOpReadyForCopy(Operation& op) {
   TP_VLOG(5) << "Channel " << id_ << " is copying chunk #" << op.chunkId
              << " of " << op.numChunks << " for buffer #" << op.sequenceNumber
              << " from CUDA device to CPU";
-  int deviceIdx = cudaDeviceForPointer(context_->getCudaLib(), op.cudaPtr);
   cudaCopy(
       op.tmpBuffer.get(),
       op.cudaPtr,
       op.length,
-      deviceIdx,
+      op.deviceIdx,
       op.stream,
       callbackWrapper_([&op](ChannelImpl& impl) {
         TP_VLOG(5) << "Channel " << impl.id_ << " is done copying chunk #"
@@ -206,6 +207,7 @@ void ChannelImpl::recvImplFromLoop(
     op.chunkId = offset / chunkLength;
     op.numChunks = numChunks;
     op.stream = buffer.stream;
+    op.deviceIdx = cudaDeviceForPointer(context_->getCudaLib(), buffer.ptr);
     op.cudaPtr = static_cast<uint8_t*>(buffer.ptr) + offset;
     op.length = std::min(buffer.length - offset, chunkLength);
     // Operations are processed in order, so we can afford to trigger the
@@ -241,6 +243,7 @@ void ChannelImpl::onRecvOpReadDescriptor(
   TP_VLOG(5) << "Channel " << id_
              << " is allocating temporary memory for chunk #" << op.chunkId
              << " of " << op.numChunks << " for buffer #" << op.sequenceNumber;
+  CudaDeviceGuard guard(op.deviceIdx);
   cudaHostAllocator_.alloc(
       op.length,
       callbackWrapper_(
@@ -286,12 +289,11 @@ void ChannelImpl::onRecvOpReadyForCopy(Operation& op) {
   TP_VLOG(5) << "Channel " << id_ << " is copying chunk #" << op.chunkId
              << " of " << op.numChunks << " for buffer #" << op.sequenceNumber
              << " from CPU to CUDA device";
-  int deviceIdx = cudaDeviceForPointer(context_->getCudaLib(), op.cudaPtr);
   cudaCopy(
       op.cudaPtr,
       op.tmpBuffer.get(),
       op.length,
-      deviceIdx,
+      op.deviceIdx,
       op.stream,
       // TODO: Avoid copying op.
       // NOTE: This callback keeps the temporary CPU buffer alive until its

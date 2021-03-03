@@ -43,7 +43,8 @@ class CudaHostAllocator {
  private:
   const size_t numChunks_;
   const size_t chunkSize_;
-  const std::unique_ptr<uint8_t[], void (*)(uint8_t*)> data_;
+  std::vector<uint8_t> data_;
+  bool dataIsRegistered_{false};
   std::vector<bool> chunkAvailable_;
   size_t allocatedChunks_{0};
   std::deque<TAllocCallback> pendingAllocations_;
@@ -52,8 +53,6 @@ class CudaHostAllocator {
   void processAllocations();
   THostPtr getAvailableChunk();
   void releaseChunk(uint8_t* ptr);
-
-  void hostPtrDeleter(uint8_t* ptr);
 };
 
 } // namespace tensorpipe
