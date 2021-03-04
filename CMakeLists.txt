@@ -18,13 +18,8 @@ include(Options)
 # Define sanitizer option, if specified.
 include(Sanitize)
 
-# We use the [[nodiscard]] attribute, which GCC 5 complains about.
-# Silence this warning if GCC 5 is used.
-if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-  if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS 6)
-    add_definitions("-Wno-attributes")
-  endif()
-endif()
+# ---[ Misc checks to cope with various compiler modes
+include(cmake/MiscCheck.cmake)
 
 add_subdirectory(tensorpipe)
 
