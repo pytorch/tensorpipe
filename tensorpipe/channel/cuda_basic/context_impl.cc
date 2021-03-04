@@ -61,9 +61,7 @@ std::shared_ptr<CudaChannel> ContextImpl::createChannel(
   auto cpuChannel =
       cpuContext_->createChannel(std::move(connections), endpoint);
   return createChannelInternal(
-      std::move(conn),
-      std::move(cpuChannel),
-      cudaLoop_);
+      std::move(conn), std::move(cpuChannel), cudaLoop_);
 }
 
 size_t ContextImpl::numConnectionsNeeded() const {
