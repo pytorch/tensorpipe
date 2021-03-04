@@ -24,12 +24,22 @@ class CudaHostAllocatorClosedError final : public BaseError {
   }
 };
 
+class CudaPinnedMemoryDeleter {
+ public:
+  explicit CudaPinnedMemoryDeleter(int deviceIdx);
+  void operator()(uint8_t* ptr);
+
+ private:
+  const int deviceIdx_;
+};
+
 class CudaHostAllocator {
  public:
   using THostPtr = std::shared_ptr<uint8_t[]>;
   using TAllocCallback = std::function<void(const Error&, THostPtr)>;
 
   explicit CudaHostAllocator(
+      int deviceIdx,
       size_t numChunks = 16,
       size_t chunkSize = 1024 * 1024);
 
@@ -43,7 +53,7 @@ class CudaHostAllocator {
  private:
   const size_t numChunks_;
   const size_t chunkSize_;
-  const std::unique_ptr<uint8_t[], void (*)(uint8_t*)> data_;
+  const std::unique_ptr<uint8_t[], CudaPinnedMemoryDeleter> data_;
   std::vector<bool> chunkAvailable_;
   size_t allocatedChunks_{0};
   std::deque<TAllocCallback> pendingAllocations_;
@@ -52,8 +62,6 @@ class CudaHostAllocator {
   void processAllocations();
   THostPtr getAvailableChunk();
   void releaseChunk(uint8_t* ptr);
-
-  void hostPtrDeleter(uint8_t* ptr);
 };
 
 } // namespace tensorpipe

@@ -16,22 +16,32 @@ namespace tensorpipe {
 
 namespace {
 
-uint8_t* allocPinnedBuffer(size_t size) {
+uint8_t* allocPinnedBuffer(int deviceIdx, size_t size) {
+  CudaDeviceGuard guard(deviceIdx);
   uint8_t* ptr;
   TP_CUDA_CHECK(cudaMallocHost(&ptr, size));
   return ptr;
 }
 
-void freePinnedBuffer(uint8_t* ptr) {
+} // namespace
+
+CudaPinnedMemoryDeleter::CudaPinnedMemoryDeleter(int deviceIdx)
+    : deviceIdx_(deviceIdx) {}
+
+void CudaPinnedMemoryDeleter::operator()(uint8_t* ptr) {
+  CudaDeviceGuard guard(deviceIdx_);
   TP_CUDA_CHECK(cudaFreeHost(ptr));
 }
 
-} // namespace
-
-CudaHostAllocator::CudaHostAllocator(size_t numChunks, size_t chunkSize)
+CudaHostAllocator::CudaHostAllocator(
+    int deviceIdx,
+    size_t numChunks,
+    size_t chunkSize)
     : numChunks_(numChunks),
       chunkSize_(chunkSize),
-      data_(allocPinnedBuffer(numChunks * chunkSize), freePinnedBuffer),
+      data_(
+          allocPinnedBuffer(deviceIdx, numChunks * chunkSize),
+          CudaPinnedMemoryDeleter(deviceIdx)),
       chunkAvailable_(numChunks, true) {}
 
 CudaHostAllocator::~CudaHostAllocator() {

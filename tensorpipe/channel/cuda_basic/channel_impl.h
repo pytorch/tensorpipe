@@ -30,6 +30,7 @@ struct Operation {
   size_t chunkId{0};
   size_t numChunks{0};
   cudaStream_t stream{cudaStreamDefault};
+  int deviceIdx{0};
   void* cudaPtr{nullptr};
   size_t length{0};
   std::shared_ptr<uint8_t[]> tmpBuffer;
@@ -46,8 +47,7 @@ class ChannelImpl final
       std::string id,
       std::shared_ptr<transport::Connection> connection,
       std::shared_ptr<CpuChannel> cpuChannel,
-      CudaLoop& cudaLoop,
-      CudaHostAllocator& cudaHostAllocator);
+      CudaLoop& cudaLoop);
 
  protected:
   // Implement the entry points called by ChannelImplBoilerplate.
@@ -69,7 +69,6 @@ class ChannelImpl final
   const std::shared_ptr<transport::Connection> connection_;
   const std::shared_ptr<CpuChannel> cpuChannel_;
   CudaLoop& cudaLoop_;
-  CudaHostAllocator& cudaHostAllocator_;
   std::deque<Operation> sendOperations_;
   std::deque<Operation> recvOperations_;
 

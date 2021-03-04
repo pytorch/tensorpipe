@@ -41,6 +41,7 @@ class ContextImpl final
   size_t numConnectionsNeeded() const override;
 
   const CudaLib& getCudaLib();
+  CudaHostAllocator& getCudaHostAllocator(int deviceIdx);
 
   // Implement the DeferredExecutor interface.
   bool inLoop() const override;
