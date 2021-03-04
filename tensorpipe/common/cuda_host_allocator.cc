@@ -23,12 +23,15 @@ uint8_t* allocPinnedBuffer(int deviceIdx, size_t size) {
   return ptr;
 }
 
-void freePinnedBuffer(int deviceIdx, uint8_t* ptr) {
-  CudaDeviceGuard guard(deviceIdx);
+} // namespace
+
+CudaPinnedMemoryDeleter::CudaPinnedMemoryDeleter(int deviceIdx)
+    : deviceIdx_(deviceIdx) {}
+
+void CudaPinnedMemoryDeleter::operator()(uint8_t* ptr) {
+  CudaDeviceGuard guard(deviceIdx_);
   TP_CUDA_CHECK(cudaFreeHost(ptr));
 }
-
-} // namespace
 
 CudaHostAllocator::CudaHostAllocator(
     int deviceIdx,
@@ -38,7 +41,7 @@ CudaHostAllocator::CudaHostAllocator(
       chunkSize_(chunkSize),
       data_(
           allocPinnedBuffer(deviceIdx, numChunks * chunkSize),
-          [deviceIdx](uint8_t* ptr) { freePinnedBuffer(deviceIdx, ptr); }),
+          CudaPinnedMemoryDeleter(deviceIdx)),
       chunkAvailable_(numChunks, true) {}
 
 CudaHostAllocator::~CudaHostAllocator() {

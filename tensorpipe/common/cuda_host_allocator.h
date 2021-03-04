@@ -24,6 +24,15 @@ class CudaHostAllocatorClosedError final : public BaseError {
   }
 };
 
+class CudaPinnedMemoryDeleter {
+ public:
+  CudaPinnedMemoryDeleter(int deviceIdx);
+  void operator()(uint8_t* ptr);
+
+ private:
+  const int deviceIdx_;
+};
+
 class CudaHostAllocator {
  public:
   using THostPtr = std::shared_ptr<uint8_t[]>;
@@ -44,7 +53,7 @@ class CudaHostAllocator {
  private:
   const size_t numChunks_;
   const size_t chunkSize_;
-  const std::unique_ptr<uint8_t[], std::function<void(uint8_t*)>> data_;
+  const std::unique_ptr<uint8_t[], CudaPinnedMemoryDeleter> data_;
   std::vector<bool> chunkAvailable_;
   size_t allocatedChunks_{0};
   std::deque<TAllocCallback> pendingAllocations_;
