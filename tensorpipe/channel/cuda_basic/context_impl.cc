@@ -74,9 +74,9 @@ const CudaLib& ContextImpl::getCudaLib() {
   return cudaLib_;
 }
 
-CudaHostAllocator& ContextImpl::getCudaHostAllocator() {
+CudaHostAllocator& ContextImpl::getCudaHostAllocator(int deviceIdx) {
   if (!cudaHostAllocator_.has_value()) {
-    cudaHostAllocator_.emplace();
+    cudaHostAllocator_.emplace(deviceIdx);
   }
 
   return cudaHostAllocator_.value();
