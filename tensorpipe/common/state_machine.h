@@ -66,7 +66,11 @@ class OpsStateMachine {
     // We cannot just iterate over the operations here as advanceOneOperation
     // could potentially erase some of them, thus invalidating references and/or
     // iterators.
-    for (int64_t sequenceNumber = 0;; ++sequenceNumber) {
+    if (ops_.empty()) {
+      return;
+    }
+    for (int64_t sequenceNumber = ops_.front().sequenceNumber;;
+         ++sequenceNumber) {
       TOp* opPtr = findOperation(sequenceNumber);
       if (opPtr == nullptr) {
         break;
