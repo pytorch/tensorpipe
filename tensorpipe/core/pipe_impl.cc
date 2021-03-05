@@ -755,7 +755,7 @@ void PipeImpl::advanceReadOperation(
       opIter,
       /*from=*/ReadOperation::READING_DESCRIPTOR,
       /*to=*/ReadOperation::ASKING_FOR_ALLOCATION,
-      /*cond=*/(error_ || opIter->doneReadingDescriptor) &&
+      /*cond=*/opIter->doneReadingDescriptor &&
           prevOpState >= ReadOperation::ASKING_FOR_ALLOCATION,
       /*action=*/&PipeImpl::callReadDescriptorCallback);
 
@@ -765,7 +765,7 @@ void PipeImpl::advanceReadOperation(
       opIter,
       /*from=*/ReadOperation::ASKING_FOR_ALLOCATION,
       /*to=*/ReadOperation::ASKING_FOR_ALLOCATION_FIRST_IN_LINE,
-      /*cond=*/(error_ || opIter->doneReadingDescriptor) &&
+      /*cond=*/opIter->doneReadingDescriptor &&
           prevOpState >= ReadOperation::READING_PAYLOADS_AND_RECEIVING_TENSORS,
       /*action=*/&PipeImpl::expectReadCall);
 
@@ -876,9 +876,7 @@ void PipeImpl::readDescriptorOfMessage(ReadOpIter opIter) {
         TP_VLOG(3) << "Pipe " << impl.id_
                    << " done reading nop object (message descriptor #"
                    << opIter->sequenceNumber << ")";
-        if (!impl.error_) {
-          impl.onReadOfMessageDescriptor(opIter, nopHolderIn->getObject());
-        }
+        impl.onReadOfMessageDescriptor(opIter, nopHolderIn->getObject());
       }));
   connectionState_ = AWAITING_PAYLOADS;
 }
@@ -1343,8 +1341,10 @@ void PipeImpl::onReadOfMessageDescriptor(
   ReadOperation& op = *opIter;
 
   TP_DCHECK_EQ(op.state, ReadOperation::READING_DESCRIPTOR);
-  parseDescriptorOfMessage(op, nopPacketIn);
   op.doneReadingDescriptor = true;
+  if (!error_) {
+    parseDescriptorOfMessage(op, nopPacketIn);
+  }
 
   readOps_.advanceOperation(opIter);
 }
