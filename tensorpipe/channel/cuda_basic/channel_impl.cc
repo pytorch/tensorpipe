@@ -100,7 +100,7 @@ void ChannelImpl::sendImplFromLoop(
     cudaHostAllocator.alloc(
         op.length,
         callbackWrapper_(
-            [&op](ChannelImpl& impl, std::shared_ptr<uint8_t[]> tmpBuffer) {
+            [&op](ChannelImpl& impl, std::shared_ptr<uint8_t> tmpBuffer) {
               TP_VLOG(5) << "Channel " << impl.id_
                          << " is done allocating temporary memory for chunk #"
                          << op.chunkId << " of " << op.numChunks
@@ -252,7 +252,7 @@ void ChannelImpl::onRecvOpReadDescriptor(
       op.length,
       callbackWrapper_(
           [&op, descriptor{std::move(descriptor)}](
-              ChannelImpl& impl, std::shared_ptr<uint8_t[]> tmpBuffer) mutable {
+              ChannelImpl& impl, std::shared_ptr<uint8_t> tmpBuffer) mutable {
             TP_VLOG(5) << "Channel " << impl.id_
                        << " is done allocating temporary memory for chunk #"
                        << op.chunkId << " of " << op.numChunks

@@ -33,7 +33,7 @@ struct Operation {
   int deviceIdx{0};
   void* cudaPtr{nullptr};
   size_t length{0};
-  std::shared_ptr<uint8_t[]> tmpBuffer;
+  std::shared_ptr<uint8_t> tmpBuffer;
   std::function<void(const Error&)> callback;
   bool done{false};
 };

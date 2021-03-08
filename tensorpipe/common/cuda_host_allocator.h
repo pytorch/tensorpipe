@@ -35,7 +35,9 @@ class CudaPinnedMemoryDeleter {
 
 class CudaHostAllocator {
  public:
-  using THostPtr = std::shared_ptr<uint8_t[]>;
+  // Note: this is a std::shared_ptr<uint8_t[]> semantically. A shared_ptr with
+  // array type is supported in C++17 and higher.
+  using THostPtr = std::shared_ptr<uint8_t>;
   using TAllocCallback = std::function<void(const Error&, THostPtr)>;
 
   explicit CudaHostAllocator(
