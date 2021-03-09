@@ -196,7 +196,6 @@ void ChannelImpl::advanceSendOperation(
     SendOpIter opIter,
     SendOperation::State prevOpState) {
   TP_DCHECK(context_->inLoop());
-  // Don't check state_ == ESTABLISHED: it can be called after failed handshake.
 
   sendOps_.attemptTransition(
       opIter,
@@ -260,12 +259,7 @@ void ChannelImpl::advanceSendOperation(
 
 void ChannelImpl::writeReadyToSendAndReadReadyToReceive(SendOpIter opIter) {
   TP_DCHECK(context_->inLoop());
-  TP_DCHECK_EQ(state_, ESTABLISHED);
-  TP_DCHECK(!error_);
-
   SendOperation& op = *opIter;
-  TP_DCHECK_EQ(op.state, SendOperation::UNINITIALIZED);
-  op.state = SendOperation::READING_READY_TO_RECEIVE;
 
   auto nopHolderIn = std::make_shared<NopHolder<ReadyToReceive>>();
   TP_VLOG(6) << "Channel " << id_ << " is reading ready-to-receive (#"
@@ -283,10 +277,8 @@ void ChannelImpl::onReadReadyToReceive(
     SendOpIter opIter,
     const ReadyToReceive& readyToReceive) {
   TP_DCHECK(context_->inLoop());
-  TP_DCHECK_EQ(state_, ESTABLISHED);
 
   SendOperation& op = *opIter;
-  TP_DCHECK_EQ(op.state, SendOperation::READING_READY_TO_RECEIVE);
 
   op.readReadyToReceive = true;
   op.remoteNicIdx = readyToReceive.destinationNicIdx;
@@ -296,12 +288,8 @@ void ChannelImpl::onReadReadyToReceive(
 
 void ChannelImpl::waitForSendCudaEvent(SendOpIter opIter) {
   TP_DCHECK(context_->inLoop());
-  TP_DCHECK_EQ(state_, ESTABLISHED);
-  TP_DCHECK(!error_);
 
   SendOperation& op = *opIter;
-  TP_DCHECK_EQ(op.state, SendOperation::READING_READY_TO_RECEIVE);
-  op.state = SendOperation::WAITING_FOR_CUDA_EVENT;
 
   TP_VLOG(6) << "Channel " << id_ << " is waiting for CUDA event to send (#"
              << op.sequenceNumber << ")";
@@ -316,10 +304,8 @@ void ChannelImpl::waitForSendCudaEvent(SendOpIter opIter) {
 
 void ChannelImpl::onSendEventReady(SendOpIter opIter) {
   TP_DCHECK(context_->inLoop());
-  TP_DCHECK_EQ(state_, ESTABLISHED);
 
   SendOperation& op = *opIter;
-  TP_DCHECK_EQ(op.state, SendOperation::WAITING_FOR_CUDA_EVENT);
 
   op.sendEventReady = true;
 
@@ -328,12 +314,8 @@ void ChannelImpl::onSendEventReady(SendOpIter opIter) {
 
 void ChannelImpl::sendOverIb(SendOpIter opIter) {
   TP_DCHECK(context_->inLoop());
-  TP_DCHECK_EQ(state_, ESTABLISHED);
-  TP_DCHECK(!error_);
 
   SendOperation& op = *opIter;
-  TP_DCHECK_EQ(op.state, SendOperation::WAITING_FOR_CUDA_EVENT);
-  op.state = SendOperation::SENDING_OVER_IB;
 
   IbvNic& localNic = context_->getIbvNic(op.localNicIdx);
   IbvQueuePair& qp = queuePairs_[op.localNicIdx][op.remoteNicIdx];
@@ -366,10 +348,8 @@ void ChannelImpl::sendOverIb(SendOpIter opIter) {
 
 void ChannelImpl::onIbvSendDone(SendOpIter opIter) {
   TP_DCHECK(context_->inLoop());
-  TP_DCHECK_EQ(state_, ESTABLISHED);
 
   SendOperation& op = *opIter;
-  TP_DCHECK_EQ(op.state, SendOperation::SENDING_OVER_IB);
 
   op.sentOverIb = true;
 
@@ -381,12 +361,8 @@ void ChannelImpl::onIbvSendDone(SendOpIter opIter) {
 
 void ChannelImpl::callSendCallback(SendOpIter opIter) {
   TP_DCHECK(context_->inLoop());
-  // Don't check state_ == ESTABLISHED: it can be called after failed handshake.
-  // Similarly, don't check for !error_.
 
   SendOperation& op = *opIter;
-  // Don't check op.state: it can be called for many previous states.
-  op.state = SendOperation::FINISHED;
 
   op.callback(error_);
   // Reset callback to release the resources it was holding.
@@ -422,7 +398,6 @@ void ChannelImpl::advanceRecvOperation(
     RecvOpIter opIter,
     RecvOperation::State prevOpState) {
   TP_DCHECK(context_->inLoop());
-  // Don't check state_ == ESTABLISHED: it can be called after failed handshake.
 
   recvOps_.attemptTransition(
       opIter,
@@ -472,12 +447,8 @@ void ChannelImpl::advanceRecvOperation(
 
 void ChannelImpl::waitForRecvCudaEvent(RecvOpIter opIter) {
   TP_DCHECK(context_->inLoop());
-  TP_DCHECK_EQ(state_, ESTABLISHED);
-  TP_DCHECK(!error_);
 
   RecvOperation& op = *opIter;
-  TP_DCHECK_EQ(op.state, RecvOperation::UNINITIALIZED);
-  op.state = RecvOperation::WAITING_FOR_CUDA_EVENT;
 
   TP_VLOG(6) << "Channel " << id_ << " is waiting for CUDA event to recv (#"
              << op.sequenceNumber << ")";
@@ -492,10 +463,8 @@ void ChannelImpl::waitForRecvCudaEvent(RecvOpIter opIter) {
 
 void ChannelImpl::onRecvEventReady(RecvOpIter opIter) {
   TP_DCHECK(context_->inLoop());
-  TP_DCHECK_EQ(state_, ESTABLISHED);
 
   RecvOperation& op = *opIter;
-  TP_DCHECK_EQ(op.state, RecvOperation::WAITING_FOR_CUDA_EVENT);
 
   op.recvEventReady = true;
 
@@ -504,12 +473,8 @@ void ChannelImpl::onRecvEventReady(RecvOpIter opIter) {
 
 void ChannelImpl::recvOverIbAndWriteReadyToRecive(RecvOpIter opIter) {
   TP_DCHECK(context_->inLoop());
-  TP_DCHECK_EQ(state_, ESTABLISHED);
-  TP_DCHECK(!error_);
 
   RecvOperation& op = *opIter;
-  TP_DCHECK_EQ(op.state, RecvOperation::WAITING_FOR_CUDA_EVENT);
-  op.state = RecvOperation::RECEIVING_OVER_IB_AND_WRITING_READY_TO_RECEIVE;
 
   IbvNic& localNic = context_->getIbvNic(op.localNicIdx);
   IbvQueuePair& qp = queuePairs_[op.localNicIdx][op.remoteNicIdx];
@@ -555,11 +520,8 @@ void ChannelImpl::recvOverIbAndWriteReadyToRecive(RecvOpIter opIter) {
 
 void ChannelImpl::onReceivedOverIb(RecvOpIter opIter) {
   TP_DCHECK(context_->inLoop());
-  TP_DCHECK_EQ(state_, ESTABLISHED);
 
   RecvOperation& op = *opIter;
-  TP_DCHECK_EQ(
-      op.state, RecvOperation::RECEIVING_OVER_IB_AND_WRITING_READY_TO_RECEIVE);
 
   op.receivedOverIb = true;
 
@@ -571,12 +533,8 @@ void ChannelImpl::onReceivedOverIb(RecvOpIter opIter) {
 
 void ChannelImpl::callRecvCallback(RecvOpIter opIter) {
   TP_DCHECK(context_->inLoop());
-  // Don't check state_ == ESTABLISHED: it can be called after failed handshake.
-  // Similarly, don't check for !error_.
 
   RecvOperation& op = *opIter;
-  // Don't check op.state: it can be called for many previous states.
-  op.state = RecvOperation::FINISHED;
 
   op.callback(error_);
   // Reset callback to release the resources it was holding.

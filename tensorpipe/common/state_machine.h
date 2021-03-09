@@ -89,7 +89,7 @@ class OpsStateMachine {
       for (const auto& action : actions) {
         (subject_.*action)(opIter);
       }
-      TP_DCHECK_EQ(opIter->state, to);
+      opIter->state = to;
     }
   }
 
