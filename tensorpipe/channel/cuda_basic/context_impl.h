@@ -41,7 +41,8 @@ class ContextImpl final
   size_t numConnectionsNeeded() const override;
 
   const CudaLib& getCudaLib();
-  CudaHostAllocator& getCudaHostAllocator(int deviceIdx);
+  CudaHostAllocator& getCudaHostSendAllocator(int deviceIdx);
+  CudaHostAllocator& getCudaHostRecvAllocator(int deviceIdx);
 
   // Implement the DeferredExecutor interface.
   bool inLoop() const override;
@@ -61,7 +62,8 @@ class ContextImpl final
   const std::shared_ptr<CpuContext> cpuContext_;
   // TODO: Lazy initialization of cuda loop.
   CudaLoop cudaLoop_;
-  optional<CudaHostAllocator> cudaHostAllocator_;
+  optional<CudaHostAllocator> cudaHostSendAllocator_;
+  optional<CudaHostAllocator> cudaHostRecvAllocator_;
 };
 
 } // namespace cuda_basic

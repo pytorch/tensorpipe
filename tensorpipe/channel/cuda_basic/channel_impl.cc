@@ -74,7 +74,7 @@ void ChannelImpl::sendImplFromLoop(
     TSendCallback callback) {
   int deviceIdx = cudaDeviceForPointer(context_->getCudaLib(), buffer.ptr);
   CudaHostAllocator& cudaHostAllocator =
-      context_->getCudaHostAllocator(deviceIdx);
+      context_->getCudaHostSendAllocator(deviceIdx);
   const size_t chunkLength = cudaHostAllocator.getChunkLength();
   const size_t numChunks = ceilOfRatio(buffer.length, chunkLength);
 
@@ -139,6 +139,9 @@ void ChannelImpl::advanceChunkSendOperation(
           prevOpState >= ChunkSendOperation::INVOKED_CALLBACK,
       /*actions=*/{&ChannelImpl::callSendCallback});
 
+  // FIXME In principle we could write the ready-to-send as soon as we received
+  // the allocation, if we didn't have to collect the descriptor.
+
   chunkSendOps_.attemptTransition(
       opIter,
       /*from=*/ChunkSendOperation::ALLOCATING_CPU_BUFFER,
@@ -194,15 +197,15 @@ void ChannelImpl::advanceChunkSendOperation(
   chunkSendOps_.attemptTransition(
       opIter,
       /*from=*/ChunkSendOperation::SENDING_CPU_BUFFER_AND_COLLECTING_DESCRIPTOR,
-      /*to=*/ChunkSendOperation::SENDING_CPU_BUFFER_AND_WRITING_DESCRIPTOR,
+      /*to=*/ChunkSendOperation::SENDING_CPU_BUFFER_AND_WRITING_READY_TO_SEND,
       /*cond=*/!error_ && op.doneCollectingDescriptor &&
           prevOpState >=
-              ChunkSendOperation::SENDING_CPU_BUFFER_AND_WRITING_DESCRIPTOR,
-      /*actions=*/{&ChannelImpl::writeDescriptor});
+              ChunkSendOperation::SENDING_CPU_BUFFER_AND_WRITING_READY_TO_SEND,
+      /*actions=*/{&ChannelImpl::writeReadyToSend});
 
   chunkSendOps_.attemptTransition(
       opIter,
-      /*from=*/ChunkSendOperation::SENDING_CPU_BUFFER_AND_WRITING_DESCRIPTOR,
+      /*from=*/ChunkSendOperation::SENDING_CPU_BUFFER_AND_WRITING_READY_TO_SEND,
       /*to=*/ChunkSendOperation::FINISHED,
       /*cond=*/op.doneSendingCpuBuffer && op.doneWritingDescriptor,
       /*actions=*/{});
@@ -218,7 +221,7 @@ void ChannelImpl::allocateSendCpuBuffer(ChunkSendOpIter opIter) {
              << " of " << op.numChunks << " for buffer #"
              << op.bufferSequenceNumber;
   CudaHostAllocator& cudaHostAllocator =
-      context_->getCudaHostAllocator(op.deviceIdx);
+      context_->getCudaHostSendAllocator(op.deviceIdx);
   cudaHostAllocator.alloc(
       op.length,
       callbackWrapper_(
@@ -285,7 +288,7 @@ void ChannelImpl::sendCpuBuffer(ChunkSendOpIter opIter) {
       }));
 }
 
-void ChannelImpl::writeDescriptor(ChunkSendOpIter opIter) {
+void ChannelImpl::writeReadyToSend(ChunkSendOpIter opIter) {
   ChunkSendOperation& op = *opIter;
 
   TP_VLOG(6) << "Channel " << id_ << " is sending descriptor for chunk #"
@@ -323,7 +326,7 @@ void ChannelImpl::recvImplFromLoop(
     TRecvCallback callback) {
   int deviceIdx = cudaDeviceForPointer(context_->getCudaLib(), buffer.ptr);
   CudaHostAllocator& cudaHostAllocator =
-      context_->getCudaHostAllocator(deviceIdx);
+      context_->getCudaHostRecvAllocator(deviceIdx);
   const size_t chunkLength = cudaHostAllocator.getChunkLength();
   const size_t numChunks = ceilOfRatio(buffer.length, chunkLength);
 
@@ -372,14 +375,15 @@ void ChannelImpl::advanceChunkRecvOperation(
   chunkRecvOps_.attemptTransition(
       opIter,
       /*from=*/ChunkRecvOperation::UNINITIALIZED,
-      /*to=*/ChunkRecvOperation::READING_DESCRIPTOR,
-      /*cond=*/!error_ && prevOpState >= ChunkRecvOperation::READING_DESCRIPTOR,
-      /*actions=*/{&ChannelImpl::readDescriptor});
+      /*to=*/ChunkRecvOperation::READING_READY_TO_SEND,
+      /*cond=*/!error_ &&
+          prevOpState >= ChunkRecvOperation::READING_READY_TO_SEND,
+      /*actions=*/{&ChannelImpl::readReadyToSend});
 
   // See above for why this needs to go after previous op.
   chunkRecvOps_.attemptTransition(
       opIter,
-      /*from=*/ChunkRecvOperation::READING_DESCRIPTOR,
+      /*from=*/ChunkRecvOperation::READING_READY_TO_SEND,
       /*to=*/ChunkRecvOperation::FINISHED,
       /*cond=*/error_ && op.doneReadingDescriptor &&
           prevOpState >=
@@ -393,7 +397,7 @@ void ChannelImpl::advanceChunkRecvOperation(
   // completed, and if they are blocked waiting for buffers we may deadlock.
   chunkRecvOps_.attemptTransition(
       opIter,
-      /*from=*/ChunkRecvOperation::READING_DESCRIPTOR,
+      /*from=*/ChunkRecvOperation::READING_READY_TO_SEND,
       /*to=*/ChunkRecvOperation::ALLOCATING_CPU_BUFFER,
       /*cond=*/!error_ && op.doneReadingDescriptor &&
           prevOpState >= ChunkRecvOperation::ALLOCATING_CPU_BUFFER,
@@ -455,7 +459,7 @@ void ChannelImpl::advanceChunkRecvOperation(
   // FIXME Should we add an explicit transition to release the staging buffer?
 }
 
-void ChannelImpl::readDescriptor(ChunkRecvOpIter opIter) {
+void ChannelImpl::readReadyToSend(ChunkRecvOpIter opIter) {
   ChunkRecvOperation& op = *opIter;
 
   TP_VLOG(6) << "Channel " << id_ << " is reading descriptor for chunk #"
@@ -481,7 +485,7 @@ void ChannelImpl::allocateRecvCpuBuffer(ChunkRecvOpIter opIter) {
              << " of " << op.numChunks << " for buffer #"
              << op.bufferSequenceNumber;
   CudaHostAllocator& cudaHostAllocator =
-      context_->getCudaHostAllocator(op.deviceIdx);
+      context_->getCudaHostRecvAllocator(op.deviceIdx);
   cudaHostAllocator.alloc(
       op.length,
       callbackWrapper_(

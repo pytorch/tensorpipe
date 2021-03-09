@@ -33,7 +33,7 @@ struct ChunkSendOperation {
     COPYING_FROM_GPU_TO_CPU,
     INVOKED_CALLBACK,
     SENDING_CPU_BUFFER_AND_COLLECTING_DESCRIPTOR,
-    SENDING_CPU_BUFFER_AND_WRITING_DESCRIPTOR,
+    SENDING_CPU_BUFFER_AND_WRITING_READY_TO_SEND,
     FINISHED
   };
 
@@ -66,7 +66,7 @@ struct ChunkSendOperation {
 struct ChunkRecvOperation {
   enum State {
     UNINITIALIZED,
-    READING_DESCRIPTOR,
+    READING_READY_TO_SEND,
     ALLOCATING_CPU_BUFFER,
     RECEIVING_CPU_BUFFER,
     COPYING_FROM_CPU_TO_GPU,
@@ -158,9 +158,9 @@ class ChannelImpl final
   void copyFromGpuToCpu(ChunkSendOpIter opIter);
   void callSendCallback(ChunkSendOpIter opIter);
   void sendCpuBuffer(ChunkSendOpIter opIter);
-  void writeDescriptor(ChunkSendOpIter opIter);
+  void writeReadyToSend(ChunkSendOpIter opIter);
   // For recv operations:
-  void readDescriptor(ChunkRecvOpIter opIter);
+  void readReadyToSend(ChunkRecvOpIter opIter);
   void allocateRecvCpuBuffer(ChunkRecvOpIter opIter);
   void receiveCpuBuffer(ChunkRecvOpIter opIter);
   void copyFromCpuToGpu(ChunkRecvOpIter opIter);

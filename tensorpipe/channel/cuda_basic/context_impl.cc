@@ -72,12 +72,20 @@ const CudaLib& ContextImpl::getCudaLib() {
   return cudaLib_;
 }
 
-CudaHostAllocator& ContextImpl::getCudaHostAllocator(int deviceIdx) {
-  if (!cudaHostAllocator_.has_value()) {
-    cudaHostAllocator_.emplace(deviceIdx);
+CudaHostAllocator& ContextImpl::getCudaHostSendAllocator(int deviceIdx) {
+  if (!cudaHostSendAllocator_.has_value()) {
+    cudaHostSendAllocator_.emplace(deviceIdx);
   }
 
-  return cudaHostAllocator_.value();
+  return cudaHostSendAllocator_.value();
+}
+
+CudaHostAllocator& ContextImpl::getCudaHostRecvAllocator(int deviceIdx) {
+  if (!cudaHostRecvAllocator_.has_value()) {
+    cudaHostRecvAllocator_.emplace(deviceIdx);
+  }
+
+  return cudaHostRecvAllocator_.value();
 }
 
 void ContextImpl::handleErrorImpl() {
@@ -86,8 +94,11 @@ void ContextImpl::handleErrorImpl() {
   }
   cudaLoop_.close();
 
-  if (cudaHostAllocator_.has_value()) {
-    cudaHostAllocator_->close();
+  if (cudaHostSendAllocator_.has_value()) {
+    cudaHostSendAllocator_->close();
+  }
+  if (cudaHostRecvAllocator_.has_value()) {
+    cudaHostRecvAllocator_->close();
   }
 }
 
