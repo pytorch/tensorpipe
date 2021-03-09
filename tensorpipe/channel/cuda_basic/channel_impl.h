@@ -18,6 +18,7 @@
 #include <tensorpipe/common/cuda_buffer.h>
 #include <tensorpipe/common/cuda_host_allocator.h>
 #include <tensorpipe/common/cuda_loop.h>
+#include <tensorpipe/common/state_machine.h>
 
 namespace tensorpipe {
 namespace channel {
@@ -25,17 +26,77 @@ namespace cuda_basic {
 
 class ContextImpl;
 
-struct Operation {
+struct ChunkSendOperation {
+  enum State {
+    UNINITIALIZED,
+    ALLOCATING_CPU_BUFFER,
+    COPYING_FROM_GPU_TO_CPU,
+    INVOKED_CALLBACK,
+    SENDING_CPU_BUFFER_AND_COLLECTING_DESCRIPTOR,
+    SENDING_CPU_BUFFER_AND_WRITING_DESCRIPTOR,
+    FINISHED
+  };
+
+  // Fields used by the state machine
   uint64_t sequenceNumber{0};
+  State state{UNINITIALIZED};
+
+  // Arguments at creation
+  uint64_t bufferSequenceNumber{0};
   size_t chunkId{0};
   size_t numChunks{0};
   cudaStream_t stream{cudaStreamDefault};
   int deviceIdx{0};
   void* cudaPtr{nullptr};
   size_t length{0};
-  std::shared_ptr<uint8_t> tmpBuffer;
   std::function<void(const Error&)> callback;
-  bool done{false};
+
+  // Data collected during processing
+  std::shared_ptr<uint8_t> tmpBuffer;
+  std::string descriptor;
+
+  // Progress flags
+  bool doneAllocatingCpuStagingBuffer{false};
+  bool doneCopyingFromGpuToCpu{false};
+  bool doneCollectingDescriptor{false};
+  bool doneSendingCpuBuffer{false};
+  bool doneWritingDescriptor{false};
+};
+
+struct ChunkRecvOperation {
+  enum State {
+    UNINITIALIZED,
+    READING_DESCRIPTOR,
+    ALLOCATING_CPU_BUFFER,
+    RECEIVING_CPU_BUFFER,
+    COPYING_FROM_CPU_TO_GPU,
+    COPYING_FROM_CPU_TO_GPU_AND_INVOKED_CALLBACK,
+    FINISHED
+  };
+
+  // Fields used by the state machine
+  uint64_t sequenceNumber{0};
+  State state{UNINITIALIZED};
+
+  // Arguments at creation
+  uint64_t bufferSequenceNumber{0};
+  size_t chunkId{0};
+  size_t numChunks{0};
+  cudaStream_t stream{cudaStreamDefault};
+  int deviceIdx{0};
+  void* cudaPtr{nullptr};
+  size_t length{0};
+  std::function<void(const Error&)> callback;
+
+  // Data collected during processing
+  std::string descriptor;
+  std::shared_ptr<uint8_t> tmpBuffer;
+
+  // Progress flags
+  bool doneReadingDescriptor{false};
+  bool doneAllocatingCpuStagingBuffer{false};
+  bool doneReceivingCpuBuffer{false};
+  bool doneCopyingFromCpuToGpu{false};
 };
 
 class ChannelImpl final
@@ -69,8 +130,41 @@ class ChannelImpl final
   const std::shared_ptr<transport::Connection> connection_;
   const std::shared_ptr<CpuChannel> cpuChannel_;
   CudaLoop& cudaLoop_;
-  std::deque<Operation> sendOperations_;
-  std::deque<Operation> recvOperations_;
+
+  // A sequence number for the chunks.
+  uint64_t nextChunkBeingSent_{0};
+  uint64_t nextChunkBeingReceived_{0};
+
+  OpsStateMachine<ChannelImpl, ChunkSendOperation> chunkSendOps_{
+      *this,
+      &ChannelImpl::advanceChunkSendOperation};
+  using ChunkSendOpIter = decltype(chunkSendOps_)::Iter;
+  OpsStateMachine<ChannelImpl, ChunkRecvOperation> chunkRecvOps_{
+      *this,
+      &ChannelImpl::advanceChunkRecvOperation};
+  using ChunkRecvOpIter = decltype(chunkRecvOps_)::Iter;
+
+  // State machines for send and recv ops.
+  void advanceChunkSendOperation(
+      ChunkSendOpIter opIter,
+      ChunkSendOperation::State prevOpState);
+  void advanceChunkRecvOperation(
+      ChunkRecvOpIter opIter,
+      ChunkRecvOperation::State prevOpState);
+
+  // Actions (i.e., methods that begin a state transition).
+  // For send operations:
+  void allocateSendCpuBuffer(ChunkSendOpIter opIter);
+  void copyFromGpuToCpu(ChunkSendOpIter opIter);
+  void callSendCallback(ChunkSendOpIter opIter);
+  void sendCpuBuffer(ChunkSendOpIter opIter);
+  void writeDescriptor(ChunkSendOpIter opIter);
+  // For recv operations:
+  void readDescriptor(ChunkRecvOpIter opIter);
+  void allocateRecvCpuBuffer(ChunkRecvOpIter opIter);
+  void receiveCpuBuffer(ChunkRecvOpIter opIter);
+  void copyFromCpuToGpu(ChunkRecvOpIter opIter);
+  void callRecvCallback(ChunkRecvOpIter opIter);
 
   void cudaCopy(
       void* dst,
@@ -79,19 +173,6 @@ class ChannelImpl final
       int deviceIdx,
       cudaStream_t stream,
       std::function<void(const Error&)> callback);
-
-  void onSendOpReadyForCopy(Operation& op);
-  void onSendOpDone();
-  void sendChunkDescriptor(Operation op, std::string descriptor);
-  void sendChunkThroughCpuChannel(Operation op);
-
-  void onRecvOpReadDescriptor(Operation& op, std::string descriptor);
-  void onRecvOpReadyForRecv(Operation& op, std::string descriptor);
-  void onRecvOpReadyForCopy(Operation& op);
-  void onRecvOpDone();
-
-  void tryCleanup();
-  void cleanup();
 };
 
 } // namespace cuda_basic
