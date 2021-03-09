@@ -84,9 +84,11 @@ class OpsStateMachine {
       typename TOp::State from,
       typename TOp::State to,
       bool cond,
-      void (TSubject::*action)(Iter)) {
+      std::initializer_list<void (TSubject::*)(Iter)> actions) {
     if (opIter->state == from && cond) {
-      (subject_.*action)(opIter);
+      for (const auto& action : actions) {
+        (subject_.*action)(opIter);
+      }
       TP_DCHECK_EQ(opIter->state, to);
     }
   }

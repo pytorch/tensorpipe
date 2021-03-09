@@ -736,7 +736,7 @@ void PipeImpl::advanceReadOperation(
       /*from=*/ReadOperation::UNINITIALIZED,
       /*to=*/ReadOperation::ASKING_FOR_ALLOCATION,
       /*cond=*/error_ && prevOpState >= ReadOperation::ASKING_FOR_ALLOCATION,
-      /*action=*/&PipeImpl::callReadDescriptorCallback);
+      /*actions=*/{&PipeImpl::callReadDescriptorCallback});
 
   // The ordering on the "wire" (the primary connection) is descriptor of op N,
   // then payloads of op N, then descriptor of op N+1. Hence this transition
@@ -748,7 +748,7 @@ void PipeImpl::advanceReadOperation(
       /*to=*/ReadOperation::READING_DESCRIPTOR,
       /*cond=*/!error_ && state_ == ESTABLISHED &&
           prevOpState >= ReadOperation::READING_PAYLOADS_AND_RECEIVING_TENSORS,
-      /*action=*/&PipeImpl::readDescriptorOfMessage);
+      /*actions=*/{&PipeImpl::readDescriptorOfMessage});
 
   // Needs to go after previous op to ensure ordering of callback invocations.
   readOps_.attemptTransition(
@@ -757,7 +757,7 @@ void PipeImpl::advanceReadOperation(
       /*to=*/ReadOperation::ASKING_FOR_ALLOCATION,
       /*cond=*/opIter->doneReadingDescriptor &&
           prevOpState >= ReadOperation::ASKING_FOR_ALLOCATION,
-      /*action=*/&PipeImpl::callReadDescriptorCallback);
+      /*actions=*/{&PipeImpl::callReadDescriptorCallback});
 
   // Needs to wait for previous op to have _received_ the read call, as we can
   // only have exactly one operation at a time for which we expect a read call.
@@ -767,7 +767,7 @@ void PipeImpl::advanceReadOperation(
       /*to=*/ReadOperation::ASKING_FOR_ALLOCATION_FIRST_IN_LINE,
       /*cond=*/opIter->doneReadingDescriptor &&
           prevOpState >= ReadOperation::READING_PAYLOADS_AND_RECEIVING_TENSORS,
-      /*action=*/&PipeImpl::expectReadCall);
+      /*actions=*/{&PipeImpl::expectReadCall});
 
   // Needs to go after previous op to ensure ordering of callback invocations.
   readOps_.attemptTransition(
@@ -776,7 +776,7 @@ void PipeImpl::advanceReadOperation(
       /*to=*/ReadOperation::FINISHED,
       /*cond=*/error_ && opIter->doneGettingAllocation &&
           prevOpState >= ReadOperation::FINISHED,
-      /*action=*/&PipeImpl::callReadCallback);
+      /*actions=*/{&PipeImpl::callReadCallback});
 
   // No need to order this with the previous operation, since all it needs is
   // to come after this own op's descriptor read.
@@ -785,7 +785,7 @@ void PipeImpl::advanceReadOperation(
       /*from=*/ReadOperation::ASKING_FOR_ALLOCATION_FIRST_IN_LINE,
       /*to=*/ReadOperation::READING_PAYLOADS_AND_RECEIVING_TENSORS,
       /*cond=*/!error_ && opIter->doneGettingAllocation,
-      /*action=*/&PipeImpl::readPayloadsAndReceiveTensorsOfMessage);
+      /*actions=*/{&PipeImpl::readPayloadsAndReceiveTensorsOfMessage});
 
   // Needs to go after previous op to ensure ordering of callback invocations.
   readOps_.attemptTransition(
@@ -795,7 +795,7 @@ void PipeImpl::advanceReadOperation(
       /*cond=*/opIter->numPayloadsBeingRead == 0 &&
           opIter->numTensorsBeingReceived == 0 &&
           prevOpState >= ReadOperation::FINISHED,
-      /*action=*/&PipeImpl::callReadCallback);
+      /*actions=*/{&PipeImpl::callReadCallback});
 }
 
 void PipeImpl::advanceWriteOperation(
@@ -810,7 +810,7 @@ void PipeImpl::advanceWriteOperation(
       /*from=*/WriteOperation::UNINITIALIZED,
       /*to=*/WriteOperation::FINISHED,
       /*cond=*/error_ && prevOpState >= WriteOperation::FINISHED,
-      /*action=*/&PipeImpl::callWriteCallback);
+      /*actions=*/{&PipeImpl::callWriteCallback});
 
   // Needs to go after previous op to ensure predictable and consistent ordering
   // of send calls on channels.
@@ -821,7 +821,7 @@ void PipeImpl::advanceWriteOperation(
       /*cond=*/!error_ && state_ == ESTABLISHED &&
           prevOpState >=
               WriteOperation::SENDING_TENSORS_AND_COLLECTING_DESCRIPTORS,
-      /*action=*/&PipeImpl::sendTensorsOfMessage);
+      /*actions=*/{&PipeImpl::sendTensorsOfMessage});
 
   // Needs to go after previous op to ensure ordering of callback invocations.
   writeOps_.attemptTransition(
@@ -831,7 +831,7 @@ void PipeImpl::advanceWriteOperation(
       /*cond=*/error_ && opIter->numTensorDescriptorsBeingCollected == 0 &&
           opIter->numTensorsBeingSent == 0 &&
           prevOpState >= WriteOperation::FINISHED,
-      /*action=*/&PipeImpl::callWriteCallback);
+      /*actions=*/{&PipeImpl::callWriteCallback});
 
   // Needs to go after previous op to ensure predictable and consistent ordering
   // of write calls on the connection.
@@ -841,7 +841,7 @@ void PipeImpl::advanceWriteOperation(
       /*to=*/WriteOperation::WRITING_PAYLOADS_AND_SENDING_TENSORS,
       /*cond=*/!error_ && opIter->numTensorDescriptorsBeingCollected == 0 &&
           prevOpState >= WriteOperation::WRITING_PAYLOADS_AND_SENDING_TENSORS,
-      /*action=*/&PipeImpl::writeDescriptorAndPayloadsOfMessage);
+      /*actions=*/{&PipeImpl::writeDescriptorAndPayloadsOfMessage});
 
   // Needs to go after previous op to ensure ordering of callback invocations.
   writeOps_.attemptTransition(
@@ -851,7 +851,7 @@ void PipeImpl::advanceWriteOperation(
       /*cond=*/opIter->numPayloadsBeingWritten == 0 &&
           opIter->numTensorsBeingSent == 0 &&
           prevOpState >= WriteOperation::FINISHED,
-      /*action=*/&PipeImpl::callWriteCallback);
+      /*actions=*/{&PipeImpl::callWriteCallback});
 }
 
 void PipeImpl::readDescriptorOfMessage(ReadOpIter opIter) {
