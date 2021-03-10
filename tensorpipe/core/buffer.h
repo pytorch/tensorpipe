@@ -11,6 +11,7 @@
 #include <tensorpipe/config.h>
 
 #include <tensorpipe/common/cpu_buffer.h>
+#include <tensorpipe/common/defs.h>
 #if TENSORPIPE_SUPPORTS_CUDA
 #include <tensorpipe/common/cuda_buffer.h>
 #endif // TENSORPIPE_SUPPORTS_CUDA
@@ -58,5 +59,22 @@ struct Buffer {
 #endif // TENSORPIPE_SUPPORTS_CUDA
   };
 };
+
+template <typename TBuffer>
+TBuffer unwrap(Buffer);
+
+template <>
+inline CpuBuffer unwrap(Buffer b) {
+  TP_DCHECK(DeviceType::kCpu == b.type);
+  return b.cpu;
+}
+
+#if TENSORPIPE_SUPPORTS_CUDA
+template <>
+inline CudaBuffer unwrap(Buffer b) {
+  TP_DCHECK(DeviceType::kCuda == b.type);
+  return b.cuda;
+}
+#endif // TENSORPIPE_SUPPORTS_CUDA
 
 } // namespace tensorpipe

@@ -64,6 +64,9 @@ class ContextImplBoilerplate : public virtual DeferredExecutor,
 
   virtual ~ContextImplBoilerplate() = default;
 
+  // FIXME: Private, temporary API.
+  bool supportsDeviceType(DeviceType type) const;
+
  protected:
   virtual void initImplFromLoop() {}
   virtual void handleErrorImpl() = 0;
@@ -73,7 +76,7 @@ class ContextImplBoilerplate : public virtual DeferredExecutor,
   void setError(Error error);
 
   template <typename... Args>
-  std::shared_ptr<Channel<TBuffer>> createChannelInternal(Args&&... args);
+  std::shared_ptr<Channel> createChannelInternal(Args&&... args);
 
   Error error_{Error::kSuccess};
 
@@ -119,7 +122,7 @@ ContextImplBoilerplate<TBuffer, TCtx, TChan>::ContextImplBoilerplate(
 
 template <typename TBuffer, typename TCtx, typename TChan>
 template <typename... Args>
-std::shared_ptr<Channel<TBuffer>> ContextImplBoilerplate<TBuffer, TCtx, TChan>::
+std::shared_ptr<Channel> ContextImplBoilerplate<TBuffer, TCtx, TChan>::
     createChannelInternal(Args&&... args) {
   std::string channelId = id_ + ".c" + std::to_string(channelCounter_++);
   TP_VLOG(4) << "Channel context " << id_ << " is opening channel "
@@ -272,6 +275,22 @@ void ContextImplBoilerplate<TBuffer, TCtx, TChan>::join() {
     // kept alive by the underlying transport, and thus outlive their context.
     // TP_DCHECK(channels_.empty());
   }
+}
+
+template <typename TBuffer, typename TCtx, typename TChan>
+bool ContextImplBoilerplate<TBuffer, TCtx, TChan>::supportsDeviceType(
+    DeviceType type) const {
+  if (std::is_same<TBuffer, CpuBuffer>::value) {
+    return (type == DeviceType::kCpu);
+  }
+
+#if TENSORPIPE_SUPPORTS_CUDA
+  if (std::is_same<TBuffer, CudaBuffer>::value) {
+    return (type == DeviceType::kCuda);
+  }
+#endif // TENSORPIPE_SUPPORTS_CUDA
+
+  return false;
 }
 
 } // namespace channel

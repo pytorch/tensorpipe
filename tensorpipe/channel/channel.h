@@ -13,6 +13,7 @@
 
 #include <tensorpipe/channel/context.h>
 #include <tensorpipe/common/error.h>
+#include <tensorpipe/core/buffer.h>
 
 // Channels are an out of band mechanism to transfer data between
 // processes. Examples include a direct address space to address space
@@ -50,19 +51,18 @@ using TSendCallback = std::function<void(const Error&)>;
 using TRecvCallback = std::function<void(const Error&)>;
 
 // Abstract base class for channel classes.
-template <typename TBuffer>
 class Channel {
  public:
   // Send memory region to peer.
   virtual void send(
-      TBuffer buffer,
+      Buffer buffer,
       TDescriptorCallback descriptorCallback,
       TSendCallback callback) = 0;
 
   // Receive memory region from peer.
   virtual void recv(
       TDescriptor descriptor,
-      TBuffer buffer,
+      Buffer buffer,
       TRecvCallback callback) = 0;
 
   // Tell the channel what its identifier is.

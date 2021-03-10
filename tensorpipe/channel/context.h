@@ -12,6 +12,7 @@
 #include <string>
 #include <vector>
 
+#include <tensorpipe/core/buffer.h>
 #include <tensorpipe/transport/context.h>
 
 namespace tensorpipe {
@@ -19,7 +20,6 @@ namespace channel {
 
 enum class Endpoint : bool { kConnect, kListen };
 
-template <typename TBuffer>
 class Channel;
 
 // Abstract base class for channel context classes.
@@ -28,7 +28,6 @@ class Channel;
 // context. All registered instances are assumed to be eligible
 // channels for all pairs.
 //
-template <typename TBuffer>
 class Context {
  public:
   // Return whether the context is able to operate correctly.
@@ -77,7 +76,7 @@ class Context {
   // initialized yet, take care to queue these operations to execute
   // as soon as initialization has completed.
   //
-  virtual std::shared_ptr<Channel<TBuffer>> createChannel(
+  virtual std::shared_ptr<Channel> createChannel(
       std::vector<std::shared_ptr<transport::Connection>>,
       Endpoint) = 0;
 
@@ -96,6 +95,10 @@ class Context {
   virtual void join() = 0;
 
   virtual ~Context() = default;
+
+  // FIXME: This is a private, temporary, API. It will be removed in the
+  // coming weeks. DO NOT USE IT.
+  virtual bool supportsDeviceType(DeviceType type) const = 0;
 
  private:
   std::string name_;
