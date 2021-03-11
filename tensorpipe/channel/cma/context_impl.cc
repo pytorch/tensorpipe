@@ -213,7 +213,7 @@ std::shared_ptr<ContextImpl> ContextImpl::create() {
       }
       switch (yamaScope.value()) {
         case YamaPtraceScope::kClassicPtracePermissions:
-          TP_VLOG(5) << "YAMA ptrace scope set to classic ptrace persmissions";
+          TP_VLOG(5) << "YAMA ptrace scope set to classic ptrace permissions";
           break;
         case YamaPtraceScope::kRestrictedPtrace:
           TP_VLOG(5) << "YAMA ptrace scope set to restricted ptrace";
@@ -258,6 +258,7 @@ ContextImpl::ContextImpl(std::string domainDescriptor)
           /*isViable=*/true,
           std::move(domainDescriptor)) {
   thread_ = std::thread(&ContextImpl::handleCopyRequests, this);
+  threadRunning_ = true;
 }
 
 std::shared_ptr<CpuChannel> ContextImpl::createChannel(
@@ -272,7 +273,10 @@ void ContextImpl::closeImpl() {
 }
 
 void ContextImpl::joinImpl() {
-  thread_.join();
+  if (threadRunning_) {
+    thread_.join();
+    threadRunning_ = false;
+  }
   // TP_DCHECK(requests_.empty());
 }
 

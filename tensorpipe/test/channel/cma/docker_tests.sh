@@ -32,13 +32,15 @@ docker run \
   /tmp/build/tensorpipe/test/channel/cma/tensorpipe_channel_cma_probe \
   0 /tmp/report/socket \
   > /tmp/report/probe1_report.json & \
-  # To allow the probe to bind to the socket \
-  sleep 0.1; \
+  probe1_pid=$!; \
+  while [ ! -S /tmp/report/socket ]; do sleep 0.1; done; \
   TP_VERBOSE_LOGGING=5 \
   /tmp/build/tensorpipe/test/channel/cma/tensorpipe_channel_cma_probe \
   1 /tmp/report/socket \
   > /tmp/report/probe2_report.json & \
-  wait'
+  probe2_pid=$!; \
+  wait $probe1_pid; \
+  wait $probe2_pid'
 
 python3 \
   "$(pwd)/tensorpipe/test/channel/cma/probe_report_checker.py" \
@@ -62,13 +64,15 @@ docker run \
   /tmp/build/tensorpipe/test/channel/cma/tensorpipe_channel_cma_probe \
   0 /tmp/report/socket \
   > /tmp/report/probe1_report.json & \
-  # To allow the probe to bind to the socket \
-  sleep 0.1; \
+  probe1_pid=$!; \
+  while [ ! -S /tmp/report/socket ]; do sleep 0.1; done; \
   TP_VERBOSE_LOGGING=5 \
   /tmp/build/tensorpipe/test/channel/cma/tensorpipe_channel_cma_probe \
   1 /tmp/report/socket \
   > /tmp/report/probe2_report.json & \
-  wait'
+  probe2_pid=$!; \
+  wait $probe1_pid; \
+  wait $probe2_pid'
 
 python3 \
   "$(pwd)/tensorpipe/test/channel/cma/probe_report_checker.py" \
@@ -93,13 +97,15 @@ docker run \
   /tmp/build/tensorpipe/test/channel/cma/tensorpipe_channel_cma_probe \
   0 /tmp/report/socket \
   > /tmp/report/probe1_report.json & \
-  # To allow the probe to bind to the socket \
-  sleep 0.1; \
+  probe1_pid=$!; \
+  while [ ! -S /tmp/report/socket ]; do sleep 0.1; done; \
   TP_VERBOSE_LOGGING=5 \
   /tmp/build/tensorpipe/test/channel/cma/tensorpipe_channel_cma_probe \
   1 /tmp/report/socket \
   > /tmp/report/probe2_report.json & \
-  wait'
+  probe2_pid=$!; \
+  wait $probe1_pid; \
+  wait $probe2_pid'
 
 python3 \
   "$(pwd)/tensorpipe/test/channel/cma/probe_report_checker.py" \
@@ -124,13 +130,15 @@ docker run \
   /tmp/build/tensorpipe/test/channel/cma/tensorpipe_channel_cma_probe \
   0 /tmp/report/socket \
   > /tmp/report/probe1_report.json & \
-  # To allow the probe to bind to the socket \
-  sleep 0.1; \
+  probe1_pid=$!; \
+  while [ ! -S /tmp/report/socket ]; do sleep 0.1; done; \
   TP_VERBOSE_LOGGING=5 \
   /tmp/build/tensorpipe/test/channel/cma/tensorpipe_channel_cma_probe \
   1 /tmp/report/socket \
   > /tmp/report/probe2_report.json & \
-  wait'
+  probe2_pid=$!; \
+  wait $probe1_pid; \
+  wait $probe2_pid'
 
 python3 \
   "$(pwd)/tensorpipe/test/channel/cma/probe_report_checker.py" \
@@ -160,13 +168,15 @@ docker run \
   /tmp/build/tensorpipe/test/channel/cma/tensorpipe_channel_cma_probe \
   0 /tmp/report/socket \
   > /tmp/report/probe1_report.json & \
-  # To allow the probe to bind to the socket \
-  sleep 0.1; \
+  probe1_pid=$!; \
+  while [ ! -S /tmp/report/socket ]; do sleep 0.1; done; \
   TP_VERBOSE_LOGGING=5 \
   /tmp/build/tensorpipe/test/channel/cma/tensorpipe_channel_cma_probe \
   1 /tmp/report/socket \
   > /tmp/report/probe2_report.json & \
-  wait'
+  probe2_pid=$!; \
+  wait $probe1_pid; \
+  wait $probe2_pid'
 
 python3 \
   "$(pwd)/tensorpipe/test/channel/cma/probe_report_checker.py" \
@@ -193,8 +203,6 @@ chmod ugo+rwx "$TEMPDIR"
 echo "Using $TEMPDIR for staging data"
 
 docker run \
-  --detach \
-  --cidfile "$TEMPDIR/probe1_container_id" \
   --volume "$TEMPDIR:/tmp/report" \
   --volume "$(pwd)/build:/tmp/build" \
   --security-opt seccomp=unconfined \
@@ -203,12 +211,10 @@ docker run \
   TP_VERBOSE_LOGGING=5 \
   /tmp/build/tensorpipe/test/channel/cma/tensorpipe_channel_cma_probe \
   0 /tmp/report/socket \
-  > /tmp/report/probe1_report.json'
-docker logs --follow "$(cat "$TEMPDIR/probe1_container_id")" &
-sleep 0.1 # To allow probe to bind to socket
+  > /tmp/report/probe1_report.json' &
+probe1_pid=$!
+while [ ! -S "$TEMPDIR/socket" ]; do sleep 0.1; done
 docker run \
-  --detach \
-  --cidfile "$TEMPDIR/probe2_container_id" \
   --volume "$TEMPDIR:/tmp/report" \
   --volume "$(pwd)/build:/tmp/build" \
   --security-opt seccomp=unconfined \
@@ -217,9 +223,10 @@ docker run \
   TP_VERBOSE_LOGGING=5 \
   /tmp/build/tensorpipe/test/channel/cma/tensorpipe_channel_cma_probe \
   1 /tmp/report/socket \
-  > /tmp/report/probe2_report.json'
-docker logs --follow "$(cat "$TEMPDIR/probe2_container_id")" &
-docker wait "$(cat "$TEMPDIR/probe1_container_id")" "$(cat "$TEMPDIR/probe2_container_id")"
+  > /tmp/report/probe2_report.json' &
+probe2_pid=$!
+wait $probe1_pid
+wait $probe2_pid
 
 python3 \
   "$(pwd)/tensorpipe/test/channel/cma/probe_report_checker.py" \
@@ -238,8 +245,6 @@ chmod ugo+rwx "$TEMPDIR"
 echo "Using $TEMPDIR for staging data"
 
 docker run \
-  --detach \
-  --cidfile "$TEMPDIR/probe1_container_id" \
   --volume "$TEMPDIR:/tmp/report" \
   --volume "$(pwd)/build:/tmp/build" \
   --security-opt seccomp=unconfined \
@@ -250,12 +255,10 @@ docker run \
   TP_VERBOSE_LOGGING=5 \
   /tmp/build/tensorpipe/test/channel/cma/tensorpipe_channel_cma_probe \
   0 /tmp/report/socket \
-  > /tmp/report/probe1_report.json'
-docker logs --follow "$(cat "$TEMPDIR/probe1_container_id")" &
-sleep 0.1 # To allow probe to bind to socket
+  > /tmp/report/probe1_report.json' &
+probe1_pid=$!
+while [ ! -S "$TEMPDIR/socket" ]; do sleep 0.1; done
 docker run \
-  --detach \
-  --cidfile "$TEMPDIR/probe2_container_id" \
   --volume "$TEMPDIR:/tmp/report" \
   --volume "$(pwd)/build:/tmp/build" \
   --security-opt seccomp=unconfined \
@@ -266,9 +269,10 @@ docker run \
   TP_VERBOSE_LOGGING=5 \
   /tmp/build/tensorpipe/test/channel/cma/tensorpipe_channel_cma_probe \
   1 /tmp/report/socket \
-  > /tmp/report/probe2_report.json'
-docker logs --follow "$(cat "$TEMPDIR/probe2_container_id")" &
-docker wait "$(cat "$TEMPDIR/probe1_container_id")" "$(cat "$TEMPDIR/probe2_container_id")"
+  > /tmp/report/probe2_report.json' &
+probe2_pid=$!
+wait $probe1_pid
+wait $probe2_pid
 
 python3 \
   "$(pwd)/tensorpipe/test/channel/cma/probe_report_checker.py" \
@@ -283,7 +287,6 @@ chmod ugo+rwx "$TEMPDIR"
 echo "Using $TEMPDIR for staging data"
 
 docker run \
-  --detach \
   --cidfile "$TEMPDIR/probe1_container_id" \
   --volume "$TEMPDIR:/tmp/report" \
   --volume "$(pwd)/build:/tmp/build" \
@@ -293,12 +296,10 @@ docker run \
   TP_VERBOSE_LOGGING=5 \
   /tmp/build/tensorpipe/test/channel/cma/tensorpipe_channel_cma_probe \
   0 /tmp/report/socket \
-  > /tmp/report/probe1_report.json'
-docker logs --follow "$(cat "$TEMPDIR/probe1_container_id")" &
-sleep 0.1 # To allow probe to bind to socket
+  > /tmp/report/probe1_report.json' &
+probe1_pid=$!
+while [ ! -S "$TEMPDIR/socket" ]; do sleep 0.1; done
 docker run \
-  --detach \
-  --cidfile "$TEMPDIR/probe2_container_id" \
   --volume "$TEMPDIR:/tmp/report" \
   --volume "$(pwd)/build:/tmp/build" \
   --pid "container:$(cat "$TEMPDIR/probe1_container_id")" \
@@ -308,9 +309,10 @@ docker run \
   TP_VERBOSE_LOGGING=5 \
   /tmp/build/tensorpipe/test/channel/cma/tensorpipe_channel_cma_probe \
   1 /tmp/report/socket \
-  > /tmp/report/probe2_report.json'
-docker logs --follow "$(cat "$TEMPDIR/probe2_container_id")" &
-docker wait "$(cat "$TEMPDIR/probe1_container_id")" "$(cat "$TEMPDIR/probe2_container_id")"
+  > /tmp/report/probe2_report.json' &
+probe2_pid=$!
+wait $probe1_pid
+wait $probe2_pid
 
 python3 \
   "$(pwd)/tensorpipe/test/channel/cma/probe_report_checker.py" \
@@ -329,8 +331,6 @@ chmod ugo+rwx "$TEMPDIR"
 echo "Using $TEMPDIR for staging data"
 
 docker run \
-  --detach \
-  --cidfile "$TEMPDIR/probe1_container_id" \
   --volume "$TEMPDIR:/tmp/report" \
   --volume "$(pwd)/build:/tmp/build" \
   --security-opt seccomp=unconfined \
@@ -341,17 +341,17 @@ docker run \
   TP_VERBOSE_LOGGING=5 \
   /tmp/build/tensorpipe/test/channel/cma/tensorpipe_channel_cma_probe \
   0 /tmp/report/socket \
-  > /tmp/report/probe1_report.json'
-docker logs --follow "$(cat "$TEMPDIR/probe1_container_id")" &
-sleep 0.1 # To allow probe to bind to socket
+  > /tmp/report/probe1_report.json' &
+probe1_pid=$!
+while [ ! -S "$TEMPDIR/socket" ]; do sleep 0.1; done
 sudo chmod ugo+rwx "$TEMPDIR"/socket
 TP_VERBOSE_LOGGING=5 \
   "$(pwd)/build/tensorpipe/test/channel/cma/tensorpipe_channel_cma_probe" \
   1 "$TEMPDIR/socket" \
-  > "$TEMPDIR/probe2_report.json" \
-  &
-docker wait "$(cat "$TEMPDIR/probe1_container_id")"
-wait
+  > "$TEMPDIR/probe2_report.json" &
+probe2_pid=$!
+wait $probe1_pid
+wait $probe2_pid
 
 python3 \
   "$(pwd)/tensorpipe/test/channel/cma/probe_report_checker.py" \
@@ -366,8 +366,6 @@ chmod ugo+rwx "$TEMPDIR"
 echo "Using $TEMPDIR for staging data"
 
 docker run \
-  --detach \
-  --cidfile "$TEMPDIR/probe1_container_id" \
   --volume "$TEMPDIR:/tmp/report" \
   --volume "$(pwd)/build:/tmp/build" \
   --security-opt seccomp=unconfined \
@@ -380,17 +378,17 @@ docker run \
   TP_VERBOSE_LOGGING=5 \
   /tmp/build/tensorpipe/test/channel/cma/tensorpipe_channel_cma_probe \
   0 /tmp/report/socket \
-  > /tmp/report/probe1_report.json'
-docker logs --follow "$(cat "$TEMPDIR/probe1_container_id")" &
-sleep 0.1 # To allow probe to bind to socket
+  > /tmp/report/probe1_report.json' &
+probe1_pid=$!
+while [ ! -S "$TEMPDIR/socket" ]; do sleep 0.1; done
 sudo chmod ugo+rwx "$TEMPDIR"/socket
 TP_VERBOSE_LOGGING=5 \
   "$(pwd)/build/tensorpipe/test/channel/cma/tensorpipe_channel_cma_probe" \
   1 "$TEMPDIR/socket" \
-  > "$TEMPDIR/probe2_report.json" \
-  &
-docker wait "$(cat "$TEMPDIR/probe1_container_id")"
-wait
+  > "$TEMPDIR/probe2_report.json" &
+probe2_pid=$!
+wait $probe1_pid
+wait $probe2_pid
 
 python3 \
   "$(pwd)/tensorpipe/test/channel/cma/probe_report_checker.py" \
@@ -405,8 +403,6 @@ chmod ugo+rwx "$TEMPDIR"
 echo "Using $TEMPDIR for staging data"
 
 docker run \
-  --detach \
-  --cidfile "$TEMPDIR/probe1_container_id" \
   --volume "$TEMPDIR:/tmp/report" \
   --volume "$(pwd)/build:/tmp/build" \
   --security-opt seccomp=unconfined \
@@ -419,17 +415,17 @@ docker run \
   TP_VERBOSE_LOGGING=5 \
   /tmp/build/tensorpipe/test/channel/cma/tensorpipe_channel_cma_probe \
   0 /tmp/report/socket \
-  > /tmp/report/probe1_report.json'
-docker logs --follow "$(cat "$TEMPDIR/probe1_container_id")" &
-sleep 0.1 # To allow probe to bind to socket
+  > /tmp/report/probe1_report.json' &
+probe1_pid=$!
+while [ ! -S "$TEMPDIR/socket" ]; do sleep 0.1; done
 sudo chmod ugo+rwx "$TEMPDIR"/socket
 TP_VERBOSE_LOGGING=5 \
   "$(pwd)/build/tensorpipe/test/channel/cma/tensorpipe_channel_cma_probe" \
   1 "$TEMPDIR/socket" \
-  > "$TEMPDIR/probe2_report.json" \
-  &
-docker wait "$(cat "$TEMPDIR/probe1_container_id")"
-wait
+  > "$TEMPDIR/probe2_report.json" &
+probe2_pid=$!
+wait $probe1_pid
+wait $probe2_pid
 
 python3 \
   "$(pwd)/tensorpipe/test/channel/cma/probe_report_checker.py" \
@@ -446,15 +442,16 @@ echo "Using $TEMPDIR for staging data"
 TP_VERBOSE_LOGGING=5 \
   "$(pwd)/build/tensorpipe/test/channel/cma/tensorpipe_channel_cma_probe" \
   0 "$TEMPDIR/socket" \
-  > "$TEMPDIR/probe1_report.json" \
-  &
-sleep 0.1 # To allow probe to bind to socket
+  > "$TEMPDIR/probe1_report.json" &
+probe1_pid=$!
+while [ ! -S "$TEMPDIR/socket" ]; do sleep 0.1; done
 TP_VERBOSE_LOGGING=5 \
   "$(pwd)/build/tensorpipe/test/channel/cma/tensorpipe_channel_cma_probe" \
   1 "$TEMPDIR/socket" \
-  > "$TEMPDIR/probe2_report.json" \
-  &
-wait
+  > "$TEMPDIR/probe2_report.json" &
+probe2_pid=$!
+wait $probe1_pid
+wait $probe2_pid
 
 python3 \
   "$(pwd)/tensorpipe/test/channel/cma/probe_report_checker.py" \
