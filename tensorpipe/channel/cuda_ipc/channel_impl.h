@@ -18,6 +18,7 @@
 #include <tensorpipe/common/cuda.h>
 #include <tensorpipe/common/cuda_buffer.h>
 #include <tensorpipe/common/cuda_lib.h>
+#include <tensorpipe/common/state_machine.h>
 #include <tensorpipe/transport/context.h>
 
 namespace tensorpipe {
@@ -26,58 +27,58 @@ namespace cuda_ipc {
 
 class ContextImpl;
 
-struct Descriptor;
-struct Reply;
+struct SendOperation {
+  enum State { UNINITIALIZED, READING_REPLY, FINISHED };
 
-class SendOperation {
- public:
-  uint64_t sequenceNumber;
+  // Fields used by the state machine
+  uint64_t sequenceNumber{0};
+  State state{UNINITIALIZED};
+
+  // Progress flags
+  bool doneReadingReply{false};
+
+  // Arguments at creation
+  const void* const ptr;
+  const int deviceIdx;
+  const cudaStream_t stream;
   TSendCallback callback;
 
+  // Other data
+  CudaEvent startEv;
+  std::string stopEvHandle;
+
   SendOperation(
-      uint64_t sequenceNumber,
       TSendCallback callback,
       int deviceIdx,
       const void* ptr,
       cudaStream_t stream);
-
-  Descriptor descriptor(
-      const CudaLib& cudaLib,
-      const std::string& processIdentifier);
-
-  void process(const cudaIpcEventHandle_t& stopEvHandle);
-
- private:
-  const int deviceIdx_;
-  const void* ptr_;
-  cudaStream_t stream_;
-  CudaEvent startEv_;
 };
 
 struct RecvOperation {
- public:
-  uint64_t sequenceNumber;
+  enum State { UNINITIALIZED, READING_ACK, FINISHED };
 
-  RecvOperation(
-      uint64_t sequenceNumber,
-      int deviceIdx,
-      void* ptr,
-      cudaStream_t stream,
-      size_t length);
+  // Fields used by the state machine
+  uint64_t sequenceNumber{0};
+  State state{UNINITIALIZED};
 
-  Reply reply();
+  // Progress flags
+  bool doneReadingAck{false};
 
-  void process(
-      const cudaIpcEventHandle_t& startEvHandle,
-      void* remotePtr,
-      size_t offset);
+  // Arguments at creation
+  void* const ptr;
+  const size_t length;
+  const int deviceIdx;
+  const cudaStream_t stream;
+  TRecvCallback callback;
 
- private:
-  const int deviceIdx_;
-  void* ptr_;
-  cudaStream_t stream_;
-  size_t length_;
-  CudaEvent stopEv_;
+  // Other data
+  CudaEvent stopEv;
+  std::string allocationId;
+  std::string bufferHandle;
+  size_t offset;
+  std::string startEvHandle;
+
+  RecvOperation(int deviceIdx, void* ptr, cudaStream_t stream, size_t length);
 };
 
 class ChannelImpl final
@@ -109,14 +110,33 @@ class ChannelImpl final
   const std::shared_ptr<transport::Connection> replyConnection_;
   const std::shared_ptr<transport::Connection> ackConnection_;
 
-  // List of alive send operations.
-  std::list<SendOperation> sendOperations_;
+  OpsStateMachine<ChannelImpl, SendOperation> sendOps_{
+      *this,
+      &ChannelImpl::advanceSendOperation};
+  using SendOpIter = decltype(sendOps_)::Iter;
+  OpsStateMachine<ChannelImpl, RecvOperation> recvOps_{
+      *this,
+      &ChannelImpl::advanceRecvOperation};
+  using RecvOpIter = decltype(recvOps_)::Iter;
 
-  // List of alive recv operations.
-  std::list<RecvOperation> recvOperations_;
+  // State machines for send and recv ops.
+  void advanceSendOperation(
+      SendOpIter opIter,
+      SendOperation::State prevOpState);
+  void advanceRecvOperation(
+      RecvOpIter opIter,
+      RecvOperation::State prevOpState);
 
-  void onReply(SendOperation& op, const Reply& nopReply);
-  void onAck(RecvOperation& op);
+  // Actions (i.e., methods that begin a state transition).
+  // For send operations:
+  void readReply(SendOpIter opIter);
+  void waitOnStopEvent(SendOpIter opIter);
+  void callSendCallback(SendOpIter opIter);
+  void writeAck(SendOpIter opIter);
+  // For recv operations:
+  void waitOnStartEventAndCopyAndRecordStopEvent(RecvOpIter opIter);
+  void callRecvCallback(RecvOpIter opIter);
+  void writeReplyAndReadAck(RecvOpIter opIter);
 };
 
 } // namespace cuda_ipc

@@ -29,6 +29,8 @@ namespace tensorpipe {
 namespace channel {
 namespace cuda_ipc {
 
+namespace {
+
 struct Descriptor {
   std::string allocationId;
   std::string handle;
@@ -46,33 +48,19 @@ struct Ack {
   NOP_STRUCTURE(Ack);
 };
 
-SendOperation::SendOperation(
-    uint64_t sequenceNumber,
-    TSendCallback callback,
-    int deviceIdx,
-    const void* ptr,
-    cudaStream_t stream)
-    : sequenceNumber(sequenceNumber),
-      callback(std::move(callback)),
-      deviceIdx_(deviceIdx),
-      ptr_(ptr),
-      stream_(stream),
-      startEv_(deviceIdx_, /* interprocess = */ true) {
-  startEv_.record(stream_);
-}
-
-Descriptor SendOperation::descriptor(
+Descriptor makeDescriptor(
+    SendOperation& op,
     const CudaLib& cudaLib,
     const std::string& processIdentifier) {
-  CudaDeviceGuard guard(deviceIdx_);
+  CudaDeviceGuard guard(op.deviceIdx);
   cudaIpcMemHandle_t handle;
-  TP_CUDA_CHECK(cudaIpcGetMemHandle(&handle, const_cast<void*>(ptr_)));
+  TP_CUDA_CHECK(cudaIpcGetMemHandle(&handle, const_cast<void*>(op.ptr)));
   CUdeviceptr basePtr;
   TP_CUDA_DRIVER_CHECK(
       cudaLib,
       cudaLib.memGetAddressRange(
-          &basePtr, nullptr, reinterpret_cast<CUdeviceptr>(ptr_)));
-  size_t offset = reinterpret_cast<const uint8_t*>(ptr_) -
+          &basePtr, nullptr, reinterpret_cast<CUdeviceptr>(op.ptr)));
+  size_t offset = reinterpret_cast<const uint8_t*>(op.ptr) -
       reinterpret_cast<uint8_t*>(basePtr);
 
   unsigned long long bufferId;
@@ -87,50 +75,34 @@ Descriptor SendOperation::descriptor(
       processIdentifier + "_" + std::to_string(bufferId),
       std::string(reinterpret_cast<const char*>(&handle), sizeof(handle)),
       offset,
-      startEv_.serializedHandle()};
+      op.startEv.serializedHandle()};
 }
 
-void SendOperation::process(const cudaIpcEventHandle_t& stopEvHandle) {
-  CudaEvent stopEv(deviceIdx_, stopEvHandle);
-  stopEv.wait(stream_, deviceIdx_);
+} // namespace
+
+SendOperation::SendOperation(
+    TSendCallback callback,
+    int deviceIdx,
+    const void* ptr,
+    cudaStream_t stream)
+    : ptr(ptr),
+      deviceIdx(deviceIdx),
+      stream(stream),
+      callback(std::move(callback)),
+      startEv(deviceIdx, /*interprocess=*/true) {
+  startEv.record(stream);
 }
 
 RecvOperation::RecvOperation(
-    uint64_t sequenceNumber,
     int deviceIdx,
     void* ptr,
     cudaStream_t stream,
     size_t length)
-    : sequenceNumber(sequenceNumber),
-      deviceIdx_(deviceIdx),
-      ptr_(ptr),
-      stream_(stream),
-      length_(length),
-      stopEv_(deviceIdx_, /* interprocess = */ true) {}
-
-Reply RecvOperation::reply() {
-  return Reply{stopEv_.serializedHandle()};
-}
-
-void RecvOperation::process(
-    const cudaIpcEventHandle_t& startEvHandle,
-    void* remotePtr,
-    size_t offset) {
-  CudaEvent startEv(deviceIdx_, startEvHandle);
-  startEv.wait(stream_, deviceIdx_);
-
-  {
-    CudaDeviceGuard guard(deviceIdx_);
-    TP_CUDA_CHECK(cudaMemcpyAsync(
-        ptr_,
-        static_cast<uint8_t*>(remotePtr) + offset,
-        length_,
-        cudaMemcpyDeviceToDevice,
-        stream_));
-  }
-
-  stopEv_.record(stream_);
-}
+    : ptr(ptr),
+      length(length),
+      deviceIdx(deviceIdx),
+      stream(stream),
+      stopEv(deviceIdx, /*interprocess=*/true) {}
 
 ChannelImpl::ChannelImpl(
     ConstructorToken token,
@@ -155,32 +127,118 @@ void ChannelImpl::sendImplFromLoop(
     TDescriptorCallback descriptorCallback,
     TSendCallback callback) {
   int deviceIdx = cudaDeviceForPointer(context_->getCudaLib(), buffer.ptr);
-  sendOperations_.emplace_back(
+
+  SendOpIter opIter = sendOps_.emplaceBack(
       sequenceNumber,
       std::move(callback),
       deviceIdx,
       buffer.ptr,
       buffer.stream);
-  auto& op = sendOperations_.back();
+
+  sendOps_.advanceOperation(opIter);
 
   NopHolder<Descriptor> nopHolder;
-  nopHolder.getObject() =
-      op.descriptor(context_->getCudaLib(), context_->getProcessIdentifier());
+  nopHolder.getObject() = makeDescriptor(
+      *opIter, context_->getCudaLib(), context_->getProcessIdentifier());
   descriptorCallback(Error::kSuccess, saveDescriptor(nopHolder));
+}
+
+void ChannelImpl::advanceSendOperation(
+    SendOpIter opIter,
+    SendOperation::State prevOpState) {
+  TP_DCHECK(context_->inLoop());
+
+  SendOperation& op = *opIter;
+
+  sendOps_.attemptTransition(
+      opIter,
+      /*from=*/SendOperation::UNINITIALIZED,
+      /*to=*/SendOperation::FINISHED,
+      /*cond=*/error_,
+      /*actions=*/{&ChannelImpl::callSendCallback});
+
+  // Needs to go after previous op to ensure predictable and consistent ordering
+  // of read calls on reply control connection.
+  sendOps_.attemptTransition(
+      opIter,
+      /*from=*/SendOperation::UNINITIALIZED,
+      /*to=*/SendOperation::READING_REPLY,
+      /*cond=*/!error_ && prevOpState >= SendOperation::READING_REPLY,
+      /*actions=*/{&ChannelImpl::readReply});
+
+  sendOps_.attemptTransition(
+      opIter,
+      /*from=*/SendOperation::READING_REPLY,
+      /*to=*/SendOperation::FINISHED,
+      /*cond=*/error_ && op.doneReadingReply,
+      /*actions=*/{&ChannelImpl::callSendCallback});
+
+  // Needs to go after previous op to ensure predictable and consistent ordering
+  // of write calls on ack control connection.
+  sendOps_.attemptTransition(
+      opIter,
+      /*from=*/SendOperation::READING_REPLY,
+      /*to=*/SendOperation::FINISHED,
+      /*cond=*/!error_ && op.doneReadingReply &&
+          prevOpState >= SendOperation::FINISHED,
+      /*actions=*/
+      {&ChannelImpl::waitOnStopEvent,
+       &ChannelImpl::callSendCallback,
+       &ChannelImpl::writeAck});
+}
+
+void ChannelImpl::readReply(SendOpIter opIter) {
+  SendOperation& op = *opIter;
 
   auto nopReplyHolder = std::make_shared<NopHolder<Reply>>();
   TP_VLOG(6) << "Channel " << id_ << " is reading nop object (reply #"
-             << sequenceNumber << ")";
+             << op.sequenceNumber << ")";
   replyConnection_->read(
       *nopReplyHolder,
-      callbackWrapper_([&op, nopReplyHolder](ChannelImpl& impl) {
+      callbackWrapper_([opIter, nopReplyHolder](ChannelImpl& impl) {
         TP_VLOG(6) << "Channel " << impl.id_
-                   << " done reading nop object (reply #" << op.sequenceNumber
-                   << ")";
+                   << " done reading nop object (reply #"
+                   << opIter->sequenceNumber << ")";
+        opIter->doneReadingReply = true;
         if (!impl.error_) {
-          impl.onReply(op, nopReplyHolder->getObject());
+          opIter->stopEvHandle =
+              std::move(nopReplyHolder->getObject().stopEvHandle);
         }
+        impl.sendOps_.advanceOperation(opIter);
       }));
+}
+
+void ChannelImpl::waitOnStopEvent(SendOpIter opIter) {
+  SendOperation& op = *opIter;
+
+  const cudaIpcEventHandle_t* stopEvHandle =
+      reinterpret_cast<const cudaIpcEventHandle_t*>(op.stopEvHandle.c_str());
+  CudaEvent stopEv(op.deviceIdx, *stopEvHandle);
+  stopEv.wait(op.stream, op.deviceIdx);
+}
+
+void ChannelImpl::callSendCallback(SendOpIter opIter) {
+  SendOperation& op = *opIter;
+
+  op.callback(error_);
+  // Reset callback to release the resources it was holding.
+  op.callback = nullptr;
+}
+
+void ChannelImpl::writeAck(SendOpIter opIter) {
+  SendOperation& op = *opIter;
+
+  TP_VLOG(6) << "Channel " << id_ << " is writing ACK notification (#"
+             << op.sequenceNumber << ")";
+  auto nopAckHolder = std::make_shared<NopHolder<Ack>>();
+  ackConnection_->write(
+      *nopAckHolder,
+      callbackWrapper_(
+          [nopAckHolder, sequenceNumber{op.sequenceNumber}](ChannelImpl& impl) {
+            TP_VLOG(6) << "Channel " << impl.id_
+                       << " done writing ACK notification (#" << sequenceNumber
+                       << ")";
+          }));
 }
 
 void ChannelImpl::recvImplFromLoop(
@@ -189,38 +247,107 @@ void ChannelImpl::recvImplFromLoop(
     CudaBuffer buffer,
     TRecvCallback callback) {
   int deviceIdx = cudaDeviceForPointer(context_->getCudaLib(), buffer.ptr);
-  recvOperations_.emplace_back(
+  RecvOpIter opIter = recvOps_.emplaceBack(
       sequenceNumber, deviceIdx, buffer.ptr, buffer.stream, buffer.length);
-  auto& op = recvOperations_.back();
+
+  opIter->callback = std::move(callback);
 
   NopHolder<Descriptor> nopHolder;
   loadDescriptor(nopHolder, descriptor);
   Descriptor& nopDescriptor = nopHolder.getObject();
+  opIter->allocationId = std::move(nopDescriptor.allocationId);
+  opIter->startEvHandle = std::move(nopDescriptor.startEvHandle);
+  opIter->bufferHandle = std::move(nopDescriptor.handle);
+  opIter->offset = nopDescriptor.offset;
+
+  recvOps_.advanceOperation(opIter);
+}
+
+void ChannelImpl::advanceRecvOperation(
+    RecvOpIter opIter,
+    RecvOperation::State prevOpState) {
+  TP_DCHECK(context_->inLoop());
+
+  RecvOperation& op = *opIter;
+
+  recvOps_.attemptTransition(
+      opIter,
+      /*from=*/RecvOperation::UNINITIALIZED,
+      /*to=*/RecvOperation::FINISHED,
+      /*cond=*/error_,
+      /*actions=*/{&ChannelImpl::callRecvCallback});
+
+  // Needs to go after previous op to ensure predictable and consistent ordering
+  // of write calls on reply control connection and read calls on ack control
+  // connection.
+  recvOps_.attemptTransition(
+      opIter,
+      /*from=*/RecvOperation::UNINITIALIZED,
+      /*to=*/RecvOperation::READING_ACK,
+      /*cond=*/!error_ && prevOpState >= RecvOperation::READING_ACK,
+      /*actions=*/
+      {&ChannelImpl::waitOnStartEventAndCopyAndRecordStopEvent,
+       &ChannelImpl::callRecvCallback,
+       &ChannelImpl::writeReplyAndReadAck});
+
+  // This transition is needed just to keep the operation (and thus its stop
+  // event) alive until the remote acknowledged having finished using the event.
+  recvOps_.attemptTransition(
+      opIter,
+      /*from=*/RecvOperation::READING_ACK,
+      /*to=*/RecvOperation::FINISHED,
+      /*cond=*/op.doneReadingAck,
+      /*actions=*/{});
+}
+
+void ChannelImpl::waitOnStartEventAndCopyAndRecordStopEvent(RecvOpIter opIter) {
+  RecvOperation& op = *opIter;
+
   const cudaIpcEventHandle_t* startEvHandle =
-      reinterpret_cast<const cudaIpcEventHandle_t*>(
-          nopDescriptor.startEvHandle.c_str());
+      reinterpret_cast<const cudaIpcEventHandle_t*>(op.startEvHandle.c_str());
   const cudaIpcMemHandle_t* remoteHandle =
-      reinterpret_cast<const cudaIpcMemHandle_t*>(nopDescriptor.handle.c_str());
+      reinterpret_cast<const cudaIpcMemHandle_t*>(op.bufferHandle.c_str());
 
-  // Perform copy.
-  TP_VLOG(6) << "Channel " << id_ << " is copying payload (#" << sequenceNumber
-             << ")";
+  TP_VLOG(6) << "Channel " << id_ << " is copying payload (#"
+             << op.sequenceNumber << ")";
 
-  void* remoteBasePtr = context_->openIpcHandle(
-      nopDescriptor.allocationId, *remoteHandle, deviceIdx);
-  op.process(*startEvHandle, remoteBasePtr, nopDescriptor.offset);
+  CudaEvent startEv(op.deviceIdx, *startEvHandle);
+  startEv.wait(op.stream, op.deviceIdx);
+
+  void* remoteBasePtr =
+      context_->openIpcHandle(op.allocationId, *remoteHandle, op.deviceIdx);
+  {
+    CudaDeviceGuard guard(op.deviceIdx);
+    TP_CUDA_CHECK(cudaMemcpyAsync(
+        op.ptr,
+        static_cast<uint8_t*>(remoteBasePtr) + op.offset,
+        op.length,
+        cudaMemcpyDeviceToDevice,
+        op.stream));
+  }
+
+  op.stopEv.record(op.stream);
 
   TP_VLOG(6) << "Channel " << id_ << " done copying payload (#"
              << op.sequenceNumber << ")";
+}
 
-  callback(error_);
+void ChannelImpl::callRecvCallback(RecvOpIter opIter) {
+  RecvOperation& op = *opIter;
 
-  // Let peer know we've completed the copy.
+  op.callback(error_);
+  // Reset callback to release the resources it was holding.
+  op.callback = nullptr;
+}
+
+void ChannelImpl::writeReplyAndReadAck(RecvOpIter opIter) {
+  RecvOperation& op = *opIter;
+
   TP_VLOG(6) << "Channel " << id_ << " is writing reply notification (#"
              << op.sequenceNumber << ")";
   auto nopReplyHolder = std::make_shared<NopHolder<Reply>>();
-  nopReplyHolder->getObject() = op.reply();
-
+  Reply& nopReply = nopReplyHolder->getObject();
+  nopReply.stopEvHandle = op.stopEv.serializedHandle();
   replyConnection_->write(
       *nopReplyHolder,
       callbackWrapper_([nopReplyHolder,
@@ -234,62 +361,22 @@ void ChannelImpl::recvImplFromLoop(
              << op.sequenceNumber << ")";
   auto nopAckHolder = std::make_shared<NopHolder<Ack>>();
   ackConnection_->read(
-      *nopAckHolder, callbackWrapper_([&op, nopAckHolder](ChannelImpl& impl) {
+      *nopAckHolder,
+      callbackWrapper_([opIter, nopAckHolder](ChannelImpl& impl) {
         TP_VLOG(6) << "Channel " << impl.id_
-                   << " done reading ACK notification (#" << op.sequenceNumber
-                   << ")";
-        if (!impl.error_) {
-          impl.onAck(op);
-        }
+                   << " done reading ACK notification (#"
+                   << opIter->sequenceNumber << ")";
+        opIter->doneReadingAck = true;
+        impl.recvOps_.advanceOperation(opIter);
       }));
 }
 
-void ChannelImpl::onReply(SendOperation& op, const Reply& nopReply) {
-  TP_VLOG(6) << "Channel " << id_ << " received reply notification (#"
-             << op.sequenceNumber << ")";
-
-  const cudaIpcEventHandle_t* stopEvHandle =
-      reinterpret_cast<const cudaIpcEventHandle_t*>(
-          nopReply.stopEvHandle.c_str());
-
-  op.process(*stopEvHandle);
-
-  TP_VLOG(6) << "Channel " << id_ << " is writing ACK notification (#"
-             << op.sequenceNumber << ")";
-  auto nopAckHolder = std::make_shared<NopHolder<Ack>>();
-
-  op.callback(error_);
-
-  ackConnection_->write(
-      *nopAckHolder,
-      callbackWrapper_(
-          [nopAckHolder, sequenceNumber{op.sequenceNumber}](ChannelImpl& impl) {
-            TP_VLOG(6) << "Channel " << impl.id_
-                       << " done writing ACK notification (#" << sequenceNumber
-                       << ")";
-          }));
-
-  sendOperations_.pop_front();
-}
-
-void ChannelImpl::onAck(RecvOperation& op) {
-  TP_VLOG(6) << "Channel " << id_ << " received ACK notification (#"
-             << op.sequenceNumber << ")";
-
-  recvOperations_.pop_front();
-}
-
 void ChannelImpl::handleErrorImpl() {
+  sendOps_.advanceAllOperations();
+  recvOps_.advanceAllOperations();
+
   replyConnection_->close();
   ackConnection_->close();
-
-  for (auto& op : sendOperations_) {
-    op.callback(error_);
-  }
-  sendOperations_.clear();
-
-  // Callbacks for recv operations are always called inline.
-  recvOperations_.clear();
 
   context_->unenroll(*this);
 }
