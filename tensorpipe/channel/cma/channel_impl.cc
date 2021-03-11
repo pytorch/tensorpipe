@@ -55,26 +55,75 @@ void ChannelImpl::sendImplFromLoop(
     CpuBuffer buffer,
     TDescriptorCallback descriptorCallback,
     TSendCallback callback) {
+  SendOpIter opIter = sendOps_.emplaceBack(sequenceNumber);
+  SendOperation& op = *opIter;
+  op.callback = std::move(callback);
+
+  sendOps_.advanceOperation(opIter);
+
+  NopHolder<Descriptor> nopHolder;
+  Descriptor& nopDescriptor = nopHolder.getObject();
+  nopDescriptor.pid = ::getpid();
+  nopDescriptor.ptr = reinterpret_cast<uint64_t>(buffer.ptr);
+  descriptorCallback(Error::kSuccess, saveDescriptor(nopHolder));
+}
+
+void ChannelImpl::advanceSendOperation(
+    SendOpIter opIter,
+    SendOperation::State prevOpState) {
+  TP_DCHECK(context_->inLoop());
+
+  SendOperation& op = *opIter;
+
+  sendOps_.attemptTransition(
+      opIter,
+      /*from=*/SendOperation::UNINITIALIZED,
+      /*to=*/SendOperation::FINISHED,
+      /*cond=*/error_,
+      /*actions=*/{&ChannelImpl::callSendCallback});
+
+  // Needs to go after previous op to ensure predictable and consistent ordering
+  // of read calls on the control connection.
+  sendOps_.attemptTransition(
+      opIter,
+      /*from=*/SendOperation::UNINITIALIZED,
+      /*to=*/SendOperation::READING_NOTIFICATION,
+      /*cond=*/!error_ && prevOpState >= SendOperation::READING_NOTIFICATION,
+      /*actions=*/{&ChannelImpl::readNotification});
+
+  sendOps_.attemptTransition(
+      opIter,
+      /*from=*/SendOperation::READING_NOTIFICATION,
+      /*to=*/SendOperation::FINISHED,
+      /*cond=*/op.doneReadingNotification,
+      /*actions=*/{&ChannelImpl::callSendCallback});
+}
+
+void ChannelImpl::readNotification(SendOpIter opIter) {
+  SendOperation& op = *opIter;
+
   TP_VLOG(6) << "Channel " << id_ << " is reading notification (#"
-             << sequenceNumber << ")";
+             << op.sequenceNumber << ")";
   connection_->read(
       nullptr,
       0,
-      callbackWrapper_([sequenceNumber, callback{std::move(callback)}](
+      callbackWrapper_([opIter](
                            ChannelImpl& impl,
                            const void* /* unused */,
                            size_t /* unused */) {
         TP_VLOG(6) << "Channel " << impl.id_ << " done reading notification (#"
-                   << sequenceNumber << ")";
-        callback(impl.error_);
+                   << opIter->sequenceNumber << ")";
+        opIter->doneReadingNotification = true;
+        impl.sendOps_.advanceOperation(opIter);
       }));
+}
 
-  NopHolder<Descriptor> nopHolder;
-  Descriptor& nopDescriptor = nopHolder.getObject();
-  nopDescriptor.pid = getpid();
-  nopDescriptor.ptr = reinterpret_cast<uint64_t>(buffer.ptr);
+void ChannelImpl::callSendCallback(SendOpIter opIter) {
+  SendOperation& op = *opIter;
 
-  descriptorCallback(Error::kSuccess, saveDescriptor(nopHolder));
+  op.callback(error_);
+  // Reset callback to release the resources it was holding.
+  op.callback = nullptr;
 }
 
 void ChannelImpl::recvImplFromLoop(
@@ -82,41 +131,105 @@ void ChannelImpl::recvImplFromLoop(
     TDescriptor descriptor,
     CpuBuffer buffer,
     TRecvCallback callback) {
+  RecvOpIter opIter = recvOps_.emplaceBack(sequenceNumber);
+  RecvOperation& op = *opIter;
+  op.ptr = buffer.ptr;
+  op.length = buffer.length;
+  op.callback = std::move(callback);
+
   NopHolder<Descriptor> nopHolder;
   loadDescriptor(nopHolder, descriptor);
   Descriptor& nopDescriptor = nopHolder.getObject();
-  pid_t remotePid = nopDescriptor.pid;
-  void* remotePtr = reinterpret_cast<void*>(nopDescriptor.ptr);
+  op.remotePid = nopDescriptor.pid;
+  op.remotePtr = reinterpret_cast<void*>(nopDescriptor.ptr);
 
-  TP_VLOG(6) << "Channel " << id_ << " is copying payload (#" << sequenceNumber
-             << ")";
+  recvOps_.advanceOperation(opIter);
+}
+
+void ChannelImpl::advanceRecvOperation(
+    RecvOpIter opIter,
+    RecvOperation::State prevOpState) {
+  TP_DCHECK(context_->inLoop());
+
+  RecvOperation& op = *opIter;
+
+  recvOps_.attemptTransition(
+      opIter,
+      /*from=*/RecvOperation::UNINITIALIZED,
+      /*to=*/RecvOperation::FINISHED,
+      /*cond=*/error_,
+      /*actions=*/{&ChannelImpl::callRecvCallback});
+
+  recvOps_.attemptTransition(
+      opIter,
+      /*from=*/RecvOperation::UNINITIALIZED,
+      /*to=*/RecvOperation::COPYING,
+      /*cond=*/!error_,
+      /*actions=*/{&ChannelImpl::copy});
+
+  recvOps_.attemptTransition(
+      opIter,
+      /*from=*/RecvOperation::COPYING,
+      /*to=*/RecvOperation::FINISHED,
+      /*cond=*/error_ && op.doneCopying,
+      /*actions=*/{&ChannelImpl::callRecvCallback});
+
+  // Needs to go after previous op to ensure predictable and consistent ordering
+  // of write calls on the control connection.
+  recvOps_.attemptTransition(
+      opIter,
+      /*from=*/RecvOperation::COPYING,
+      /*to=*/RecvOperation::FINISHED,
+      /*cond=*/!error_ && op.doneCopying &&
+          prevOpState >= RecvOperation::FINISHED,
+      /*actions=*/
+      {&ChannelImpl::callRecvCallback, &ChannelImpl::writeNotification});
+}
+
+void ChannelImpl::copy(RecvOpIter opIter) {
+  RecvOperation& op = *opIter;
+
+  TP_VLOG(6) << "Channel " << id_ << " is copying payload (#"
+             << op.sequenceNumber << ")";
   context_->requestCopy(
-      remotePid,
-      remotePtr,
-      buffer.ptr,
-      buffer.length,
-      callbackWrapper_([sequenceNumber,
-                        callback{std::move(callback)}](ChannelImpl& impl) {
+      op.remotePid,
+      op.remotePtr,
+      op.ptr,
+      op.length,
+      callbackWrapper_([opIter](ChannelImpl& impl) {
         TP_VLOG(6) << "Channel " << impl.id_ << " done copying payload (#"
-                   << sequenceNumber << ")";
+                   << opIter->sequenceNumber << ")";
+        opIter->doneCopying = true;
+        impl.recvOps_.advanceOperation(opIter);
+      }));
+}
 
-        // Let peer know we've completed the copy.
-        TP_VLOG(6) << "Channel " << impl.id_ << " is writing notification (#"
-                   << sequenceNumber << ")";
-        impl.connection_->write(
-            nullptr,
-            0,
-            impl.callbackWrapper_([sequenceNumber](ChannelImpl& impl) {
-              TP_VLOG(6) << "Channel " << impl.id_
-                         << " done writing notification (#" << sequenceNumber
-                         << ")";
-            }));
+void ChannelImpl::callRecvCallback(RecvOpIter opIter) {
+  RecvOperation& op = *opIter;
 
-        callback(impl.error_);
+  op.callback(error_);
+  // Reset callback to release the resources it was holding.
+  op.callback = nullptr;
+}
+
+void ChannelImpl::writeNotification(RecvOpIter opIter) {
+  RecvOperation& op = *opIter;
+
+  TP_VLOG(6) << "Channel " << id_ << " is writing notification (#"
+             << op.sequenceNumber << ")";
+  connection_->write(
+      nullptr,
+      0,
+      callbackWrapper_([sequenceNumber{op.sequenceNumber}](ChannelImpl& impl) {
+        TP_VLOG(6) << "Channel " << impl.id_ << " done writing notification (#"
+                   << sequenceNumber << ")";
       }));
 }
 
 void ChannelImpl::handleErrorImpl() {
+  sendOps_.advanceAllOperations();
+  recvOps_.advanceAllOperations();
+
   connection_->close();
 
   context_->unenroll(*this);
