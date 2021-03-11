@@ -111,6 +111,10 @@ class CudaEvent {
     return true;
   }
 
+  cudaEvent_t raw() {
+    return ev_;
+  }
+
   std::string serializedHandle() {
     CudaDeviceGuard guard(deviceIdx_);
     cudaIpcEventHandle_t handle;
