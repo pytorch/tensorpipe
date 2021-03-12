@@ -96,44 +96,6 @@ void ChannelImpl::initImplFromLoop() {
   }
 }
 
-void ChannelImpl::sendImplFromLoop(
-    uint64_t sequenceNumber,
-    CpuBuffer buffer,
-    TDescriptorCallback descriptorCallback,
-    TSendCallback callback) {
-  sendOperations_.emplace_back();
-  SendOperation& op = sendOperations_.back();
-  op.sequenceNumber = sequenceNumber;
-  op.ptr = buffer.ptr;
-  op.length = buffer.length;
-  op.callback = std::move(callback);
-
-  if (state_ == ESTABLISHED) {
-    sendOperation(op);
-  }
-
-  descriptorCallback(Error::kSuccess, std::string());
-}
-
-void ChannelImpl::recvImplFromLoop(
-    uint64_t sequenceNumber,
-    TDescriptor descriptor,
-    CpuBuffer buffer,
-    TRecvCallback callback) {
-  TP_DCHECK_EQ(descriptor, std::string());
-
-  recvOperations_.emplace_back();
-  RecvOperation& op = recvOperations_.back();
-  op.sequenceNumber = sequenceNumber;
-  op.ptr = buffer.ptr;
-  op.length = buffer.length;
-  op.callback = std::move(callback);
-
-  if (state_ == ESTABLISHED) {
-    recvOperation(op);
-  }
-}
-
 void ChannelImpl::onClientReadHelloOnConnection(const Packet& nopPacketIn) {
   TP_DCHECK(context_->inLoop());
   TP_DCHECK_EQ(state_, CLIENT_READING_HELLO);
@@ -165,7 +127,8 @@ void ChannelImpl::onClientReadHelloOnConnection(const Packet& nopPacketIn) {
   }
 
   state_ = ESTABLISHED;
-  startSendingAndReceivingUponEstablishingChannel();
+  sendOps_.advanceAllOperations();
+  recvOps_.advanceAllOperations();
 }
 
 void ChannelImpl::onServerAcceptOfLane(
@@ -185,25 +148,61 @@ void ChannelImpl::onServerAcceptOfLane(
 
   if (numLanesBeingAccepted_ == 0) {
     state_ = ESTABLISHED;
-    startSendingAndReceivingUponEstablishingChannel();
+    sendOps_.advanceAllOperations();
+    recvOps_.advanceAllOperations();
   }
 }
 
-void ChannelImpl::startSendingAndReceivingUponEstablishingChannel() {
-  TP_DCHECK(context_->inLoop());
-  TP_DCHECK_EQ(state_, ESTABLISHED);
+void ChannelImpl::sendImplFromLoop(
+    uint64_t sequenceNumber,
+    CpuBuffer buffer,
+    TDescriptorCallback descriptorCallback,
+    TSendCallback callback) {
+  SendOpIter opIter = sendOps_.emplaceBack(sequenceNumber);
+  SendOperation& op = *opIter;
+  op.ptr = buffer.ptr;
+  op.length = buffer.length;
+  op.callback = std::move(callback);
 
-  for (SendOperation& op : sendOperations_) {
-    sendOperation(op);
-  }
-  for (RecvOperation& op : recvOperations_) {
-    recvOperation(op);
-  }
+  sendOps_.advanceOperation(opIter);
+
+  descriptorCallback(Error::kSuccess, std::string());
 }
 
-void ChannelImpl::sendOperation(SendOperation& op) {
+void ChannelImpl::advanceSendOperation(
+    SendOpIter opIter,
+    SendOperation::State prevOpState) {
   TP_DCHECK(context_->inLoop());
-  TP_DCHECK_EQ(state_, ESTABLISHED);
+
+  SendOperation& op = *opIter;
+
+  sendOps_.attemptTransition(
+      opIter,
+      /*from=*/SendOperation::UNINITIALIZED,
+      /*to=*/SendOperation::FINISHED,
+      /*cond=*/error_,
+      /*actions=*/{&ChannelImpl::callSendCallback});
+
+  // Needs to go after previous op to ensure predictable and consistent ordering
+  // of write calls on lanes.
+  sendOps_.attemptTransition(
+      opIter,
+      /*from=*/SendOperation::UNINITIALIZED,
+      /*to=*/SendOperation::WRITING_CHUNKS,
+      /*cond=*/!error_ && state_ == ESTABLISHED &&
+          prevOpState >= SendOperation::WRITING_CHUNKS,
+      /*actions=*/{&ChannelImpl::writeChunks});
+
+  sendOps_.attemptTransition(
+      opIter,
+      /*from=*/SendOperation::WRITING_CHUNKS,
+      /*to=*/SendOperation::FINISHED,
+      /*cond=*/op.numChunksBeingWritten == 0,
+      /*actions=*/{&ChannelImpl::callSendCallback});
+}
+
+void ChannelImpl::writeChunks(SendOpIter opIter) {
+  SendOperation& op = *opIter;
 
   for (uint64_t laneIdx = 0; laneIdx < lanes_.size(); laneIdx++) {
     // Insert "cutpoints" at equally-spaced intervals in the buffer, rounding
@@ -219,18 +218,74 @@ void ChannelImpl::sendOperation(SendOperation& op) {
     TP_VLOG(6) << "Channel " << id_ << " writing payload #" << op.sequenceNumber
                << " on lane " << laneIdx;
     lanes_[laneIdx]->write(
-        ptr, length, callbackWrapper_([&op, laneIdx](ChannelImpl& impl) {
+        ptr, length, callbackWrapper_([opIter, laneIdx](ChannelImpl& impl) {
           TP_VLOG(6) << "Channel " << impl.id_ << " done writing payload #"
-                     << op.sequenceNumber << " on lane " << laneIdx;
-          impl.onWriteOfPayload(op);
+                     << opIter->sequenceNumber << " on lane " << laneIdx;
+          --opIter->numChunksBeingWritten;
+          impl.sendOps_.advanceOperation(opIter);
         }));
     ++op.numChunksBeingWritten;
   }
 }
 
-void ChannelImpl::recvOperation(RecvOperation& op) {
+void ChannelImpl::callSendCallback(SendOpIter opIter) {
+  SendOperation& op = *opIter;
+
+  op.callback(error_);
+  // Reset callback to release the resources it was holding.
+  op.callback = nullptr;
+}
+
+void ChannelImpl::recvImplFromLoop(
+    uint64_t sequenceNumber,
+    TDescriptor descriptor,
+    CpuBuffer buffer,
+    TRecvCallback callback) {
+  TP_DCHECK_EQ(descriptor, std::string());
+
+  RecvOpIter opIter = recvOps_.emplaceBack(sequenceNumber);
+  RecvOperation& op = *opIter;
+  op.ptr = buffer.ptr;
+  op.length = buffer.length;
+  op.callback = std::move(callback);
+
+  recvOps_.advanceOperation(opIter);
+}
+
+void ChannelImpl::advanceRecvOperation(
+    RecvOpIter opIter,
+    RecvOperation::State prevOpState) {
   TP_DCHECK(context_->inLoop());
-  TP_DCHECK_EQ(state_, ESTABLISHED);
+
+  RecvOperation& op = *opIter;
+
+  recvOps_.attemptTransition(
+      opIter,
+      /*from=*/RecvOperation::UNINITIALIZED,
+      /*to=*/RecvOperation::FINISHED,
+      /*cond=*/error_,
+      /*actions=*/{&ChannelImpl::callRecvCallback});
+
+  // Needs to go after previous op to ensure predictable and consistent ordering
+  // of read calls on lanes.
+  recvOps_.attemptTransition(
+      opIter,
+      /*from=*/RecvOperation::UNINITIALIZED,
+      /*to=*/RecvOperation::READING_CHUNKS,
+      /*cond=*/!error_ && state_ == ESTABLISHED &&
+          prevOpState >= RecvOperation::READING_CHUNKS,
+      /*actions=*/{&ChannelImpl::readChunks});
+
+  recvOps_.attemptTransition(
+      opIter,
+      /*from=*/RecvOperation::READING_CHUNKS,
+      /*to=*/RecvOperation::FINISHED,
+      /*cond=*/op.numChunksBeingRead == 0,
+      /*actions=*/{&ChannelImpl::callRecvCallback});
+}
+
+void ChannelImpl::readChunks(RecvOpIter opIter) {
+  RecvOperation& op = *opIter;
 
   for (uint64_t laneIdx = 0; laneIdx < lanes_.size(); laneIdx++) {
     // Insert "cutpoints" at equally-spaced intervals in the buffer, rounding
@@ -248,62 +303,30 @@ void ChannelImpl::recvOperation(RecvOperation& op) {
     lanes_[laneIdx]->read(
         ptr,
         length,
-        callbackWrapper_([&op, laneIdx](
+        callbackWrapper_([opIter, laneIdx](
                              ChannelImpl& impl,
                              const void* /* unused */,
                              size_t /* unused */) {
           TP_VLOG(6) << "Channel " << impl.id_ << " done reading payload #"
-                     << op.sequenceNumber << " on lane " << laneIdx;
-          impl.onReadOfPayload(op);
+                     << opIter->sequenceNumber << " on lane " << laneIdx;
+          --opIter->numChunksBeingRead;
+          impl.recvOps_.advanceOperation(opIter);
         }));
     ++op.numChunksBeingRead;
   }
 }
 
-void ChannelImpl::onWriteOfPayload(SendOperation& op) {
-  TP_DCHECK(context_->inLoop());
-
-  --op.numChunksBeingWritten;
-  if (op.numChunksBeingWritten > 0) {
-    return;
-  }
+void ChannelImpl::callRecvCallback(RecvOpIter opIter) {
+  RecvOperation& op = *opIter;
 
   op.callback(error_);
-
-  TP_DCHECK(!sendOperations_.empty());
-  TP_DCHECK(&op == &sendOperations_.front());
-  sendOperations_.pop_front();
-}
-
-void ChannelImpl::onReadOfPayload(RecvOperation& op) {
-  TP_DCHECK(context_->inLoop());
-  TP_DCHECK_EQ(state_, ESTABLISHED);
-
-  --op.numChunksBeingRead;
-  if (op.numChunksBeingRead > 0) {
-    return;
-  }
-
-  op.callback(error_);
-
-  TP_DCHECK(!recvOperations_.empty());
-  TP_DCHECK(&op == &recvOperations_.front());
-  recvOperations_.pop_front();
+  // Reset callback to release the resources it was holding.
+  op.callback = nullptr;
 }
 
 void ChannelImpl::handleErrorImpl() {
-  if (state_ != ESTABLISHED) {
-    for (SendOperation& op : sendOperations_) {
-      TP_DCHECK_EQ(op.numChunksBeingWritten, 0);
-      op.callback(error_);
-    }
-    sendOperations_.clear();
-    for (RecvOperation& op : recvOperations_) {
-      TP_DCHECK_EQ(op.numChunksBeingRead, 0);
-      op.callback(error_);
-    }
-    recvOperations_.clear();
-  }
+  sendOps_.advanceAllOperations();
+  recvOps_.advanceAllOperations();
 
   // Close the connections so that all current operations will be aborted. This
   // will cause their callbacks to be invoked, and only then we'll invoke ours.

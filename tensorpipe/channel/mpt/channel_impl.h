@@ -17,31 +17,48 @@
 #include <tensorpipe/channel/channel_impl_boilerplate.h>
 #include <tensorpipe/channel/mpt/nop_types.h>
 #include <tensorpipe/common/cpu_buffer.h>
+#include <tensorpipe/common/state_machine.h>
 #include <tensorpipe/transport/context.h>
 
 namespace tensorpipe {
 namespace channel {
 namespace mpt {
 
+class ContextImpl;
+
 // State capturing a single send operation.
 struct SendOperation {
-  uint64_t sequenceNumber;
+  enum State { UNINITIALIZED, WRITING_CHUNKS, FINISHED };
+
+  // Fields used by the state machine
+  uint64_t sequenceNumber{0};
+  State state{UNINITIALIZED};
+
+  // Progress flags
+  int64_t numChunksBeingWritten{0};
+
+  // Arguments at creation
   const void* ptr;
   size_t length;
-  int64_t numChunksBeingWritten{0};
   TSendCallback callback;
 };
 
 // State capturing a single recv operation.
 struct RecvOperation {
-  uint64_t sequenceNumber;
+  enum State { UNINITIALIZED, READING_CHUNKS, FINISHED };
+
+  // Fields used by the state machine
+  uint64_t sequenceNumber{0};
+  State state{UNINITIALIZED};
+
+  // Progress flags
+  int64_t numChunksBeingRead{0};
+
+  // Arguments at creation
   void* ptr;
   size_t length;
-  int64_t numChunksBeingRead{0};
   TRecvCallback callback;
 };
-
-class ContextImpl;
 
 class ChannelImpl final
     : public ChannelImplBoilerplate<CpuBuffer, ContextImpl, ChannelImpl> {
@@ -85,22 +102,6 @@ class ChannelImpl final
       uint64_t laneIdx,
       std::shared_ptr<transport::Connection> connection);
 
-  // Called when channel endpoint has all lanes established, and processes
-  // operations that were performed in the meantime and queued.
-  void startSendingAndReceivingUponEstablishingChannel();
-
-  // Performs the chunking and the writing of one send operation.
-  void sendOperation(SendOperation& op);
-
-  // Performs the chunking and the reading of one recv operation.
-  void recvOperation(RecvOperation& op);
-
-  // Called when the write of one chunk of a send operation has been completed.
-  void onWriteOfPayload(SendOperation& op);
-
-  // Called when the read of one chunk of a recv operation has been completed.
-  void onReadOfPayload(RecvOperation& op);
-
   const std::shared_ptr<transport::Connection> connection_;
   const Endpoint endpoint_;
   State state_{UNINITIALIZED};
@@ -109,8 +110,30 @@ class ChannelImpl final
   std::vector<std::shared_ptr<transport::Connection>> lanes_;
   std::unordered_map<uint64_t, uint64_t> laneRegistrationIds_;
 
-  std::deque<SendOperation> sendOperations_;
-  std::deque<RecvOperation> recvOperations_;
+  OpsStateMachine<ChannelImpl, SendOperation> sendOps_{
+      *this,
+      &ChannelImpl::advanceSendOperation};
+  using SendOpIter = decltype(sendOps_)::Iter;
+  OpsStateMachine<ChannelImpl, RecvOperation> recvOps_{
+      *this,
+      &ChannelImpl::advanceRecvOperation};
+  using RecvOpIter = decltype(recvOps_)::Iter;
+
+  // State machines for send and recv ops.
+  void advanceSendOperation(
+      SendOpIter opIter,
+      SendOperation::State prevOpState);
+  void advanceRecvOperation(
+      RecvOpIter opIter,
+      RecvOperation::State prevOpState);
+
+  // Actions (i.e., methods that begin a state transition).
+  // For send operations:
+  void writeChunks(SendOpIter opIter);
+  void callSendCallback(SendOpIter opIter);
+  // For recv operations:
+  void readChunks(RecvOpIter opIter);
+  void callRecvCallback(RecvOpIter opIter);
 };
 
 } // namespace mpt
