@@ -54,7 +54,7 @@ performed by calling the `readDescriptor` method with said callback. The
 callback will be invoked with a so-called descriptor, which can be seen as a
 "message skeleton", i.e., a message with no buffers attached to it (they are
 set to null pointers). The job of this callback is filling in those buffers,
-either by allocating the required memory or by obtaining it from somehere else
+either by allocating the required memory or by obtaining it from somewhere else
 (from a cache, as a slice of a batch that's being assembled, ...). This
 descriptor also contains some metadata, given by the sender, which can be used
 to provide allocation hints or any other information that can help the receiver

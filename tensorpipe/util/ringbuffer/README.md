@@ -39,7 +39,7 @@ The following use use cases shaped the design:
      although it does in buffer's header.
 
   2. Data must be a power of 2. This allow to use bit-shift instead of
-     modular arithmethic.
+     modular arithmetic.
      This constraint favours split control and data sections because
      operative system pages are powers of 2, and control structures
      are small. If both control and data sections where placed in the
