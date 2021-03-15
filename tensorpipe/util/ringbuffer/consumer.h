@@ -8,6 +8,11 @@
 
 #pragma once
 
+#include <array>
+#include <cstring>
+#include <tuple>
+#include <utility>
+
 #include <tensorpipe/util/ringbuffer/ringbuffer.h>
 
 namespace tensorpipe {
