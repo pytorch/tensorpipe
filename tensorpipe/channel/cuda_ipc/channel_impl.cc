@@ -48,39 +48,10 @@ struct Ack {
   NOP_STRUCTURE(Ack);
 };
 
-Descriptor makeDescriptor(
-    SendOperation& op,
-    const CudaLib& cudaLib,
-    const std::string& processIdentifier) {
-  CudaDeviceGuard guard(op.deviceIdx);
-  cudaIpcMemHandle_t handle;
-  TP_CUDA_CHECK(cudaIpcGetMemHandle(&handle, const_cast<void*>(op.ptr)));
-  CUdeviceptr basePtr;
-  TP_CUDA_DRIVER_CHECK(
-      cudaLib,
-      cudaLib.memGetAddressRange(
-          &basePtr, nullptr, reinterpret_cast<CUdeviceptr>(op.ptr)));
-  size_t offset = reinterpret_cast<const uint8_t*>(op.ptr) -
-      reinterpret_cast<uint8_t*>(basePtr);
-
-  unsigned long long bufferId;
-  TP_CUDA_DRIVER_CHECK(
-      cudaLib,
-      cudaLib.pointerGetAttribute(
-          &bufferId, CU_POINTER_ATTRIBUTE_BUFFER_ID, basePtr));
-
-  return Descriptor{
-      // FIXME The process identifier will be the same each time, hence we could
-      // just send it once during the setup of the channel and omit it later.
-      processIdentifier + "_" + std::to_string(bufferId),
-      std::string(reinterpret_cast<const char*>(&handle), sizeof(handle)),
-      offset,
-      op.startEv.serializedHandle()};
-}
-
 } // namespace
 
 SendOperation::SendOperation(
+    TDescriptorCallback descriptorCallback,
     TSendCallback callback,
     int deviceIdx,
     const void* ptr,
@@ -88,10 +59,9 @@ SendOperation::SendOperation(
     : ptr(ptr),
       deviceIdx(deviceIdx),
       stream(stream),
+      descriptorCallback(std::move(descriptorCallback)),
       callback(std::move(callback)),
-      startEv(deviceIdx, /*interprocess=*/true) {
-  startEv.record(stream);
-}
+      startEv(deviceIdx, /*interprocess=*/true) {}
 
 RecvOperation::RecvOperation(
     int deviceIdx,
@@ -130,17 +100,13 @@ void ChannelImpl::sendImplFromLoop(
 
   SendOpIter opIter = sendOps_.emplaceBack(
       sequenceNumber,
+      std::move(descriptorCallback),
       std::move(callback),
       deviceIdx,
       buffer.ptr,
       buffer.stream);
 
   sendOps_.advanceOperation(opIter);
-
-  NopHolder<Descriptor> nopHolder;
-  nopHolder.getObject() = makeDescriptor(
-      *opIter, context_->getCudaLib(), context_->getProcessIdentifier());
-  descriptorCallback(Error::kSuccess, saveDescriptor(nopHolder));
 }
 
 void ChannelImpl::advanceSendOperation(
@@ -155,7 +121,8 @@ void ChannelImpl::advanceSendOperation(
       /*from=*/SendOperation::UNINITIALIZED,
       /*to=*/SendOperation::FINISHED,
       /*cond=*/error_,
-      /*actions=*/{&ChannelImpl::callSendCallback});
+      /*actions=*/
+      {&ChannelImpl::callDescriptorCallback, &ChannelImpl::callSendCallback});
 
   // Needs to go after previous op to ensure predictable and consistent ordering
   // of read calls on reply control connection.
@@ -164,7 +131,10 @@ void ChannelImpl::advanceSendOperation(
       /*from=*/SendOperation::UNINITIALIZED,
       /*to=*/SendOperation::READING_REPLY,
       /*cond=*/!error_ && prevOpState >= SendOperation::READING_REPLY,
-      /*actions=*/{&ChannelImpl::readReply});
+      /*actions=*/
+      {&ChannelImpl::recordStartEvent,
+       &ChannelImpl::callDescriptorCallback,
+       &ChannelImpl::readReply});
 
   sendOps_.attemptTransition(
       opIter,
@@ -185,6 +155,58 @@ void ChannelImpl::advanceSendOperation(
       {&ChannelImpl::waitOnStopEvent,
        &ChannelImpl::callSendCallback,
        &ChannelImpl::writeAck});
+}
+
+void ChannelImpl::recordStartEvent(SendOpIter opIter) {
+  SendOperation& op = *opIter;
+
+  op.startEv.record(op.stream);
+}
+
+void ChannelImpl::callDescriptorCallback(SendOpIter opIter) {
+  SendOperation& op = *opIter;
+
+  if (error_) {
+    op.descriptorCallback(error_, std::string());
+    // Reset callback to release the resources it was holding.
+    op.descriptorCallback = nullptr;
+    return;
+  }
+
+  const CudaLib& cudaLib = context_->getCudaLib();
+
+  cudaIpcMemHandle_t handle;
+  size_t offset;
+  unsigned long long bufferId;
+  {
+    CudaDeviceGuard guard(op.deviceIdx);
+    TP_CUDA_CHECK(cudaIpcGetMemHandle(&handle, const_cast<void*>(op.ptr)));
+
+    CUdeviceptr basePtr;
+    TP_CUDA_DRIVER_CHECK(
+        cudaLib,
+        cudaLib.memGetAddressRange(
+            &basePtr, nullptr, reinterpret_cast<CUdeviceptr>(op.ptr)));
+    offset = reinterpret_cast<const uint8_t*>(op.ptr) -
+        reinterpret_cast<uint8_t*>(basePtr);
+
+    TP_CUDA_DRIVER_CHECK(
+        cudaLib,
+        cudaLib.pointerGetAttribute(
+            &bufferId, CU_POINTER_ATTRIBUTE_BUFFER_ID, basePtr));
+  }
+
+  NopHolder<Descriptor> nopHolder;
+  nopHolder.getObject() = Descriptor{
+      // FIXME The process identifier will be the same each time, hence we could
+      // just send it once during the setup of the channel and omit it later.
+      context_->getProcessIdentifier() + "_" + std::to_string(bufferId),
+      std::string(reinterpret_cast<const char*>(&handle), sizeof(handle)),
+      offset,
+      op.startEv.serializedHandle()};
+  op.descriptorCallback(error_, saveDescriptor(nopHolder));
+  // Reset callback to release the resources it was holding.
+  op.descriptorCallback = nullptr;
 }
 
 void ChannelImpl::readReply(SendOpIter opIter) {

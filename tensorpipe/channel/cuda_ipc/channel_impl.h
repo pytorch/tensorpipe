@@ -41,6 +41,7 @@ struct SendOperation {
   const void* const ptr;
   const int deviceIdx;
   const cudaStream_t stream;
+  TDescriptorCallback descriptorCallback;
   TSendCallback callback;
 
   // Other data
@@ -48,6 +49,7 @@ struct SendOperation {
   std::string stopEvHandle;
 
   SendOperation(
+      TDescriptorCallback descriptorCallback,
       TSendCallback callback,
       int deviceIdx,
       const void* ptr,
@@ -129,6 +131,8 @@ class ChannelImpl final
 
   // Actions (i.e., methods that begin a state transition).
   // For send operations:
+  void recordStartEvent(SendOpIter opIter);
+  void callDescriptorCallback(SendOpIter opIter);
   void readReply(SendOpIter opIter);
   void waitOnStopEvent(SendOpIter opIter);
   void callSendCallback(SendOpIter opIter);
