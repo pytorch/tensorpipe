@@ -38,6 +38,10 @@ namespace cuda_ipc {
 
 namespace {
 
+// Half of them will go in the send pool, the other half in the recv pool.
+// This number is per-device.
+static constexpr size_t kNumIpcEventsInPool = 1000;
+
 std::tuple<std::vector<std::string>, std::vector<std::vector<bool>>>
 getGlobalUuidsAndP2pSupport(const NvmlLib& nvmlLib) {
   unsigned int numDevices;
@@ -307,7 +311,52 @@ void* ContextImpl::openIpcHandle(
   return remotePtr;
 }
 
-void ContextImpl::handleErrorImpl() {}
+void ContextImpl::requestSendEvent(
+    int deviceIdx,
+    CudaEventPool::RequestCallback callback) {
+  if (sendEventPools_.size() <= deviceIdx) {
+    sendEventPools_.resize(deviceIdx + 1);
+  }
+  if (sendEventPools_[deviceIdx] == nullptr) {
+    sendEventPools_[deviceIdx] = std::make_unique<CudaEventPool>(
+        kNumIpcEventsInPool / 2, deviceIdx, /*interprocess=*/true);
+    // Handle some weird corner case.
+    if (error_) {
+      sendEventPools_[deviceIdx]->close();
+    }
+  }
+  sendEventPools_[deviceIdx]->request(std::move(callback));
+}
+
+void ContextImpl::requestRecvEvent(
+    int deviceIdx,
+    CudaEventPool::RequestCallback callback) {
+  if (recvEventPools_.size() <= deviceIdx) {
+    recvEventPools_.resize(deviceIdx + 1);
+  }
+  if (recvEventPools_[deviceIdx] == nullptr) {
+    recvEventPools_[deviceIdx] = std::make_unique<CudaEventPool>(
+        kNumIpcEventsInPool / 2, deviceIdx, /*interprocess=*/true);
+    // Handle some weird corner case.
+    if (error_) {
+      recvEventPools_[deviceIdx]->close();
+    }
+  }
+  recvEventPools_[deviceIdx]->request(std::move(callback));
+}
+
+void ContextImpl::handleErrorImpl() {
+  for (std::unique_ptr<CudaEventPool>& pool : sendEventPools_) {
+    if (pool != nullptr) {
+      pool->close();
+    }
+  }
+  for (std::unique_ptr<CudaEventPool>& pool : recvEventPools_) {
+    if (pool != nullptr) {
+      pool->close();
+    }
+  }
+}
 
 void ContextImpl::joinImpl() {
   for (const auto& handle : openIpcHandles_) {

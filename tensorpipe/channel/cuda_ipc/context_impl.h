@@ -17,6 +17,7 @@
 #include <tensorpipe/channel/context_impl_boilerplate.h>
 #include <tensorpipe/channel/cuda_context.h>
 #include <tensorpipe/common/cuda_buffer.h>
+#include <tensorpipe/common/cuda_event_pool.h>
 #include <tensorpipe/common/cuda_lib.h>
 #include <tensorpipe/common/deferred_executor.h>
 #include <tensorpipe/common/nvml_lib.h>
@@ -61,6 +62,13 @@ class ContextImpl final
       const cudaIpcMemHandle_t& remoteHandle,
       int deviceIdx);
 
+  // Creating CUDA IPC events "on-the-fly" risks causing a deadlock, due to a
+  // bug in the CUDA driver that was supposedly fixed in version 460. However,
+  // to support earlier versions, we create a pool of events at the beginning
+  // and re-use them for all transfers.
+  void requestSendEvent(int deviceIdx, CudaEventPool::RequestCallback callback);
+  void requestRecvEvent(int deviceIdx, CudaEventPool::RequestCallback callback);
+
   // Implement the DeferredExecutor interface.
   bool inLoop() const override;
   void deferToLoop(std::function<void()> fn) override;
@@ -95,6 +103,9 @@ class ContextImpl final
   // index), because each channel will only ever look up handles for the same
   // process identifier, hence we could do that first loopup once and cache it.
   std::map<std::tuple<std::string, int>, void*> openIpcHandles_;
+
+  std::vector<std::unique_ptr<CudaEventPool>> sendEventPools_;
+  std::vector<std::unique_ptr<CudaEventPool>> recvEventPools_;
 };
 
 } // namespace cuda_ipc

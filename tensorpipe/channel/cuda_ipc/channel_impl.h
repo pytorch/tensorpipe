@@ -17,6 +17,7 @@
 #include <tensorpipe/channel/channel_impl_boilerplate.h>
 #include <tensorpipe/common/cuda.h>
 #include <tensorpipe/common/cuda_buffer.h>
+#include <tensorpipe/common/cuda_event_pool.h>
 #include <tensorpipe/common/cuda_lib.h>
 #include <tensorpipe/common/state_machine.h>
 #include <tensorpipe/transport/context.h>
@@ -28,13 +29,14 @@ namespace cuda_ipc {
 class ContextImpl;
 
 struct SendOperation {
-  enum State { UNINITIALIZED, READING_REPLY, FINISHED };
+  enum State { UNINITIALIZED, REQUESTING_EVENT, READING_REPLY, FINISHED };
 
   // Fields used by the state machine
   uint64_t sequenceNumber{0};
   State state{UNINITIALIZED};
 
   // Progress flags
+  bool doneRequestingEvent{false};
   bool doneReadingReply{false};
 
   // Arguments at creation
@@ -45,7 +47,7 @@ struct SendOperation {
   TSendCallback callback;
 
   // Other data
-  CudaEvent startEv;
+  CudaEventPool::BorrowedEvent startEv;
   std::string stopEvHandle;
 
   SendOperation(
@@ -57,13 +59,14 @@ struct SendOperation {
 };
 
 struct RecvOperation {
-  enum State { UNINITIALIZED, READING_ACK, FINISHED };
+  enum State { UNINITIALIZED, REQUESTING_EVENT, READING_ACK, FINISHED };
 
   // Fields used by the state machine
   uint64_t sequenceNumber{0};
   State state{UNINITIALIZED};
 
   // Progress flags
+  bool doneRequestingEvent{false};
   bool doneReadingAck{false};
 
   // Arguments at creation
@@ -74,7 +77,7 @@ struct RecvOperation {
   TRecvCallback callback;
 
   // Other data
-  CudaEvent stopEv;
+  CudaEventPool::BorrowedEvent stopEv;
   std::string allocationId;
   std::string bufferHandle;
   size_t offset;
@@ -131,16 +134,20 @@ class ChannelImpl final
 
   // Actions (i.e., methods that begin a state transition).
   // For send operations:
+  void requestEvent(SendOpIter opIter);
   void recordStartEvent(SendOpIter opIter);
   void callDescriptorCallback(SendOpIter opIter);
   void readReply(SendOpIter opIter);
+  void returnEvent(SendOpIter opIter);
   void waitOnStopEvent(SendOpIter opIter);
   void callSendCallback(SendOpIter opIter);
   void writeAck(SendOpIter opIter);
   // For recv operations:
+  void requestEvent(RecvOpIter opIter);
   void waitOnStartEventAndCopyAndRecordStopEvent(RecvOpIter opIter);
   void callRecvCallback(RecvOpIter opIter);
   void writeReplyAndReadAck(RecvOpIter opIter);
+  void returnEvent(RecvOpIter opIter);
 };
 
 } // namespace cuda_ipc
