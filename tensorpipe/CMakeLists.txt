@@ -22,6 +22,22 @@ add_library(tensorpipe
   core/pipe_impl.cc
   transport/error.cc)
 
+set(TP_PUBLIC_HEADERS
+  tensorpipe.h
+  channel/context.h
+  channel/cpu_context.h
+  channel/error.h
+  common/cpu_buffer.h
+  common/error.h
+  core/buffer.h
+  core/context.h
+  core/error.h
+  core/listener.h
+  core/message.h
+  core/pipe.h
+  transport/context.h
+  transport/error.h)
+
 # Support `#include <tensorpipe/foo.h>`.
 target_include_directories(tensorpipe PUBLIC $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}>)
 
@@ -37,6 +53,8 @@ target_sources(tensorpipe PRIVATE
   channel/basic/channel_impl.cc
   channel/basic/context_impl.cc
   channel/basic/factory.cc)
+set(TP_PUBLIC_HEADERS ${TP_PUBLIC_HEADERS}
+  channel/basic/factory.h)
 
 ### xth
 
@@ -44,6 +62,8 @@ target_sources(tensorpipe PRIVATE
   channel/xth/channel_impl.cc
   channel/xth/context_impl.cc
   channel/xth/factory.cc)
+set(TP_PUBLIC_HEADERS ${TP_PUBLIC_HEADERS}
+  channel/xth/factory.h)
 
 ### cma
 
@@ -52,6 +72,8 @@ if(TP_ENABLE_CMA)
     channel/cma/channel_impl.cc
     channel/cma/context_impl.cc
     channel/cma/factory.cc)
+  set(TP_PUBLIC_HEADERS ${TP_PUBLIC_HEADERS}
+    channel/cma/factory.h)
   set(TENSORPIPE_HAS_CMA_CHANNEL 1)
 else()
   set(TENSORPIPE_HAS_CMA_CHANNEL 0)
@@ -63,6 +85,8 @@ target_sources(tensorpipe PRIVATE
   channel/mpt/channel_impl.cc
   channel/mpt/context_impl.cc
   channel/mpt/factory.cc)
+set(TP_PUBLIC_HEADERS ${TP_PUBLIC_HEADERS}
+  channel/mpt/factory.h)
 
 ## CUDA channels
 
@@ -70,6 +94,9 @@ if(TP_USE_CUDA)
   find_package(CUDA REQUIRED)
   target_link_libraries(tensorpipe PUBLIC ${CUDA_LIBRARIES})
   target_include_directories(tensorpipe PUBLIC ${CUDA_INCLUDE_DIRS})
+  set(TP_PUBLIC_HEADERS ${TP_PUBLIC_HEADERS}
+    channel/cuda_context.h
+    common/cuda_buffer.h)
   set(TENSORPIPE_SUPPORTS_CUDA 1)
 
   ### cuda_xth
@@ -78,6 +105,8 @@ if(TP_USE_CUDA)
     channel/cuda_xth/channel_impl.cc
     channel/cuda_xth/context_impl.cc
     channel/cuda_xth/factory.cc)
+  set(TP_PUBLIC_HEADERS ${TP_PUBLIC_HEADERS}
+    channel/cuda_xth/factory.h)
 
   ### cuda_basic
 
@@ -87,6 +116,8 @@ if(TP_USE_CUDA)
     channel/cuda_basic/factory.cc
     common/cuda_host_allocator.cc
     common/cuda_loop.cc)
+  set(TP_PUBLIC_HEADERS ${TP_PUBLIC_HEADERS}
+    channel/cuda_basic/factory.h)
 
   ### cuda_ipc
 
@@ -95,6 +126,8 @@ if(TP_USE_CUDA)
       channel/cuda_ipc/channel_impl.cc
       channel/cuda_ipc/context_impl.cc
       channel/cuda_ipc/factory.cc)
+    set(TP_PUBLIC_HEADERS ${TP_PUBLIC_HEADERS}
+      channel/cuda_ipc/factory.h)
     set(TENSORPIPE_HAS_CUDA_IPC_CHANNEL 1)
   endif()
 
@@ -103,6 +136,9 @@ if(TP_USE_CUDA)
     channel/cuda_gdr/channel_impl.cc
     channel/cuda_gdr/context_impl.cc
     channel/cuda_gdr/factory.cc)
+  set(TP_PUBLIC_HEADERS ${TP_PUBLIC_HEADERS}
+    channel/cuda_gdr/error.h
+    channel/cuda_gdr/factory.h)
   set(TENSORPIPE_HAS_CUDA_GDR_CHANNEL 1)
 endif()
 
@@ -119,6 +155,10 @@ target_sources(tensorpipe PRIVATE
   transport/uv/loop.cc
   transport/uv/sockaddr.cc
   transport/uv/utility.cc)
+set(TP_PUBLIC_HEADERS ${TP_PUBLIC_HEADERS}
+  transport/uv/error.h
+  transport/uv/factory.h
+  transport/uv/utility.h)
 find_package(uv REQUIRED)
 target_link_libraries(tensorpipe PRIVATE uv::uv)
 
@@ -135,6 +175,8 @@ if(TP_ENABLE_SHM)
     transport/shm/sockaddr.cc
     util/ringbuffer/shm.cc
     util/shm/segment.cc)
+  set(TP_PUBLIC_HEADERS ${TP_PUBLIC_HEADERS}
+    transport/shm/factory.h)
   set(TENSORPIPE_HAS_SHM_TRANSPORT 1)
 else()
   set(TENSORPIPE_HAS_SHM_TRANSPORT 0)
@@ -154,6 +196,10 @@ if(TP_ENABLE_IBV)
     transport/ibv/reactor.cc
     transport/ibv/sockaddr.cc
     transport/ibv/utility.cc)
+  set(TP_PUBLIC_HEADERS ${TP_PUBLIC_HEADERS}
+    transport/ibv/error.h
+    transport/ibv/factory.h
+    transport/ibv/utility.h)
   set(TENSORPIPE_HAS_IBV_TRANSPORT 1)
 endif()
 
@@ -209,62 +255,6 @@ install(TARGETS tensorpipe
         EXPORT TensorpipeTargets
         LIBRARY DESTINATION ${TP_INSTALL_LIBDIR}
         ARCHIVE DESTINATION ${TP_INSTALL_LIBDIR})
-
-### Public headers
-
-set(TP_PUBLIC_HEADERS
-  tensorpipe.h
-  channel/context.h
-  channel/cpu_context.h
-  channel/error.h
-  channel/basic/factory.h
-  channel/mpt/factory.h
-  channel/xth/factory.h
-  common/cpu_buffer.h
-  common/error.h
-  core/buffer.h
-  core/context.h
-  core/error.h
-  core/listener.h
-  core/message.h
-  core/pipe.h
-  transport/context.h
-  transport/error.h
-  transport/uv/error.h
-  transport/uv/factory.h
-  transport/uv/utility.h
-)
-
-if(TP_ENABLE_CMA)
-  set(TP_PUBLIC_HEADERS ${TP_PUBLIC_HEADERS} channel/cma/factory.h)
-endif()
-
-if(TP_USE_CUDA)
-  set(TP_PUBLIC_HEADERS ${TP_PUBLIC_HEADERS}
-    channel/cuda_context.h
-    channel/cuda_basic/factory.h
-    channel/cuda_gdr/error.h
-    channel/cuda_gdr/factory.h
-    channel/cuda_xth/factory.h
-    common/cuda_buffer.h
-  )
-
-  if(TP_ENABLE_CUDA_IPC)
-    set(TP_PUBLIC_HEADERS ${TP_PUBLIC_HEADERS} channel/cuda_ipc/factory.h)
-  endif()
-endif()
-
-if(TP_ENABLE_SHM)
-  set(TP_PUBLIC_HEADERS ${TP_PUBLIC_HEADERS} transport/shm/factory.h)
-endif()
-
-if(TP_ENABLE_IBV)
-  set(TP_PUBLIC_HEADERS ${TP_PUBLIC_HEADERS}
-    transport/ibv/error.h
-    transport/ibv/factory.h
-    transport/ibv/utility.h
-  )
-endif()
 
 foreach(_header_file ${TP_PUBLIC_HEADERS})
   get_filename_component(_TP_HEADER_SUBDIR "${_header_file}" DIRECTORY)
