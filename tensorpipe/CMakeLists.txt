@@ -38,11 +38,10 @@ set(TP_PUBLIC_HEADERS
   transport/context.h
   transport/error.h)
 
-# Support `#include <tensorpipe/foo.h>`.
-target_include_directories(tensorpipe PUBLIC $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}>)
-
-# Support `#include <tensorpipe/tensorpipe.h>`.
-target_include_directories(tensorpipe PUBLIC $<BUILD_INTERFACE:${PROJECT_BINARY_DIR}>)
+target_include_directories(tensorpipe PUBLIC
+  $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}>
+  $<BUILD_INTERFACE:${PROJECT_BINARY_DIR}>
+  $<INSTALL_INTERFACE:${TP_INSTALL_INCLUDEDIR}>)
 
 
 ## Channels
