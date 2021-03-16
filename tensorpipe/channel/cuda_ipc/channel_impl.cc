@@ -60,19 +60,14 @@ SendOperation::SendOperation(
       deviceIdx(deviceIdx),
       stream(stream),
       descriptorCallback(std::move(descriptorCallback)),
-      callback(std::move(callback)),
-      startEv(deviceIdx, /*interprocess=*/true) {}
+      callback(std::move(callback)) {}
 
 RecvOperation::RecvOperation(
     int deviceIdx,
     void* ptr,
     cudaStream_t stream,
     size_t length)
-    : ptr(ptr),
-      length(length),
-      deviceIdx(deviceIdx),
-      stream(stream),
-      stopEv(deviceIdx, /*interprocess=*/true) {}
+    : ptr(ptr), length(length), deviceIdx(deviceIdx), stream(stream) {}
 
 ChannelImpl::ChannelImpl(
     ConstructorToken token,
@@ -124,13 +119,37 @@ void ChannelImpl::advanceSendOperation(
       /*actions=*/
       {&ChannelImpl::callDescriptorCallback, &ChannelImpl::callSendCallback});
 
+  // Needs to go after previous op to ensure later operations are not holding
+  // events while earlier ones are still blocked waiting for them, because the
+  // events will only be returned after the control messages have been written
+  // and sent, and this won't happen for later operations until earlier ones
+  // have reached that stage too, and if those are blocked waiting for events
+  // then we may deadlock.
+  sendOps_.attemptTransition(
+      opIter,
+      /*from=*/SendOperation::UNINITIALIZED,
+      /*to=*/SendOperation::REQUESTING_EVENT,
+      /*cond=*/!error_ && prevOpState >= SendOperation::REQUESTING_EVENT,
+      /*actions=*/{&ChannelImpl::requestEvent});
+
+  sendOps_.attemptTransition(
+      opIter,
+      /*from=*/SendOperation::REQUESTING_EVENT,
+      /*to=*/SendOperation::FINISHED,
+      /*cond=*/error_ && op.doneRequestingEvent,
+      /*actions=*/
+      {&ChannelImpl::callDescriptorCallback,
+       &ChannelImpl::returnEvent,
+       &ChannelImpl::callSendCallback});
+
   // Needs to go after previous op to ensure predictable and consistent ordering
   // of read calls on reply control connection.
   sendOps_.attemptTransition(
       opIter,
-      /*from=*/SendOperation::UNINITIALIZED,
+      /*from=*/SendOperation::REQUESTING_EVENT,
       /*to=*/SendOperation::READING_REPLY,
-      /*cond=*/!error_ && prevOpState >= SendOperation::READING_REPLY,
+      /*cond=*/!error_ && op.doneRequestingEvent &&
+          prevOpState >= SendOperation::READING_REPLY,
       /*actions=*/
       {&ChannelImpl::recordStartEvent,
        &ChannelImpl::callDescriptorCallback,
@@ -141,7 +160,7 @@ void ChannelImpl::advanceSendOperation(
       /*from=*/SendOperation::READING_REPLY,
       /*to=*/SendOperation::FINISHED,
       /*cond=*/error_ && op.doneReadingReply,
-      /*actions=*/{&ChannelImpl::callSendCallback});
+      /*actions=*/{&ChannelImpl::returnEvent, &ChannelImpl::callSendCallback});
 
   // Needs to go after previous op to ensure predictable and consistent ordering
   // of write calls on ack control connection.
@@ -152,15 +171,31 @@ void ChannelImpl::advanceSendOperation(
       /*cond=*/!error_ && op.doneReadingReply &&
           prevOpState >= SendOperation::FINISHED,
       /*actions=*/
-      {&ChannelImpl::waitOnStopEvent,
+      {&ChannelImpl::returnEvent,
+       &ChannelImpl::waitOnStopEvent,
        &ChannelImpl::callSendCallback,
        &ChannelImpl::writeAck});
+}
+
+void ChannelImpl::requestEvent(SendOpIter opIter) {
+  SendOperation& op = *opIter;
+
+  context_->requestSendEvent(
+      op.deviceIdx,
+      callbackWrapper_(
+          [opIter](ChannelImpl& impl, CudaEventPool::BorrowedEvent event) {
+            opIter->doneRequestingEvent = true;
+            if (!impl.error_) {
+              opIter->startEv = std::move(event);
+            }
+            impl.sendOps_.advanceOperation(opIter);
+          }));
 }
 
 void ChannelImpl::recordStartEvent(SendOpIter opIter) {
   SendOperation& op = *opIter;
 
-  op.startEv.record(op.stream);
+  op.startEv->record(op.stream);
 }
 
 void ChannelImpl::callDescriptorCallback(SendOpIter opIter) {
@@ -203,7 +238,7 @@ void ChannelImpl::callDescriptorCallback(SendOpIter opIter) {
       context_->getProcessIdentifier() + "_" + std::to_string(bufferId),
       std::string(reinterpret_cast<const char*>(&handle), sizeof(handle)),
       offset,
-      op.startEv.serializedHandle()};
+      op.startEv->serializedHandle()};
   op.descriptorCallback(error_, saveDescriptor(nopHolder));
   // Reset callback to release the resources it was holding.
   op.descriptorCallback = nullptr;
@@ -228,6 +263,12 @@ void ChannelImpl::readReply(SendOpIter opIter) {
         }
         impl.sendOps_.advanceOperation(opIter);
       }));
+}
+
+void ChannelImpl::returnEvent(SendOpIter opIter) {
+  SendOperation& op = *opIter;
+
+  op.startEv = nullptr;
 }
 
 void ChannelImpl::waitOnStopEvent(SendOpIter opIter) {
@@ -299,27 +340,62 @@ void ChannelImpl::advanceRecvOperation(
       /*cond=*/error_,
       /*actions=*/{&ChannelImpl::callRecvCallback});
 
+  // Needs to go after previous op to ensure later operations are not holding
+  // events while earlier ones are still blocked waiting for them, because the
+  // events will only be returned after the control messages have been written
+  // and sent, and this won't happen for later operations until earlier ones
+  // have reached that stage too, and if those are blocked waiting for events
+  // then we may deadlock.
+  recvOps_.attemptTransition(
+      opIter,
+      /*from=*/RecvOperation::UNINITIALIZED,
+      /*to=*/RecvOperation::REQUESTING_EVENT,
+      /*cond=*/!error_ && prevOpState >= RecvOperation::REQUESTING_EVENT,
+      /*actions=*/
+      {&ChannelImpl::requestEvent});
+
+  recvOps_.attemptTransition(
+      opIter,
+      /*from=*/RecvOperation::REQUESTING_EVENT,
+      /*to=*/RecvOperation::FINISHED,
+      /*cond=*/error_ && op.doneRequestingEvent,
+      /*actions=*/{&ChannelImpl::callRecvCallback, &ChannelImpl::returnEvent});
+
   // Needs to go after previous op to ensure predictable and consistent ordering
   // of write calls on reply control connection and read calls on ack control
   // connection.
   recvOps_.attemptTransition(
       opIter,
-      /*from=*/RecvOperation::UNINITIALIZED,
+      /*from=*/RecvOperation::REQUESTING_EVENT,
       /*to=*/RecvOperation::READING_ACK,
-      /*cond=*/!error_ && prevOpState >= RecvOperation::READING_ACK,
+      /*cond=*/!error_ && op.doneRequestingEvent &&
+          prevOpState >= RecvOperation::READING_ACK,
       /*actions=*/
       {&ChannelImpl::waitOnStartEventAndCopyAndRecordStopEvent,
        &ChannelImpl::callRecvCallback,
        &ChannelImpl::writeReplyAndReadAck});
 
-  // This transition is needed just to keep the operation (and thus its stop
-  // event) alive until the remote acknowledged having finished using the event.
   recvOps_.attemptTransition(
       opIter,
       /*from=*/RecvOperation::READING_ACK,
       /*to=*/RecvOperation::FINISHED,
       /*cond=*/op.doneReadingAck,
-      /*actions=*/{});
+      /*actions=*/{&ChannelImpl::returnEvent});
+}
+
+void ChannelImpl::requestEvent(RecvOpIter opIter) {
+  RecvOperation& op = *opIter;
+
+  context_->requestRecvEvent(
+      op.deviceIdx,
+      callbackWrapper_(
+          [opIter](ChannelImpl& impl, CudaEventPool::BorrowedEvent event) {
+            opIter->doneRequestingEvent = true;
+            if (!impl.error_) {
+              opIter->stopEv = std::move(event);
+            }
+            impl.recvOps_.advanceOperation(opIter);
+          }));
 }
 
 void ChannelImpl::waitOnStartEventAndCopyAndRecordStopEvent(RecvOpIter opIter) {
@@ -348,7 +424,7 @@ void ChannelImpl::waitOnStartEventAndCopyAndRecordStopEvent(RecvOpIter opIter) {
         op.stream));
   }
 
-  op.stopEv.record(op.stream);
+  op.stopEv->record(op.stream);
 
   TP_VLOG(6) << "Channel " << id_ << " done copying payload (#"
              << op.sequenceNumber << ")";
@@ -369,7 +445,7 @@ void ChannelImpl::writeReplyAndReadAck(RecvOpIter opIter) {
              << op.sequenceNumber << ")";
   auto nopReplyHolder = std::make_shared<NopHolder<Reply>>();
   Reply& nopReply = nopReplyHolder->getObject();
-  nopReply.stopEvHandle = op.stopEv.serializedHandle();
+  nopReply.stopEvHandle = op.stopEv->serializedHandle();
   replyConnection_->write(
       *nopReplyHolder,
       callbackWrapper_([nopReplyHolder,
@@ -391,6 +467,12 @@ void ChannelImpl::writeReplyAndReadAck(RecvOpIter opIter) {
         opIter->doneReadingAck = true;
         impl.recvOps_.advanceOperation(opIter);
       }));
+}
+
+void ChannelImpl::returnEvent(RecvOpIter opIter) {
+  RecvOperation& op = *opIter;
+
+  op.stopEv = nullptr;
 }
 
 void ChannelImpl::handleErrorImpl() {
