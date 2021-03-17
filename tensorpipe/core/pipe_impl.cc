@@ -17,12 +17,17 @@
 #include <tensorpipe/common/address.h>
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/error_macros.h>
-#include <tensorpipe/core/buffer_helpers.h>
 #include <tensorpipe/core/context_impl.h>
 #include <tensorpipe/core/error.h>
 #include <tensorpipe/core/listener.h>
 #include <tensorpipe/core/listener_impl.h>
 #include <tensorpipe/transport/connection.h>
+
+#include <tensorpipe/common/buffer.h>
+#include <tensorpipe/common/cpu_buffer.h>
+#if TENSORPIPE_SUPPORTS_CUDA
+#include <tensorpipe/common/cuda_buffer.h>
+#endif // TENSORPIPE_SUPPORTS_CUDA
 
 namespace tensorpipe {
 
@@ -102,20 +107,7 @@ void checkAllocationCompatibility(
     const Message::Tensor& tensor = message.tensors[tensorIdx];
     const ReadOperation::Tensor& tensorBeingAllocated = op.tensors[tensorIdx];
     TP_DCHECK_GE(tensorBeingAllocated.length, 0);
-    switch (tensor.buffer.type) {
-      case DeviceType::kCpu:
-        TP_THROW_ASSERT_IF(
-            tensor.buffer.cpu.length != tensorBeingAllocated.length);
-        break;
-#if TENSORPIPE_SUPPORTS_CUDA
-      case DeviceType::kCuda:
-        TP_THROW_ASSERT_IF(
-            tensor.buffer.cuda.length != tensorBeingAllocated.length);
-        break;
-#endif // TENSORPIPE_SUPPORTS_CUDA
-      default:
-        TP_THROW_ASSERT() << "Unexpected device type.";
-    }
+    TP_THROW_ASSERT_IF(tensor.buffer.length() != tensorBeingAllocated.length);
   }
 }
 
@@ -154,19 +146,8 @@ std::shared_ptr<NopHolder<Packet>> makeDescriptorForMessage(
     // FIXME In principle we could move here.
     nopTensorDescriptor.channelDescriptor = otherTensor.descriptor;
 
-    nopTensorDescriptor.deviceType = tensor.buffer.type;
-    switch (tensor.buffer.type) {
-      case DeviceType::kCpu:
-        nopTensorDescriptor.sizeInBytes = tensor.buffer.cpu.length;
-        break;
-#if TENSORPIPE_SUPPORTS_CUDA
-      case DeviceType::kCuda:
-        nopTensorDescriptor.sizeInBytes = tensor.buffer.cuda.length;
-        break;
-#endif // TENSORPIPE_SUPPORTS_CUDA
-      default:
-        TP_THROW_ASSERT() << "Unknown device type.";
-    };
+    nopTensorDescriptor.deviceType = tensor.buffer.deviceType();
+    nopTensorDescriptor.sizeInBytes = tensor.buffer.length();
   }
 
   return nopHolderOut;
@@ -241,23 +222,6 @@ template <>
 const std::unordered_map<std::string, ChannelSelection>& getChannelSelection<
     CudaBuffer>(const BrochureAnswer& nopBrochureAnswer) {
   return nopBrochureAnswer.cudaChannelSelection;
-}
-#endif // TENSORPIPE_SUPPORTS_CUDA
-
-template <typename TBuffer>
-TBuffer unwrap(Buffer);
-
-template <>
-CpuBuffer unwrap(Buffer b) {
-  TP_DCHECK(DeviceType::kCpu == b.type);
-  return b.cpu;
-}
-
-#if TENSORPIPE_SUPPORTS_CUDA
-template <>
-CudaBuffer unwrap(Buffer b) {
-  TP_DCHECK(DeviceType::kCuda == b.type);
-  return b.cuda;
 }
 #endif // TENSORPIPE_SUPPORTS_CUDA
 
@@ -544,7 +508,7 @@ void PipeImpl::readPayloadsAndReceiveTensorsOfMessage(ReadOpIter opIter) {
        tensorIdx++) {
     Message::Tensor& tensor = op.message.tensors[tensorIdx];
     switchOnDeviceType(
-        op.message.tensors[tensorIdx].buffer.type, [&](auto buffer) {
+        op.message.tensors[tensorIdx].buffer.deviceType(), [&](auto buffer) {
           ReadOperation::Tensor& tensorBeingAllocated = op.tensors[tensorIdx];
           std::shared_ptr<channel::Channel<decltype(buffer)>> channel =
               channels_.get<decltype(buffer)>().at(
@@ -554,7 +518,7 @@ void PipeImpl::readPayloadsAndReceiveTensorsOfMessage(ReadOpIter opIter) {
 
           channel->recv(
               std::move(tensorBeingAllocated.descriptor),
-              unwrap<decltype(buffer)>(tensor.buffer),
+              tensor.buffer.unwrap<decltype(buffer)>(),
               callbackWrapper_([opIter, tensorIdx](PipeImpl& impl) {
                 TP_VLOG(3) << "Pipe " << impl.id_ << " done receiving tensor #"
                            << opIter->sequenceNumber << "." << tensorIdx;
@@ -871,7 +835,7 @@ void PipeImpl::sendTensorsOfMessage(WriteOpIter opIter) {
   for (int tensorIdx = 0; tensorIdx < op.message.tensors.size(); ++tensorIdx) {
     const auto& tensor = op.message.tensors[tensorIdx];
 
-    auto t = switchOnDeviceType(tensor.buffer.type, [&](auto buffer) {
+    auto t = switchOnDeviceType(tensor.buffer.deviceType(), [&](auto buffer) {
       auto& orderedChannels = this->getOrderedChannels<decltype(buffer)>();
       auto& availableChannels = channels_.get<decltype(buffer)>();
       for (const auto& channelContextIter : orderedChannels) {
@@ -886,7 +850,7 @@ void PipeImpl::sendTensorsOfMessage(WriteOpIter opIter) {
                    << op.sequenceNumber << "." << tensorIdx;
 
         channel.send(
-            unwrap<decltype(buffer)>(tensor.buffer),
+            tensor.buffer.unwrap<decltype(buffer)>(),
             callbackWrapper_([opIter, tensorIdx](
                                  PipeImpl& impl,
                                  channel::TDescriptor descriptor) {
@@ -900,7 +864,7 @@ void PipeImpl::sendTensorsOfMessage(WriteOpIter opIter) {
                          << opIter->sequenceNumber << "." << tensorIdx;
               impl.onSendOfTensor(opIter);
             }));
-        return WriteOperation::Tensor{tensor.buffer.type, channelName};
+        return WriteOperation::Tensor{tensor.buffer.deviceType(), channelName};
       }
 
       TP_THROW_ASSERT() << "Could not find channel.";

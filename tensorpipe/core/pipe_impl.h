@@ -17,18 +17,23 @@
 #include <vector>
 
 #include <tensorpipe/channel/channel.h>
+#include <tensorpipe/common/buffer.h>
 #include <tensorpipe/common/callback.h>
 #include <tensorpipe/common/deferred_executor.h>
 #include <tensorpipe/common/error.h>
 #include <tensorpipe/common/optional.h>
 #include <tensorpipe/common/state_machine.h>
-#include <tensorpipe/core/buffer.h>
 #include <tensorpipe/core/buffer_helpers.h>
 #include <tensorpipe/core/context_impl.h>
 #include <tensorpipe/core/message.h>
 #include <tensorpipe/core/nop_types.h>
 #include <tensorpipe/core/pipe.h>
 #include <tensorpipe/transport/context.h>
+
+#include <tensorpipe/common/cpu_buffer.h>
+#if TENSORPIPE_SUPPORTS_CUDA
+#include <tensorpipe/common/cuda_buffer.h>
+#endif // TENSORPIPE_SUPPORTS_CUDA
 
 namespace tensorpipe {
 
