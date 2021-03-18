@@ -12,7 +12,7 @@
 #include <string>
 #include <vector>
 
-#include <tensorpipe/core/buffer.h>
+#include <tensorpipe/common/buffer.h>
 
 namespace tensorpipe {
 
