@@ -138,8 +138,6 @@ class ContextImpl final
       std::vector<std::shared_ptr<transport::Connection>> connections,
       Endpoint endpoint);
 
-  bool supportsDeviceType(DeviceType type) const override;
-
   const CudaLib& getCudaLib();
 
   const std::vector<size_t>& getGpuToNicMapping();

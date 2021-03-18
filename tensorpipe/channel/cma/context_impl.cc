@@ -257,10 +257,6 @@ std::shared_ptr<CpuChannel> ContextImpl::createChannel(
   return createChannelInternal(std::move(connections[0]));
 }
 
-bool ContextImpl::supportsDeviceType(DeviceType type) const {
-  return (DeviceType::kCpu == type);
-}
-
 void ContextImpl::handleErrorImpl() {
   requests_.push(nullopt);
 }

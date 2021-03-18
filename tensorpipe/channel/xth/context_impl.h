@@ -37,8 +37,6 @@ class ContextImpl final
       std::vector<std::shared_ptr<transport::Connection>> connections,
       Endpoint endpoint);
 
-  bool supportsDeviceType(DeviceType type) const override;
-
   // Implement the DeferredExecutor interface.
   bool inLoop() const override;
   void deferToLoop(std::function<void()> fn) override;

@@ -93,10 +93,6 @@ std::shared_ptr<CudaChannel> ContextImpl::createChannel(
   return createChannelInternal(std::move(connections[0]));
 }
 
-bool ContextImpl::supportsDeviceType(DeviceType type) const {
-  return (DeviceType::kCuda == type);
-}
-
 const CudaLib& ContextImpl::getCudaLib() {
   return cudaLib_;
 }
