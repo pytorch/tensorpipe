@@ -68,6 +68,10 @@ size_t ContextImpl::numConnectionsNeeded() const {
   return 1 + cpuContext_->numConnectionsNeeded();
 }
 
+bool ContextImpl::supportsDeviceType(DeviceType type) const {
+  return (DeviceType::kCuda == type);
+}
+
 const CudaLib& ContextImpl::getCudaLib() {
   return cudaLib_;
 }

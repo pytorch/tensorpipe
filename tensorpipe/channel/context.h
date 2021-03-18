@@ -12,6 +12,7 @@
 #include <string>
 #include <vector>
 
+#include <tensorpipe/common/buffer.h>
 #include <tensorpipe/transport/context.h>
 
 namespace tensorpipe {
@@ -96,6 +97,11 @@ class Context {
   virtual void join() = 0;
 
   virtual ~Context() = default;
+
+  // FIXME: This is a private, temporary, API. It will be removed once
+  // TensorPipe supports cross-device type transfers.
+  // DO NOT USE IT.
+  virtual bool supportsDeviceType(DeviceType type) const = 0;
 
  private:
   std::string name_;
