@@ -12,18 +12,12 @@
 
 // High-level API
 
+#include <tensorpipe/core/buffer.h>
 #include <tensorpipe/core/context.h>
 #include <tensorpipe/core/error.h>
 #include <tensorpipe/core/listener.h>
 #include <tensorpipe/core/message.h>
 #include <tensorpipe/core/pipe.h>
-
-#include <tensorpipe/common/buffer.h>
-
-#include <tensorpipe/common/cpu_buffer.h>
-#if TENSORPIPE_SUPPORTS_CUDA
-#include <tensorpipe/common/cuda_buffer.h>
-#endif // TENSORPIPE_SUPPORTS_CUDA
 
 // Transports
 

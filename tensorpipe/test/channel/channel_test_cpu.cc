@@ -55,8 +55,8 @@ class EmptyTensorTest : public ClientServerChannelTestCase<CpuBuffer> {
     // Allocate a non-empty vector so that its .data() pointer is non-null.
     std::vector<uint8_t> data(1);
     DataWrapper<CpuBuffer> wrappedData(data);
-    Buffer buffer = wrappedData.buffer();
-    buffer.unwrap<CpuBuffer>().length = 0;
+    CpuBuffer buffer = wrappedData.buffer();
+    buffer.length = 0;
 
     // Perform send and wait for completion.
     std::future<std::tuple<Error, TDescriptor>> descriptorFuture;
@@ -77,8 +77,8 @@ class EmptyTensorTest : public ClientServerChannelTestCase<CpuBuffer> {
   void client(std::shared_ptr<CpuChannel> channel) override {
     // Allocate a non-empty vector so that its .data() pointer is non-null.
     DataWrapper<CpuBuffer> wrappedData(1);
-    Buffer buffer = wrappedData.buffer();
-    buffer.unwrap<CpuBuffer>().length = 0;
+    CpuBuffer buffer = wrappedData.buffer();
+    buffer.length = 0;
 
     // Perform recv and wait for completion.
     auto descriptor = this->peers_->recv(PeerGroup::kClient);

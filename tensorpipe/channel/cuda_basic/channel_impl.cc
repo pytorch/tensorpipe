@@ -16,7 +16,6 @@
 
 #include <tensorpipe/channel/channel.h>
 #include <tensorpipe/channel/cuda_basic/context_impl.h>
-#include <tensorpipe/common/cpu_buffer.h>
 #include <tensorpipe/common/cuda.h>
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/error.h>

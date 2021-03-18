@@ -12,7 +12,6 @@
 #include <string>
 
 #include <tensorpipe/channel/context.h>
-#include <tensorpipe/common/buffer.h>
 #include <tensorpipe/common/error.h>
 
 // Channels are an out of band mechanism to transfer data between
@@ -56,14 +55,14 @@ class Channel {
  public:
   // Send memory region to peer.
   virtual void send(
-      Buffer buffer,
+      TBuffer buffer,
       TDescriptorCallback descriptorCallback,
       TSendCallback callback) = 0;
 
   // Receive memory region from peer.
   virtual void recv(
       TDescriptor descriptor,
-      Buffer buffer,
+      TBuffer buffer,
       TRecvCallback callback) = 0;
 
   // Tell the channel what its identifier is.

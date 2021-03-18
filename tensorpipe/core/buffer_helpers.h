@@ -8,13 +8,8 @@
 
 #pragma once
 
-#include <tensorpipe/common/buffer.h>
 #include <tensorpipe/config.h>
-
-#include <tensorpipe/common/cpu_buffer.h>
-#if TENSORPIPE_SUPPORTS_CUDA
-#include <tensorpipe/common/cuda_buffer.h>
-#endif // TENSORPIPE_SUPPORTS_CUDA
+#include <tensorpipe/core/buffer.h>
 
 #define TP_CPU_DEVICE_FIELD_AND_ACCESSOR(t)         \
   t cpu;                                            \

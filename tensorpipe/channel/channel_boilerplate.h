@@ -38,12 +38,12 @@ class ChannelBoilerplate : public Channel<TBuffer> {
 
   // Perform a send operation.
   void send(
-      Buffer buffer,
+      TBuffer buffer,
       TDescriptorCallback descriptorCallback,
       TSendCallback callback) override;
 
   // Queue a recv operation.
-  void recv(TDescriptor descriptor, Buffer buffer, TRecvCallback callback)
+  void recv(TDescriptor descriptor, TBuffer buffer, TRecvCallback callback)
       override;
 
   // Tell the connection what its identifier is.
@@ -82,22 +82,18 @@ ChannelBoilerplate<TBuffer, TCtx, TChan>::ChannelBoilerplate(
 
 template <typename TBuffer, typename TCtx, typename TChan>
 void ChannelBoilerplate<TBuffer, TCtx, TChan>::send(
-    Buffer buffer,
+    TBuffer buffer,
     TDescriptorCallback descriptorCallback,
     TSendCallback callback) {
-  impl_->send(
-      buffer.unwrap<TBuffer>(),
-      std::move(descriptorCallback),
-      std::move(callback));
+  impl_->send(buffer, std::move(descriptorCallback), std::move(callback));
 }
 
 template <typename TBuffer, typename TCtx, typename TChan>
 void ChannelBoilerplate<TBuffer, TCtx, TChan>::recv(
     TDescriptor descriptor,
-    Buffer buffer,
+    TBuffer buffer,
     TRecvCallback callback) {
-  impl_->recv(
-      std::move(descriptor), buffer.unwrap<TBuffer>(), std::move(callback));
+  impl_->recv(std::move(descriptor), buffer, std::move(callback));
 }
 
 template <typename TBuffer, typename TCtx, typename TChan>

@@ -22,6 +22,7 @@
 #include <tensorpipe/common/error_macros.h>
 #include <tensorpipe/common/optional.h>
 #include <tensorpipe/common/queue.h>
+#include <tensorpipe/core/buffer_helpers.h>
 #include <tensorpipe/core/error.h>
 #include <tensorpipe/core/listener.h>
 #include <tensorpipe/core/listener_impl.h>
