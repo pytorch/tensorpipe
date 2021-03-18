@@ -8,9 +8,9 @@
 
 #pragma once
 
-#include <cstddef>
-
 #include <cuda_runtime.h>
+
+#include <tensorpipe/common/buffer.h>
 
 namespace tensorpipe {
 
@@ -19,5 +19,10 @@ struct CudaBuffer {
   size_t length{0};
   cudaStream_t stream{cudaStreamDefault};
 };
+
+template <>
+inline DeviceType deviceType(const CudaBuffer& /* unused */) {
+  return DeviceType::kCuda;
+}
 
 } // namespace tensorpipe

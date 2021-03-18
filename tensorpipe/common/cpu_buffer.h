@@ -10,11 +10,18 @@
 
 #include <cstddef>
 
+#include <tensorpipe/common/buffer.h>
+
 namespace tensorpipe {
 
 struct CpuBuffer {
   void* ptr{nullptr};
   size_t length{0};
 };
+
+template <>
+inline DeviceType deviceType(const CpuBuffer& /* unused */) {
+  return DeviceType::kCpu;
+}
 
 } // namespace tensorpipe
