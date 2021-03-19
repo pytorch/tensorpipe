@@ -20,6 +20,7 @@
 
 #include <tensorpipe/channel/channel.h>
 #include <tensorpipe/channel/context.h>
+#include <tensorpipe/common/buffer.h>
 #include <tensorpipe/common/cpu_buffer.h>
 #include <tensorpipe/config.h>
 #include <tensorpipe/test/peer_group.h>
@@ -157,7 +158,7 @@ template <typename TBuffer>
     std::future<tensorpipe::Error>>
 sendWithFuture(
     std::shared_ptr<tensorpipe::channel::Channel<TBuffer>> channel,
-    TBuffer buffer) {
+    tensorpipe::Buffer buffer) {
   auto descriptorPromise = std::make_shared<
       std::promise<std::tuple<tensorpipe::Error, std::string>>>();
   auto promise = std::make_shared<std::promise<tensorpipe::Error>>();
@@ -181,7 +182,7 @@ template <typename TBuffer>
 [[nodiscard]] std::future<tensorpipe::Error> recvWithFuture(
     std::shared_ptr<tensorpipe::channel::Channel<TBuffer>> channel,
     tensorpipe::channel::TDescriptor descriptor,
-    TBuffer buffer) {
+    tensorpipe::Buffer buffer) {
   auto promise = std::make_shared<std::promise<tensorpipe::Error>>();
   auto future = promise->get_future();
 
