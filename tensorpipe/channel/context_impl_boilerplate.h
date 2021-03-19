@@ -64,6 +64,9 @@ class ContextImplBoilerplate : public virtual DeferredExecutor,
 
   virtual ~ContextImplBoilerplate() = default;
 
+  // FIXME: Private, temporary API.
+  virtual bool supportsDeviceType(DeviceType type) const = 0;
+
  protected:
   virtual void initImplFromLoop() {}
   virtual void handleErrorImpl() = 0;

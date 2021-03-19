@@ -52,6 +52,9 @@ class ContextBoilerplate : public Context<TBuffer> {
 
   ~ContextBoilerplate() override;
 
+  // FIXME: Private, temporary API.
+  bool supportsDeviceType(DeviceType type) const override;
+
  protected:
   // The implementation is managed by a shared_ptr because each child object
   // will also hold a shared_ptr to it. However, its lifetime is tied to the one
@@ -119,6 +122,13 @@ void ContextBoilerplate<TBuffer, TCtx, TChan>::join() {
 template <typename TBuffer, typename TCtx, typename TChan>
 ContextBoilerplate<TBuffer, TCtx, TChan>::~ContextBoilerplate() {
   join();
+}
+
+// FIXME
+template <typename TBuffer, typename TCtx, typename TChan>
+bool ContextBoilerplate<TBuffer, TCtx, TChan>::supportsDeviceType(
+    DeviceType type) const {
+  return impl_->supportsDeviceType(type);
 }
 
 } // namespace channel
