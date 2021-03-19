@@ -16,10 +16,7 @@
 #include <tensorpipe/config.h>
 #include <tensorpipe/transport/context.h>
 
-#include <tensorpipe/channel/cpu_context.h>
-#if TENSORPIPE_SUPPORTS_CUDA
-#include <tensorpipe/channel/cuda_context.h>
-#endif // TENSORPIPE_SUPPORTS_CUDA
+#include <tensorpipe/channel/context.h>
 
 namespace tensorpipe {
 
@@ -71,14 +68,7 @@ class Context final {
   void registerChannel(
       int64_t priority,
       std::string channel,
-      std::shared_ptr<channel::CpuContext> context);
-
-#if TENSORPIPE_SUPPORTS_CUDA
-  void registerChannel(
-      int64_t,
-      std::string,
-      std::shared_ptr<channel::CudaContext>);
-#endif // TENSORPIPE_SUPPORTS_CUDA
+      std::shared_ptr<channel::Context> context);
 
   std::shared_ptr<Listener> listen(const std::vector<std::string>& urls);
 

@@ -9,13 +9,14 @@
 #pragma once
 
 #include <tensorpipe/channel/context.h>
-#include <tensorpipe/common/cuda_buffer.h>
 
 namespace tensorpipe {
 namespace channel {
 
-using CudaChannel = Channel<CudaBuffer>;
-using CudaContext = Context<CudaBuffer>;
+// FIXME: These aliases are temporarily required for backwards compatibility.
+// Remove once dependent code has been updated.
+using CudaChannel = Channel;
+using CudaContext = Context;
 
 } // namespace channel
 } // namespace tensorpipe

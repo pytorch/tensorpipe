@@ -21,7 +21,7 @@ namespace tensorpipe {
 namespace channel {
 
 template <typename TBuffer, typename TCtx, typename TChan>
-class ChannelBoilerplate : public Channel<TBuffer> {
+class ChannelBoilerplate : public Channel {
  public:
   template <typename... Args>
   ChannelBoilerplate(

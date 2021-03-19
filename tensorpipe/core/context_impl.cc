@@ -85,18 +85,15 @@ void ContextImpl::registerTransport(
   transportsByPriority_.emplace(-priority, std::make_tuple(transport, context));
 }
 
-template <typename TBuffer>
 void ContextImpl::registerChannel(
     int64_t priority,
     std::string channel,
-    std::shared_ptr<channel::Context<TBuffer>> context) {
-  auto& channels = channels_.get<TBuffer>();
-  auto& channelsByPriority = channelsByPriority_.get<TBuffer>();
+    std::shared_ptr<channel::Context> context) {
   TP_THROW_ASSERT_IF(channel.empty());
-  TP_THROW_ASSERT_IF(channels.find(channel) != channels.end())
+  TP_THROW_ASSERT_IF(channels_.find(channel) != channels_.end())
       << "channel " << channel << " already registered";
   TP_THROW_ASSERT_IF(
-      channelsByPriority.find(-priority) != channelsByPriority.end())
+      channelsByPriority_.find(-priority) != channelsByPriority_.end())
       << "channel with priority " << priority << " already registered";
   if (!context->isViable()) {
     TP_VLOG(1) << "Context " << id_ << " is not registering channel " << channel
@@ -105,27 +102,11 @@ void ContextImpl::registerChannel(
   }
   TP_VLOG(1) << "Context " << id_ << " is registering channel " << channel;
   context->setId(id_ + ".ch_" + channel);
-  channels.emplace(channel, context);
+  channels_.emplace(channel, context);
   // Reverse the priority, as the pipe will pick the *first* available channel
   // it can find in the ordered map, so higher priorities should come first.
-  channelsByPriority.emplace(-priority, std::make_tuple(channel, context));
+  channelsByPriority_.emplace(-priority, std::make_tuple(channel, context));
 }
-
-void ContextImpl::registerChannel(
-    int64_t priority,
-    std::string channel,
-    std::shared_ptr<channel::CpuContext> context) {
-  registerChannel<CpuBuffer>(priority, std::move(channel), std::move(context));
-}
-
-#if TENSORPIPE_SUPPORTS_CUDA
-void ContextImpl::registerChannel(
-    int64_t priority,
-    std::string channel,
-    std::shared_ptr<channel::CudaContext> context) {
-  registerChannel<CudaBuffer>(priority, std::move(channel), std::move(context));
-}
-#endif
 
 std::shared_ptr<Listener> ContextImpl::listen(
     const std::vector<std::string>& urls) {
@@ -167,44 +148,22 @@ std::shared_ptr<transport::Context> ContextImpl::getTransport(
   return iter->second;
 }
 
-template <typename TBuffer>
-std::shared_ptr<channel::Context<TBuffer>> ContextImpl::getChannel(
+std::shared_ptr<channel::Context> ContextImpl::getChannel(
     const std::string& channel) {
-  auto& channels = channels_.get<TBuffer>();
-  auto iter = channels.find(channel);
-  if (iter == channels.end()) {
+  auto iter = channels_.find(channel);
+  if (iter == channels_.end()) {
     TP_THROW_EINVAL() << "unsupported channel " << channel;
   }
   return iter->second;
 }
 
-std::shared_ptr<channel::CpuContext> ContextImpl::getCpuChannel(
-    const std::string& channel) {
-  return getChannel<CpuBuffer>(channel);
-}
-
-#if TENSORPIPE_SUPPORTS_CUDA
-std::shared_ptr<channel::CudaContext> ContextImpl::getCudaChannel(
-    const std::string& channel) {
-  return getChannel<CudaBuffer>(channel);
-}
-#endif // TENSORPIPE_SUPPORTS_CUDA
-
 const ContextImpl::TOrderedTransports& ContextImpl::getOrderedTransports() {
   return transportsByPriority_;
 }
 
-const ContextImpl::TOrderedChannels<CpuBuffer>& ContextImpl::
-    getOrderedCpuChannels() {
-  return channelsByPriority_.get<CpuBuffer>();
+const ContextImpl::TOrderedChannels& ContextImpl::getOrderedChannels() {
+  return channelsByPriority_;
 }
-
-#if TENSORPIPE_SUPPORTS_CUDA
-const ContextImpl::TOrderedChannels<CudaBuffer>& ContextImpl::
-    getOrderedCudaChannels() {
-  return channelsByPriority_.get<CudaBuffer>();
-}
-#endif // TENSORPIPE_SUPPORTS_CUDA
 
 const std::string& ContextImpl::getName() {
   return name_;
@@ -295,11 +254,9 @@ void ContextImpl::handleError() {
   for (auto& iter : transports_) {
     iter.second->close();
   }
-  forEachDeviceType([&](auto buffer) {
-    for (auto& iter : channels_.get<decltype(buffer)>()) {
-      iter.second->close();
-    }
-  });
+  for (auto& iter : channels_) {
+    iter.second->close();
+  }
 }
 
 void ContextImpl::join() {
@@ -319,11 +276,9 @@ void ContextImpl::join() {
     for (auto& iter : transports_) {
       iter.second->join();
     }
-    forEachDeviceType([&](auto buffer) {
-      for (auto& iter : channels_.get<decltype(buffer)>()) {
-        iter.second->join();
-      }
-    });
+    for (auto& iter : channels_) {
+      iter.second->join();
+    }
 
     TP_VLOG(1) << "Context " << id_ << " done joining";
 

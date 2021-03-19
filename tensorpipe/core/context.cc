@@ -32,18 +32,9 @@ void Context::registerTransport(
 void Context::registerChannel(
     int64_t priority,
     std::string channel,
-    std::shared_ptr<channel::CpuContext> context) {
+    std::shared_ptr<channel::Context> context) {
   impl_->registerChannel(priority, std::move(channel), std::move(context));
 }
-
-#if TENSORPIPE_SUPPORTS_CUDA
-void Context::registerChannel(
-    int64_t priority,
-    std::string channel,
-    std::shared_ptr<channel::CudaContext> context) {
-  impl_->registerChannel(priority, std::move(channel), std::move(context));
-}
-#endif // TENSORPIPE_SUPPORTS_CUDA
 
 std::shared_ptr<Listener> Context::listen(
     const std::vector<std::string>& urls) {

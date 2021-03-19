@@ -23,7 +23,6 @@
 #include <tensorpipe/common/error.h>
 #include <tensorpipe/common/optional.h>
 #include <tensorpipe/common/state_machine.h>
-#include <tensorpipe/core/buffer_helpers.h>
 #include <tensorpipe/core/context_impl.h>
 #include <tensorpipe/core/message.h>
 #include <tensorpipe/core/nop_types.h>
@@ -178,25 +177,19 @@ class PipeImpl final : public std::enable_shared_from_this<PipeImpl> {
   std::string transport_;
   std::shared_ptr<transport::Connection> connection_;
 
-  template <typename TBuffer>
-  using TChannelMap = std::
-      unordered_map<std::string, std::shared_ptr<channel::Channel<TBuffer>>>;
-  TP_DEVICE_FIELD(TChannelMap<CpuBuffer>, TChannelMap<CudaBuffer>) channels_;
+  std::unordered_map<std::string, std::shared_ptr<channel::Channel>> channels_;
 
   // The server will set this up when it tell the client to switch to a
   // different connection or to open some channels.
   optional<uint64_t> registrationId_;
 
-  using TChannelRegistrationMap =
-      std::unordered_map<std::string, std::vector<uint64_t>>;
-  TP_DEVICE_FIELD(TChannelRegistrationMap, TChannelRegistrationMap)
-  channelRegistrationIds_;
+  std::unordered_map<std::string, std::vector<uint64_t>>
+      channelRegistrationIds_;
 
-  using TChannelConnectionsMap = std::unordered_map<
+  std::unordered_map<
       std::string,
-      std::vector<std::shared_ptr<transport::Connection>>>;
-  TP_DEVICE_FIELD(TChannelConnectionsMap, TChannelConnectionsMap)
-  channelReceivedConnections_;
+      std::vector<std::shared_ptr<transport::Connection>>>
+      channelReceivedConnections_;
 
   OpsStateMachine<PipeImpl, ReadOperation> readOps_{
       *this,
@@ -285,7 +278,6 @@ class PipeImpl final : public std::enable_shared_from_this<PipeImpl> {
   void onAcceptWhileServerWaitingForConnection(
       std::string receivedTransport,
       std::shared_ptr<transport::Connection> receivedConnection);
-  template <typename TBuffer>
   void onAcceptWhileServerWaitingForChannel(
       std::string channelName,
       size_t connId,
@@ -300,16 +292,6 @@ class PipeImpl final : public std::enable_shared_from_this<PipeImpl> {
   void onRecvOfTensor(ReadOpIter opIter);
   void onWriteOfPayload(WriteOpIter opIter);
   void onSendOfTensor(WriteOpIter opIter);
-
-  template <typename TBuffer>
-  const std::map<
-      int64_t,
-      std::tuple<std::string, std::shared_ptr<channel::Context<TBuffer>>>>&
-  getOrderedChannels();
-
-  template <typename TBuffer>
-  std::shared_ptr<channel::Context<TBuffer>> getChannelContext(
-      const std::string& channelName);
 
   bool pendingRegistrations();
 
