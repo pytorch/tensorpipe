@@ -23,10 +23,8 @@ class DomainDescriptorTest : public ChannelTestCase<TBuffer> {
     auto peerGroup = helper->makePeerGroup();
     peerGroup->spawn(
         [&] {
-          std::shared_ptr<Context<TBuffer>> context1 =
-              helper->makeContext("ctx1");
-          std::shared_ptr<Context<TBuffer>> context2 =
-              helper->makeContext("ctx2");
+          std::shared_ptr<Context> context1 = helper->makeContext("ctx1");
+          std::shared_ptr<Context> context2 = helper->makeContext("ctx2");
           EXPECT_FALSE(context1->domainDescriptor().empty());
           EXPECT_FALSE(context2->domainDescriptor().empty());
           EXPECT_EQ(context1->domainDescriptor(), context2->domainDescriptor());
@@ -42,7 +40,7 @@ class ClientToServerTest : public ClientServerChannelTestCase<TBuffer> {
  public:
   static constexpr int kDataSize = 256;
 
-  void server(std::shared_ptr<Channel<TBuffer>> channel) override {
+  void server(std::shared_ptr<Channel> channel) override {
     // Initialize with sequential values.
     std::vector<uint8_t> data(kDataSize);
     std::iota(data.begin(), data.end(), 0);
@@ -65,7 +63,7 @@ class ClientToServerTest : public ClientServerChannelTestCase<TBuffer> {
     this->peers_->join(PeerGroup::kServer);
   }
 
-  void client(std::shared_ptr<Channel<TBuffer>> channel) override {
+  void client(std::shared_ptr<Channel> channel) override {
     DataWrapper<TBuffer> wrappedData(kDataSize);
 
     // Perform recv and wait for completion.
@@ -93,7 +91,7 @@ class ServerToClientTest : public ClientServerChannelTestCase<TBuffer> {
   static constexpr int kDataSize = 256;
 
  public:
-  void server(std::shared_ptr<Channel<TBuffer>> channel) override {
+  void server(std::shared_ptr<Channel> channel) override {
     DataWrapper<TBuffer> wrappedData(kDataSize);
 
     // Perform recv and wait for completion.
@@ -113,7 +111,7 @@ class ServerToClientTest : public ClientServerChannelTestCase<TBuffer> {
     this->peers_->join(PeerGroup::kServer);
   }
 
-  void client(std::shared_ptr<Channel<TBuffer>> channel) override {
+  void client(std::shared_ptr<Channel> channel) override {
     // Initialize with sequential values.
     std::vector<uint8_t> data(kDataSize);
     std::iota(data.begin(), data.end(), 0);
@@ -147,7 +145,7 @@ class SendMultipleTensorsTest : public ClientServerChannelTestCase<TBuffer> {
   static constexpr int kNumTensors = 100;
 
  public:
-  void server(std::shared_ptr<Channel<TBuffer>> channel) override {
+  void server(std::shared_ptr<Channel> channel) override {
     // Initialize with sequential values.
     std::vector<uint8_t> data(dataSize_);
     std::iota(data.begin(), data.end(), 0);
@@ -178,7 +176,7 @@ class SendMultipleTensorsTest : public ClientServerChannelTestCase<TBuffer> {
     this->peers_->join(PeerGroup::kServer);
   }
 
-  void client(std::shared_ptr<Channel<TBuffer>> channel) override {
+  void client(std::shared_ptr<Channel> channel) override {
     std::vector<DataWrapper<TBuffer>> wrappedDataVec;
     for (int i = 0; i < kNumTensors; i++) {
       wrappedDataVec.emplace_back(dataSize_);
@@ -218,7 +216,7 @@ template <typename TBuffer>
 class SendTensorsBothWaysTest : public ClientServerChannelTestCase<TBuffer> {
   static constexpr int kDataSize = 256;
 
-  void server(std::shared_ptr<Channel<TBuffer>> channel) override {
+  void server(std::shared_ptr<Channel> channel) override {
     // Initialize sendBuffer with sequential values.
     std::vector<uint8_t> sendData(kDataSize);
     std::iota(sendData.begin(), sendData.end(), 0);
@@ -265,7 +263,7 @@ class SendTensorsBothWaysTest : public ClientServerChannelTestCase<TBuffer> {
     this->peers_->join(PeerGroup::kServer);
   }
 
-  void client(std::shared_ptr<Channel<TBuffer>> channel) override {
+  void client(std::shared_ptr<Channel> channel) override {
     // Initialize sendBuffer with sequential values.
     std::vector<uint8_t> sendData(kDataSize);
     std::iota(sendData.begin(), sendData.end(), 0);

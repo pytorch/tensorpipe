@@ -51,7 +51,6 @@ using TSendCallback = std::function<void(const Error&)>;
 using TRecvCallback = std::function<void(const Error&)>;
 
 // Abstract base class for channel classes.
-template <typename TBuffer>
 class Channel {
  public:
   // Send memory region to peer.

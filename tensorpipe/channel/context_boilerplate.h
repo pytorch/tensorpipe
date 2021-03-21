@@ -21,7 +21,7 @@ namespace tensorpipe {
 namespace channel {
 
 template <typename TBuffer, typename TCtx, typename TChan>
-class ContextBoilerplate : public Context<TBuffer> {
+class ContextBoilerplate : public Context {
  public:
   template <typename... Args>
   explicit ContextBoilerplate(Args&&... args);
@@ -31,7 +31,7 @@ class ContextBoilerplate : public Context<TBuffer> {
   ContextBoilerplate& operator=(const ContextBoilerplate&) = delete;
   ContextBoilerplate& operator=(ContextBoilerplate&&) = delete;
 
-  std::shared_ptr<Channel<TBuffer>> createChannel(
+  std::shared_ptr<Channel> createChannel(
       std::vector<std::shared_ptr<transport::Connection>> connections,
       Endpoint endpoint) override;
 
@@ -75,7 +75,7 @@ ContextBoilerplate<TBuffer, TCtx, TChan>::ContextBoilerplate(Args&&... args)
 }
 
 template <typename TBuffer, typename TCtx, typename TChan>
-std::shared_ptr<Channel<TBuffer>> ContextBoilerplate<TBuffer, TCtx, TChan>::
+std::shared_ptr<Channel> ContextBoilerplate<TBuffer, TCtx, TChan>::
     createChannel(
         std::vector<std::shared_ptr<transport::Connection>> connections,
         Endpoint endpoint) {

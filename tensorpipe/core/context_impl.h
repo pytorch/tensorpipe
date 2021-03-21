@@ -16,19 +16,11 @@
 #include <unordered_map>
 #include <vector>
 
+#include <tensorpipe/channel/context.h>
 #include <tensorpipe/common/callback.h>
 #include <tensorpipe/config.h>
-#include <tensorpipe/core/buffer_helpers.h>
 #include <tensorpipe/core/context.h>
 #include <tensorpipe/transport/context.h>
-
-#include <tensorpipe/channel/cpu_context.h>
-#include <tensorpipe/common/cpu_buffer.h>
-
-#if TENSORPIPE_SUPPORTS_CUDA
-#include <tensorpipe/channel/cuda_context.h>
-#include <tensorpipe/common/cuda_buffer.h>
-#endif // TENSORPIPE_SUPPORTS_CUDA
 
 namespace tensorpipe {
 
@@ -50,14 +42,7 @@ class ContextImpl final : public virtual DeferredExecutor,
   void registerChannel(
       int64_t priority,
       std::string channel,
-      std::shared_ptr<channel::CpuContext> context);
-
-#if TENSORPIPE_SUPPORTS_CUDA
-  void registerChannel(
-      int64_t priority,
-      std::string channel,
-      std::shared_ptr<channel::CudaContext> context);
-#endif
+      std::shared_ptr<channel::Context> context);
 
   std::shared_ptr<Listener> listen(const std::vector<std::string>& urls);
 
@@ -65,12 +50,7 @@ class ContextImpl final : public virtual DeferredExecutor,
 
   std::shared_ptr<transport::Context> getTransport(
       const std::string& transport);
-  std::shared_ptr<channel::CpuContext> getCpuChannel(
-      const std::string& channel);
-#if TENSORPIPE_SUPPORTS_CUDA
-  std::shared_ptr<channel::CudaContext> getCudaChannel(
-      const std::string& channel);
-#endif // TENSORPIPE_SUPPORTS_CUDA
+  std::shared_ptr<channel::Context> getChannel(const std::string& channel);
 
   using TOrderedTransports = std::map<
       int64_t,
@@ -78,15 +58,10 @@ class ContextImpl final : public virtual DeferredExecutor,
 
   const TOrderedTransports& getOrderedTransports();
 
-  template <typename TBuffer>
-  using TOrderedChannels = std::map<
-      int64_t,
-      std::tuple<std::string, std::shared_ptr<channel::Context<TBuffer>>>>;
+  using TOrderedChannels = std::
+      map<int64_t, std::tuple<std::string, std::shared_ptr<channel::Context>>>;
 
-  const TOrderedChannels<CpuBuffer>& getOrderedCpuChannels();
-#if TENSORPIPE_SUPPORTS_CUDA
-  const TOrderedChannels<CudaBuffer>& getOrderedCudaChannels();
-#endif // TENSORPIPE_SUPPORTS_CUDA
+  const TOrderedChannels& getOrderedChannels();
 
   // Return the name given to the context's constructor. It will be retrieved
   // by the pipes and listener in order to attach it to logged messages.
@@ -151,30 +126,17 @@ class ContextImpl final : public virtual DeferredExecutor,
   std::unordered_map<std::string, std::shared_ptr<transport::Context>>
       transports_;
 
-  template <typename TBuffer>
-  using TContextMap = std::
-      unordered_map<std::string, std::shared_ptr<channel::Context<TBuffer>>>;
-  TP_DEVICE_FIELD(TContextMap<CpuBuffer>, TContextMap<CudaBuffer>) channels_;
+  using TContextMap =
+      std::unordered_map<std::string, std::shared_ptr<channel::Context>>;
+  TContextMap channels_;
 
   TOrderedTransports transportsByPriority_;
 
-  TP_DEVICE_FIELD(TOrderedChannels<CpuBuffer>, TOrderedChannels<CudaBuffer>)
-  channelsByPriority_;
+  TOrderedChannels channelsByPriority_;
 
   CallbackWrapper<ContextImpl> callbackWrapper_{*this, *this};
 
   void initFromLoop();
-
-  template <typename TBuffer>
-  void registerChannel(
-      int64_t priority,
-      std::string channel,
-      std::shared_ptr<channel::Context<TBuffer>> context);
-
-  template <typename TBuffer>
-  std::shared_ptr<channel::Context<TBuffer>> getChannel(
-      const std::string& channel);
-
   void closeFromLoop();
   void setError(Error error);
   void handleError();

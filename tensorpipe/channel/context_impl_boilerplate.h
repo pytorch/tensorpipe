@@ -76,7 +76,7 @@ class ContextImplBoilerplate : public virtual DeferredExecutor,
   void setError(Error error);
 
   template <typename... Args>
-  std::shared_ptr<Channel<TBuffer>> createChannelInternal(Args&&... args);
+  std::shared_ptr<Channel> createChannelInternal(Args&&... args);
 
   Error error_{Error::kSuccess};
 
@@ -122,7 +122,7 @@ ContextImplBoilerplate<TBuffer, TCtx, TChan>::ContextImplBoilerplate(
 
 template <typename TBuffer, typename TCtx, typename TChan>
 template <typename... Args>
-std::shared_ptr<Channel<TBuffer>> ContextImplBoilerplate<TBuffer, TCtx, TChan>::
+std::shared_ptr<Channel> ContextImplBoilerplate<TBuffer, TCtx, TChan>::
     createChannelInternal(Args&&... args) {
   std::string channelId = id_ + ".c" + std::to_string(channelCounter_++);
   TP_VLOG(4) << "Channel context " << id_ << " is opening channel "

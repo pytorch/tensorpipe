@@ -43,7 +43,7 @@ class DataWrapper<tensorpipe::CpuBuffer> {
 
   explicit DataWrapper(std::vector<uint8_t> v) : vector_(v) {}
 
-  tensorpipe::CpuBuffer buffer() const {
+  tensorpipe::Buffer buffer() const {
     return tensorpipe::CpuBuffer{
         const_cast<uint8_t*>(vector_.data()), vector_.size()};
   }
@@ -97,7 +97,7 @@ class DataWrapper<tensorpipe::CudaBuffer> {
     return *this;
   }
 
-  tensorpipe::CudaBuffer buffer() const {
+  tensorpipe::Buffer buffer() const {
     return tensorpipe::CudaBuffer{cudaPtr_, length_, stream_};
   }
 
@@ -131,10 +131,10 @@ class ChannelTestHelper {
  public:
   virtual ~ChannelTestHelper() = default;
 
-  std::shared_ptr<tensorpipe::channel::Context<TBuffer>> makeContext(
+  std::shared_ptr<tensorpipe::channel::Context> makeContext(
       std::string id,
       bool skipViabilityCheck = false) {
-    std::shared_ptr<tensorpipe::channel::Context<TBuffer>> ctx =
+    std::shared_ptr<tensorpipe::channel::Context> ctx =
         makeContextInternal(std::move(id));
     if (!skipViabilityCheck) {
       EXPECT_TRUE(ctx->isViable());
@@ -147,17 +147,16 @@ class ChannelTestHelper {
   }
 
  protected:
-  virtual std::shared_ptr<tensorpipe::channel::Context<TBuffer>>
-  makeContextInternal(std::string id) = 0;
+  virtual std::shared_ptr<tensorpipe::channel::Context> makeContextInternal(
+      std::string id) = 0;
 };
 
-template <typename TBuffer>
-[[nodiscard]] std::pair<
+[[nodiscard]] inline std::pair<
     std::future<
         std::tuple<tensorpipe::Error, tensorpipe::channel::TDescriptor>>,
     std::future<tensorpipe::Error>>
 sendWithFuture(
-    std::shared_ptr<tensorpipe::channel::Channel<TBuffer>> channel,
+    std::shared_ptr<tensorpipe::channel::Channel> channel,
     tensorpipe::Buffer buffer) {
   auto descriptorPromise = std::make_shared<
       std::promise<std::tuple<tensorpipe::Error, std::string>>>();
@@ -178,9 +177,8 @@ sendWithFuture(
   return {std::move(descriptorFuture), std::move(future)};
 }
 
-template <typename TBuffer>
-[[nodiscard]] std::future<tensorpipe::Error> recvWithFuture(
-    std::shared_ptr<tensorpipe::channel::Channel<TBuffer>> channel,
+[[nodiscard]] inline std::future<tensorpipe::Error> recvWithFuture(
+    std::shared_ptr<tensorpipe::channel::Channel> channel,
     tensorpipe::channel::TDescriptor descriptor,
     tensorpipe::Buffer buffer) {
   auto promise = std::make_shared<std::promise<tensorpipe::Error>>();
@@ -361,9 +359,9 @@ class ClientServerChannelTestCase : public ChannelTestCase<TBuffer> {
   }
 
   virtual void server(
-      std::shared_ptr<tensorpipe::channel::Channel<TBuffer>> channel) {}
+      std::shared_ptr<tensorpipe::channel::Channel> /* channel */) {}
   virtual void client(
-      std::shared_ptr<tensorpipe::channel::Channel<TBuffer>> channel) {}
+      std::shared_ptr<tensorpipe::channel::Channel> /* channel */) {}
 
   virtual void afterServer() {}
   virtual void afterClient() {}
