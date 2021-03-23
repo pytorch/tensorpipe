@@ -75,8 +75,6 @@ if(TP_ENABLE_CMA)
   set(TP_PUBLIC_HEADERS ${TP_PUBLIC_HEADERS}
     channel/cma/factory.h)
   set(TENSORPIPE_HAS_CMA_CHANNEL 1)
-else()
-  set(TENSORPIPE_HAS_CMA_CHANNEL 0)
 endif()
 
 ### mpt
@@ -177,8 +175,6 @@ if(TP_ENABLE_SHM)
   set(TP_PUBLIC_HEADERS ${TP_PUBLIC_HEADERS}
     transport/shm/factory.h)
   set(TENSORPIPE_HAS_SHM_TRANSPORT 1)
-else()
-  set(TENSORPIPE_HAS_SHM_TRANSPORT 0)
 endif()
 
 ### ibv
