@@ -10,7 +10,7 @@
 
 #include <cuda_runtime.h>
 
-#include <tensorpipe/common/buffer.h>
+#include <tensorpipe/common/device.h>
 
 namespace tensorpipe {
 

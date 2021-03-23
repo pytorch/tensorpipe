@@ -10,7 +10,7 @@
 
 #include <cstddef>
 
-#include <tensorpipe/common/buffer.h>
+#include <tensorpipe/common/device.h>
 
 namespace tensorpipe {
 

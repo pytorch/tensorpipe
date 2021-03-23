@@ -28,6 +28,7 @@ set(TP_PUBLIC_HEADERS
   channel/error.h
   common/buffer.h
   common/cpu_buffer.h
+  common/device.h
   common/error.h
   core/context.h
   core/error.h

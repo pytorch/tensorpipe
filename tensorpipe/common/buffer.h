@@ -13,13 +13,9 @@
 #include <type_traits>
 #include <utility>
 
-namespace tensorpipe {
+#include <tensorpipe/common/device.h>
 
-enum class DeviceType {
-  kNone,
-  kCpu,
-  kCuda,
-};
+namespace tensorpipe {
 
 struct NoneBuffer {
   size_t length{0};
