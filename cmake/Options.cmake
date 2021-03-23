@@ -10,7 +10,20 @@ else()
   set(LINUX OFF)
 endif()
 
-include(CMakeDependentOption)
+macro(TP_CONDITIONAL_BACKEND name docstring condition)
+  # No clue why this monstrosity is needed. But cmake_dependent_option has it,
+  # and the code doesn't seem to work without it.
+  string(REGEX REPLACE " +" ";" TP_CONDITIONAL_BACKEND_CONDITION "${condition}")
+  if(${TP_CONDITIONAL_BACKEND_CONDITION})
+    set(TP_CONDITIONAL_BACKEND_CAN_ENABLE ON)
+  else()
+    set(TP_CONDITIONAL_BACKEND_CAN_ENABLE OFF)
+  endif()
+  set(${name} ${TP_CONDITIONAL_BACKEND_CAN_ENABLE} CACHE BOOL ${docstring})
+  if(${name} AND NOT ${TP_CONDITIONAL_BACKEND_CAN_ENABLE})
+    message(FATAL_ERROR "${name} was explicitly set, but that can't be honored")
+  endif()
+endmacro()
 
 # Try to auto-detect the presence of some libraries in order to enable/disable
 # the transports/channels that make use of them.
@@ -18,15 +31,6 @@ include(CMakeDependentOption)
 
 # TODO: Default to ON if CUDA available.
 option(TP_USE_CUDA "Enable support for CUDA tensors" OFF)
-
-# Transports
-option(TP_ENABLE_IBV "Enable InfiniBand transport" ${LINUX})
-option(TP_ENABLE_SHM "Enable shm transport" ${LINUX})
-
-# Channels
-option(TP_ENABLE_CMA "Enable cma channel" ${LINUX})
-cmake_dependent_option(TP_ENABLE_CUDA_IPC "Enable CUDA IPC channel" ON
-                       "TP_USE_CUDA" OFF)
 
 # Optional features
 option(TP_BUILD_BENCHMARK "Build benchmarks" OFF)

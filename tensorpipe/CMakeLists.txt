@@ -67,6 +67,8 @@ set(TP_PUBLIC_HEADERS ${TP_PUBLIC_HEADERS}
 
 ### cma
 
+tp_conditional_backend(
+  TP_ENABLE_CMA "Enable cross-memory attach channel" "LINUX")
 if(TP_ENABLE_CMA)
   target_sources(tensorpipe PRIVATE
     channel/cma/channel_impl.cc
@@ -118,6 +120,8 @@ if(TP_USE_CUDA)
 
   ### cuda_ipc
 
+  tp_conditional_backend(
+    TP_ENABLE_CUDA_IPC "Enable CUDA inter-process communication channel" "TP_USE_CUDA")
   if(TP_ENABLE_CUDA_IPC)
     target_sources(tensorpipe PRIVATE
       channel/cuda_ipc/channel_impl.cc
@@ -161,6 +165,8 @@ target_link_libraries(tensorpipe PRIVATE uv::uv)
 
 ### shm
 
+tp_conditional_backend(
+  TP_ENABLE_SHM "Enable shared-memory transport" "LINUX")
 if(TP_ENABLE_SHM)
   target_sources(tensorpipe PRIVATE
     common/epoll_loop.cc
@@ -179,6 +185,8 @@ endif()
 
 ### ibv
 
+tp_conditional_backend(
+  TP_ENABLE_IBV "Enable InfiniBand transport" "LINUX")
 if(TP_ENABLE_IBV)
   target_sources(tensorpipe PRIVATE
     common/epoll_loop.cc
