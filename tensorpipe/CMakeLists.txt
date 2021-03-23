@@ -132,15 +132,21 @@ if(TP_USE_CUDA)
     set(TENSORPIPE_HAS_CUDA_IPC_CHANNEL 1)
   endif()
 
-  target_sources(tensorpipe PRIVATE
-    common/ibv.cc
-    channel/cuda_gdr/channel_impl.cc
-    channel/cuda_gdr/context_impl.cc
-    channel/cuda_gdr/factory.cc)
-  set(TP_PUBLIC_HEADERS ${TP_PUBLIC_HEADERS}
-    channel/cuda_gdr/error.h
-    channel/cuda_gdr/factory.h)
-  set(TENSORPIPE_HAS_CUDA_GDR_CHANNEL 1)
+  ### cuda_gdr
+
+  tp_conditional_backend(
+    TP_ENABLE_CUDA_GDR "Enable CUDA GpuDirect (InfiniBand) channel" "LINUX")
+  if(TP_ENABLE_CUDA_GDR)
+    target_sources(tensorpipe PRIVATE
+      common/ibv.cc
+      channel/cuda_gdr/channel_impl.cc
+      channel/cuda_gdr/context_impl.cc
+      channel/cuda_gdr/factory.cc)
+    set(TP_PUBLIC_HEADERS ${TP_PUBLIC_HEADERS}
+      channel/cuda_gdr/error.h
+      channel/cuda_gdr/factory.h)
+    set(TENSORPIPE_HAS_CUDA_GDR_CHANNEL 1)
+  endif()
 endif()
 
 ## Transports
