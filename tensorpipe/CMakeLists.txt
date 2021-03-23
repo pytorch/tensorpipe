@@ -30,6 +30,7 @@ set(TP_PUBLIC_HEADERS
   common/cpu_buffer.h
   common/device.h
   common/error.h
+  common/optional.h
   core/context.h
   core/error.h
   core/listener.h
