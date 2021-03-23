@@ -173,6 +173,35 @@ inline CudaPinnedBuffer makeCudaPinnedBuffer(size_t length, int deviceIdx) {
       });
 }
 
+inline std::string getUuidOfDevice(const CudaLib& cudaLib, int deviceIdx) {
+  CUdevice device;
+  TP_CUDA_DRIVER_CHECK(cudaLib, cudaLib.deviceGet(&device, deviceIdx));
+
+  CUuuid uuid;
+  TP_CUDA_DRIVER_CHECK(cudaLib, cudaLib.deviceGetUuid(&uuid, device));
+
+  // The CUDA driver and NVML choose two different format for UUIDs, hence we
+  // need to reconcile them. We do so using the most human readable format, that
+  // is "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee" (8-4-4-4-12).
+  std::ostringstream uuidSs;
+  uuidSs << std::hex << std::setfill('0');
+  for (int j = 0; j < 16; ++j) {
+    // The bitmask is required otherwise a negative value will get promoted to
+    // (signed) int with sign extension if char is signed.
+    uuidSs << std::setw(2) << (uuid.bytes[j] & 0xff);
+    if (j == 3 || j == 5 || j == 7 || j == 9) {
+      uuidSs << '-';
+    }
+  }
+
+  std::string uuidStr = uuidSs.str();
+  TP_THROW_ASSERT_IF(!isValidUuid(uuidStr))
+      << "Couldn't obtain valid UUID for GPU #" << deviceIdx
+      << " from CUDA driver. Got: " << uuidStr;
+
+  return uuidStr;
+}
+
 inline std::vector<std::string> getUuidsOfVisibleDevices(
     const CudaLib& cudaLib) {
   int deviceCount;
@@ -180,32 +209,7 @@ inline std::vector<std::string> getUuidsOfVisibleDevices(
 
   std::vector<std::string> result(deviceCount);
   for (int devIdx = 0; devIdx < deviceCount; ++devIdx) {
-    CUdevice device;
-    TP_CUDA_DRIVER_CHECK(cudaLib, cudaLib.deviceGet(&device, devIdx));
-
-    CUuuid uuid;
-    TP_CUDA_DRIVER_CHECK(cudaLib, cudaLib.deviceGetUuid(&uuid, device));
-
-    // The CUDA driver and NVML choose two different format for UUIDs, hence we
-    // need to reconcile them. We do so using the most human readable format,
-    // that is "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee" (8-4-4-4-12).
-    std::ostringstream uuidSs;
-    uuidSs << std::hex << std::setfill('0');
-    for (int j = 0; j < 16; ++j) {
-      // The bitmask is required otherwise a negative value will get promoted to
-      // (signed) int with sign extension if char is signed.
-      uuidSs << std::setw(2) << (uuid.bytes[j] & 0xff);
-      if (j == 3 || j == 5 || j == 7 || j == 9) {
-        uuidSs << '-';
-      }
-    }
-
-    std::string uuidStr = uuidSs.str();
-    TP_THROW_ASSERT_IF(!isValidUuid(uuidStr))
-        << "Couldn't obtain valid UUID for GPU #" << devIdx
-        << " from CUDA driver. Got: " << uuidStr;
-
-    result[devIdx] = std::move(uuidStr);
+    result[devIdx] = getUuidOfDevice(cudaLib, devIdx);
   }
 
   return result;
