@@ -171,6 +171,12 @@ class ContextImpl final
   std::list<std::tuple<const CudaEvent&, std::function<void(const Error&)>>>
       pendingCudaEvents_;
 
+  // This marks whether the event loop thread was started (it isn't in case the
+  // reactor isn't viable), in order to determine whether to join it at the end.
+  // It's a bad solution, a better one would be to not even create the reactor
+  // if it's not viable.
+  bool threadRunning_{false};
+
   bool pollCudaOnce();
 
   void waitForCudaEventFromLoop(
