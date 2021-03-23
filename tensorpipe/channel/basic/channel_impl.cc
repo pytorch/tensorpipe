@@ -13,6 +13,7 @@
 #include <utility>
 
 #include <tensorpipe/channel/basic/context_impl.h>
+#include <tensorpipe/common/cpu_buffer.h>
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/error.h>
 #include <tensorpipe/transport/connection.h>
@@ -26,7 +27,7 @@ ChannelImpl::ChannelImpl(
     std::shared_ptr<ContextImpl> context,
     std::string id,
     std::shared_ptr<transport::Connection> connection)
-    : ChannelImplBoilerplate<CpuBuffer, ContextImpl, ChannelImpl>(
+    : ChannelImplBoilerplate<ContextImpl, ChannelImpl>(
           token,
           std::move(context),
           std::move(id)),
@@ -38,13 +39,13 @@ void ChannelImpl::initImplFromLoop() {
 
 void ChannelImpl::sendImplFromLoop(
     uint64_t sequenceNumber,
-    CpuBuffer buffer,
+    Buffer buffer,
     TDescriptorCallback descriptorCallback,
     TSendCallback callback) {
   SendOpIter opIter = sendOps_.emplaceBack(sequenceNumber);
   SendOperation& op = *opIter;
-  op.ptr = buffer.ptr;
-  op.length = buffer.length;
+  op.ptr = buffer.unwrap<CpuBuffer>().ptr;
+  op.length = buffer.unwrap<CpuBuffer>().length;
   op.callback = std::move(callback);
 
   sendOps_.advanceOperation(opIter);
@@ -108,14 +109,14 @@ void ChannelImpl::callSendCallback(SendOpIter opIter) {
 void ChannelImpl::recvImplFromLoop(
     uint64_t sequenceNumber,
     TDescriptor descriptor,
-    CpuBuffer buffer,
+    Buffer buffer,
     TRecvCallback callback) {
   TP_DCHECK_EQ(descriptor, std::string());
 
   RecvOpIter opIter = recvOps_.emplaceBack(sequenceNumber);
   RecvOperation& op = *opIter;
-  op.ptr = buffer.ptr;
-  op.length = buffer.length;
+  op.ptr = buffer.unwrap<CpuBuffer>().ptr;
+  op.length = buffer.unwrap<CpuBuffer>().length;
   op.callback = std::move(callback);
 
   recvOps_.advanceOperation(opIter);

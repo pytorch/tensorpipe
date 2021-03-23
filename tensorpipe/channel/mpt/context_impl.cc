@@ -56,14 +56,14 @@ std::shared_ptr<ContextImpl> ContextImpl::create(
 }
 
 ContextImpl::ContextImpl()
-    : ContextImplBoilerplate<CpuBuffer, ContextImpl, ChannelImpl>(
+    : ContextImplBoilerplate<ContextImpl, ChannelImpl>(
           /*isViable=*/false,
           /*domainDescriptor=*/"") {}
 
 ContextImpl::ContextImpl(
     std::vector<std::shared_ptr<transport::Context>> contexts,
     std::vector<std::shared_ptr<transport::Listener>> listeners)
-    : ContextImplBoilerplate<CpuBuffer, ContextImpl, ChannelImpl>(
+    : ContextImplBoilerplate<ContextImpl, ChannelImpl>(
           /*isViable=*/true,
           generateDomainDescriptor(contexts)),
       contexts_(std::move(contexts)),
@@ -83,7 +83,7 @@ void ContextImpl::initImplFromLoop() {
   }
 }
 
-std::shared_ptr<CpuChannel> ContextImpl::createChannel(
+std::shared_ptr<Channel> ContextImpl::createChannel(
     std::vector<std::shared_ptr<transport::Connection>> connections,
     Endpoint endpoint) {
   TP_DCHECK_EQ(numConnectionsNeeded(), connections.size());

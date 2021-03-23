@@ -16,11 +16,10 @@ namespace tensorpipe {
 namespace channel {
 namespace mpt {
 
-std::shared_ptr<CpuContext> create(
+std::shared_ptr<Context> create(
     std::vector<std::shared_ptr<transport::Context>> contexts,
     std::vector<std::shared_ptr<transport::Listener>> listeners) {
-  return std::make_shared<
-      ContextBoilerplate<CpuBuffer, ContextImpl, ChannelImpl>>(
+  return std::make_shared<ContextBoilerplate<ContextImpl, ChannelImpl>>(
       std::move(contexts), std::move(listeners));
 }
 

@@ -10,14 +10,13 @@
 
 #include <memory>
 
-#include <tensorpipe/channel/cpu_context.h>
-#include <tensorpipe/channel/cuda_context.h>
+#include <tensorpipe/channel/context.h>
 
 namespace tensorpipe {
 namespace channel {
 namespace cuda_basic {
 
-std::shared_ptr<CudaContext> create(std::shared_ptr<CpuContext> cpuContext);
+std::shared_ptr<Context> create(std::shared_ptr<Context> cpuContext);
 
 } // namespace cuda_basic
 } // namespace channel

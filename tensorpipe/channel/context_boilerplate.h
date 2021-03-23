@@ -20,7 +20,7 @@
 namespace tensorpipe {
 namespace channel {
 
-template <typename TBuffer, typename TCtx, typename TChan>
+template <typename TCtx, typename TChan>
 class ContextBoilerplate : public Context {
  public:
   template <typename... Args>
@@ -63,70 +63,66 @@ class ContextBoilerplate : public Context {
   const std::shared_ptr<TCtx> impl_;
 };
 
-template <typename TBuffer, typename TCtx, typename TChan>
+template <typename TCtx, typename TChan>
 template <typename... Args>
-ContextBoilerplate<TBuffer, TCtx, TChan>::ContextBoilerplate(Args&&... args)
+ContextBoilerplate<TCtx, TChan>::ContextBoilerplate(Args&&... args)
     : impl_(TCtx::create(std::forward<Args>(args)...)) {
   static_assert(
-      std::is_base_of<ChannelImplBoilerplate<TBuffer, TCtx, TChan>, TChan>::
-          value,
-      "");
+      std::is_base_of<ChannelImplBoilerplate<TCtx, TChan>, TChan>::value, "");
   impl_->init();
 }
 
-template <typename TBuffer, typename TCtx, typename TChan>
-std::shared_ptr<Channel> ContextBoilerplate<TBuffer, TCtx, TChan>::
-    createChannel(
-        std::vector<std::shared_ptr<transport::Connection>> connections,
-        Endpoint endpoint) {
+template <typename TCtx, typename TChan>
+std::shared_ptr<Channel> ContextBoilerplate<TCtx, TChan>::createChannel(
+    std::vector<std::shared_ptr<transport::Connection>> connections,
+    Endpoint endpoint) {
   return impl_->createChannel(std::move(connections), endpoint);
 }
 
-template <typename TBuffer, typename TCtx, typename TChan>
-size_t ContextBoilerplate<TBuffer, TCtx, TChan>::numConnectionsNeeded() const {
+template <typename TCtx, typename TChan>
+size_t ContextBoilerplate<TCtx, TChan>::numConnectionsNeeded() const {
   return impl_->numConnectionsNeeded();
 }
 
-template <typename TBuffer, typename TCtx, typename TChan>
-bool ContextBoilerplate<TBuffer, TCtx, TChan>::isViable() const {
+template <typename TCtx, typename TChan>
+bool ContextBoilerplate<TCtx, TChan>::isViable() const {
   return impl_->isViable();
 }
 
-template <typename TBuffer, typename TCtx, typename TChan>
-const std::string& ContextBoilerplate<TBuffer, TCtx, TChan>::domainDescriptor()
-    const {
+template <typename TCtx, typename TChan>
+const std::string& ContextBoilerplate<TCtx, TChan>::domainDescriptor() const {
   return impl_->domainDescriptor();
 }
 
-template <typename TBuffer, typename TCtx, typename TChan>
-bool ContextBoilerplate<TBuffer, TCtx, TChan>::canCommunicateWithRemote(
+template <typename TCtx, typename TChan>
+bool ContextBoilerplate<TCtx, TChan>::canCommunicateWithRemote(
     const std::string& remoteDomainDescriptor) const {
   return impl_->canCommunicateWithRemote(remoteDomainDescriptor);
 }
 
-template <typename TBuffer, typename TCtx, typename TChan>
-void ContextBoilerplate<TBuffer, TCtx, TChan>::setId(std::string id) {
+template <typename TCtx, typename TChan>
+void ContextBoilerplate<TCtx, TChan>::setId(std::string id) {
   impl_->setId(std::move(id));
 }
 
-template <typename TBuffer, typename TCtx, typename TChan>
-void ContextBoilerplate<TBuffer, TCtx, TChan>::close() {
+template <typename TCtx, typename TChan>
+void ContextBoilerplate<TCtx, TChan>::close() {
   impl_->close();
 }
 
-template <typename TBuffer, typename TCtx, typename TChan>
-void ContextBoilerplate<TBuffer, TCtx, TChan>::join() {
+template <typename TCtx, typename TChan>
+void ContextBoilerplate<TCtx, TChan>::join() {
   impl_->join();
 }
 
-template <typename TBuffer, typename TCtx, typename TChan>
-ContextBoilerplate<TBuffer, TCtx, TChan>::~ContextBoilerplate() {
+template <typename TCtx, typename TChan>
+ContextBoilerplate<TCtx, TChan>::~ContextBoilerplate() {
   join();
 }
 
 // FIXME
-template <typename TBuffer, typename TCtx, typename TChan>
-bool ContextBoilerplate<TBuffer, TCtx, TChan>::supportsDeviceType(
+template <typename TCtx, typename TChan>
+bool ContextBoilerplate<TCtx, TChan>::supportsDeviceType(
     DeviceType type) const {
   return impl_->supportsDeviceType(type);
 }

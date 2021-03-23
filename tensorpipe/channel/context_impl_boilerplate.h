@@ -22,7 +22,7 @@
 namespace tensorpipe {
 namespace channel {
 
-template <typename TBuffer, typename TCtx, typename TChan>
+template <typename TCtx, typename TChan>
 class ContextImplBoilerplate : public virtual DeferredExecutor,
                                public std::enable_shared_from_this<TCtx> {
  public:
@@ -114,33 +114,33 @@ class ContextImplBoilerplate : public virtual DeferredExecutor,
   friend class tensorpipe::CallbackWrapper;
 };
 
-template <typename TBuffer, typename TCtx, typename TChan>
-ContextImplBoilerplate<TBuffer, TCtx, TChan>::ContextImplBoilerplate(
+template <typename TCtx, typename TChan>
+ContextImplBoilerplate<TCtx, TChan>::ContextImplBoilerplate(
     bool isViable,
     std::string domainDescriptor)
     : isViable_(isViable), domainDescriptor_(std::move(domainDescriptor)) {}
 
-template <typename TBuffer, typename TCtx, typename TChan>
+template <typename TCtx, typename TChan>
 template <typename... Args>
-std::shared_ptr<Channel> ContextImplBoilerplate<TBuffer, TCtx, TChan>::
+std::shared_ptr<Channel> ContextImplBoilerplate<TCtx, TChan>::
     createChannelInternal(Args&&... args) {
   std::string channelId = id_ + ".c" + std::to_string(channelCounter_++);
   TP_VLOG(4) << "Channel context " << id_ << " is opening channel "
              << channelId;
-  return std::make_shared<ChannelBoilerplate<TBuffer, TCtx, TChan>>(
-      typename ChannelImplBoilerplate<TBuffer, TCtx, TChan>::ConstructorToken(),
+  return std::make_shared<ChannelBoilerplate<TCtx, TChan>>(
+      typename ChannelImplBoilerplate<TCtx, TChan>::ConstructorToken(),
       this->shared_from_this(),
       std::move(channelId),
       std::forward<Args>(args)...);
 }
 
-template <typename TBuffer, typename TCtx, typename TChan>
-void ContextImplBoilerplate<TBuffer, TCtx, TChan>::init() {
+template <typename TCtx, typename TChan>
+void ContextImplBoilerplate<TCtx, TChan>::init() {
   deferToLoop([this]() { initFromLoop(); });
 }
 
-template <typename TBuffer, typename TCtx, typename TChan>
-void ContextImplBoilerplate<TBuffer, TCtx, TChan>::initFromLoop() {
+template <typename TCtx, typename TChan>
+void ContextImplBoilerplate<TCtx, TChan>::initFromLoop() {
   TP_DCHECK(inLoop());
 
   TP_DCHECK(!error_);
@@ -155,31 +155,30 @@ void ContextImplBoilerplate<TBuffer, TCtx, TChan>::initFromLoop() {
   initImplFromLoop();
 }
 
-template <typename TBuffer, typename TCtx, typename TChan>
-size_t ContextImplBoilerplate<TBuffer, TCtx, TChan>::numConnectionsNeeded()
-    const {
+template <typename TCtx, typename TChan>
+size_t ContextImplBoilerplate<TCtx, TChan>::numConnectionsNeeded() const {
   return 1;
 }
 
-template <typename TBuffer, typename TCtx, typename TChan>
-bool ContextImplBoilerplate<TBuffer, TCtx, TChan>::isViable() const {
+template <typename TCtx, typename TChan>
+bool ContextImplBoilerplate<TCtx, TChan>::isViable() const {
   return isViable_;
 }
 
-template <typename TBuffer, typename TCtx, typename TChan>
-const std::string& ContextImplBoilerplate<TBuffer, TCtx, TChan>::
-    domainDescriptor() const {
+template <typename TCtx, typename TChan>
+const std::string& ContextImplBoilerplate<TCtx, TChan>::domainDescriptor()
+    const {
   return domainDescriptor_;
 }
 
-template <typename TBuffer, typename TCtx, typename TChan>
-bool ContextImplBoilerplate<TBuffer, TCtx, TChan>::canCommunicateWithRemote(
+template <typename TCtx, typename TChan>
+bool ContextImplBoilerplate<TCtx, TChan>::canCommunicateWithRemote(
     const std::string& remoteDomainDescriptor) const {
   return domainDescriptor_ == remoteDomainDescriptor;
 }
 
-template <typename TBuffer, typename TCtx, typename TChan>
-void ContextImplBoilerplate<TBuffer, TCtx, TChan>::enroll(TChan& channel) {
+template <typename TCtx, typename TChan>
+void ContextImplBoilerplate<TCtx, TChan>::enroll(TChan& channel) {
   TP_DCHECK(inLoop());
   bool wasInserted;
   std::tie(std::ignore, wasInserted) =
@@ -187,41 +186,41 @@ void ContextImplBoilerplate<TBuffer, TCtx, TChan>::enroll(TChan& channel) {
   TP_DCHECK(wasInserted);
 }
 
-template <typename TBuffer, typename TCtx, typename TChan>
-void ContextImplBoilerplate<TBuffer, TCtx, TChan>::unenroll(TChan& channel) {
+template <typename TCtx, typename TChan>
+void ContextImplBoilerplate<TCtx, TChan>::unenroll(TChan& channel) {
   TP_DCHECK(inLoop());
   auto numRemoved = channels_.erase(&channel);
   TP_DCHECK_EQ(numRemoved, 1);
 }
 
-template <typename TBuffer, typename TCtx, typename TChan>
-bool ContextImplBoilerplate<TBuffer, TCtx, TChan>::closed() {
+template <typename TCtx, typename TChan>
+bool ContextImplBoilerplate<TCtx, TChan>::closed() {
   TP_DCHECK(inLoop());
   return error_;
 };
 
-template <typename TBuffer, typename TCtx, typename TChan>
-void ContextImplBoilerplate<TBuffer, TCtx, TChan>::setId(std::string id) {
+template <typename TCtx, typename TChan>
+void ContextImplBoilerplate<TCtx, TChan>::setId(std::string id) {
   TP_VLOG(4) << "Channel context " << id_ << " was renamed to " << id;
   id_ = std::move(id);
   setIdImpl();
 }
 
-template <typename TBuffer, typename TCtx, typename TChan>
-void ContextImplBoilerplate<TBuffer, TCtx, TChan>::close() {
+template <typename TCtx, typename TChan>
+void ContextImplBoilerplate<TCtx, TChan>::close() {
   deferToLoop([this]() { closeFromLoop(); });
 }
 
-template <typename TBuffer, typename TCtx, typename TChan>
-void ContextImplBoilerplate<TBuffer, TCtx, TChan>::closeFromLoop() {
+template <typename TCtx, typename TChan>
+void ContextImplBoilerplate<TCtx, TChan>::closeFromLoop() {
   TP_DCHECK(inLoop());
   TP_VLOG(4) << "Channel context " << id_ << " is closing";
   setError(TP_CREATE_ERROR(ContextClosedError));
   TP_VLOG(4) << "Channel context " << id_ << " done closing";
 }
 
-template <typename TBuffer, typename TCtx, typename TChan>
-void ContextImplBoilerplate<TBuffer, TCtx, TChan>::setError(Error error) {
+template <typename TCtx, typename TChan>
+void ContextImplBoilerplate<TCtx, TChan>::setError(Error error) {
   // Don't overwrite an error that's already set.
   if (error_ || !error) {
     return;
@@ -232,8 +231,8 @@ void ContextImplBoilerplate<TBuffer, TCtx, TChan>::setError(Error error) {
   handleError();
 }
 
-template <typename TBuffer, typename TCtx, typename TChan>
-void ContextImplBoilerplate<TBuffer, TCtx, TChan>::handleError() {
+template <typename TCtx, typename TChan>
+void ContextImplBoilerplate<TCtx, TChan>::handleError() {
   TP_DCHECK(inLoop());
   TP_VLOG(5) << "Channel context " << id_ << " is handling error "
              << error_.what();
@@ -252,8 +251,8 @@ void ContextImplBoilerplate<TBuffer, TCtx, TChan>::handleError() {
   handleErrorImpl();
 }
 
-template <typename TBuffer, typename TCtx, typename TChan>
-void ContextImplBoilerplate<TBuffer, TCtx, TChan>::join() {
+template <typename TCtx, typename TChan>
+void ContextImplBoilerplate<TCtx, TChan>::join() {
   close();
 
   if (!joined_.exchange(true)) {

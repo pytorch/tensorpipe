@@ -18,6 +18,7 @@
 #include <tensorpipe/channel/cuda_basic/context_impl.h>
 #include <tensorpipe/common/cpu_buffer.h>
 #include <tensorpipe/common/cuda.h>
+#include <tensorpipe/common/cuda_buffer.h>
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/error.h>
 #include <tensorpipe/transport/connection.h>
@@ -39,9 +40,9 @@ ChannelImpl::ChannelImpl(
     std::shared_ptr<ContextImpl> context,
     std::string id,
     std::shared_ptr<transport::Connection> connection,
-    std::shared_ptr<CpuChannel> cpuChannel,
+    std::shared_ptr<Channel> cpuChannel,
     CudaLoop& cudaLoop)
-    : ChannelImplBoilerplate<CudaBuffer, ContextImpl, ChannelImpl>(
+    : ChannelImplBoilerplate<ContextImpl, ChannelImpl>(
           token,
           std::move(context),
           std::move(id)),
@@ -70,25 +71,28 @@ void ChannelImpl::cudaCopy(
 
 void ChannelImpl::sendImplFromLoop(
     uint64_t sequenceNumber,
-    CudaBuffer buffer,
+    Buffer buffer,
     TDescriptorCallback descriptorCallback,
     TSendCallback callback) {
-  int deviceIdx = cudaDeviceForPointer(context_->getCudaLib(), buffer.ptr);
+  int deviceIdx = cudaDeviceForPointer(
+      context_->getCudaLib(), buffer.unwrap<CudaBuffer>().ptr);
   CudaHostAllocator& cudaHostAllocator =
       context_->getCudaHostSendAllocator(deviceIdx);
   const size_t chunkLength = cudaHostAllocator.getChunkLength();
-  const size_t numChunks = ceilOfRatio(buffer.length, chunkLength);
+  const size_t bufferLength = buffer.unwrap<CudaBuffer>().length;
+  const size_t numChunks = ceilOfRatio(bufferLength, chunkLength);
 
-  for (size_t offset = 0; offset < buffer.length; offset += chunkLength) {
+  for (size_t offset = 0; offset < bufferLength; offset += chunkLength) {
     ChunkSendOpIter opIter = chunkSendOps_.emplaceBack(nextChunkBeingSent_++);
     ChunkSendOperation& op = *opIter;
     op.bufferSequenceNumber = sequenceNumber;
     op.chunkId = offset / chunkLength;
     op.numChunks = numChunks;
-    op.stream = buffer.stream;
+    op.stream = buffer.unwrap<CudaBuffer>().stream;
     op.deviceIdx = deviceIdx;
-    op.cudaPtr = static_cast<uint8_t*>(buffer.ptr) + offset;
-    op.length = std::min(buffer.length - offset, chunkLength);
+    op.cudaPtr =
+        static_cast<uint8_t*>(buffer.unwrap<CudaBuffer>().ptr) + offset;
+    op.length = std::min(bufferLength - offset, chunkLength);
     // Operations are processed in order, so we can afford to trigger the
     // callback once the last operation is done.
     if (op.chunkId == numChunks - 1) {
@@ -323,25 +327,28 @@ void ChannelImpl::callSendCallback(ChunkSendOpIter opIter) {
 void ChannelImpl::recvImplFromLoop(
     uint64_t sequenceNumber,
     TDescriptor descriptor,
-    CudaBuffer buffer,
+    Buffer buffer,
     TRecvCallback callback) {
-  int deviceIdx = cudaDeviceForPointer(context_->getCudaLib(), buffer.ptr);
+  int deviceIdx = cudaDeviceForPointer(
+      context_->getCudaLib(), buffer.unwrap<CudaBuffer>().ptr);
   CudaHostAllocator& cudaHostAllocator =
       context_->getCudaHostRecvAllocator(deviceIdx);
   const size_t chunkLength = cudaHostAllocator.getChunkLength();
-  const size_t numChunks = ceilOfRatio(buffer.length, chunkLength);
+  const size_t bufferLength = buffer.unwrap<CudaBuffer>().length;
+  const size_t numChunks = ceilOfRatio(bufferLength, chunkLength);
 
-  for (size_t offset = 0; offset < buffer.length; offset += chunkLength) {
+  for (size_t offset = 0; offset < bufferLength; offset += chunkLength) {
     ChunkRecvOpIter opIter =
         chunkRecvOps_.emplaceBack(nextChunkBeingReceived_++);
     ChunkRecvOperation& op = *opIter;
     op.bufferSequenceNumber = sequenceNumber;
     op.chunkId = offset / chunkLength;
     op.numChunks = numChunks;
-    op.stream = buffer.stream;
+    op.stream = buffer.unwrap<CudaBuffer>().stream;
     op.deviceIdx = deviceIdx;
-    op.cudaPtr = static_cast<uint8_t*>(buffer.ptr) + offset;
-    op.length = std::min(buffer.length - offset, chunkLength);
+    op.cudaPtr =
+        static_cast<uint8_t*>(buffer.unwrap<CudaBuffer>().ptr) + offset;
+    op.length = std::min(bufferLength - offset, chunkLength);
     // Operations are processed in order, so we can afford to trigger the
     // callback once the last operation is done.
     if (op.chunkId == numChunks - 1) {

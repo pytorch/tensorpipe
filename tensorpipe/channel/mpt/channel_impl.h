@@ -16,7 +16,6 @@
 
 #include <tensorpipe/channel/channel_impl_boilerplate.h>
 #include <tensorpipe/channel/mpt/nop_types.h>
-#include <tensorpipe/common/cpu_buffer.h>
 #include <tensorpipe/common/state_machine.h>
 #include <tensorpipe/transport/context.h>
 
@@ -61,7 +60,7 @@ struct RecvOperation {
 };
 
 class ChannelImpl final
-    : public ChannelImplBoilerplate<CpuBuffer, ContextImpl, ChannelImpl> {
+    : public ChannelImplBoilerplate<ContextImpl, ChannelImpl> {
  public:
   ChannelImpl(
       ConstructorToken token,
@@ -76,13 +75,13 @@ class ChannelImpl final
   void initImplFromLoop() override;
   void sendImplFromLoop(
       uint64_t sequenceNumber,
-      CpuBuffer buffer,
+      Buffer buffer,
       TDescriptorCallback descriptorCallback,
       TSendCallback callback) override;
   void recvImplFromLoop(
       uint64_t sequenceNumber,
       TDescriptor descriptor,
-      CpuBuffer buffer,
+      Buffer buffer,
       TRecvCallback callback) override;
   void handleErrorImpl() override;
 

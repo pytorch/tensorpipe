@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <tensorpipe/channel/cpu_context.h>
+#include <tensorpipe/channel/context.h>
 #include <tensorpipe/channel/mpt/factory.h>
 #include <tensorpipe/common/cpu_buffer.h>
 #include <tensorpipe/test/channel/channel_test.h>
@@ -16,7 +16,7 @@ namespace {
 
 class MptChannelTestHelper : public ChannelTestHelper<tensorpipe::CpuBuffer> {
  protected:
-  std::shared_ptr<tensorpipe::channel::CpuContext> makeContextInternal(
+  std::shared_ptr<tensorpipe::channel::Context> makeContextInternal(
       std::string id) override {
     std::vector<std::shared_ptr<tensorpipe::transport::Context>> contexts = {
         tensorpipe::transport::uv::create(),
@@ -84,7 +84,7 @@ class ContextIsNotJoinedTest : public ChannelTestCase<tensorpipe::CpuBuffer> {
   }
 
   void server(std::shared_ptr<tensorpipe::transport::Connection> conn) {
-    std::shared_ptr<tensorpipe::channel::CpuContext> context =
+    std::shared_ptr<tensorpipe::channel::Context> context =
         this->helper_->makeContext("server");
     this->peers_->send(PeerGroup::kClient, kReady);
     context->createChannel(
@@ -92,7 +92,7 @@ class ContextIsNotJoinedTest : public ChannelTestCase<tensorpipe::CpuBuffer> {
   }
 
   void client(std::shared_ptr<tensorpipe::transport::Connection> conn) {
-    std::shared_ptr<tensorpipe::channel::CpuContext> context =
+    std::shared_ptr<tensorpipe::channel::Context> context =
         this->helper_->makeContext("client");
     EXPECT_EQ(kReady, this->peers_->recv(PeerGroup::kClient));
     context->createChannel(

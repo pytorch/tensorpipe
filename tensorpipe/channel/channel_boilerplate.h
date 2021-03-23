@@ -20,13 +20,12 @@
 namespace tensorpipe {
 namespace channel {
 
-template <typename TBuffer, typename TCtx, typename TChan>
+template <typename TCtx, typename TChan>
 class ChannelBoilerplate : public Channel {
  public:
   template <typename... Args>
   ChannelBoilerplate(
-      typename ChannelImplBoilerplate<TBuffer, TCtx, TChan>::ConstructorToken
-          token,
+      typename ChannelImplBoilerplate<TCtx, TChan>::ConstructorToken token,
       std::shared_ptr<TCtx> context,
       std::string id,
       Args&&... args);
@@ -60,11 +59,10 @@ class ChannelBoilerplate : public Channel {
   const std::shared_ptr<TChan> impl_;
 };
 
-template <typename TBuffer, typename TCtx, typename TChan>
+template <typename TCtx, typename TChan>
 template <typename... Args>
-ChannelBoilerplate<TBuffer, TCtx, TChan>::ChannelBoilerplate(
-    typename ChannelImplBoilerplate<TBuffer, TCtx, TChan>::ConstructorToken
-        token,
+ChannelBoilerplate<TCtx, TChan>::ChannelBoilerplate(
+    typename ChannelImplBoilerplate<TCtx, TChan>::ConstructorToken token,
     std::shared_ptr<TCtx> context,
     std::string id,
     Args&&... args)
@@ -74,44 +72,38 @@ ChannelBoilerplate<TBuffer, TCtx, TChan>::ChannelBoilerplate(
           std::move(id),
           std::forward<Args>(args)...)) {
   static_assert(
-      std::is_base_of<ChannelImplBoilerplate<TBuffer, TCtx, TChan>, TChan>::
-          value,
-      "");
+      std::is_base_of<ChannelImplBoilerplate<TCtx, TChan>, TChan>::value, "");
   impl_->init();
 }
 
-template <typename TBuffer, typename TCtx, typename TChan>
-void ChannelBoilerplate<TBuffer, TCtx, TChan>::send(
+template <typename TCtx, typename TChan>
+void ChannelBoilerplate<TCtx, TChan>::send(
     Buffer buffer,
     TDescriptorCallback descriptorCallback,
     TSendCallback callback) {
-  impl_->send(
-      buffer.unwrap<TBuffer>(),
-      std::move(descriptorCallback),
-      std::move(callback));
+  impl_->send(buffer, std::move(descriptorCallback), std::move(callback));
 }
 
-template <typename TBuffer, typename TCtx, typename TChan>
-void ChannelBoilerplate<TBuffer, TCtx, TChan>::recv(
+template <typename TCtx, typename TChan>
+void ChannelBoilerplate<TCtx, TChan>::recv(
     TDescriptor descriptor,
     Buffer buffer,
     TRecvCallback callback) {
-  impl_->recv(
-      std::move(descriptor), buffer.unwrap<TBuffer>(), std::move(callback));
+  impl_->recv(std::move(descriptor), buffer, std::move(callback));
 }
 
-template <typename TBuffer, typename TCtx, typename TChan>
-void ChannelBoilerplate<TBuffer, TCtx, TChan>::setId(std::string id) {
+template <typename TCtx, typename TChan>
+void ChannelBoilerplate<TCtx, TChan>::setId(std::string id) {
   impl_->setId(std::move(id));
 }
 
-template <typename TBuffer, typename TCtx, typename TChan>
-void ChannelBoilerplate<TBuffer, TCtx, TChan>::close() {
+template <typename TCtx, typename TChan>
+void ChannelBoilerplate<TCtx, TChan>::close() {
   impl_->close();
 }
 
-template <typename TBuffer, typename TCtx, typename TChan>
-ChannelBoilerplate<TBuffer, TCtx, TChan>::~ChannelBoilerplate() {
+template <typename TCtx, typename TChan>
+ChannelBoilerplate<TCtx, TChan>::~ChannelBoilerplate() {
   close();
 }
 

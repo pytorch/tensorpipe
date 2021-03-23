@@ -17,10 +17,8 @@
 #include <vector>
 
 #include <tensorpipe/channel/context_impl_boilerplate.h>
-#include <tensorpipe/channel/cpu_context.h>
 #include <tensorpipe/channel/mpt/nop_types.h>
 #include <tensorpipe/common/callback.h>
-#include <tensorpipe/common/cpu_buffer.h>
 #include <tensorpipe/common/deferred_executor.h>
 #include <tensorpipe/transport/context.h>
 
@@ -31,7 +29,7 @@ namespace mpt {
 class ChannelImpl;
 
 class ContextImpl final
-    : public ContextImplBoilerplate<CpuBuffer, ContextImpl, ChannelImpl> {
+    : public ContextImplBoilerplate<ContextImpl, ChannelImpl> {
  public:
   static std::shared_ptr<ContextImpl> create(
       std::vector<std::shared_ptr<transport::Context>> contexts,
@@ -43,7 +41,7 @@ class ContextImpl final
       std::vector<std::shared_ptr<transport::Context>> contexts,
       std::vector<std::shared_ptr<transport::Listener>> listeners);
 
-  std::shared_ptr<CpuChannel> createChannel(
+  std::shared_ptr<Channel> createChannel(
       std::vector<std::shared_ptr<transport::Connection>> connections,
       Endpoint endpoint);
 

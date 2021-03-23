@@ -16,7 +16,6 @@
 
 #include <tensorpipe/channel/channel_impl_boilerplate.h>
 #include <tensorpipe/common/cuda.h>
-#include <tensorpipe/common/cuda_buffer.h>
 #include <tensorpipe/common/cuda_event_pool.h>
 #include <tensorpipe/common/cuda_lib.h>
 #include <tensorpipe/common/state_machine.h>
@@ -87,7 +86,7 @@ struct RecvOperation {
 };
 
 class ChannelImpl final
-    : public ChannelImplBoilerplate<CudaBuffer, ContextImpl, ChannelImpl> {
+    : public ChannelImplBoilerplate<ContextImpl, ChannelImpl> {
  public:
   ChannelImpl(
       ConstructorToken token,
@@ -101,13 +100,13 @@ class ChannelImpl final
   void initImplFromLoop() override;
   void sendImplFromLoop(
       uint64_t sequenceNumber,
-      CudaBuffer buffer,
+      Buffer buffer,
       TDescriptorCallback descriptorCallback,
       TSendCallback callback) override;
   void recvImplFromLoop(
       uint64_t sequenceNumber,
       TDescriptor descriptor,
-      CudaBuffer buffer,
+      Buffer buffer,
       TRecvCallback callback) override;
   void handleErrorImpl() override;
 

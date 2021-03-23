@@ -22,11 +22,11 @@ std::shared_ptr<ContextImpl> ContextImpl::create() {
 }
 
 ContextImpl::ContextImpl()
-    : ContextImplBoilerplate<CpuBuffer, ContextImpl, ChannelImpl>(
+    : ContextImplBoilerplate<ContextImpl, ChannelImpl>(
           /*isViable=*/true,
           /*domainDescriptor=*/"any") {}
 
-std::shared_ptr<CpuChannel> ContextImpl::createChannel(
+std::shared_ptr<Channel> ContextImpl::createChannel(
     std::vector<std::shared_ptr<transport::Connection>> connections,
     Endpoint /* unused */) {
   TP_DCHECK_EQ(numConnectionsNeeded(), connections.size());

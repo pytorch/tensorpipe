@@ -17,6 +17,7 @@
 
 #include <tensorpipe/channel/cuda_gdr/context_impl.h>
 #include <tensorpipe/channel/helpers.h>
+#include <tensorpipe/common/cuda_buffer.h>
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/error.h>
 #include <tensorpipe/transport/connection.h>
@@ -30,7 +31,7 @@ ChannelImpl::ChannelImpl(
     std::shared_ptr<ContextImpl> context,
     std::string id,
     std::shared_ptr<transport::Connection> connection)
-    : ChannelImplBoilerplate<CudaBuffer, ContextImpl, ChannelImpl>(
+    : ChannelImplBoilerplate<ContextImpl, ChannelImpl>(
           token,
           std::move(context),
           std::move(id)),
@@ -174,15 +175,20 @@ void ChannelImpl::onReadHandshakeSetupInfo(
 
 void ChannelImpl::sendImplFromLoop(
     uint64_t sequenceNumber,
-    CudaBuffer buffer,
+    Buffer buffer,
     TDescriptorCallback descriptorCallback,
     TSendCallback callback) {
-  size_t localGpuIdx = cudaDeviceForPointer(context_->getCudaLib(), buffer.ptr);
+  size_t localGpuIdx = cudaDeviceForPointer(
+      context_->getCudaLib(), buffer.unwrap<CudaBuffer>().ptr);
   size_t localNicIdx = context_->getGpuToNicMapping()[localGpuIdx];
 
   SendOpIter opIter = sendOps_.emplaceBack(
-      sequenceNumber, buffer, std::move(callback), localGpuIdx, localNicIdx);
-  opIter->event.record(buffer.stream);
+      sequenceNumber,
+      buffer.unwrap<CudaBuffer>(),
+      std::move(callback),
+      localGpuIdx,
+      localNicIdx);
+  opIter->event.record(buffer.unwrap<CudaBuffer>().stream);
 
   sendOps_.advanceOperation(opIter);
 
@@ -372,9 +378,10 @@ void ChannelImpl::callSendCallback(SendOpIter opIter) {
 void ChannelImpl::recvImplFromLoop(
     uint64_t sequenceNumber,
     TDescriptor descriptor,
-    CudaBuffer buffer,
+    Buffer buffer,
     TRecvCallback callback) {
-  size_t localGpuIdx = cudaDeviceForPointer(context_->getCudaLib(), buffer.ptr);
+  size_t localGpuIdx = cudaDeviceForPointer(
+      context_->getCudaLib(), buffer.unwrap<CudaBuffer>().ptr);
   size_t localNicIdx = context_->getGpuToNicMapping()[localGpuIdx];
 
   NopHolder<Descriptor> nopHolder;
@@ -384,12 +391,12 @@ void ChannelImpl::recvImplFromLoop(
 
   RecvOpIter opIter = recvOps_.emplaceBack(
       sequenceNumber,
-      buffer,
+      buffer.unwrap<CudaBuffer>(),
       std::move(callback),
       localGpuIdx,
       localNicIdx,
       remoteNicIdx);
-  opIter->event.record(buffer.stream);
+  opIter->event.record(buffer.unwrap<CudaBuffer>().stream);
 
   recvOps_.advanceOperation(opIter);
 }

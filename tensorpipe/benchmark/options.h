@@ -10,7 +10,7 @@
 
 #include <string>
 
-#include <tensorpipe/channel/cpu_context.h>
+#include <tensorpipe/channel/context.h>
 #include <tensorpipe/transport/context.h>
 
 namespace tensorpipe {
@@ -32,7 +32,7 @@ struct Options {
 struct Options parseOptions(int argc, char** argv);
 
 void validateTransportContext(std::shared_ptr<transport::Context> context);
-void validateChannelContext(std::shared_ptr<channel::CpuContext> context);
+void validateChannelContext(std::shared_ptr<channel::Context> context);
 
 } // namespace benchmark
 } // namespace tensorpipe

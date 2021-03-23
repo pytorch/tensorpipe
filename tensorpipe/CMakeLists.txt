@@ -25,7 +25,6 @@ add_library(tensorpipe
 set(TP_PUBLIC_HEADERS
   tensorpipe.h
   channel/context.h
-  channel/cpu_context.h
   channel/error.h
   common/buffer.h
   common/cpu_buffer.h
@@ -94,7 +93,6 @@ if(TP_USE_CUDA)
   target_link_libraries(tensorpipe PUBLIC ${CUDA_LIBRARIES})
   target_include_directories(tensorpipe PUBLIC ${CUDA_INCLUDE_DIRS})
   set(TP_PUBLIC_HEADERS ${TP_PUBLIC_HEADERS}
-    channel/cuda_context.h
     common/cuda_buffer.h)
   set(TENSORPIPE_SUPPORTS_CUDA 1)
 

@@ -428,7 +428,7 @@ PYBIND11_MODULE(pytensorpipe, module) {
       py::arg("name"),
       py::arg("transport"));
 
-  shared_ptr_class_<tensorpipe::channel::CpuContext> abstractChannel(
+  shared_ptr_class_<tensorpipe::channel::Context> abstractChannel(
       module, "AbstractChannel");
 
   module.def("create_basic_channel", &tensorpipe::channel::basic::create);

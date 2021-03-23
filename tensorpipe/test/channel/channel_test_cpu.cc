@@ -8,7 +8,6 @@
 
 #include <numeric>
 
-#include <tensorpipe/channel/cpu_context.h>
 #include <tensorpipe/test/channel/channel_test.h>
 
 using namespace tensorpipe;
@@ -16,7 +15,7 @@ using namespace tensorpipe::channel;
 
 // Call send and recv with a null pointer and a length of 0.
 class NullPointerTest : public ClientServerChannelTestCase<CpuBuffer> {
-  void server(std::shared_ptr<CpuChannel> channel) override {
+  void server(std::shared_ptr<Channel> channel) override {
     // Perform send and wait for completion.
     std::future<std::tuple<Error, TDescriptor>> descriptorFuture;
     std::future<Error> sendFuture;
@@ -34,7 +33,7 @@ class NullPointerTest : public ClientServerChannelTestCase<CpuBuffer> {
     this->peers_->join(PeerGroup::kServer);
   }
 
-  void client(std::shared_ptr<CpuChannel> channel) override {
+  void client(std::shared_ptr<Channel> channel) override {
     // Perform recv and wait for completion.
     auto descriptor = this->peers_->recv(PeerGroup::kClient);
     std::future<Error> recvFuture =
@@ -51,7 +50,7 @@ CHANNEL_TEST(CpuChannelTestSuite, NullPointer);
 
 // Call send and recv with a length of 0 but a non-null pointer.
 class EmptyTensorTest : public ClientServerChannelTestCase<CpuBuffer> {
-  void server(std::shared_ptr<CpuChannel> channel) override {
+  void server(std::shared_ptr<Channel> channel) override {
     // Allocate a non-empty vector so that its .data() pointer is non-null.
     std::vector<uint8_t> data(1);
     DataWrapper<CpuBuffer> wrappedData(data);
@@ -74,7 +73,7 @@ class EmptyTensorTest : public ClientServerChannelTestCase<CpuBuffer> {
     this->peers_->join(PeerGroup::kServer);
   }
 
-  void client(std::shared_ptr<CpuChannel> channel) override {
+  void client(std::shared_ptr<Channel> channel) override {
     // Allocate a non-empty vector so that its .data() pointer is non-null.
     DataWrapper<CpuBuffer> wrappedData(1);
     Buffer buffer = wrappedData.buffer();
@@ -103,7 +102,7 @@ class CallbacksAreDeferredTest : public ClientServerChannelTestCase<CpuBuffer> {
   static constexpr auto kDataSize = 256;
 
  public:
-  void server(std::shared_ptr<CpuChannel> channel) override {
+  void server(std::shared_ptr<Channel> channel) override {
     // Initialize with sequential values.
     std::vector<uint8_t> data(kDataSize);
     std::iota(data.begin(), data.end(), 0);
@@ -137,7 +136,7 @@ class CallbacksAreDeferredTest : public ClientServerChannelTestCase<CpuBuffer> {
     this->peers_->join(PeerGroup::kServer);
   }
 
-  void client(std::shared_ptr<CpuChannel> channel) override {
+  void client(std::shared_ptr<Channel> channel) override {
     // Initialize with zeroes.
     std::vector<uint8_t> data(kDataSize);
     std::fill(data.begin(), data.end(), 0);

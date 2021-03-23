@@ -74,7 +74,7 @@ ChannelImpl::ChannelImpl(
     std::shared_ptr<ContextImpl> context,
     std::string id,
     std::shared_ptr<transport::Connection> connection)
-    : ChannelImplBoilerplate<CudaBuffer, ContextImpl, ChannelImpl>(
+    : ChannelImplBoilerplate<ContextImpl, ChannelImpl>(
           token,
           std::move(context),
           std::move(id)),
@@ -86,12 +86,16 @@ void ChannelImpl::initImplFromLoop() {
 
 void ChannelImpl::sendImplFromLoop(
     uint64_t sequenceNumber,
-    CudaBuffer buffer,
+    Buffer buffer,
     TDescriptorCallback descriptorCallback,
     TSendCallback callback) {
-  int deviceIdx = cudaDeviceForPointer(context_->getCudaLib(), buffer.ptr);
+  int deviceIdx = cudaDeviceForPointer(
+      context_->getCudaLib(), buffer.unwrap<CudaBuffer>().ptr);
   SendOpIter opIter = sendOps_.emplaceBack(
-      sequenceNumber, deviceIdx, buffer.stream, std::move(callback));
+      sequenceNumber,
+      deviceIdx,
+      buffer.unwrap<CudaBuffer>().stream,
+      std::move(callback));
   SendOperation& op = *opIter;
 
   sendOps_.advanceOperation(opIter);
@@ -101,9 +105,11 @@ void ChannelImpl::sendImplFromLoop(
   static_assert(std::is_pointer<cudaEvent_t>::value, "");
   static_assert(std::is_pointer<cudaStream_t>::value, "");
   nopDescriptor.startEvent = reinterpret_cast<uintptr_t>(op.startEv.raw());
-  nopDescriptor.srcPtr = reinterpret_cast<uintptr_t>(buffer.ptr);
+  nopDescriptor.srcPtr =
+      reinterpret_cast<uintptr_t>(buffer.unwrap<CudaBuffer>().ptr);
   nopDescriptor.srcDeviceIdx = deviceIdx;
-  nopDescriptor.srcStream = reinterpret_cast<uintptr_t>(buffer.stream);
+  nopDescriptor.srcStream =
+      reinterpret_cast<uintptr_t>(buffer.unwrap<CudaBuffer>().stream);
   descriptorCallback(Error::kSuccess, saveDescriptor(nopHolder));
 }
 
@@ -168,11 +174,15 @@ void ChannelImpl::callSendCallback(SendOpIter opIter) {
 void ChannelImpl::recvImplFromLoop(
     uint64_t sequenceNumber,
     TDescriptor descriptor,
-    CudaBuffer buffer,
+    Buffer buffer,
     TRecvCallback callback) {
-  int deviceIdx = cudaDeviceForPointer(context_->getCudaLib(), buffer.ptr);
+  int deviceIdx = cudaDeviceForPointer(
+      context_->getCudaLib(), buffer.unwrap<CudaBuffer>().ptr);
   RecvOpIter opIter = recvOps_.emplaceBack(
-      sequenceNumber, deviceIdx, buffer, std::move(callback));
+      sequenceNumber,
+      deviceIdx,
+      buffer.unwrap<CudaBuffer>(),
+      std::move(callback));
   RecvOperation& op = *opIter;
 
   NopHolder<Descriptor> nopHolder;

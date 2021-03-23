@@ -9,7 +9,6 @@
 #include <cuda_runtime.h>
 #include <gmock/gmock.h>
 
-#include <tensorpipe/channel/cuda_context.h>
 #include <tensorpipe/common/cuda.h>
 #include <tensorpipe/test/channel/channel_test.h>
 #include <tensorpipe/test/channel/kernel.cuh>
@@ -21,7 +20,7 @@ class ReceiverWaitsForStartEventTest
     : public ClientServerChannelTestCase<CudaBuffer> {
   static constexpr size_t kSize = 1024;
 
-  void server(std::shared_ptr<CudaChannel> channel) override {
+  void server(std::shared_ptr<Channel> channel) override {
     TP_CUDA_CHECK(cudaSetDevice(0));
     cudaStream_t sendStream;
     TP_CUDA_CHECK(
@@ -71,7 +70,7 @@ class ReceiverWaitsForStartEventTest
     this->peers_->join(PeerGroup::kServer);
   }
 
-  void client(std::shared_ptr<CudaChannel> channel) override {
+  void client(std::shared_ptr<Channel> channel) override {
     TP_CUDA_CHECK(cudaSetDevice(0));
     cudaStream_t recvStream;
     TP_CUDA_CHECK(
@@ -118,7 +117,7 @@ class SendOffsetAllocationTest
   static constexpr int kDataSize = 256;
   static constexpr int kOffset = 128;
 
-  void server(std::shared_ptr<CudaChannel> channel) override {
+  void server(std::shared_ptr<Channel> channel) override {
     // Initialize with sequential values.
     void* ptr;
     TP_CUDA_CHECK(cudaMalloc(&ptr, kOffset + kDataSize));
@@ -144,7 +143,7 @@ class SendOffsetAllocationTest
     this->peers_->join(PeerGroup::kServer);
   }
 
-  void client(std::shared_ptr<CudaChannel> channel) override {
+  void client(std::shared_ptr<Channel> channel) override {
     DataWrapper<CudaBuffer> wrappedData(kDataSize);
 
     // Perform recv and wait for completion.

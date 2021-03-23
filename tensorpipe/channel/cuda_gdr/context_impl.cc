@@ -385,7 +385,7 @@ std::shared_ptr<ContextImpl> ContextImpl::create(
 }
 
 ContextImpl::ContextImpl()
-    : ContextImplBoilerplate<CudaBuffer, ContextImpl, ChannelImpl>(
+    : ContextImplBoilerplate<ContextImpl, ChannelImpl>(
           /*isViable=*/false,
           /*domainDescriptor=*/"") {}
 
@@ -394,7 +394,7 @@ ContextImpl::ContextImpl(
     IbvLib ibvLib,
     IbvDeviceList deviceList,
     optional<std::vector<std::string>> gpuIdxToNicName)
-    : ContextImplBoilerplate<CudaBuffer, ContextImpl, ChannelImpl>(
+    : ContextImplBoilerplate<ContextImpl, ChannelImpl>(
           /*isViable=*/true,
           /*domainDescriptor=*/"*"),
       cudaLib_(std::move(cudaLib)),
@@ -535,7 +535,7 @@ void ContextImpl::setIdImpl() {
   }
 }
 
-std::shared_ptr<CudaChannel> ContextImpl::createChannel(
+std::shared_ptr<Channel> ContextImpl::createChannel(
     std::vector<std::shared_ptr<transport::Connection>> connections,
     Endpoint /* unused */) {
   TP_DCHECK_EQ(numConnectionsNeeded(), connections.size());

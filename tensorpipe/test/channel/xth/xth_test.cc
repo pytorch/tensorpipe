@@ -13,7 +13,7 @@ namespace {
 
 class XthChannelTestHelper : public ChannelTestHelper<tensorpipe::CpuBuffer> {
  protected:
-  std::shared_ptr<tensorpipe::channel::CpuContext> makeContextInternal(
+  std::shared_ptr<tensorpipe::channel::Context> makeContextInternal(
       std::string id) override {
     auto context = tensorpipe::channel::xth::create();
     context->setId(std::move(id));

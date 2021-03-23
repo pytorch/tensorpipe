@@ -15,8 +15,6 @@
 #include <vector>
 
 #include <tensorpipe/channel/context_impl_boilerplate.h>
-#include <tensorpipe/channel/cuda_context.h>
-#include <tensorpipe/common/cuda_buffer.h>
 #include <tensorpipe/common/cuda_event_pool.h>
 #include <tensorpipe/common/cuda_lib.h>
 #include <tensorpipe/common/deferred_executor.h>
@@ -29,7 +27,7 @@ namespace cuda_ipc {
 class ChannelImpl;
 
 class ContextImpl final
-    : public ContextImplBoilerplate<CudaBuffer, ContextImpl, ChannelImpl> {
+    : public ContextImplBoilerplate<ContextImpl, ChannelImpl> {
  public:
   static std::shared_ptr<ContextImpl> create();
 
@@ -44,7 +42,7 @@ class ContextImpl final
       std::vector<std::vector<bool>> p2pSupport,
       std::vector<int> globalIdxOfVisibleDevices);
 
-  std::shared_ptr<CudaChannel> createChannel(
+  std::shared_ptr<Channel> createChannel(
       std::vector<std::shared_ptr<transport::Connection>> connections,
       Endpoint endpoint);
 

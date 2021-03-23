@@ -21,6 +21,7 @@
 #include <tensorpipe/channel/cuda_ipc/context_impl.h>
 #include <tensorpipe/channel/helpers.h>
 #include <tensorpipe/common/cuda.h>
+#include <tensorpipe/common/cuda_buffer.h>
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/error.h>
 #include <tensorpipe/transport/connection.h>
@@ -75,7 +76,7 @@ ChannelImpl::ChannelImpl(
     std::string id,
     std::shared_ptr<transport::Connection> replyConnection,
     std::shared_ptr<transport::Connection> ackConnection)
-    : ChannelImplBoilerplate<CudaBuffer, ContextImpl, ChannelImpl>(
+    : ChannelImplBoilerplate<ContextImpl, ChannelImpl>(
           token,
           std::move(context),
           std::move(id)),
@@ -88,18 +89,19 @@ void ChannelImpl::initImplFromLoop() {
 
 void ChannelImpl::sendImplFromLoop(
     uint64_t sequenceNumber,
-    CudaBuffer buffer,
+    Buffer buffer,
     TDescriptorCallback descriptorCallback,
     TSendCallback callback) {
-  int deviceIdx = cudaDeviceForPointer(context_->getCudaLib(), buffer.ptr);
+  int deviceIdx = cudaDeviceForPointer(
+      context_->getCudaLib(), buffer.unwrap<CudaBuffer>().ptr);
 
   SendOpIter opIter = sendOps_.emplaceBack(
       sequenceNumber,
       std::move(descriptorCallback),
       std::move(callback),
       deviceIdx,
-      buffer.ptr,
-      buffer.stream);
+      buffer.unwrap<CudaBuffer>().ptr,
+      buffer.unwrap<CudaBuffer>().stream);
 
   sendOps_.advanceOperation(opIter);
 }
@@ -307,11 +309,16 @@ void ChannelImpl::writeAck(SendOpIter opIter) {
 void ChannelImpl::recvImplFromLoop(
     uint64_t sequenceNumber,
     TDescriptor descriptor,
-    CudaBuffer buffer,
+    Buffer buffer,
     TRecvCallback callback) {
-  int deviceIdx = cudaDeviceForPointer(context_->getCudaLib(), buffer.ptr);
+  int deviceIdx = cudaDeviceForPointer(
+      context_->getCudaLib(), buffer.unwrap<CudaBuffer>().ptr);
   RecvOpIter opIter = recvOps_.emplaceBack(
-      sequenceNumber, deviceIdx, buffer.ptr, buffer.stream, buffer.length);
+      sequenceNumber,
+      deviceIdx,
+      buffer.unwrap<CudaBuffer>().ptr,
+      buffer.unwrap<CudaBuffer>().stream,
+      buffer.unwrap<CudaBuffer>().length);
 
   opIter->callback = std::move(callback);
 

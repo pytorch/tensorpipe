@@ -16,9 +16,8 @@ namespace tensorpipe {
 namespace channel {
 namespace cuda_basic {
 
-std::shared_ptr<CudaContext> create(std::shared_ptr<CpuContext> cpuContext) {
-  return std::make_shared<
-      ContextBoilerplate<CudaBuffer, ContextImpl, ChannelImpl>>(
+std::shared_ptr<Context> create(std::shared_ptr<Context> cpuContext) {
+  return std::make_shared<ContextBoilerplate<ContextImpl, ChannelImpl>>(
       std::move(cpuContext));
 }
 

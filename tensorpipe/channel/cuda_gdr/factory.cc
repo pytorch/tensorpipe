@@ -16,10 +16,9 @@ namespace tensorpipe {
 namespace channel {
 namespace cuda_gdr {
 
-std::shared_ptr<CudaContext> create(
+std::shared_ptr<Context> create(
     optional<std::vector<std::string>> gpuIdxToNicName) {
-  return std::make_shared<
-      ContextBoilerplate<CudaBuffer, ContextImpl, ChannelImpl>>(
+  return std::make_shared<ContextBoilerplate<ContextImpl, ChannelImpl>>(
       std::move(gpuIdxToNicName));
 }
 

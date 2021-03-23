@@ -11,14 +11,14 @@
 #include <memory>
 #include <vector>
 
-#include <tensorpipe/channel/cuda_context.h>
+#include <tensorpipe/channel/context.h>
 #include <tensorpipe/common/optional.h>
 
 namespace tensorpipe {
 namespace channel {
 namespace cuda_gdr {
 
-std::shared_ptr<CudaContext> create(
+std::shared_ptr<Context> create(
     optional<std::vector<std::string>> gpuIdxToNicName = nullopt);
 
 } // namespace cuda_gdr

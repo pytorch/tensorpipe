@@ -32,7 +32,7 @@ void validateTransportContext(std::shared_ptr<transport::Context> context) {
   }
 }
 
-void validateChannelContext(std::shared_ptr<channel::CpuContext> context) {
+void validateChannelContext(std::shared_ptr<channel::Context> context) {
   if (!context) {
     auto keys = TensorpipeChannelRegistry().keys();
     std::cout

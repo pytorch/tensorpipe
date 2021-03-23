@@ -9,8 +9,6 @@
 #pragma once
 
 #include <tensorpipe/channel/context_impl_boilerplate.h>
-#include <tensorpipe/channel/cpu_context.h>
-#include <tensorpipe/channel/cuda_context.h>
 #include <tensorpipe/common/cuda_buffer.h>
 #include <tensorpipe/common/cuda_host_allocator.h>
 #include <tensorpipe/common/cuda_lib.h>
@@ -25,16 +23,16 @@ namespace cuda_basic {
 class ChannelImpl;
 
 class ContextImpl final
-    : public ContextImplBoilerplate<CudaBuffer, ContextImpl, ChannelImpl> {
+    : public ContextImplBoilerplate<ContextImpl, ChannelImpl> {
  public:
   static std::shared_ptr<ContextImpl> create(
-      std::shared_ptr<CpuContext> cpuContext);
+      std::shared_ptr<Context> cpuContext);
 
   ContextImpl();
 
-  ContextImpl(CudaLib cudaLib, std::shared_ptr<CpuContext> cpuContext);
+  ContextImpl(CudaLib cudaLib, std::shared_ptr<Context> cpuContext);
 
-  std::shared_ptr<CudaChannel> createChannel(
+  std::shared_ptr<Channel> createChannel(
       std::vector<std::shared_ptr<transport::Connection>> connections,
       Endpoint endpoint);
 
@@ -61,7 +59,7 @@ class ContextImpl final
 
   const CudaLib cudaLib_;
 
-  const std::shared_ptr<CpuContext> cpuContext_;
+  const std::shared_ptr<Context> cpuContext_;
   // TODO: Lazy initialization of cuda loop.
   CudaLoop cudaLoop_;
   optional<CudaHostAllocator> cudaHostSendAllocator_;

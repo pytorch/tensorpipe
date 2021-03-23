@@ -19,7 +19,6 @@
 #include <vector>
 
 #include <tensorpipe/channel/context_impl_boilerplate.h>
-#include <tensorpipe/channel/cuda_context.h>
 #include <tensorpipe/channel/cuda_gdr/constants.h>
 #include <tensorpipe/common/busy_polling_loop.h>
 #include <tensorpipe/common/cuda.h>
@@ -121,7 +120,7 @@ class IbvNic {
 
 class ContextImpl final
     : public BusyPollingLoop,
-      public ContextImplBoilerplate<CudaBuffer, ContextImpl, ChannelImpl> {
+      public ContextImplBoilerplate<ContextImpl, ChannelImpl> {
  public:
   static std::shared_ptr<ContextImpl> create(
       optional<std::vector<std::string>> gpuIdxToNicName = nullopt);
@@ -134,7 +133,7 @@ class ContextImpl final
       IbvDeviceList deviceList,
       optional<std::vector<std::string>> gpuIdxToNicName);
 
-  std::shared_ptr<CudaChannel> createChannel(
+  std::shared_ptr<Channel> createChannel(
       std::vector<std::shared_ptr<transport::Connection>> connections,
       Endpoint endpoint);
 

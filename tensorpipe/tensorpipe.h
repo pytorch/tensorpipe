@@ -46,11 +46,7 @@
 
 // Channels
 
-#include <tensorpipe/channel/cpu_context.h>
-#if TENSORPIPE_SUPPORTS_CUDA
-#include <tensorpipe/channel/cuda_context.h>
-#endif // TENSORPIPE_SUPPORTS_CUDA
-
+#include <tensorpipe/channel/context.h>
 #include <tensorpipe/channel/error.h>
 
 #include <tensorpipe/channel/basic/factory.h>

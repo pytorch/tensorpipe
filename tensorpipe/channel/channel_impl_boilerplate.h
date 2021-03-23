@@ -22,10 +22,10 @@
 namespace tensorpipe {
 namespace channel {
 
-template <typename TBuffer, typename TCtx, typename TChan>
+template <typename TCtx, typename TChan>
 class ContextImplBoilerplate;
 
-template <typename TBuffer, typename TCtx, typename TChan>
+template <typename TCtx, typename TChan>
 class ChannelImplBoilerplate : public std::enable_shared_from_this<TChan> {
  public:
   class ConstructorToken {
@@ -34,7 +34,7 @@ class ChannelImplBoilerplate : public std::enable_shared_from_this<TChan> {
 
    private:
     explicit ConstructorToken() {}
-    friend ContextImplBoilerplate<TBuffer, TCtx, TChan>;
+    friend ContextImplBoilerplate<TCtx, TChan>;
   };
 
   ChannelImplBoilerplate(
@@ -52,12 +52,12 @@ class ChannelImplBoilerplate : public std::enable_shared_from_this<TChan> {
 
   // Perform a send operation.
   void send(
-      TBuffer buffer,
+      Buffer buffer,
       TDescriptorCallback descriptorCallback,
       TSendCallback callback);
 
   // Queue a recv operation.
-  void recv(TDescriptor descriptor, TBuffer buffer, TRecvCallback callback);
+  void recv(TDescriptor descriptor, Buffer buffer, TRecvCallback callback);
 
   // Tell the connection what its identifier is.
   void setId(std::string id);
@@ -71,13 +71,13 @@ class ChannelImplBoilerplate : public std::enable_shared_from_this<TChan> {
   virtual void initImplFromLoop() = 0;
   virtual void sendImplFromLoop(
       uint64_t sequenceNumber,
-      TBuffer buffer,
+      Buffer buffer,
       TDescriptorCallback descriptorCallback,
       TSendCallback callback) = 0;
   virtual void recvImplFromLoop(
       uint64_t sequenceNumber,
       TDescriptor descriptor,
-      TBuffer buffer,
+      Buffer buffer,
       TRecvCallback callback) = 0;
   virtual void handleErrorImpl() = 0;
   virtual void setIdImpl() {}
@@ -101,14 +101,14 @@ class ChannelImplBoilerplate : public std::enable_shared_from_this<TChan> {
 
   // Perform a send operation.
   void sendFromLoop(
-      TBuffer buffer,
+      Buffer buffer,
       TDescriptorCallback descriptorCallback,
       TSendCallback callback);
 
   // Queue a recv operation.
   void recvFromLoop(
       TDescriptor descriptor,
-      TBuffer buffer,
+      Buffer buffer,
       TRecvCallback callback);
 
   void setIdFromLoop(std::string id);
@@ -131,24 +131,24 @@ class ChannelImplBoilerplate : public std::enable_shared_from_this<TChan> {
   // make sure that some of their operations can happen "atomically" on the
   // connection, without possibly other operations occurring in between (e.g.,
   // an error).
-  friend ContextImplBoilerplate<TBuffer, TCtx, TChan>;
+  friend ContextImplBoilerplate<TCtx, TChan>;
 };
 
-template <typename TBuffer, typename TCtx, typename TChan>
-ChannelImplBoilerplate<TBuffer, TCtx, TChan>::ChannelImplBoilerplate(
+template <typename TCtx, typename TChan>
+ChannelImplBoilerplate<TCtx, TChan>::ChannelImplBoilerplate(
     ConstructorToken /* unused */,
     std::shared_ptr<TCtx> context,
     std::string id)
     : context_(std::move(context)), id_(std::move(id)) {}
 
-template <typename TBuffer, typename TCtx, typename TChan>
-void ChannelImplBoilerplate<TBuffer, TCtx, TChan>::init() {
+template <typename TCtx, typename TChan>
+void ChannelImplBoilerplate<TCtx, TChan>::init() {
   context_->deferToLoop(
       [impl{this->shared_from_this()}]() { impl->initFromLoop(); });
 }
 
-template <typename TBuffer, typename TCtx, typename TChan>
-void ChannelImplBoilerplate<TBuffer, TCtx, TChan>::initFromLoop() {
+template <typename TCtx, typename TChan>
+void ChannelImplBoilerplate<TCtx, TChan>::initFromLoop() {
   if (context_->closed()) {
     // Set the error without calling setError because we do not want to invoke
     // the subclass's handleErrorImpl as it would find itself in a weird state
@@ -161,9 +161,9 @@ void ChannelImplBoilerplate<TBuffer, TCtx, TChan>::initFromLoop() {
   initImplFromLoop();
 }
 
-template <typename TBuffer, typename TCtx, typename TChan>
-void ChannelImplBoilerplate<TBuffer, TCtx, TChan>::send(
-    TBuffer buffer,
+template <typename TCtx, typename TChan>
+void ChannelImplBoilerplate<TCtx, TChan>::send(
+    Buffer buffer,
     TDescriptorCallback descriptorCallback,
     TSendCallback callback) {
   context_->deferToLoop([impl{this->shared_from_this()},
@@ -175,9 +175,9 @@ void ChannelImplBoilerplate<TBuffer, TCtx, TChan>::send(
   });
 }
 
-template <typename TBuffer, typename TCtx, typename TChan>
-void ChannelImplBoilerplate<TBuffer, TCtx, TChan>::sendFromLoop(
-    TBuffer buffer,
+template <typename TCtx, typename TChan>
+void ChannelImplBoilerplate<TCtx, TChan>::sendFromLoop(
+    Buffer buffer,
     TDescriptorCallback descriptorCallback,
     TSendCallback callback) {
   TP_DCHECK(context_->inLoop());
@@ -221,10 +221,10 @@ void ChannelImplBoilerplate<TBuffer, TCtx, TChan>::sendFromLoop(
       std::move(callback));
 }
 
-template <typename TBuffer, typename TCtx, typename TChan>
-void ChannelImplBoilerplate<TBuffer, TCtx, TChan>::recv(
+template <typename TCtx, typename TChan>
+void ChannelImplBoilerplate<TCtx, TChan>::recv(
     TDescriptor descriptor,
-    TBuffer buffer,
+    Buffer buffer,
     TRecvCallback callback) {
   context_->deferToLoop([impl{this->shared_from_this()},
                          descriptor{std::move(descriptor)},
@@ -234,10 +234,10 @@ void ChannelImplBoilerplate<TBuffer, TCtx, TChan>::recv(
   });
 }
 
-template <typename TBuffer, typename TCtx, typename TChan>
-void ChannelImplBoilerplate<TBuffer, TCtx, TChan>::recvFromLoop(
+template <typename TCtx, typename TChan>
+void ChannelImplBoilerplate<TCtx, TChan>::recvFromLoop(
     TDescriptor descriptor,
-    TBuffer buffer,
+    Buffer buffer,
     TRecvCallback callback) {
   TP_DCHECK(context_->inLoop());
 
@@ -264,38 +264,37 @@ void ChannelImplBoilerplate<TBuffer, TCtx, TChan>::recvFromLoop(
       sequenceNumber, std::move(descriptor), buffer, std::move(callback));
 }
 
-template <typename TBuffer, typename TCtx, typename TChan>
-void ChannelImplBoilerplate<TBuffer, TCtx, TChan>::setId(std::string id) {
+template <typename TCtx, typename TChan>
+void ChannelImplBoilerplate<TCtx, TChan>::setId(std::string id) {
   context_->deferToLoop(
       [impl{this->shared_from_this()}, id{std::move(id)}]() mutable {
         impl->setIdFromLoop(std::move(id));
       });
 }
 
-template <typename TBuffer, typename TCtx, typename TChan>
-void ChannelImplBoilerplate<TBuffer, TCtx, TChan>::setIdFromLoop(
-    std::string id) {
+template <typename TCtx, typename TChan>
+void ChannelImplBoilerplate<TCtx, TChan>::setIdFromLoop(std::string id) {
   TP_DCHECK(context_->inLoop());
   TP_VLOG(4) << "Channel " << id_ << " was renamed to " << id;
   id_ = std::move(id);
   setIdImpl();
 }
 
-template <typename TBuffer, typename TCtx, typename TChan>
-void ChannelImplBoilerplate<TBuffer, TCtx, TChan>::close() {
+template <typename TCtx, typename TChan>
+void ChannelImplBoilerplate<TCtx, TChan>::close() {
   context_->deferToLoop(
       [impl{this->shared_from_this()}]() { impl->closeFromLoop(); });
 }
 
-template <typename TBuffer, typename TCtx, typename TChan>
-void ChannelImplBoilerplate<TBuffer, TCtx, TChan>::closeFromLoop() {
+template <typename TCtx, typename TChan>
+void ChannelImplBoilerplate<TCtx, TChan>::closeFromLoop() {
   TP_DCHECK(context_->inLoop());
   TP_VLOG(4) << "Channel " << id_ << " is closing";
   setError(TP_CREATE_ERROR(ChannelClosedError));
 }
 
-template <typename TBuffer, typename TCtx, typename TChan>
-void ChannelImplBoilerplate<TBuffer, TCtx, TChan>::setError(Error error) {
+template <typename TCtx, typename TChan>
+void ChannelImplBoilerplate<TCtx, TChan>::setError(Error error) {
   // Don't overwrite an error that's already set.
   if (error_ || !error) {
     return;
@@ -306,8 +305,8 @@ void ChannelImplBoilerplate<TBuffer, TCtx, TChan>::setError(Error error) {
   handleError();
 }
 
-template <typename TBuffer, typename TCtx, typename TChan>
-void ChannelImplBoilerplate<TBuffer, TCtx, TChan>::handleError() {
+template <typename TCtx, typename TChan>
+void ChannelImplBoilerplate<TCtx, TChan>::handleError() {
   TP_DCHECK(context_->inLoop());
   TP_VLOG(5) << "Channel " << id_ << " is handling error " << error_.what();
 

@@ -16,7 +16,7 @@ namespace {
 class CudaGdrChannelTestHelper
     : public ChannelTestHelper<tensorpipe::CudaBuffer> {
  protected:
-  std::shared_ptr<tensorpipe::channel::CudaContext> makeContextInternal(
+  std::shared_ptr<tensorpipe::channel::Context> makeContextInternal(
       std::string id) override {
     auto context = tensorpipe::channel::cuda_gdr::create();
     context->setId(std::move(id));

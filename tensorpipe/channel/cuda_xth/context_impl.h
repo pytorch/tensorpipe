@@ -9,8 +9,6 @@
 #pragma once
 
 #include <tensorpipe/channel/context_impl_boilerplate.h>
-#include <tensorpipe/channel/cuda_context.h>
-#include <tensorpipe/common/cuda_buffer.h>
 #include <tensorpipe/common/cuda_lib.h>
 #include <tensorpipe/common/deferred_executor.h>
 
@@ -21,7 +19,7 @@ namespace cuda_xth {
 class ChannelImpl;
 
 class ContextImpl final
-    : public ContextImplBoilerplate<CudaBuffer, ContextImpl, ChannelImpl> {
+    : public ContextImplBoilerplate<ContextImpl, ChannelImpl> {
  public:
   static std::shared_ptr<ContextImpl> create();
 
@@ -29,7 +27,7 @@ class ContextImpl final
 
   explicit ContextImpl(CudaLib cudaLib);
 
-  std::shared_ptr<CudaChannel> createChannel(
+  std::shared_ptr<Channel> createChannel(
       std::vector<std::shared_ptr<transport::Connection>> connections,
       Endpoint endpoint);
 

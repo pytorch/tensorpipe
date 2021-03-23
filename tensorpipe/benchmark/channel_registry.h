@@ -8,9 +8,9 @@
 
 #pragma once
 
-#include <tensorpipe/channel/cpu_context.h>
+#include <tensorpipe/channel/context.h>
 #include <tensorpipe/util/registry/registry.h>
 
 TP_DECLARE_SHARED_REGISTRY(
     TensorpipeChannelRegistry,
-    tensorpipe::channel::CpuContext);
+    tensorpipe::channel::Context);

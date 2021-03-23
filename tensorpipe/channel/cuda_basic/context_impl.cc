@@ -19,7 +19,7 @@ namespace channel {
 namespace cuda_basic {
 
 std::shared_ptr<ContextImpl> ContextImpl::create(
-    std::shared_ptr<CpuContext> cpuContext) {
+    std::shared_ptr<Context> cpuContext) {
   Error error;
   CudaLib cudaLib;
   std::tie(error, cudaLib) = CudaLib::create();
@@ -27,6 +27,12 @@ std::shared_ptr<ContextImpl> ContextImpl::create(
     TP_VLOG(5)
         << "CUDA basic channel is not viable because libcuda could not be loaded: "
         << error.what();
+    return std::make_shared<ContextImpl>();
+  }
+
+  if (!cpuContext->supportsDeviceType(DeviceType::kCpu)) {
+    TP_VLOG(5) << "CUDA basic channel is not viable because the provided CPU"
+                  "channel does not support CPU buffers";
     return std::make_shared<ContextImpl>();
   }
 
@@ -39,20 +45,18 @@ std::shared_ptr<ContextImpl> ContextImpl::create(
 }
 
 ContextImpl::ContextImpl()
-    : ContextImplBoilerplate<CudaBuffer, ContextImpl, ChannelImpl>(
+    : ContextImplBoilerplate<ContextImpl, ChannelImpl>(
           /*isViable=*/false,
           /*domainDescriptor=*/"") {}
 
-ContextImpl::ContextImpl(
-    CudaLib cudaLib,
-    std::shared_ptr<CpuContext> cpuContext)
-    : ContextImplBoilerplate<CudaBuffer, ContextImpl, ChannelImpl>(
+ContextImpl::ContextImpl(CudaLib cudaLib, std::shared_ptr<Context> cpuContext)
+    : ContextImplBoilerplate<ContextImpl, ChannelImpl>(
           /*isViable=*/true,
           cpuContext->domainDescriptor()),
       cudaLib_(std::move(cudaLib)),
       cpuContext_(std::move(cpuContext)) {}
 
-std::shared_ptr<CudaChannel> ContextImpl::createChannel(
+std::shared_ptr<Channel> ContextImpl::createChannel(
     std::vector<std::shared_ptr<transport::Connection>> connections,
     Endpoint endpoint) {
   TP_DCHECK_EQ(numConnectionsNeeded(), connections.size());

@@ -16,9 +16,8 @@ namespace tensorpipe {
 namespace channel {
 namespace cma {
 
-std::shared_ptr<CpuContext> create() {
-  return std::make_shared<
-      ContextBoilerplate<CpuBuffer, ContextImpl, ChannelImpl>>();
+std::shared_ptr<Context> create() {
+  return std::make_shared<ContextBoilerplate<ContextImpl, ChannelImpl>>();
 }
 
 } // namespace cma

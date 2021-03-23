@@ -220,7 +220,7 @@ std::shared_ptr<ContextImpl> ContextImpl::create() {
 }
 
 ContextImpl::ContextImpl()
-    : ContextImplBoilerplate<CudaBuffer, ContextImpl, ChannelImpl>(
+    : ContextImplBoilerplate<ContextImpl, ChannelImpl>(
           /*isViable=*/false,
           /*domainDescriptor=*/"") {}
 
@@ -232,7 +232,7 @@ ContextImpl::ContextImpl(
     std::vector<std::string> globalUuids,
     std::vector<std::vector<bool>> p2pSupport,
     std::vector<int> globalIdxOfVisibleDevices)
-    : ContextImplBoilerplate<CudaBuffer, ContextImpl, ChannelImpl>(
+    : ContextImplBoilerplate<ContextImpl, ChannelImpl>(
           /*isViable=*/true,
           std::move(domainDescriptor)),
       cudaLib_(std::move(cudaLib)),
@@ -243,7 +243,7 @@ ContextImpl::ContextImpl(
       globalIdxOfVisibleDevices_(std::move(globalIdxOfVisibleDevices)),
       processIdentifier_(genProcessIdentifier()) {}
 
-std::shared_ptr<CudaChannel> ContextImpl::createChannel(
+std::shared_ptr<Channel> ContextImpl::createChannel(
     std::vector<std::shared_ptr<transport::Connection>> connections,
     Endpoint /* unused */) {
   TP_DCHECK_EQ(numConnectionsNeeded(), connections.size());

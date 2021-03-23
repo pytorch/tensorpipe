@@ -9,7 +9,6 @@
 #include <cuda_runtime.h>
 #include <gmock/gmock.h>
 
-#include <tensorpipe/channel/cuda_context.h>
 #include <tensorpipe/common/cuda.h>
 #include <tensorpipe/test/channel/channel_test.h>
 #include <tensorpipe/test/channel/cuda_helpers.h>
@@ -31,7 +30,7 @@ class SendAcrossDevicesTest : public ClientServerChannelTestCase<CudaBuffer> {
   }
 
  private:
-  void server(std::shared_ptr<CudaChannel> channel) override {
+  void server(std::shared_ptr<Channel> channel) override {
     cudaStream_t sendStream;
     void* ptr;
     {
@@ -94,7 +93,7 @@ class SendAcrossDevicesTest : public ClientServerChannelTestCase<CudaBuffer> {
     }
   }
 
-  void client(std::shared_ptr<CudaChannel> channel) override {
+  void client(std::shared_ptr<Channel> channel) override {
     cudaStream_t recvStream;
     void* ptr;
     {
@@ -164,7 +163,7 @@ class SendReverseAcrossDevicesTest
   }
 
  private:
-  void server(std::shared_ptr<CudaChannel> channel) override {
+  void server(std::shared_ptr<Channel> channel) override {
     cudaStream_t sendStream;
     void* ptr;
     {
@@ -227,7 +226,7 @@ class SendReverseAcrossDevicesTest
     }
   }
 
-  void client(std::shared_ptr<CudaChannel> channel) override {
+  void client(std::shared_ptr<Channel> channel) override {
     cudaStream_t recvStream;
     void* ptr;
     {
@@ -297,7 +296,7 @@ class SendAcrossNonDefaultDevicesTest
   }
 
  private:
-  void server(std::shared_ptr<CudaChannel> channel) override {
+  void server(std::shared_ptr<Channel> channel) override {
     cudaStream_t sendStream;
     void* ptr;
     {
@@ -356,7 +355,7 @@ class SendAcrossNonDefaultDevicesTest
     EXPECT_TRUE(initializedCudaContexts({1}));
   }
 
-  void client(std::shared_ptr<CudaChannel> channel) override {
+  void client(std::shared_ptr<Channel> channel) override {
     cudaStream_t recvStream;
     void* ptr;
     {
