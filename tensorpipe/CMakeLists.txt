@@ -68,7 +68,7 @@ set(TP_PUBLIC_HEADERS ${TP_PUBLIC_HEADERS}
 ### cma
 
 tp_conditional_backend(
-  TP_ENABLE_CMA "Enable cross-memory attach channel" "LINUX")
+  TP_ENABLE_CMA "Enable cross-memory attach channel" "LINUX AND SUPPORT_GLIBCXX_USE_PROCESS_VM_READV")
 if(TP_ENABLE_CMA)
   target_sources(tensorpipe PRIVATE
     channel/cma/channel_impl.cc

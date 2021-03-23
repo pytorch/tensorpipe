@@ -18,8 +18,8 @@ include(Options)
 # Define sanitizer option, if specified.
 include(Sanitize)
 
-# ---[ Misc checks to cope with various compiler modes
-include(cmake/MiscCheck.cmake)
+# Misc checks to cope with various compiler modes.
+include(MiscCheck)
 
 add_subdirectory(tensorpipe)
 
