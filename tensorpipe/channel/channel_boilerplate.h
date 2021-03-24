@@ -30,6 +30,8 @@ class ChannelBoilerplate : public Channel {
       std::string id,
       Args&&... args);
 
+  explicit ChannelBoilerplate(std::shared_ptr<TChan> channel);
+
   ChannelBoilerplate(const ChannelBoilerplate&) = delete;
   ChannelBoilerplate(ChannelBoilerplate&&) = delete;
   ChannelBoilerplate& operator=(const ChannelBoilerplate&) = delete;
@@ -77,10 +79,25 @@ ChannelBoilerplate<TCtx, TChan>::ChannelBoilerplate(
 }
 
 template <typename TCtx, typename TChan>
+ChannelBoilerplate<TCtx, TChan>::ChannelBoilerplate(
+    std::shared_ptr<TChan> channel)
+    : impl_(std::move(channel)) {
+  static_assert(
+      std::is_base_of<ChannelImplBoilerplate<TCtx, TChan>, TChan>::value, "");
+}
+
+template <typename TCtx, typename TChan>
 void ChannelBoilerplate<TCtx, TChan>::send(
     Buffer buffer,
     TDescriptorCallback descriptorCallback,
     TSendCallback callback) {
+  if (unlikely(!impl_)) {
+    // FIXME In C++-17 perhaps a global static inline variable would be better?
+    static Error error = TP_CREATE_ERROR(ContextNotViableError);
+    descriptorCallback(error, "");
+    callback(error);
+    return;
+  }
   impl_->send(buffer, std::move(descriptorCallback), std::move(callback));
 }
 
@@ -89,16 +106,28 @@ void ChannelBoilerplate<TCtx, TChan>::recv(
     TDescriptor descriptor,
     Buffer buffer,
     TRecvCallback callback) {
+  if (unlikely(!impl_)) {
+    // FIXME In C++-17 perhaps a global static inline variable would be better?
+    static Error error = TP_CREATE_ERROR(ContextNotViableError);
+    callback(error);
+    return;
+  }
   impl_->recv(std::move(descriptor), buffer, std::move(callback));
 }
 
 template <typename TCtx, typename TChan>
 void ChannelBoilerplate<TCtx, TChan>::setId(std::string id) {
+  if (unlikely(!impl_)) {
+    return;
+  }
   impl_->setId(std::move(id));
 }
 
 template <typename TCtx, typename TChan>
 void ChannelBoilerplate<TCtx, TChan>::close() {
+  if (unlikely(!impl_)) {
+    return;
+  }
   impl_->close();
 }
 

@@ -69,6 +69,9 @@ ContextBoilerplate<TCtx, TChan>::ContextBoilerplate(Args&&... args)
     : impl_(TCtx::create(std::forward<Args>(args)...)) {
   static_assert(
       std::is_base_of<ChannelImplBoilerplate<TCtx, TChan>, TChan>::value, "");
+  if (unlikely(!impl_)) {
+    return;
+  }
   impl_->init();
 }
 
@@ -76,42 +79,68 @@ template <typename TCtx, typename TChan>
 std::shared_ptr<Channel> ContextBoilerplate<TCtx, TChan>::createChannel(
     std::vector<std::shared_ptr<transport::Connection>> connections,
     Endpoint endpoint) {
+  if (unlikely(!impl_)) {
+    return std::make_shared<ChannelBoilerplate<TCtx, TChan>>(nullptr);
+  }
   return impl_->createChannel(std::move(connections), endpoint);
 }
 
 template <typename TCtx, typename TChan>
 size_t ContextBoilerplate<TCtx, TChan>::numConnectionsNeeded() const {
+  if (unlikely(!impl_)) {
+    return 0;
+  }
   return impl_->numConnectionsNeeded();
 }
 
 template <typename TCtx, typename TChan>
 bool ContextBoilerplate<TCtx, TChan>::isViable() const {
+  if (unlikely(!impl_)) {
+    return false;
+  }
   return impl_->isViable();
 }
 
 template <typename TCtx, typename TChan>
 const std::string& ContextBoilerplate<TCtx, TChan>::domainDescriptor() const {
+  if (unlikely(!impl_)) {
+    // FIXME In C++-17 perhaps a global static inline variable would be better?
+    static std::string empty = "";
+    return empty;
+  }
   return impl_->domainDescriptor();
 }
 
 template <typename TCtx, typename TChan>
 bool ContextBoilerplate<TCtx, TChan>::canCommunicateWithRemote(
     const std::string& remoteDomainDescriptor) const {
+  if (unlikely(!impl_)) {
+    return false;
+  }
   return impl_->canCommunicateWithRemote(remoteDomainDescriptor);
 }
 
 template <typename TCtx, typename TChan>
 void ContextBoilerplate<TCtx, TChan>::setId(std::string id) {
+  if (unlikely(!impl_)) {
+    return;
+  }
   impl_->setId(std::move(id));
 }
 
 template <typename TCtx, typename TChan>
 void ContextBoilerplate<TCtx, TChan>::close() {
+  if (unlikely(!impl_)) {
+    return;
+  }
   impl_->close();
 }
 
 template <typename TCtx, typename TChan>
 void ContextBoilerplate<TCtx, TChan>::join() {
+  if (unlikely(!impl_)) {
+    return;
+  }
   impl_->join();
 }
 
@@ -124,6 +153,9 @@ ContextBoilerplate<TCtx, TChan>::~ContextBoilerplate() {
 template <typename TCtx, typename TChan>
 bool ContextBoilerplate<TCtx, TChan>::supportsDeviceType(
     DeviceType type) const {
+  if (unlikely(!impl_)) {
+    return false;
+  }
   return impl_->supportsDeviceType(type);
 }
 

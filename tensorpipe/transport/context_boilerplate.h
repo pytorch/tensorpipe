@@ -62,44 +62,70 @@ ContextBoilerplate<TCtx, TList, TConn>::ContextBoilerplate(Args&&... args)
   static_assert(
       std::is_base_of<ContextImplBoilerplate<TCtx, TList, TConn>, TCtx>::value,
       "");
+  if (unlikely(!impl_)) {
+    return;
+  }
   impl_->init();
 }
 
 template <typename TCtx, typename TList, typename TConn>
 std::shared_ptr<Connection> ContextBoilerplate<TCtx, TList, TConn>::connect(
     std::string addr) {
+  if (unlikely(!impl_)) {
+    return std::make_shared<ConnectionBoilerplate<TCtx, TList, TConn>>(nullptr);
+  }
   return impl_->connect(std::move(addr));
 }
 
 template <typename TCtx, typename TList, typename TConn>
 std::shared_ptr<Listener> ContextBoilerplate<TCtx, TList, TConn>::listen(
     std::string addr) {
+  if (unlikely(!impl_)) {
+    return std::make_shared<ListenerBoilerplate<TCtx, TList, TConn>>(nullptr);
+  }
   return impl_->listen(std::move(addr));
 }
 
 template <typename TCtx, typename TList, typename TConn>
 bool ContextBoilerplate<TCtx, TList, TConn>::isViable() const {
+  if (unlikely(!impl_)) {
+    return false;
+  }
   return impl_->isViable();
 }
 
 template <typename TCtx, typename TList, typename TConn>
 const std::string& ContextBoilerplate<TCtx, TList, TConn>::domainDescriptor()
     const {
+  if (unlikely(!impl_)) {
+    // FIXME In C++-17 perhaps a global static inline variable would be better?
+    static std::string empty = "";
+    return empty;
+  }
   return impl_->domainDescriptor();
 }
 
 template <typename TCtx, typename TList, typename TConn>
 void ContextBoilerplate<TCtx, TList, TConn>::setId(std::string id) {
+  if (unlikely(!impl_)) {
+    return;
+  }
   impl_->setId(std::move(id));
 }
 
 template <typename TCtx, typename TList, typename TConn>
 void ContextBoilerplate<TCtx, TList, TConn>::close() {
+  if (unlikely(!impl_)) {
+    return;
+  }
   impl_->close();
 }
 
 template <typename TCtx, typename TList, typename TConn>
 void ContextBoilerplate<TCtx, TList, TConn>::join() {
+  if (unlikely(!impl_)) {
+    return;
+  }
   impl_->join();
 }
 

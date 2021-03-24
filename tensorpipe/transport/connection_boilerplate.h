@@ -93,6 +93,12 @@ ConnectionBoilerplate<TCtx, TList, TConn>::ConnectionBoilerplate(
 
 template <typename TCtx, typename TList, typename TConn>
 void ConnectionBoilerplate<TCtx, TList, TConn>::read(read_callback_fn fn) {
+  if (unlikely(!impl_)) {
+    // FIXME In C++-17 perhaps a global static inline variable would be better?
+    static Error error = TP_CREATE_ERROR(ContextNotViableError);
+    fn(error, nullptr, 0);
+    return;
+  }
   impl_->read(std::move(fn));
 }
 
@@ -100,6 +106,12 @@ template <typename TCtx, typename TList, typename TConn>
 void ConnectionBoilerplate<TCtx, TList, TConn>::read(
     AbstractNopHolder& object,
     read_nop_callback_fn fn) {
+  if (unlikely(!impl_)) {
+    // FIXME In C++-17 perhaps a global static inline variable would be better?
+    static Error error = TP_CREATE_ERROR(ContextNotViableError);
+    fn(error);
+    return;
+  }
   impl_->read(object, std::move(fn));
 }
 
@@ -108,6 +120,12 @@ void ConnectionBoilerplate<TCtx, TList, TConn>::read(
     void* ptr,
     size_t length,
     read_callback_fn fn) {
+  if (unlikely(!impl_)) {
+    // FIXME In C++-17 perhaps a global static inline variable would be better?
+    static Error error = TP_CREATE_ERROR(ContextNotViableError);
+    fn(error, ptr, length);
+    return;
+  }
   impl_->read(ptr, length, std::move(fn));
 }
 
@@ -116,6 +134,12 @@ void ConnectionBoilerplate<TCtx, TList, TConn>::write(
     const void* ptr,
     size_t length,
     write_callback_fn fn) {
+  if (unlikely(!impl_)) {
+    // FIXME In C++-17 perhaps a global static inline variable would be better?
+    static Error error = TP_CREATE_ERROR(ContextNotViableError);
+    fn(error);
+    return;
+  }
   impl_->write(ptr, length, std::move(fn));
 }
 
@@ -123,16 +147,28 @@ template <typename TCtx, typename TList, typename TConn>
 void ConnectionBoilerplate<TCtx, TList, TConn>::write(
     const AbstractNopHolder& object,
     write_callback_fn fn) {
+  if (unlikely(!impl_)) {
+    // FIXME In C++-17 perhaps a global static inline variable would be better?
+    static Error error = TP_CREATE_ERROR(ContextNotViableError);
+    fn(error);
+    return;
+  }
   impl_->write(object, std::move(fn));
 }
 
 template <typename TCtx, typename TList, typename TConn>
 void ConnectionBoilerplate<TCtx, TList, TConn>::setId(std::string id) {
+  if (unlikely(!impl_)) {
+    return;
+  }
   impl_->setId(std::move(id));
 }
 
 template <typename TCtx, typename TList, typename TConn>
 void ConnectionBoilerplate<TCtx, TList, TConn>::close() {
+  if (unlikely(!impl_)) {
+    return;
+  }
   impl_->close();
 }
 

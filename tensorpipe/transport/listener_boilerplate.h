@@ -30,6 +30,8 @@ class ListenerBoilerplate : public Listener {
       std::string id,
       Args... args);
 
+  explicit ListenerBoilerplate(std::shared_ptr<TList> listener);
+
   ListenerBoilerplate(const ListenerBoilerplate&) = delete;
   ListenerBoilerplate(ListenerBoilerplate&&) = delete;
   ListenerBoilerplate& operator=(const ListenerBoilerplate&) = delete;
@@ -76,22 +78,47 @@ ListenerBoilerplate<TCtx, TList, TConn>::ListenerBoilerplate(
 }
 
 template <typename TCtx, typename TList, typename TConn>
+ListenerBoilerplate<TCtx, TList, TConn>::ListenerBoilerplate(
+    std::shared_ptr<TList> listener)
+    : impl_(std::move(listener)) {
+  static_assert(
+      std::is_base_of<ListenerImplBoilerplate<TCtx, TList, TConn>, TList>::
+          value,
+      "");
+}
+
+template <typename TCtx, typename TList, typename TConn>
 void ListenerBoilerplate<TCtx, TList, TConn>::accept(accept_callback_fn fn) {
+  if (unlikely(!impl_)) {
+    // FIXME In C++-17 perhaps a global static inline variable would be better?
+    static Error error = TP_CREATE_ERROR(ContextNotViableError);
+    fn(error, nullptr);
+    return;
+  }
   impl_->accept(std::move(fn));
 }
 
 template <typename TCtx, typename TList, typename TConn>
 std::string ListenerBoilerplate<TCtx, TList, TConn>::addr() const {
+  if (unlikely(!impl_)) {
+    return "";
+  }
   return impl_->addr();
 }
 
 template <typename TCtx, typename TList, typename TConn>
 void ListenerBoilerplate<TCtx, TList, TConn>::setId(std::string id) {
+  if (unlikely(!impl_)) {
+    return;
+  }
   impl_->setId(std::move(id));
 }
 
 template <typename TCtx, typename TList, typename TConn>
 void ListenerBoilerplate<TCtx, TList, TConn>::close() {
+  if (unlikely(!impl_)) {
+    return;
+  }
   impl_->close();
 }
 
