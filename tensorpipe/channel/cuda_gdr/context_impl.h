@@ -125,8 +125,6 @@ class ContextImpl final
   static std::shared_ptr<ContextImpl> create(
       optional<std::vector<std::string>> gpuIdxToNicName = nullopt);
 
-  ContextImpl();
-
   ContextImpl(
       CudaLib cudaLib,
       IbvLib ibvLib,

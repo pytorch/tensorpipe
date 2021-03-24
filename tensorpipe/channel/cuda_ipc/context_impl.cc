@@ -152,7 +152,7 @@ std::shared_ptr<ContextImpl> ContextImpl::create() {
     TP_VLOG(5)
         << "CUDA IPC channel is not viable because libcuda could not be loaded: "
         << error.what();
-    return std::make_shared<ContextImpl>();
+    return nullptr;
   }
 
   NvmlLib nvmlLib;
@@ -161,7 +161,7 @@ std::shared_ptr<ContextImpl> ContextImpl::create() {
     TP_VLOG(5)
         << "CUDA IPC channel is not viable because libnvidia-ml could not be loaded: "
         << error.what();
-    return std::make_shared<ContextImpl>();
+    return nullptr;
   }
 
   // This part is largely inspired from
@@ -176,7 +176,7 @@ std::shared_ptr<ContextImpl> ContextImpl::create() {
     if (!props.unifiedAddressing) {
       TP_VLOG(4) << "CUDA IPC channel is not viable because CUDA device " << i
                  << " does not have unified addressing";
-      return std::make_shared<ContextImpl>();
+      return nullptr;
     }
 
     // The other two compute modes are "exclusive" and "prohibited", both of
@@ -184,7 +184,7 @@ std::shared_ptr<ContextImpl> ContextImpl::create() {
     if (props.computeMode != cudaComputeModeDefault) {
       TP_VLOG(4) << "CUDA IPC channel is not viable because CUDA device " << i
                  << " is not in default compute mode";
-      return std::make_shared<ContextImpl>();
+      return nullptr;
     }
   }
 
@@ -218,11 +218,6 @@ std::shared_ptr<ContextImpl> ContextImpl::create() {
       std::move(p2pSupport),
       std::move(globalIdxOfVisibleDevices));
 }
-
-ContextImpl::ContextImpl()
-    : ContextImplBoilerplate<ContextImpl, ChannelImpl>(
-          /*isViable=*/false,
-          /*domainDescriptor=*/"") {}
 
 ContextImpl::ContextImpl(
     std::string domainDescriptor,

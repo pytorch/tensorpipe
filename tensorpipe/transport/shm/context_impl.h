@@ -28,8 +28,6 @@ class ContextImpl final
  public:
   static std::shared_ptr<ContextImpl> create();
 
-  ContextImpl();
-
   explicit ContextImpl(std::string domainDescriptor);
 
   // Implement the DeferredExecutor interface.

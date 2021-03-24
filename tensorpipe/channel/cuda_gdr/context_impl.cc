@@ -343,7 +343,7 @@ std::shared_ptr<ContextImpl> ContextImpl::create(
     TP_VLOG(5)
         << "CUDA GDR channel is not viable because libcuda could not be loaded: "
         << error.what();
-    return std::make_shared<ContextImpl>();
+    return nullptr;
   }
 
   IbvLib ibvLib;
@@ -354,7 +354,7 @@ std::shared_ptr<ContextImpl> ContextImpl::create(
     TP_VLOG(5)
         << "CUDA GDR channel is not viable because libibverbs could not be loaded: "
         << error.what();
-    return std::make_shared<ContextImpl>();
+    return nullptr;
   }
 
   // TODO Check whether the NVIDIA memory peering kernel module is available.
@@ -367,14 +367,14 @@ std::shared_ptr<ContextImpl> ContextImpl::create(
     TP_VLOG(5)
         << "CUDA GDR channel couldn't get list of InfiniBand devices because the kernel module isn't "
         << "loaded";
-    return std::make_shared<ContextImpl>();
+    return nullptr;
   }
   TP_THROW_ASSERT_IF(error)
       << "Couldn't get list of InfiniBand devices: " << error.what();
   if (deviceList.size() == 0) {
     TP_VLOG(5)
         << "CUDA GDR channel is not viable because it couldn't find any InfiniBand NICs";
-    return std::make_shared<ContextImpl>();
+    return nullptr;
   }
 
   return std::make_shared<ContextImpl>(
@@ -383,11 +383,6 @@ std::shared_ptr<ContextImpl> ContextImpl::create(
       std::move(deviceList),
       std::move(gpuIdxToNicName));
 }
-
-ContextImpl::ContextImpl()
-    : ContextImplBoilerplate<ContextImpl, ChannelImpl>(
-          /*isViable=*/false,
-          /*domainDescriptor=*/"") {}
 
 ContextImpl::ContextImpl(
     CudaLib cudaLib,

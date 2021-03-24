@@ -35,8 +35,6 @@ class ContextImpl final
       std::vector<std::shared_ptr<transport::Context>> contexts,
       std::vector<std::shared_ptr<transport::Listener>> listeners);
 
-  ContextImpl();
-
   ContextImpl(
       std::vector<std::shared_ptr<transport::Context>> contexts,
       std::vector<std::shared_ptr<transport::Listener>> listeners);

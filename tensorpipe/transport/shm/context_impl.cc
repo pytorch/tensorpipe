@@ -54,7 +54,7 @@ std::shared_ptr<ContextImpl> ContextImpl::create() {
       1024 * 1024, /*permWrite=*/true, /*pageType=*/nullopt);
   if (error) {
     TP_VLOG(8) << "Couldn't allocate shared memory segment: " << error.what();
-    return std::make_shared<ContextImpl>();
+    return nullptr;
   }
 
   // A separate problem is that /dev/shm may be sized too small for all the
@@ -65,11 +65,6 @@ std::shared_ptr<ContextImpl> ContextImpl::create() {
   TP_VLOG(8) << "The domain descriptor for SHM is " << domainDescriptor;
   return std::make_shared<ContextImpl>(std::move(domainDescriptor));
 }
-
-ContextImpl::ContextImpl()
-    : ContextImplBoilerplate<ContextImpl, ListenerImpl, ConnectionImpl>(
-          /*isViable=*/false,
-          /*domainDescriptor=*/"") {}
 
 ContextImpl::ContextImpl(std::string domainDescriptor)
     : ContextImplBoilerplate<ContextImpl, ListenerImpl, ConnectionImpl>(

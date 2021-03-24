@@ -145,7 +145,7 @@ std::shared_ptr<ContextImpl> ContextImpl::create() {
                << " (saved-set). Group IDs are " << realGroupId << " (real), "
                << effectiveGroupId << " (effective) and " << savedSetGroupId
                << " (saved-set).";
-    return std::make_shared<ContextImpl>();
+    return nullptr;
   }
   oss << '_' << realUserId << '_' << realGroupId;
 
@@ -156,7 +156,7 @@ std::shared_ptr<ContextImpl> ContextImpl::create() {
   // SUID_DUMP_USER has a value of 1.
   if (rv != 1) {
     TP_VLOG(5) << "Process isn't dumpable";
-    return std::make_shared<ContextImpl>();
+    return nullptr;
   }
 
   // Next the Linux Security Modules (LSMs) kick in. Since users could register
@@ -215,10 +215,10 @@ std::shared_ptr<ContextImpl> ContextImpl::create() {
           break;
         case YamaPtraceScope::kAdminOnlyAttach:
           TP_VLOG(5) << "YAMA ptrace scope set to admin-only attach";
-          return std::make_shared<ContextImpl>();
+          return nullptr;
         case YamaPtraceScope::kNoAttach:
           TP_VLOG(5) << "YAMA ptrace scope set to no attach";
-          return std::make_shared<ContextImpl>();
+          return nullptr;
         default:
           TP_THROW_ASSERT() << "Unknown YAMA ptrace scope";
       }
@@ -229,18 +229,13 @@ std::shared_ptr<ContextImpl> ContextImpl::create() {
   // the process_vm_readv syscall is outright blocked by seccomp-bpf.
   if (!isProcessVmReadvSyscallAllowed()) {
     TP_VLOG(5) << "The process_vm_readv syscall appears to be blocked";
-    return std::make_shared<ContextImpl>();
+    return nullptr;
   }
 
   std::string domainDescriptor = oss.str();
   TP_VLOG(5) << "The domain descriptor for CMA is " << domainDescriptor;
   return std::make_shared<ContextImpl>(std::move(domainDescriptor));
 }
-
-ContextImpl::ContextImpl()
-    : ContextImplBoilerplate<ContextImpl, ChannelImpl>(
-          /*isViable=*/false,
-          /*domainDescriptor=*/"") {}
 
 ContextImpl::ContextImpl(std::string domainDescriptor)
     : ContextImplBoilerplate<ContextImpl, ChannelImpl>(

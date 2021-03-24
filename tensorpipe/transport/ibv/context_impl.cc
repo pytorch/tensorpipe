@@ -41,7 +41,7 @@ std::shared_ptr<ContextImpl> ContextImpl::create() {
     TP_VLOG(7)
         << "IBV transport is not viable because libibverbs couldn't be loaded: "
         << error.what();
-    return std::make_shared<ContextImpl>();
+    return nullptr;
   }
 
   IbvDeviceList deviceList;
@@ -50,7 +50,7 @@ std::shared_ptr<ContextImpl> ContextImpl::create() {
       error.castToType<SystemError>()->errorCode() == ENOSYS) {
     TP_VLOG(7) << "IBV transport is not viable because it couldn't get list of "
                << "InfiniBand devices because the kernel module isn't loaded";
-    return std::make_shared<ContextImpl>();
+    return nullptr;
   }
   TP_THROW_ASSERT_IF(error)
       << "Couldn't get list of InfiniBand devices: " << error.what();
@@ -58,17 +58,12 @@ std::shared_ptr<ContextImpl> ContextImpl::create() {
   if (deviceList.size() == 0) {
     TP_VLOG(7) << "IBV transport is not viable because it couldn't find any "
                << "InfiniBand NICs";
-    return std::make_shared<ContextImpl>();
+    return nullptr;
   }
 
   return std::make_shared<ContextImpl>(
       std::move(ibvLib), std::move(deviceList));
 }
-
-ContextImpl::ContextImpl()
-    : ContextImplBoilerplate<ContextImpl, ListenerImpl, ConnectionImpl>(
-          /*isViable=*/false,
-          /*domainDescriptor=*/"") {}
 
 ContextImpl::ContextImpl(IbvLib ibvLib, IbvDeviceList deviceList)
     : ContextImplBoilerplate<ContextImpl, ListenerImpl, ConnectionImpl>(

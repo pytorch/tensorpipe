@@ -29,8 +29,6 @@ class ContextImpl final
  public:
   static std::shared_ptr<ContextImpl> create();
 
-  ContextImpl();
-
   ContextImpl(IbvLib ibvLib, IbvDeviceList deviceList);
 
   // Implement the DeferredExecutor interface.

@@ -55,8 +55,6 @@ class IbvEventHandler {
 //
 class Reactor final : public BusyPollingLoop {
  public:
-  Reactor();
-
   Reactor(IbvLib ibvLib, IbvDeviceList deviceList);
 
   const IbvLib& getIbvLib() {

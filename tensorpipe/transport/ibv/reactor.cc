@@ -15,8 +15,6 @@ namespace tensorpipe {
 namespace transport {
 namespace ibv {
 
-Reactor::Reactor() {}
-
 Reactor::Reactor(IbvLib ibvLib, IbvDeviceList deviceList)
     : ibvLib_(std::move(ibvLib)) {
   TP_DCHECK_GE(deviceList.size(), 1);

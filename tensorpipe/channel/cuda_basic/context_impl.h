@@ -28,8 +28,6 @@ class ContextImpl final
   static std::shared_ptr<ContextImpl> create(
       std::shared_ptr<Context> cpuContext);
 
-  ContextImpl();
-
   ContextImpl(CudaLib cudaLib, std::shared_ptr<Context> cpuContext);
 
   std::shared_ptr<Channel> createChannel(

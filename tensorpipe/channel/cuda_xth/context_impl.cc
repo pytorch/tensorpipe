@@ -53,7 +53,7 @@ std::shared_ptr<ContextImpl> ContextImpl::create() {
     TP_VLOG(5)
         << "CUDA XTH channel is not viable because libcuda could not be loaded: "
         << error.what();
-    return std::make_shared<ContextImpl>();
+    return nullptr;
   }
 
   int deviceCount;
@@ -68,17 +68,12 @@ std::shared_ptr<ContextImpl> ContextImpl::create() {
     if (!props.unifiedAddressing) {
       TP_VLOG(4) << "CUDA XTH channel is not viable because CUDA device " << i
                  << " does not have unified addressing";
-      return std::make_shared<ContextImpl>();
+      return nullptr;
     }
   }
 
   return std::make_shared<ContextImpl>(std::move(cudaLib));
 }
-
-ContextImpl::ContextImpl()
-    : ContextImplBoilerplate<ContextImpl, ChannelImpl>(
-          /*isViable=*/false,
-          /*domainDescriptor=*/"") {}
 
 ContextImpl::ContextImpl(CudaLib cudaLib)
     : ContextImplBoilerplate<ContextImpl, ChannelImpl>(

@@ -27,27 +27,22 @@ std::shared_ptr<ContextImpl> ContextImpl::create(
     TP_VLOG(5)
         << "CUDA basic channel is not viable because libcuda could not be loaded: "
         << error.what();
-    return std::make_shared<ContextImpl>();
+    return nullptr;
   }
 
   if (!cpuContext->supportsDeviceType(DeviceType::kCpu)) {
     TP_VLOG(5) << "CUDA basic channel is not viable because the provided CPU"
                   "channel does not support CPU buffers";
-    return std::make_shared<ContextImpl>();
+    return nullptr;
   }
 
   if (!cpuContext->isViable()) {
-    return std::make_shared<ContextImpl>();
+    return nullptr;
   }
 
   return std::make_shared<ContextImpl>(
       std::move(cudaLib), std::move(cpuContext));
 }
-
-ContextImpl::ContextImpl()
-    : ContextImplBoilerplate<ContextImpl, ChannelImpl>(
-          /*isViable=*/false,
-          /*domainDescriptor=*/"") {}
 
 ContextImpl::ContextImpl(CudaLib cudaLib, std::shared_ptr<Context> cpuContext)
     : ContextImplBoilerplate<ContextImpl, ChannelImpl>(
