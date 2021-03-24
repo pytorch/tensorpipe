@@ -38,7 +38,6 @@ Reactor::Reactor(IbvLib ibvLib, IbvDeviceList deviceList)
   postRecvRequestsOnSRQ(kNumPendingRecvReqs);
 
   startThread("TP_IBV_reactor");
-  threadRunning_ = true;
 }
 
 void Reactor::postRecvRequestsOnSRQ(int num) {
@@ -70,10 +69,7 @@ void Reactor::join() {
   close();
 
   if (!joined_.exchange(true)) {
-    if (threadRunning_) {
-      joinThread();
-      threadRunning_ = false;
-    }
+    joinThread();
   }
 }
 

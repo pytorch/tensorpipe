@@ -67,8 +67,6 @@ class ContextImpl final
   };
 
   std::thread thread_;
-  // Whether the thread was started (it isn't if the context isn't viable).
-  bool threadRunning_{false};
   Queue<optional<CopyRequest>> requests_{std::numeric_limits<int>::max()};
 
   // This is atomic because it may be accessed from outside the loop.

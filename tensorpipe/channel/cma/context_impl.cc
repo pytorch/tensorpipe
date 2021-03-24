@@ -241,7 +241,6 @@ ContextImpl::ContextImpl(std::string domainDescriptor)
     : ContextImplBoilerplate<ContextImpl, ChannelImpl>(
           std::move(domainDescriptor)) {
   thread_ = std::thread(&ContextImpl::handleCopyRequests, this);
-  threadRunning_ = true;
 }
 
 std::shared_ptr<Channel> ContextImpl::createChannel(
@@ -260,10 +259,7 @@ void ContextImpl::handleErrorImpl() {
 }
 
 void ContextImpl::joinImpl() {
-  if (threadRunning_) {
-    thread_.join();
-    threadRunning_ = false;
-  }
+  thread_.join();
   // TP_DCHECK(requests_.empty());
 }
 

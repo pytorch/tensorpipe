@@ -442,7 +442,6 @@ ContextImpl::ContextImpl(
   }
 
   startThread("TP_CUDA_GDR_loop");
-  threadRunning_ = true;
 }
 
 const CudaLib& ContextImpl::getCudaLib() {
@@ -517,10 +516,7 @@ void ContextImpl::handleErrorImpl() {
 }
 
 void ContextImpl::joinImpl() {
-  if (threadRunning_) {
-    joinThread();
-    threadRunning_ = false;
-  }
+  joinThread();
 
   // FIXME It would be nice if this could be done by the thread itself just
   // before it returns, rather than by the user.
