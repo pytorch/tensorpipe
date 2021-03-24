@@ -228,7 +228,6 @@ ContextImpl::ContextImpl(
     std::vector<std::vector<bool>> p2pSupport,
     std::vector<int> globalIdxOfVisibleDevices)
     : ContextImplBoilerplate<ContextImpl, ChannelImpl>(
-          /*isViable=*/true,
           std::move(domainDescriptor)),
       cudaLib_(std::move(cudaLib)),
       nvmlLib_(std::move(nvmlLib)),

@@ -26,7 +26,7 @@ template <typename TCtx, typename TChan>
 class ContextImplBoilerplate : public virtual DeferredExecutor,
                                public std::enable_shared_from_this<TCtx> {
  public:
-  ContextImplBoilerplate(bool isViable, std::string domainDescriptor);
+  explicit ContextImplBoilerplate(std::string domainDescriptor);
 
   ContextImplBoilerplate(const ContextImplBoilerplate&) = delete;
   ContextImplBoilerplate(ContextImplBoilerplate&&) = delete;
@@ -37,7 +37,6 @@ class ContextImplBoilerplate : public virtual DeferredExecutor,
 
   virtual size_t numConnectionsNeeded() const;
 
-  bool isViable() const;
   const std::string& domainDescriptor() const;
   virtual bool canCommunicateWithRemote(
       const std::string& remoteDomainDescriptor) const;
@@ -95,7 +94,6 @@ class ContextImplBoilerplate : public virtual DeferredExecutor,
 
   std::atomic<bool> joined_{false};
 
-  const bool isViable_;
   const std::string domainDescriptor_;
 
   // Sequence numbers for the channels created by this context, used to create
@@ -116,9 +114,8 @@ class ContextImplBoilerplate : public virtual DeferredExecutor,
 
 template <typename TCtx, typename TChan>
 ContextImplBoilerplate<TCtx, TChan>::ContextImplBoilerplate(
-    bool isViable,
     std::string domainDescriptor)
-    : isViable_(isViable), domainDescriptor_(std::move(domainDescriptor)) {}
+    : domainDescriptor_(std::move(domainDescriptor)) {}
 
 template <typename TCtx, typename TChan>
 template <typename... Args>
@@ -144,13 +141,6 @@ void ContextImplBoilerplate<TCtx, TChan>::initFromLoop() {
   TP_DCHECK(inLoop());
 
   TP_DCHECK(!error_);
-  if (!isViable_) {
-    // Set the error without calling setError because we do not want to invoke
-    // the subclass's handleErrorImpl as it would find itself in a weird state
-    // (since initFromLoop wouldn't have been called).
-    error_ = TP_CREATE_ERROR(ContextNotViableError);
-    return;
-  }
 
   initImplFromLoop();
 }
@@ -158,11 +148,6 @@ void ContextImplBoilerplate<TCtx, TChan>::initFromLoop() {
 template <typename TCtx, typename TChan>
 size_t ContextImplBoilerplate<TCtx, TChan>::numConnectionsNeeded() const {
   return 1;
-}
-
-template <typename TCtx, typename TChan>
-bool ContextImplBoilerplate<TCtx, TChan>::isViable() const {
-  return isViable_;
 }
 
 template <typename TCtx, typename TChan>

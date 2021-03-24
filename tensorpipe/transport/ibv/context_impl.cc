@@ -67,7 +67,6 @@ std::shared_ptr<ContextImpl> ContextImpl::create() {
 
 ContextImpl::ContextImpl(IbvLib ibvLib, IbvDeviceList deviceList)
     : ContextImplBoilerplate<ContextImpl, ListenerImpl, ConnectionImpl>(
-          /*isViable=*/true,
           generateDomainDescriptor()),
       reactor_(std::move(ibvLib), std::move(deviceList)) {}
 

@@ -88,10 +88,7 @@ std::shared_ptr<Listener> ContextBoilerplate<TCtx, TList, TConn>::listen(
 
 template <typename TCtx, typename TList, typename TConn>
 bool ContextBoilerplate<TCtx, TList, TConn>::isViable() const {
-  if (unlikely(!impl_)) {
-    return false;
-  }
-  return impl_->isViable();
+  return impl_ != nullptr;
 }
 
 template <typename TCtx, typename TList, typename TConn>

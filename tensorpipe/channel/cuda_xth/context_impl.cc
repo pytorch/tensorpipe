@@ -77,7 +77,6 @@ std::shared_ptr<ContextImpl> ContextImpl::create() {
 
 ContextImpl::ContextImpl(CudaLib cudaLib)
     : ContextImplBoilerplate<ContextImpl, ChannelImpl>(
-          /*isViable=*/true,
           generateDomainDescriptor()),
       cudaLib_(std::move(cudaLib)) {}
 

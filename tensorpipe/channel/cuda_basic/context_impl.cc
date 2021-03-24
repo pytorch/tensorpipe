@@ -46,7 +46,6 @@ std::shared_ptr<ContextImpl> ContextImpl::create(
 
 ContextImpl::ContextImpl(CudaLib cudaLib, std::shared_ptr<Context> cpuContext)
     : ContextImplBoilerplate<ContextImpl, ChannelImpl>(
-          /*isViable=*/true,
           cpuContext->domainDescriptor()),
       cudaLib_(std::move(cudaLib)),
       cpuContext_(std::move(cpuContext)) {}

@@ -390,7 +390,6 @@ ContextImpl::ContextImpl(
     IbvDeviceList deviceList,
     optional<std::vector<std::string>> gpuIdxToNicName)
     : ContextImplBoilerplate<ContextImpl, ChannelImpl>(
-          /*isViable=*/true,
           /*domainDescriptor=*/"*"),
       cudaLib_(std::move(cudaLib)),
       ibvLib_(std::move(ibvLib)) {

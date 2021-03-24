@@ -95,10 +95,7 @@ size_t ContextBoilerplate<TCtx, TChan>::numConnectionsNeeded() const {
 
 template <typename TCtx, typename TChan>
 bool ContextBoilerplate<TCtx, TChan>::isViable() const {
-  if (unlikely(!impl_)) {
-    return false;
-  }
-  return impl_->isViable();
+  return impl_ != nullptr;
 }
 
 template <typename TCtx, typename TChan>

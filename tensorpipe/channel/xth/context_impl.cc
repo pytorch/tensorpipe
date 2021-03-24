@@ -52,7 +52,6 @@ std::shared_ptr<ContextImpl> ContextImpl::create() {
 
 ContextImpl::ContextImpl()
     : ContextImplBoilerplate<ContextImpl, ChannelImpl>(
-          /*isViable=*/true,
           generateDomainDescriptor()),
       requests_(std::numeric_limits<int>::max()) {
   thread_ = std::thread(&ContextImpl::handleCopyRequests, this);

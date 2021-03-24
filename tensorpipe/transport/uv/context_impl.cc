@@ -34,7 +34,6 @@ std::shared_ptr<ContextImpl> ContextImpl::create() {
 
 ContextImpl::ContextImpl()
     : ContextImplBoilerplate<ContextImpl, ListenerImpl, ConnectionImpl>(
-          /*isViable=*/true,
           generateDomainDescriptor()) {}
 
 void ContextImpl::handleErrorImpl() {

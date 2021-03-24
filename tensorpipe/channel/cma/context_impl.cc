@@ -239,7 +239,6 @@ std::shared_ptr<ContextImpl> ContextImpl::create() {
 
 ContextImpl::ContextImpl(std::string domainDescriptor)
     : ContextImplBoilerplate<ContextImpl, ChannelImpl>(
-          /*isViable=*/true,
           std::move(domainDescriptor)) {
   thread_ = std::thread(&ContextImpl::handleCopyRequests, this);
   threadRunning_ = true;

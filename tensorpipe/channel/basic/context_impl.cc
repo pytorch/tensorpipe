@@ -23,7 +23,6 @@ std::shared_ptr<ContextImpl> ContextImpl::create() {
 
 ContextImpl::ContextImpl()
     : ContextImplBoilerplate<ContextImpl, ChannelImpl>(
-          /*isViable=*/true,
           /*domainDescriptor=*/"any") {}
 
 std::shared_ptr<Channel> ContextImpl::createChannel(
