@@ -22,6 +22,34 @@
 #include <tensorpipe/core/listener.h>
 #include <tensorpipe/core/pipe.h>
 
+// We might sometimes want to run this benchmark using NCCL instead of
+// TensorPipe. We don't want to include NCCL as a submodule and deal with the
+// build issues. So we've prepared the code and left it around, but disabled it.
+#if USE_NCCL
+#include <nccl.h>
+
+#define TP_NCCL_CHECK(op)                   \
+  {                                         \
+    ncclResult_t res = (op);                \
+    TP_THROW_ASSERT_IF(res != ncclSuccess); \
+  }
+
+struct NcclCommDeleter {
+  void operator()(ncclComm_t comm) {
+    TP_NCCL_CHECK(ncclCommDestroy(comm));
+  }
+};
+
+using NcclComm =
+    std::unique_ptr<std::remove_pointer_t<ncclComm_t>, NcclCommDeleter>;
+
+static NcclComm createNcclComm(int rank, int worldSize, ncclUniqueId uniqueId) {
+  ncclComm_t comm;
+  TP_NCCL_CHECK(ncclCommInitRank(&comm, worldSize, uniqueId, rank));
+  return NcclComm(comm, NcclCommDeleter{});
+}
+#endif // USE_NCCL
+
 using namespace tensorpipe;
 using namespace tensorpipe::benchmark;
 
@@ -64,6 +92,10 @@ struct Data {
   CudaStream cudaStream;
 
   std::string expectedMetadata;
+
+#if USE_NCCL
+  NcclComm ncclComm;
+#endif // USE_NCCL
 };
 
 // The interval at which to do a CUDA sync and measurement.
@@ -147,6 +179,27 @@ static void serverPongPingNonBlock(
     std::promise<void>& doneProm,
     Data& data,
     Measurements& measurements) {
+#if USE_NCCL
+  for (int iterIdx = 0; iterIdx < numWarmUps + numRoundTrips; iterIdx++) {
+    // TODO Handle multiple tensors.
+    TP_NCCL_CHECK(ncclRecv(
+        data.temporaryCudaTensor[0].get(),
+        data.tensorSize,
+        ncclInt8,
+        1,
+        data.ncclComm.get(),
+        data.cudaStream.get()));
+    TP_NCCL_CHECK(ncclSend(
+        data.temporaryCudaTensor[0].get(),
+        data.tensorSize,
+        ncclInt8,
+        1,
+        data.ncclComm.get(),
+        data.cudaStream.get()));
+  }
+  doneProm.set_value();
+  return;
+#endif // USE_NCCL
   pipe->readDescriptor([pipe,
                         &numWarmUps,
                         &numRoundTrips,
@@ -324,6 +377,17 @@ static void runServer(const Options& options) {
   });
   std::shared_ptr<Pipe> pipe = pipeProm.get_future().get();
 
+#if USE_NCCL
+  std::promise<ncclUniqueId> uniqueIdProm;
+  pipe->readDescriptor([&](const Error& error, Message message) {
+    uniqueIdProm.set_value(
+        *reinterpret_cast<const ncclUniqueId*>(message.metadata.c_str()));
+  });
+  ncclUniqueId uniqueId = uniqueIdProm.get_future().get();
+
+  data.ncclComm = createNcclComm(/*rank=*/0, /*worldSize=*/2, uniqueId);
+#endif
+
   std::promise<void> doneProm;
   serverPongPingNonBlock(
       std::move(pipe), numWarmUps, numRoundTrips, doneProm, data, measurements);
@@ -340,6 +404,40 @@ static void clientPingPongNonBlock(
     std::promise<void>& doneProm,
     Data& data,
     MultiDeviceMeasurements& measurements) {
+#if USE_NCCL
+  for (int iterIdx = 0; iterIdx < numWarmUps + numRoundTrips; iterIdx++) {
+    if (iterIdx >= numWarmUps) {
+      measurements.cpu.markStart();
+      if ((iterIdx - numWarmUps) % kCudaSyncInterval == 0) {
+        measurements.cuda.markStart();
+      }
+    }
+    TP_NCCL_CHECK(ncclSend(
+        data.expectedCudaTensor[0].get(),
+        data.tensorSize,
+        ncclInt8,
+        0,
+        data.ncclComm.get(),
+        data.cudaStream.get()));
+    TP_NCCL_CHECK(ncclRecv(
+        data.temporaryCudaTensor[0].get(),
+        data.tensorSize,
+        ncclInt8,
+        0,
+        data.ncclComm.get(),
+        data.cudaStream.get()));
+    if (iterIdx >= numWarmUps) {
+      measurements.cpu.markStop();
+      if ((iterIdx - numWarmUps + 1) % kCudaSyncInterval == 0) {
+        TP_CUDA_CHECK(cudaStreamSynchronize(data.cudaStream.get()));
+        measurements.cuda.markStop(kCudaSyncInterval);
+      }
+    }
+  }
+  printMultiDeviceMeasurements(measurements, data.payloadSize);
+  doneProm.set_value();
+  return;
+#endif // USE_NCCL
   if (numWarmUps == 0) {
     measurements.cpu.markStart();
     if (numRoundTrips % kCudaSyncInterval == 0) {
@@ -557,6 +655,22 @@ static void runClient(const Options& options) {
   context->registerChannel(0, options.channel, channelContext);
 
   std::shared_ptr<Pipe> pipe = context->connect(addr);
+
+#if USE_NCCL
+  ncclUniqueId uniqueId;
+  TP_NCCL_CHECK(ncclGetUniqueId(&uniqueId));
+  Message message;
+  message.metadata = std::string(
+      reinterpret_cast<char*>(&uniqueId),
+      reinterpret_cast<char*>(&uniqueId) + sizeof(ncclUniqueId));
+  std::promise<void> promise;
+  pipe->write(
+      std::move(message),
+      [&](const Error& error, Message /* unused */) { promise.set_value(); });
+  promise.get_future().get();
+
+  data.ncclComm = createNcclComm(/*rank=*/1, /*worldSize=*/2, uniqueId);
+#endif // USE_NCCL
 
   std::promise<void> doneProm;
   clientPingPongNonBlock(
