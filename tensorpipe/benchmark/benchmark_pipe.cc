@@ -15,6 +15,8 @@
 #include <tensorpipe/benchmark/options.h>
 #include <tensorpipe/benchmark/transport_registry.h>
 #include <tensorpipe/common/cpu_buffer.h>
+#include <tensorpipe/common/cuda.h>
+#include <tensorpipe/common/cuda_buffer.h>
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/core/context.h>
 #include <tensorpipe/core/listener.h>
@@ -28,6 +30,22 @@ Measurements measurements;
 using Payload = std::unique_ptr<uint8_t[]>;
 using CpuTensor = std::unique_ptr<uint8_t[]>;
 
+struct CudaMemoryDeleter {
+  void operator()(void* ptr) {
+    TP_CUDA_CHECK(cudaFree(ptr));
+  }
+};
+
+struct CudaStreamDeleter {
+  void operator()(cudaStream_t stream) {
+    TP_CUDA_CHECK(cudaStreamDestroy(stream));
+  }
+};
+
+using CudaTensor = std::unique_ptr<uint8_t[], CudaMemoryDeleter>;
+using CudaStream =
+    std::unique_ptr<std::remove_pointer_t<cudaStream_t>, CudaStreamDeleter>;
+
 struct Data {
   size_t numPayloads;
   size_t payloadSize;
@@ -39,8 +57,11 @@ struct Data {
   size_t tensorSize;
   TensorType tensorType;
   std::vector<CpuTensor> expectedCpuTensor;
+  std::vector<CudaTensor> expectedCudaTensor;
   std::vector<std::string> expectedTensorMetadata;
   std::vector<CpuTensor> temporaryCpuTensor;
+  std::vector<CudaTensor> temporaryCudaTensor;
+  CudaStream cudaStream;
 
   std::string expectedMetadata;
 };
@@ -82,6 +103,26 @@ static std::unique_ptr<uint8_t[]> createFullCpuData(size_t size) {
   return data;
 }
 
+static CudaTensor createEmptyCudaData(size_t size) {
+  uint8_t* ptr;
+  TP_CUDA_CHECK(cudaMalloc(&ptr, size));
+  return CudaTensor(ptr);
+}
+
+static CudaTensor createFullCudaData(size_t size) {
+  uint8_t* ptr;
+  TP_CUDA_CHECK(cudaMalloc(&ptr, size));
+  CpuTensor data = createFullCpuData(size);
+  TP_CUDA_CHECK(cudaMemcpy(ptr, data.get(), size, cudaMemcpyHostToDevice));
+  return CudaTensor(ptr);
+}
+
+static CudaStream createCudaStream() {
+  cudaStream_t stream;
+  TP_CUDA_CHECK(cudaStreamCreateWithFlags(&stream, cudaStreamNonBlocking));
+  return CudaStream(stream);
+}
+
 static void serverPongPingNonBlock(
     std::shared_ptr<Pipe> pipe,
     int& numRoundTrips,
@@ -116,6 +157,11 @@ static void serverPongPingNonBlock(
         if (data.tensorType == TensorType::kCpu) {
           message.tensors[tensorIdx].buffer.unwrap<CpuBuffer>().ptr =
               data.temporaryCpuTensor[tensorIdx].get();
+        } else if (data.tensorType == TensorType::kCuda) {
+          message.tensors[tensorIdx].buffer.unwrap<CudaBuffer>().ptr =
+              data.temporaryCudaTensor[tensorIdx].get();
+          message.tensors[tensorIdx].buffer.unwrap<CudaBuffer>().stream =
+              data.cudaStream.get();
         } else {
           TP_THROW_ASSERT() << "Unknown tensor type";
         }
@@ -161,6 +207,8 @@ static void serverPongPingNonBlock(
                             .buffer.unwrap<CpuBuffer>()
                             .length),
                     0);
+              } else if (data.tensorType == TensorType::kCuda) {
+                // No (easy) way to do a memcmp with CUDA, I believe...
               } else {
                 TP_THROW_ASSERT() << "Unknown tensor type";
               }
@@ -207,6 +255,11 @@ static void runServer(const Options& options) {
     if (options.tensorType == TensorType::kCpu) {
       data.expectedCpuTensor.push_back(createFullCpuData(options.tensorSize));
       data.temporaryCpuTensor.push_back(createEmptyCpuData(options.tensorSize));
+    } else if (options.tensorType == TensorType::kCuda) {
+      data.expectedCudaTensor.push_back(createFullCudaData(options.tensorSize));
+      data.temporaryCudaTensor.push_back(
+          createEmptyCudaData(options.tensorSize));
+      data.cudaStream = createCudaStream();
     } else {
       TP_THROW_ASSERT() << "Unknown tensor type";
     }
@@ -268,6 +321,11 @@ static void clientPingPongNonBlock(
       if (data.tensorType == TensorType::kCpu) {
         tensor.buffer =
             CpuBuffer{data.expectedCpuTensor[tensorIdx].get(), data.tensorSize};
+      } else if (data.tensorType == TensorType::kCuda) {
+        tensor.buffer = CudaBuffer{
+            data.expectedCudaTensor[tensorIdx].get(),
+            data.tensorSize,
+            data.cudaStream.get()};
       } else {
         TP_THROW_ASSERT() << "Unknown tensor type";
       }
@@ -281,97 +339,107 @@ static void clientPingPongNonBlock(
       [pipe, &numRoundTrips, &doneProm, &data, &measurements](
           const Error& error, Message&& message) {
         TP_THROW_ASSERT_IF(error) << error.what();
-        pipe->readDescriptor(
-            [pipe, &numRoundTrips, &doneProm, &data, &measurements](
-                const Error& error, Message&& message) {
-              TP_THROW_ASSERT_IF(error) << error.what();
-              TP_DCHECK_EQ(message.metadata, data.expectedMetadata);
-              if (data.payloadSize > 0) {
-                TP_DCHECK_EQ(message.payloads.size(), data.numPayloads);
-                for (size_t payloadIdx = 0; payloadIdx < data.numPayloads;
-                     payloadIdx++) {
-                  TP_DCHECK_EQ(
-                      message.payloads[payloadIdx].metadata,
-                      data.expectedPayloadMetadata[payloadIdx]);
-                  TP_DCHECK_EQ(
-                      message.payloads[payloadIdx].length, data.payloadSize);
-                  message.payloads[payloadIdx].data =
-                      data.temporaryPayload[payloadIdx].get();
-                }
+        pipe->readDescriptor([pipe,
+                              &numRoundTrips,
+                              &doneProm,
+                              &data,
+                              &measurements](
+                                 const Error& error, Message&& message) {
+          TP_THROW_ASSERT_IF(error) << error.what();
+          TP_DCHECK_EQ(message.metadata, data.expectedMetadata);
+          if (data.payloadSize > 0) {
+            TP_DCHECK_EQ(message.payloads.size(), data.numPayloads);
+            for (size_t payloadIdx = 0; payloadIdx < data.numPayloads;
+                 payloadIdx++) {
+              TP_DCHECK_EQ(
+                  message.payloads[payloadIdx].metadata,
+                  data.expectedPayloadMetadata[payloadIdx]);
+              TP_DCHECK_EQ(
+                  message.payloads[payloadIdx].length, data.payloadSize);
+              message.payloads[payloadIdx].data =
+                  data.temporaryPayload[payloadIdx].get();
+            }
+          } else {
+            TP_DCHECK_EQ(message.payloads.size(), 0);
+          }
+          if (data.tensorSize > 0) {
+            TP_DCHECK_EQ(message.tensors.size(), data.numTensors);
+            for (size_t tensorIdx = 0; tensorIdx < data.numTensors;
+                 tensorIdx++) {
+              TP_DCHECK_EQ(
+                  message.tensors[tensorIdx].metadata,
+                  data.expectedTensorMetadata[tensorIdx]);
+              TP_DCHECK_EQ(
+                  message.tensors[tensorIdx].buffer.length(), data.tensorSize);
+              if (data.tensorType == TensorType::kCpu) {
+                message.tensors[tensorIdx].buffer.unwrap<CpuBuffer>().ptr =
+                    data.temporaryCpuTensor[tensorIdx].get();
+              } else if (data.tensorType == TensorType::kCuda) {
+                message.tensors[tensorIdx].buffer.unwrap<CudaBuffer>().ptr =
+                    data.temporaryCudaTensor[tensorIdx].get();
+                message.tensors[tensorIdx].buffer.unwrap<CudaBuffer>().stream =
+                    data.cudaStream.get();
               } else {
-                TP_DCHECK_EQ(message.payloads.size(), 0);
+                TP_THROW_ASSERT() << "Unknown tensor type";
               }
-              if (data.tensorSize > 0) {
-                TP_DCHECK_EQ(message.tensors.size(), data.numTensors);
-                for (size_t tensorIdx = 0; tensorIdx < data.numTensors;
-                     tensorIdx++) {
-                  TP_DCHECK_EQ(
-                      message.tensors[tensorIdx].metadata,
-                      data.expectedTensorMetadata[tensorIdx]);
-                  TP_DCHECK_EQ(
-                      message.tensors[tensorIdx].buffer.length(),
-                      data.tensorSize);
-                  if (data.tensorType == TensorType::kCpu) {
-                    message.tensors[tensorIdx].buffer.unwrap<CpuBuffer>().ptr =
-                        data.temporaryCpuTensor[tensorIdx].get();
-                  } else {
-                    TP_THROW_ASSERT() << "Unknown tensor type";
+            }
+          } else {
+            TP_DCHECK_EQ(message.tensors.size(), 0);
+          }
+          pipe->read(
+              std::move(message),
+              [pipe, &numRoundTrips, &doneProm, &data, &measurements](
+                  const Error& error, Message&& message) {
+                measurements.markStop();
+                TP_THROW_ASSERT_IF(error) << error.what();
+                if (data.payloadSize > 0) {
+                  TP_DCHECK_EQ(message.payloads.size(), data.numPayloads);
+                  for (size_t payloadIdx = 0; payloadIdx < data.numPayloads;
+                       payloadIdx++) {
+                    TP_DCHECK_EQ(
+                        memcmp(
+                            message.payloads[payloadIdx].data,
+                            data.expectedPayload[payloadIdx].get(),
+                            message.payloads[payloadIdx].length),
+                        0);
                   }
+                } else {
+                  TP_DCHECK_EQ(message.payloads.size(), 0);
                 }
-              } else {
-                TP_DCHECK_EQ(message.tensors.size(), 0);
-              }
-              pipe->read(
-                  std::move(message),
-                  [pipe, &numRoundTrips, &doneProm, &data, &measurements](
-                      const Error& error, Message&& message) {
-                    measurements.markStop();
-                    TP_THROW_ASSERT_IF(error) << error.what();
-                    if (data.payloadSize > 0) {
-                      TP_DCHECK_EQ(message.payloads.size(), data.numPayloads);
-                      for (size_t payloadIdx = 0; payloadIdx < data.numPayloads;
-                           payloadIdx++) {
-                        TP_DCHECK_EQ(
-                            memcmp(
-                                message.payloads[payloadIdx].data,
-                                data.expectedPayload[payloadIdx].get(),
-                                message.payloads[payloadIdx].length),
-                            0);
-                      }
+                if (data.tensorSize > 0) {
+                  TP_DCHECK_EQ(message.tensors.size(), data.numTensors);
+                  for (size_t tensorIdx = 0; tensorIdx < data.numTensors;
+                       tensorIdx++) {
+                    if (data.tensorType == TensorType::kCpu) {
+                      TP_DCHECK_EQ(
+                          memcmp(
+                              message.tensors[tensorIdx]
+                                  .buffer.unwrap<CpuBuffer>()
+                                  .ptr,
+                              data.expectedCpuTensor[tensorIdx].get(),
+                              message.tensors[tensorIdx]
+                                  .buffer.unwrap<CpuBuffer>()
+                                  .length),
+                          0);
+                    } else if (data.tensorType == TensorType::kCuda) {
+                      // No (easy) way to do a memcmp with CUDA, I
+                      // believe...
                     } else {
-                      TP_DCHECK_EQ(message.payloads.size(), 0);
+                      TP_THROW_ASSERT() << "Unknown tensor type";
                     }
-                    if (data.tensorSize > 0) {
-                      TP_DCHECK_EQ(message.tensors.size(), data.numTensors);
-                      for (size_t tensorIdx = 0; tensorIdx < data.numTensors;
-                           tensorIdx++) {
-                        if (data.tensorType == TensorType::kCpu) {
-                          TP_DCHECK_EQ(
-                              memcmp(
-                                  message.tensors[tensorIdx]
-                                      .buffer.unwrap<CpuBuffer>()
-                                      .ptr,
-                                  data.expectedCpuTensor[tensorIdx].get(),
-                                  message.tensors[tensorIdx]
-                                      .buffer.unwrap<CpuBuffer>()
-                                      .length),
-                              0);
-                        } else {
-                          TP_THROW_ASSERT() << "Unknown tensor type";
-                        }
-                      }
-                    } else {
-                      TP_DCHECK_EQ(message.tensors.size(), 0);
-                    }
-                    if (--numRoundTrips > 0) {
-                      clientPingPongNonBlock(
-                          pipe, numRoundTrips, doneProm, data, measurements);
-                    } else {
-                      printMeasurements(measurements, data.payloadSize);
-                      doneProm.set_value();
-                    }
-                  });
-            });
+                  }
+                } else {
+                  TP_DCHECK_EQ(message.tensors.size(), 0);
+                }
+                if (--numRoundTrips > 0) {
+                  clientPingPongNonBlock(
+                      pipe, numRoundTrips, doneProm, data, measurements);
+                } else {
+                  printMeasurements(measurements, data.payloadSize);
+                  doneProm.set_value();
+                }
+              });
+        });
       });
 }
 
@@ -398,6 +466,11 @@ static void runClient(const Options& options) {
     if (data.tensorType == TensorType::kCpu) {
       data.expectedCpuTensor.push_back(createFullCpuData(options.tensorSize));
       data.temporaryCpuTensor.push_back(createEmptyCpuData(options.tensorSize));
+    } else if (data.tensorType == TensorType::kCuda) {
+      data.expectedCudaTensor.push_back(createFullCudaData(options.tensorSize));
+      data.temporaryCudaTensor.push_back(
+          createEmptyCudaData(options.tensorSize));
+      data.cudaStream = createCudaStream();
     } else {
       TP_THROW_ASSERT() << "Unknown tensor type";
     }
