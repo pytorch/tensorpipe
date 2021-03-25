@@ -65,10 +65,10 @@ static void printMeasurements(Measurements& measurements, size_t dataLen) {
       measurements.percentile(0.95).count() / 1000.0);
 }
 
-static std::unique_ptr<uint8_t[]> createData(const int size) {
+static std::unique_ptr<uint8_t[]> createData(const size_t size) {
   auto data = std::make_unique<uint8_t[]>(size);
   // Generate fixed data for validation between peers
-  for (int i = 0; i < size; i++) {
+  for (size_t i = 0; i < size; i++) {
     data[i] = (i >> 8) ^ (i & 0xff);
   }
   return data;
