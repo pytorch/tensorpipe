@@ -24,8 +24,8 @@ class Measurements {
     start_ = clock::now();
   }
 
-  void markStop() {
-    samples_.push_back(clock::now() - start_);
+  void markStop(size_t count = 1) {
+    samples_.push_back((clock::now() - start_) / count);
   }
 
   void sort() {

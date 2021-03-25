@@ -25,8 +25,6 @@
 using namespace tensorpipe;
 using namespace tensorpipe::benchmark;
 
-Measurements measurements;
-
 using Payload = std::unique_ptr<uint8_t[]>;
 using CpuTensor = std::unique_ptr<uint8_t[]>;
 
@@ -66,6 +64,16 @@ struct Data {
   std::string expectedMetadata;
 };
 
+// The interval at which to do a CUDA sync and measurement.
+static constexpr size_t kCudaSyncInterval = 100;
+
+struct MultiDeviceMeasurements {
+  // The CPU time to do each ping-pong.
+  Measurements cpu;
+  // The CPU time of 100 iterations, including a final CUDA stream sync.
+  Measurements cuda;
+};
+
 static void printMeasurements(Measurements& measurements, size_t dataLen) {
   measurements.sort();
   fprintf(
@@ -88,6 +96,13 @@ static void printMeasurements(Measurements& measurements, size_t dataLen) {
       measurements.percentile(0.75).count() / 1000.0,
       measurements.percentile(0.90).count() / 1000.0,
       measurements.percentile(0.95).count() / 1000.0);
+}
+
+static void printMultiDeviceMeasurements(
+    MultiDeviceMeasurements& measurements,
+    size_t dataLen) {
+  printMeasurements(measurements.cpu, dataLen);
+  printMeasurements(measurements.cuda, dataLen);
 }
 
 static std::unique_ptr<uint8_t[]> createEmptyCpuData(size_t size) {
@@ -301,8 +316,11 @@ static void clientPingPongNonBlock(
     int& numRoundTrips,
     std::promise<void>& doneProm,
     Data& data,
-    Measurements& measurements) {
-  measurements.markStart();
+    MultiDeviceMeasurements& measurements) {
+  measurements.cpu.markStart();
+  if (numRoundTrips % kCudaSyncInterval == 0) {
+    measurements.cuda.markStart();
+  }
   Message message;
   message.metadata = data.expectedMetadata;
   if (data.payloadSize > 0) {
@@ -390,7 +408,11 @@ static void clientPingPongNonBlock(
               std::move(message),
               [pipe, &numRoundTrips, &doneProm, &data, &measurements](
                   const Error& error, Message&& message) {
-                measurements.markStop();
+                measurements.cpu.markStop();
+                if (numRoundTrips % kCudaSyncInterval == 1) {
+                  TP_CUDA_CHECK(cudaStreamSynchronize(data.cudaStream.get()));
+                  measurements.cuda.markStop(kCudaSyncInterval);
+                }
                 TP_THROW_ASSERT_IF(error) << error.what();
                 if (data.payloadSize > 0) {
                   TP_DCHECK_EQ(message.payloads.size(), data.numPayloads);
@@ -435,7 +457,7 @@ static void clientPingPongNonBlock(
                   clientPingPongNonBlock(
                       pipe, numRoundTrips, doneProm, data, measurements);
                 } else {
-                  printMeasurements(measurements, data.payloadSize);
+                  printMultiDeviceMeasurements(measurements, data.payloadSize);
                   doneProm.set_value();
                 }
               });
@@ -477,8 +499,9 @@ static void runClient(const Options& options) {
   }
   data.expectedMetadata = std::string(options.metadataSize, 0x42);
 
-  Measurements measurements;
-  measurements.reserve(options.numRoundTrips);
+  MultiDeviceMeasurements measurements;
+  measurements.cpu.reserve(options.numRoundTrips);
+  measurements.cuda.reserve(options.numRoundTrips / kCudaSyncInterval);
 
   std::shared_ptr<Context> context = std::make_shared<Context>();
   auto transportContext =
