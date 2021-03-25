@@ -131,7 +131,7 @@ static void serverPongPingNonBlock(
                   0);
             }
           } else {
-            TP_DCHECK_EQ(message.tensors.size(), 0);
+            TP_DCHECK_EQ(message.payloads.size(), 0);
           }
           if (data.tensorSize > 0) {
             TP_DCHECK_EQ(message.tensors.size(), data.numTensors);
@@ -241,7 +241,7 @@ static void clientPingPongNonBlock(
       message.payloads.push_back(std::move(payload));
     }
   } else {
-    TP_DCHECK_EQ(message.tensors.size(), 0);
+    TP_DCHECK_EQ(message.payloads.size(), 0);
   }
   if (data.tensorSize > 0) {
     for (size_t tensorIdx = 0; tensorIdx < data.numTensors; tensorIdx++) {
