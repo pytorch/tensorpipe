@@ -63,6 +63,7 @@ static void usage(int status, const char* argv0) {
   X("--payload-size=SIZE [optional]  Size of payload of each write/read pair");
   X("--num-tensors=NUM [optional]    Number of tensors of each write/read pair");
   X("--tensor-size=SIZE [optional]   Size of tensor of each write/read pair");
+  X("--tensor-type=TYPE [optional]   Type of tensor (cpu or cuda)");
   X("--metadata-size=SIZE [optional] Size of metadata of each write/read pair");
 
   exit(status);
@@ -106,6 +107,7 @@ struct Options parseOptions(int argc, char** argv) {
     PAYLOAD_SIZE,
     NUM_TENSORS,
     TENSOR_SIZE,
+    TENSOR_TYPE,
     METADATA_SIZE,
     HELP,
   };
@@ -120,6 +122,7 @@ struct Options parseOptions(int argc, char** argv) {
       {"payload-size", required_argument, &flag, PAYLOAD_SIZE},
       {"num-tensors", required_argument, &flag, NUM_TENSORS},
       {"tensor-size", required_argument, &flag, TENSOR_SIZE},
+      {"tensor-type", required_argument, &flag, TENSOR_TYPE},
       {"metadata-size", required_argument, &flag, METADATA_SIZE},
       {"help", no_argument, &flag, HELP},
       {nullptr, 0, nullptr, 0}};
@@ -165,6 +168,17 @@ struct Options parseOptions(int argc, char** argv) {
         break;
       case TENSOR_SIZE:
         options.tensorSize = atoi(optarg);
+        break;
+      case TENSOR_TYPE:
+        if (strcmp(optarg, "cpu") == 0) {
+          options.tensorType = TensorType::kCpu;
+        } else if (strcmp(optarg, "cuda") == 0) {
+          options.tensorType = TensorType::kCuda;
+        } else {
+          fprintf(stderr, "Error:\n");
+          fprintf(stderr, "  --tensor-type must be [cpu|cuda]\n");
+          exit(EXIT_FAILURE);
+        }
         break;
       case METADATA_SIZE:
         options.metadataSize = atoi(optarg);
