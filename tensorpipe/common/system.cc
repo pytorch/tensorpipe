@@ -262,7 +262,15 @@ optional<std::string> getPermittedCapabilitiesID() {
 
 void setThreadName(std::string name) {
 #ifdef __linux__
+// In glibc this non-standard call was added in version 2.12, hence we guard it.
+#ifdef __GLIBC__
+#if ((__GLIBC__ > 2) || ((__GLIBC__ == 2) && (__GLIBC_MINOR__ >= 12)))
   pthread_setname_np(pthread_self(), name.c_str());
+#endif
+// In other standard libraries we didn't check yet, hence we always enable it.
+#else
+  pthread_setname_np(pthread_self(), name.c_str());
+#endif
 #endif
 }
 
