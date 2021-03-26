@@ -51,15 +51,19 @@ std::shared_ptr<ContextImpl> ContextImpl::create(
     }
   }
 
+  std::unordered_map<Device, std::string> deviceDescriptors = {
+      {Device{kCpuDeviceType, 0}, generateDomainDescriptor(contexts)}};
+
   return std::make_shared<ContextImpl>(
-      std::move(contexts), std::move(listeners));
+      std::move(contexts), std::move(listeners), std::move(deviceDescriptors));
 }
 
 ContextImpl::ContextImpl(
     std::vector<std::shared_ptr<transport::Context>> contexts,
-    std::vector<std::shared_ptr<transport::Listener>> listeners)
+    std::vector<std::shared_ptr<transport::Listener>> listeners,
+    std::unordered_map<Device, std::string> deviceDescriptors)
     : ContextImplBoilerplate<ContextImpl, ChannelImpl>(
-          generateDomainDescriptor(contexts)),
+          std::move(deviceDescriptors)),
       contexts_(std::move(contexts)),
       listeners_(std::move(listeners)) {
   TP_THROW_ASSERT_IF(contexts_.size() != listeners_.size());

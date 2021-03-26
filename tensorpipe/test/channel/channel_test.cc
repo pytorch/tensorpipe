@@ -13,11 +13,10 @@
 using namespace tensorpipe;
 using namespace tensorpipe::channel;
 
-// Implement this as a client-server test, even we then use just the client,
-// because we need this test case to run in a subprocess as in some cases it may
-// initialize CUDA and thus would otherwise "pollute" the parent process.
+// Implement this in a subprocess as in some cases it may initialize CUDA and
+// thus would otherwise "pollute" the parent process.
 template <typename TBuffer>
-class DomainDescriptorTest : public ChannelTestCase<TBuffer> {
+class DeviceDescriptorsTest : public ChannelTestCase<TBuffer> {
  public:
   void run(ChannelTestHelper<TBuffer>* helper) override {
     auto peerGroup = helper->makePeerGroup();
@@ -25,15 +24,24 @@ class DomainDescriptorTest : public ChannelTestCase<TBuffer> {
         [&] {
           std::shared_ptr<Context> context1 = helper->makeContext("ctx1");
           std::shared_ptr<Context> context2 = helper->makeContext("ctx2");
-          EXPECT_FALSE(context1->domainDescriptor().empty());
-          EXPECT_FALSE(context2->domainDescriptor().empty());
-          EXPECT_EQ(context1->domainDescriptor(), context2->domainDescriptor());
+          const auto& descriptors1 = context1->deviceDescriptors();
+          const auto& descriptors2 = context2->deviceDescriptors();
+
+          EXPECT_FALSE(descriptors1.empty());
+          EXPECT_FALSE(descriptors2.empty());
+
+          EXPECT_EQ(descriptors1.size(), descriptors2.size());
+          for (const auto& deviceIter : descriptors1) {
+            EXPECT_FALSE(deviceIter.second.empty());
+            EXPECT_EQ(descriptors2.count(deviceIter.first), 1);
+            EXPECT_EQ(deviceIter.second, descriptors2.at(deviceIter.first));
+          }
         },
         [] {});
   }
 };
 
-CHANNEL_TEST_GENERIC(DomainDescriptor);
+CHANNEL_TEST_GENERIC(DeviceDescriptors);
 
 template <typename TBuffer>
 class ClientToServerTest : public ClientServerChannelTestCase<TBuffer> {

@@ -26,7 +26,8 @@ template <typename TCtx, typename TChan>
 class ContextImplBoilerplate : public virtual DeferredExecutor,
                                public std::enable_shared_from_this<TCtx> {
  public:
-  explicit ContextImplBoilerplate(std::string domainDescriptor);
+  explicit ContextImplBoilerplate(
+      std::unordered_map<Device, std::string> deviceDescriptors);
 
   ContextImplBoilerplate(const ContextImplBoilerplate&) = delete;
   ContextImplBoilerplate(ContextImplBoilerplate&&) = delete;
@@ -37,9 +38,11 @@ class ContextImplBoilerplate : public virtual DeferredExecutor,
 
   virtual size_t numConnectionsNeeded() const;
 
-  const std::string& domainDescriptor() const;
+  const std::unordered_map<Device, std::string>& deviceDescriptors() const;
+
   virtual bool canCommunicateWithRemote(
-      const std::string& remoteDomainDescriptor) const;
+      const std::string& localDeviceDescriptor,
+      const std::string& remoteDeviceDescriptor) const;
 
   // Enrolling dependent objects (channels) causes them to be kept alive for as
   // long as the context exists. These objects should enroll themselves as soon
@@ -94,7 +97,7 @@ class ContextImplBoilerplate : public virtual DeferredExecutor,
 
   std::atomic<bool> joined_{false};
 
-  const std::string domainDescriptor_;
+  const std::unordered_map<Device, std::string> deviceDescriptors_;
 
   // Sequence numbers for the channels created by this context, used to create
   // their identifiers based off this context's identifier. They will only be
@@ -114,8 +117,8 @@ class ContextImplBoilerplate : public virtual DeferredExecutor,
 
 template <typename TCtx, typename TChan>
 ContextImplBoilerplate<TCtx, TChan>::ContextImplBoilerplate(
-    std::string domainDescriptor)
-    : domainDescriptor_(std::move(domainDescriptor)) {}
+    std::unordered_map<Device, std::string> deviceDescriptors)
+    : deviceDescriptors_(std::move(deviceDescriptors)) {}
 
 template <typename TCtx, typename TChan>
 template <typename... Args>
@@ -151,15 +154,17 @@ size_t ContextImplBoilerplate<TCtx, TChan>::numConnectionsNeeded() const {
 }
 
 template <typename TCtx, typename TChan>
-const std::string& ContextImplBoilerplate<TCtx, TChan>::domainDescriptor()
-    const {
-  return domainDescriptor_;
+const std::unordered_map<Device, std::string>& ContextImplBoilerplate<
+    TCtx,
+    TChan>::deviceDescriptors() const {
+  return deviceDescriptors_;
 }
 
 template <typename TCtx, typename TChan>
 bool ContextImplBoilerplate<TCtx, TChan>::canCommunicateWithRemote(
-    const std::string& remoteDomainDescriptor) const {
-  return domainDescriptor_ == remoteDomainDescriptor;
+    const std::string& localDeviceDescriptor,
+    const std::string& remoteDeviceDescriptor) const {
+  return localDeviceDescriptor == remoteDeviceDescriptor;
 }
 
 template <typename TCtx, typename TChan>

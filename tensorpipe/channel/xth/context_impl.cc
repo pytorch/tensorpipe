@@ -47,12 +47,15 @@ std::string generateDomainDescriptor() {
 } // namespace
 
 std::shared_ptr<ContextImpl> ContextImpl::create() {
-  return std::make_shared<ContextImpl>();
+  std::unordered_map<Device, std::string> deviceDescriptors = {
+      {Device{kCpuDeviceType, 0}, generateDomainDescriptor()}};
+  return std::make_shared<ContextImpl>(std::move(deviceDescriptors));
 }
 
-ContextImpl::ContextImpl()
+ContextImpl::ContextImpl(
+    std::unordered_map<Device, std::string> deviceDescriptors)
     : ContextImplBoilerplate<ContextImpl, ChannelImpl>(
-          generateDomainDescriptor()),
+          std::move(deviceDescriptors)),
       requests_(std::numeric_limits<int>::max()) {
   thread_ = std::thread(&ContextImpl::handleCopyRequests, this);
 }

@@ -20,6 +20,7 @@
 
 #include <tensorpipe/common/cuda_lib.h>
 #include <tensorpipe/common/defs.h>
+#include <tensorpipe/common/device.h>
 #include <tensorpipe/common/error.h>
 #include <tensorpipe/common/strings.h>
 
@@ -210,6 +211,17 @@ inline std::vector<std::string> getUuidsOfVisibleDevices(
   std::vector<std::string> result(deviceCount);
   for (int devIdx = 0; devIdx < deviceCount; ++devIdx) {
     result[devIdx] = getUuidOfDevice(cudaLib, devIdx);
+  }
+
+  return result;
+}
+
+inline std::vector<Device> getCudaDevices(const CudaLib& cudaLib) {
+  int deviceCount;
+  TP_CUDA_DRIVER_CHECK(cudaLib, cudaLib.deviceGetCount(&deviceCount));
+  std::vector<Device> result(deviceCount);
+  for (int devIdx = 0; devIdx < deviceCount; ++devIdx) {
+    result[devIdx] = Device{kCudaDeviceType, devIdx};
   }
 
   return result;

@@ -133,10 +133,14 @@ int main(int argc, char* argv[]) {
   auto ctx = tensorpipe::channel::cma::create();
   TP_LOG_INFO() << "The CMA context's viability is: " << std::boolalpha
                 << ctx->isViable();
-  TP_LOG_INFO() << "Its descriptor is: " << ctx->domainDescriptor();
+  TP_LOG_INFO() << "Its descriptor is: "
+                << ctx->deviceDescriptors().at(
+                       tensorpipe::Device{tensorpipe::kCpuDeviceType, 0});
 
   std::cout << "{\"syscall_success\": " << successful
             << ", \"viability\": " << ctx->isViable()
-            << ", \"domain_descriptor\": \"" << ctx->domainDescriptor() << "\"}"
-            << std::endl;
+            << ", \"device_descriptor\": \""
+            << ctx->deviceDescriptors().at(
+                   tensorpipe::Device{tensorpipe::kCpuDeviceType, 0})
+            << "\"}" << std::endl;
 }

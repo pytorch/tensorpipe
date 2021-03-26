@@ -13,6 +13,7 @@
 #include <utility>
 
 #include <tensorpipe/channel/cuda_basic/channel_impl.h>
+#include <tensorpipe/common/cuda.h>
 
 namespace tensorpipe {
 namespace channel {
@@ -40,13 +41,26 @@ std::shared_ptr<ContextImpl> ContextImpl::create(
     return nullptr;
   }
 
+  std::unordered_map<Device, std::string> deviceDescriptors;
+  // NOTE: Assume there is only one CPU.
+  TP_DCHECK_EQ(
+      cpuContext->deviceDescriptors().count(Device{kCpuDeviceType, 0}), 1);
+  const auto cpuDeviceDescriptor =
+      cpuContext->deviceDescriptors().begin()->second;
+  for (const auto& device : getCudaDevices(cudaLib)) {
+    deviceDescriptors[device] = cpuDeviceDescriptor;
+  }
+
   return std::make_shared<ContextImpl>(
-      std::move(cudaLib), std::move(cpuContext));
+      std::move(cudaLib), std::move(cpuContext), std::move(deviceDescriptors));
 }
 
-ContextImpl::ContextImpl(CudaLib cudaLib, std::shared_ptr<Context> cpuContext)
+ContextImpl::ContextImpl(
+    CudaLib cudaLib,
+    std::shared_ptr<Context> cpuContext,
+    std::unordered_map<Device, std::string> deviceDescriptors)
     : ContextImplBoilerplate<ContextImpl, ChannelImpl>(
-          cpuContext->domainDescriptor()),
+          std::move(deviceDescriptors)),
       cudaLib_(std::move(cudaLib)),
       cpuContext_(std::move(cpuContext)) {}
 

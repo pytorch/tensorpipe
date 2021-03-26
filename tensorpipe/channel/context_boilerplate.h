@@ -39,10 +39,12 @@ class ContextBoilerplate : public Context {
 
   bool isViable() const override;
 
-  const std::string& domainDescriptor() const override;
+  const std::unordered_map<Device, std::string>& deviceDescriptors()
+      const override;
 
   bool canCommunicateWithRemote(
-      const std::string& remoteDomainDescriptor) const override;
+      const std::string& localDeviceDescriptor,
+      const std::string& remoteDeviceDescriptor) const override;
 
   void setId(std::string id) override;
 
@@ -99,22 +101,25 @@ bool ContextBoilerplate<TCtx, TChan>::isViable() const {
 }
 
 template <typename TCtx, typename TChan>
-const std::string& ContextBoilerplate<TCtx, TChan>::domainDescriptor() const {
+const std::unordered_map<Device, std::string>& ContextBoilerplate<TCtx, TChan>::
+    deviceDescriptors() const {
   if (unlikely(!impl_)) {
     // FIXME In C++-17 perhaps a global static inline variable would be better?
-    static std::string empty = "";
+    static std::unordered_map<Device, std::string> empty = {};
     return empty;
   }
-  return impl_->domainDescriptor();
+  return impl_->deviceDescriptors();
 }
 
 template <typename TCtx, typename TChan>
 bool ContextBoilerplate<TCtx, TChan>::canCommunicateWithRemote(
-    const std::string& remoteDomainDescriptor) const {
+    const std::string& localDeviceDescriptor,
+    const std::string& remoteDeviceDescriptor) const {
   if (unlikely(!impl_)) {
     return false;
   }
-  return impl_->canCommunicateWithRemote(remoteDomainDescriptor);
+  return impl_->canCommunicateWithRemote(
+      localDeviceDescriptor, remoteDeviceDescriptor);
 }
 
 template <typename TCtx, typename TChan>

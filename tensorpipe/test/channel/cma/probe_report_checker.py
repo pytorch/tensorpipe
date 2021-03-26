@@ -37,7 +37,7 @@ if __name__ == "__main__":
     detected_as_working = (
         first_report["viability"] == 1
         and second_report["viability"] == 1
-        and first_report["domain_descriptor"] == second_report["domain_descriptor"]
+        and first_report["device_descriptor"] == second_report["device_descriptor"]
     )
     if detected_as_working != worked_in_practice:
         print(

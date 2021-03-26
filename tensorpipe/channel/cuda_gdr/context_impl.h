@@ -24,6 +24,7 @@
 #include <tensorpipe/common/cuda.h>
 #include <tensorpipe/common/cuda_buffer.h>
 #include <tensorpipe/common/cuda_lib.h>
+#include <tensorpipe/common/device.h>
 #include <tensorpipe/common/error.h>
 #include <tensorpipe/common/ibv.h>
 #include <tensorpipe/common/optional.h>
@@ -126,6 +127,7 @@ class ContextImpl final
       optional<std::vector<std::string>> gpuIdxToNicName = nullopt);
 
   ContextImpl(
+      std::unordered_map<Device, std::string> deviceDescriptors,
       CudaLib cudaLib,
       IbvLib ibvLib,
       IbvDeviceList deviceList,

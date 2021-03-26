@@ -22,11 +22,11 @@
 // Construction of a channel happens as follows.
 //
 //   1) During initialization of a pipe, the connecting peer sends its
-//      list of channel contexts and their domain descriptors. The
-//      domain descriptor is used to determine whether or not a
+//      list of channel contexts and their device descriptors. The
+//      device descriptor is used to determine whether or not a
 //      channel can be used by a pair of peers.
 //   2) The listening side of the pipe compares the list it received
-//      its own list to determine the list of channels should be used
+//      its own list to determine the list of channels that should be used
 //      for the peers.
 //   3) For every channel that should be constructed, the listening
 //      side registers a slot with its low level listener. These slots

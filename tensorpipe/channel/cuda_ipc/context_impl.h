@@ -18,6 +18,7 @@
 #include <tensorpipe/common/cuda_event_pool.h>
 #include <tensorpipe/common/cuda_lib.h>
 #include <tensorpipe/common/deferred_executor.h>
+#include <tensorpipe/common/device.h>
 #include <tensorpipe/common/nvml_lib.h>
 
 namespace tensorpipe {
@@ -32,13 +33,11 @@ class ContextImpl final
   static std::shared_ptr<ContextImpl> create();
 
   ContextImpl(
-      std::string domainDescriptor,
+      std::unordered_map<Device, std::string> deviceDescriptors,
       CudaLib cudaLib,
       NvmlLib nvmlLib,
-      std::string bootId,
       std::vector<std::string> globalUuids,
-      std::vector<std::vector<bool>> p2pSupport,
-      std::vector<int> globalIdxOfVisibleDevices);
+      std::vector<std::vector<bool>> p2pSupport);
 
   std::shared_ptr<Channel> createChannel(
       std::vector<std::shared_ptr<transport::Connection>> connections,
@@ -49,7 +48,8 @@ class ContextImpl final
   bool supportsDeviceType(DeviceType type) const override;
 
   bool canCommunicateWithRemote(
-      const std::string& remoteDomainDescriptor) const override;
+      const std::string& localDeviceDescriptor,
+      const std::string& remoteDeviceDescriptor) const override;
 
   const CudaLib& getCudaLib();
 
@@ -82,10 +82,8 @@ class ContextImpl final
   const CudaLib cudaLib_;
   const NvmlLib nvmlLib_;
 
-  const std::string bootId_;
   const std::vector<std::string> globalUuids_;
   const std::vector<std::vector<bool>> p2pSupport_;
-  const std::vector<int> globalIdxOfVisibleDevices_;
 
   // A combination of the process's PID namespace and its PID, which combined
   // with CUDA's buffer ID should allow us to uniquely identify each allocation

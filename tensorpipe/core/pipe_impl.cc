@@ -199,7 +199,7 @@ SelectedTransport selectTransport(
 
 struct SelectedChannel {
   std::string name;
-  std::string domainDescriptor;
+  std::unordered_map<Device, std::string> deviceDescriptors;
 };
 
 std::vector<SelectedChannel> selectChannels(
@@ -219,13 +219,34 @@ std::vector<SelectedChannel> selectChannels(
     }
     const ChannelAdvertisement& nopCurrentChannelAdvertisement =
         nopChannelAdvertisementIter->second;
-    const std::string& domainDescriptor =
-        nopCurrentChannelAdvertisement.domainDescriptor;
-    if (!channelContext.canCommunicateWithRemote(domainDescriptor)) {
+    const std::unordered_map<Device, std::string>& localDeviceDescriptors =
+        channelContext.deviceDescriptors();
+    const std::unordered_map<Device, std::string>& remoteDeviceDescriptors =
+        nopCurrentChannelAdvertisement.deviceDescriptors;
+
+    // Do not select channels which cannot connect anything.
+    if (localDeviceDescriptors.empty() || remoteDeviceDescriptors.empty()) {
       continue;
     }
 
-    result.push_back({channelName, channelContext.domainDescriptor()});
+    // For now, only select a channel if it is supported by all pairs of
+    // relevant devices. This will be lifted once we introduce per-device pair
+    // channel selection.
+    bool selected = true;
+    for (const auto& localDescIter : localDeviceDescriptors) {
+      const std::string& localDeviceDescriptor = localDescIter.second;
+      for (const auto& remoteDescIter : remoteDeviceDescriptors) {
+        const std::string& remoteDeviceDescriptor = remoteDescIter.second;
+        if (!channelContext.canCommunicateWithRemote(
+                localDeviceDescriptor, remoteDeviceDescriptor)) {
+          selected = false;
+        }
+      }
+    }
+
+    if (selected) {
+      result.push_back({channelName, localDeviceDescriptors});
+    }
   }
 
   return result;
@@ -321,10 +342,8 @@ void PipeImpl::initFromLoop() {
       const std::string& channelName = std::get<0>(channelContextIter.second);
       const channel::Context& channelContext =
           *(std::get<1>(channelContextIter.second));
-      ChannelAdvertisement& nopChannelAdvertisement =
-          nopBrochure.channelAdvertisement[channelName];
-      nopChannelAdvertisement.domainDescriptor =
-          channelContext.domainDescriptor();
+      nopBrochure.channelAdvertisement[channelName].deviceDescriptors =
+          channelContext.deviceDescriptors();
     }
     TP_VLOG(3) << "Pipe " << id_ << " is writing nop object (brochure)";
     connection_->write(
@@ -929,7 +948,7 @@ void PipeImpl::onReadWhileServerWaitingForBrochure(const Packet& nopPacketIn) {
     ChannelSelection& nopChannelSelection =
         nopBrochureAnswer.channelSelection[channel.name];
     nopChannelSelection.registrationIds = registerChannel(channel.name);
-    nopChannelSelection.domainDescriptor = channel.domainDescriptor;
+    nopChannelSelection.deviceDescriptors = channel.deviceDescriptors;
   }
 
   TP_VLOG(3) << "Pipe " << id_ << " is writing nop object (brochure answer)";
@@ -1049,10 +1068,17 @@ void PipeImpl::onReadWhileClientWaitingForBrochureAnswer(
 
     std::shared_ptr<channel::Context> channelContext =
         context_->getChannel(channelName);
-    TP_DCHECK(channelContext->canCommunicateWithRemote(
-        nopChannelSelection.domainDescriptor))
-        << "The two endpoints disagree on whether channel " << channelName
-        << " can be used to communicate";
+
+    for (const auto& localDescIter : channelContext->deviceDescriptors()) {
+      const std::string& localDeviceDescriptor = localDescIter.second;
+      for (const auto& remoteDescIter : nopChannelSelection.deviceDescriptors) {
+        const std::string& remoteDeviceDescriptor = remoteDescIter.second;
+        TP_DCHECK(channelContext->canCommunicateWithRemote(
+            localDeviceDescriptor, remoteDeviceDescriptor))
+            << "The two endpoints disagree on whether channel " << channelName
+            << " can be used to communicate";
+      }
+    }
 
     const size_t numConnectionsNeeded = channelContext->numConnectionsNeeded();
     TP_DCHECK_EQ(

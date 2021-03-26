@@ -14,6 +14,7 @@
 #include <tensorpipe/common/cuda_lib.h>
 #include <tensorpipe/common/cuda_loop.h>
 #include <tensorpipe/common/deferred_executor.h>
+#include <tensorpipe/common/device.h>
 #include <tensorpipe/common/optional.h>
 
 namespace tensorpipe {
@@ -28,7 +29,10 @@ class ContextImpl final
   static std::shared_ptr<ContextImpl> create(
       std::shared_ptr<Context> cpuContext);
 
-  ContextImpl(CudaLib cudaLib, std::shared_ptr<Context> cpuContext);
+  ContextImpl(
+      CudaLib cudaLib,
+      std::shared_ptr<Context> cpuContext,
+      std::unordered_map<Device, std::string> deviceDescriptors);
 
   std::shared_ptr<Channel> createChannel(
       std::vector<std::shared_ptr<transport::Connection>> connections,

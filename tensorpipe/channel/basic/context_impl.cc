@@ -18,12 +18,15 @@ namespace channel {
 namespace basic {
 
 std::shared_ptr<ContextImpl> ContextImpl::create() {
-  return std::make_shared<ContextImpl>();
+  std::unordered_map<Device, std::string> deviceDescriptors = {
+      {Device{kCpuDeviceType, 0}, "any"}};
+  return std::make_shared<ContextImpl>(std::move(deviceDescriptors));
 }
 
-ContextImpl::ContextImpl()
+ContextImpl::ContextImpl(
+    std::unordered_map<Device, std::string> deviceDescriptors)
     : ContextImplBoilerplate<ContextImpl, ChannelImpl>(
-          /*domainDescriptor=*/"any") {}
+          std::move(deviceDescriptors)) {}
 
 std::shared_ptr<Channel> ContextImpl::createChannel(
     std::vector<std::shared_ptr<transport::Connection>> connections,

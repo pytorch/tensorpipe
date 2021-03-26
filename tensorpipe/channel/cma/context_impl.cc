@@ -234,12 +234,17 @@ std::shared_ptr<ContextImpl> ContextImpl::create() {
 
   std::string domainDescriptor = oss.str();
   TP_VLOG(5) << "The domain descriptor for CMA is " << domainDescriptor;
-  return std::make_shared<ContextImpl>(std::move(domainDescriptor));
+
+  std::unordered_map<Device, std::string> deviceDescriptors = {
+      {Device{kCpuDeviceType, 0}, std::move(domainDescriptor)}};
+
+  return std::make_shared<ContextImpl>(std::move(deviceDescriptors));
 }
 
-ContextImpl::ContextImpl(std::string domainDescriptor)
+ContextImpl::ContextImpl(
+    std::unordered_map<Device, std::string> deviceDescriptors)
     : ContextImplBoilerplate<ContextImpl, ChannelImpl>(
-          std::move(domainDescriptor)) {
+          std::move(deviceDescriptors)) {
   thread_ = std::thread(&ContextImpl::handleCopyRequests, this);
 }
 

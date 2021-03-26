@@ -25,6 +25,7 @@
 
 #include <tensorpipe/channel/cuda_gdr/channel_impl.h>
 #include <tensorpipe/channel/cuda_gdr/error.h>
+#include <tensorpipe/common/cuda.h>
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/error_macros.h>
 
@@ -377,7 +378,13 @@ std::shared_ptr<ContextImpl> ContextImpl::create(
     return nullptr;
   }
 
+  std::unordered_map<Device, std::string> deviceDescriptors;
+  for (const auto& device : getCudaDevices(cudaLib)) {
+    deviceDescriptors[device] = "*";
+  }
+
   return std::make_shared<ContextImpl>(
+      std::move(deviceDescriptors),
       std::move(cudaLib),
       std::move(ibvLib),
       std::move(deviceList),
@@ -385,12 +392,13 @@ std::shared_ptr<ContextImpl> ContextImpl::create(
 }
 
 ContextImpl::ContextImpl(
+    std::unordered_map<Device, std::string> deviceDescriptors,
     CudaLib cudaLib,
     IbvLib ibvLib,
     IbvDeviceList deviceList,
     optional<std::vector<std::string>> gpuIdxToNicName)
     : ContextImplBoilerplate<ContextImpl, ChannelImpl>(
-          /*domainDescriptor=*/"*"),
+          std::move(deviceDescriptors)),
       cudaLib_(std::move(cudaLib)),
       ibvLib_(std::move(ibvLib)) {
   std::vector<std::string> actualGpuIdxToNicName;

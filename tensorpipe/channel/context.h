@@ -10,6 +10,7 @@
 
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include <tensorpipe/common/buffer.h>
@@ -47,26 +48,29 @@ class Context {
   //
   virtual size_t numConnectionsNeeded() const = 0;
 
-  // Return string to describe the domain for this channel.
+  // Return a map from supported devices to strings describing the device from
+  // the channel's perspective.
   //
-  // Two processes with a channel context of the same type can connect
-  // to each other if one side's domain descriptor is "accepted" by the
-  // other one, using the canCommunicateWithRemote method below. That
-  // method must be symmetric, and unless overridden defaults to string
-  // comparison.
+  // Two processes with a channel context of the same type can leverage this
+  // channel to make two devices communicate if one side's device descriptor is
+  // "accepted" by the other one, using the canCommunicateWithRemote method
+  // below. That method must be symmetric, and unless overridden defaults to
+  // string comparison.
   //
-  virtual const std::string& domainDescriptor() const = 0;
+  virtual const std::unordered_map<Device, std::string>& deviceDescriptors()
+      const = 0;
 
-  // Compare local and remote domain descriptor for compatibility.
+  // Compare local and remote device descriptors for compatibility.
   //
-  // Determine whether a channel can be opened between this context and
-  // a remote one that has the given domain descriptor. This function
+  // Determine whether a channel can be opened between a local device and
+  // a remote one that has the given device descriptor. This function
   // needs to be symmetric: if we called this method on the remote
   // context with the local descriptor we should get the same answer.
   // Unless overridden it defaults to string comparison.
   //
   virtual bool canCommunicateWithRemote(
-      const std::string& remoteDomainDescriptor) const = 0;
+      const std::string& localDeviceDescriptor,
+      const std::string& remoteDeviceDescriptor) const = 0;
 
   // Return newly created channel using the specified connections.
   //

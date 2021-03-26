@@ -56,28 +56,36 @@ std::shared_ptr<ContextImpl> ContextImpl::create() {
     return nullptr;
   }
 
-  int deviceCount;
-  TP_CUDA_CHECK(cudaGetDeviceCount(&deviceCount));
-  for (int i = 0; i < deviceCount; ++i) {
+  const std::string domainDescriptor = generateDomainDescriptor();
+  std::unordered_map<Device, std::string> deviceDescriptors;
+  for (const auto& device : getCudaDevices(cudaLib)) {
     cudaDeviceProp props;
-    TP_CUDA_CHECK(cudaGetDeviceProperties(&props, i));
+    TP_CUDA_CHECK(cudaGetDeviceProperties(&props, device.index));
 
     // Unified addressing is required for cross-device `cudaMemcpyAsync()`. We
     // could lift this requirement by adding a fallback to
     // `cudaMemcpyPeerAsync()`.
     if (!props.unifiedAddressing) {
-      TP_VLOG(4) << "CUDA XTH channel is not viable because CUDA device " << i
-                 << " does not have unified addressing";
+      TP_VLOG(4) << "CUDA XTH channel is not viable because CUDA device "
+                 << device.index << " does not have unified addressing";
       return nullptr;
     }
+    deviceDescriptors[device] = domainDescriptor;
   }
 
-  return std::make_shared<ContextImpl>(std::move(cudaLib));
+  if (deviceDescriptors.empty()) {
+    return nullptr;
+  }
+
+  return std::make_shared<ContextImpl>(
+      std::move(cudaLib), std::move(deviceDescriptors));
 }
 
-ContextImpl::ContextImpl(CudaLib cudaLib)
+ContextImpl::ContextImpl(
+    CudaLib cudaLib,
+    std::unordered_map<Device, std::string> deviceDescriptors)
     : ContextImplBoilerplate<ContextImpl, ChannelImpl>(
-          generateDomainDescriptor()),
+          std::move(deviceDescriptors)),
       cudaLib_(std::move(cudaLib)) {}
 
 std::shared_ptr<Channel> ContextImpl::createChannel(

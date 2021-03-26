@@ -17,6 +17,7 @@
 #include <nop/types/variant.h>
 
 #include <tensorpipe/common/buffer.h>
+#include <tensorpipe/common/device.h>
 
 namespace tensorpipe {
 
@@ -35,9 +36,11 @@ struct TransportAdvertisement {
   NOP_STRUCTURE(TransportAdvertisement, domainDescriptor);
 };
 
+NOP_EXTERNAL_STRUCTURE(Device, type, index);
+
 struct ChannelAdvertisement {
-  std::string domainDescriptor;
-  NOP_STRUCTURE(ChannelAdvertisement, domainDescriptor);
+  std::unordered_map<Device, std::string> deviceDescriptors;
+  NOP_STRUCTURE(ChannelAdvertisement, deviceDescriptors);
 };
 
 struct Brochure {
@@ -49,8 +52,8 @@ struct Brochure {
 
 struct ChannelSelection {
   std::vector<uint64_t> registrationIds;
-  std::string domainDescriptor;
-  NOP_STRUCTURE(ChannelSelection, registrationIds, domainDescriptor);
+  std::unordered_map<Device, std::string> deviceDescriptors;
+  NOP_STRUCTURE(ChannelSelection, registrationIds, deviceDescriptors);
 };
 
 struct BrochureAnswer {

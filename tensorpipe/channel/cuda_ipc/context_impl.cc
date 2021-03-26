@@ -96,42 +96,33 @@ getGlobalUuidsAndP2pSupport(const NvmlLib& nvmlLib) {
   return std::make_tuple(std::move(uuids), std::move(p2pSupport));
 }
 
-struct DomainDescriptor {
-  std::string bootId;
-  std::vector<std::string> gpuUuids;
-  NOP_STRUCTURE(DomainDescriptor, bootId, gpuUuids);
-};
+int globalIdxForDevice(
+    const std::vector<std::string>& globalUuids,
+    const std::string& uuid) {
+  auto iter = std::find(globalUuids.begin(), globalUuids.end(), uuid);
+  TP_THROW_ASSERT_IF(iter == globalUuids.end())
+      << "Couldn't find GPU with UUID " << uuid;
 
-std::tuple<std::string, std::vector<std::string>, std::string>
-getBootIdAndVisibleUuidsAndDomainDescriptor(const CudaLib& cudaLib) {
-  NopHolder<DomainDescriptor> nopHolder;
-  DomainDescriptor& domainDescriptor = nopHolder.getObject();
-
-  auto bootID = getBootID();
-  TP_THROW_ASSERT_IF(!bootID) << "Unable to read boot_id";
-  domainDescriptor.bootId = std::move(bootID.value());
-
-  domainDescriptor.gpuUuids = getUuidsOfVisibleDevices(cudaLib);
-
-  std::string domainDescriptorStr = saveDescriptor(nopHolder);
-  return std::make_tuple(
-      std::move(domainDescriptor.bootId),
-      std::move(domainDescriptor.gpuUuids),
-      std::move(domainDescriptorStr));
+  return iter - globalUuids.begin();
 }
 
-std::vector<int> mapUuidsToGlobalIndices(
-    const std::vector<std::string>& uuids,
-    const std::vector<std::string>& globalUuids) {
-  std::vector<int> res(uuids.size());
-  for (int devIdx = 0; devIdx < uuids.size(); devIdx++) {
-    auto iter =
-        std::find(globalUuids.begin(), globalUuids.end(), uuids[devIdx]);
-    TP_THROW_ASSERT_IF(iter == globalUuids.end())
-        << "Couldn't find GPU #" << devIdx << " with UUID " << uuids[devIdx];
-    res[devIdx] = iter - globalUuids.begin();
-  }
-  return res;
+struct DeviceDescriptor {
+  std::string bootId;
+  std::string deviceUuid;
+  NOP_STRUCTURE(DeviceDescriptor, bootId, deviceUuid);
+};
+
+DeviceDescriptor deserializeDeviceDescriptor(
+    const std::string& deviceDescriptor) {
+  NopHolder<DeviceDescriptor> nopHolder;
+  loadDescriptor(nopHolder, deviceDescriptor);
+  return std::move(nopHolder.getObject());
+}
+
+std::string generateBootId() {
+  auto bootID = getBootID();
+  TP_THROW_ASSERT_IF(!bootID) << "Unable to read boot_id";
+  return bootID.value();
 }
 
 std::string genProcessIdentifier() {
@@ -164,39 +155,37 @@ std::shared_ptr<ContextImpl> ContextImpl::create() {
     return nullptr;
   }
 
-  // This part is largely inspired from
-  // https://github.com/NVIDIA/cuda-samples/blob/master/Samples/simpleIPC/simpleIPC.cu.
-  int deviceCount;
-  TP_CUDA_CHECK(cudaGetDeviceCount(&deviceCount));
-  for (int i = 0; i < deviceCount; ++i) {
+  const std::string bootId = generateBootId();
+
+  std::unordered_map<Device, std::string> deviceDescriptors;
+  for (const auto& device : getCudaDevices(cudaLib)) {
+    // This part is largely inspired from
+    // https://github.com/NVIDIA/cuda-samples/blob/master/Samples/simpleIPC/simpleIPC.cu.
     cudaDeviceProp props;
-    TP_CUDA_CHECK(cudaGetDeviceProperties(&props, i));
+    TP_CUDA_CHECK(cudaGetDeviceProperties(&props, device.index));
 
     // Unified addressing is required for IPC.
     if (!props.unifiedAddressing) {
-      TP_VLOG(4) << "CUDA IPC channel is not viable because CUDA device " << i
-                 << " does not have unified addressing";
+      TP_VLOG(4) << "CUDA IPC channel is not viable because CUDA device "
+                 << device.index << " does not have unified addressing";
       return nullptr;
     }
 
     // The other two compute modes are "exclusive" and "prohibited", both of
     // which prevent access from an other process.
     if (props.computeMode != cudaComputeModeDefault) {
-      TP_VLOG(4) << "CUDA IPC channel is not viable because CUDA device " << i
-                 << " is not in default compute mode";
+      TP_VLOG(4) << "CUDA IPC channel is not viable because CUDA device "
+                 << device.index << " is not in default compute mode";
       return nullptr;
     }
-  }
 
-  std::string bootId;
-  std::vector<std::string> visibleUuids;
-  std::string domainDescriptor;
-  std::tie(bootId, visibleUuids, domainDescriptor) =
-      getBootIdAndVisibleUuidsAndDomainDescriptor(cudaLib);
-  TP_VLOG(4) << "The boot ID found by the CUDA IPC channel is " << bootId;
-  TP_VLOG(4)
-      << "The UUIDs of the visible GPUs found by the CUDA IPC channel are "
-      << joinStrs(visibleUuids);
+    NopHolder<DeviceDescriptor> nopHolder;
+    DeviceDescriptor& deviceDescriptor = nopHolder.getObject();
+    deviceDescriptor.bootId = bootId;
+    deviceDescriptor.deviceUuid = getUuidOfDevice(cudaLib, device.index);
+
+    deviceDescriptors[device] = saveDescriptor(nopHolder);
+  }
 
   std::vector<std::string> globalUuids;
   std::vector<std::vector<bool>> p2pSupport;
@@ -206,35 +195,26 @@ std::shared_ptr<ContextImpl> ContextImpl::create() {
   TP_VLOG(4) << "The peer-to-peer support found by the CUDA IPC channel is "
              << formatMatrix(p2pSupport);
 
-  std::vector<int> globalIdxOfVisibleDevices =
-      mapUuidsToGlobalIndices(visibleUuids, globalUuids);
-
   return std::make_shared<ContextImpl>(
-      std::move(domainDescriptor),
+      std::move(deviceDescriptors),
       std::move(cudaLib),
       std::move(nvmlLib),
-      std::move(bootId),
       std::move(globalUuids),
-      std::move(p2pSupport),
-      std::move(globalIdxOfVisibleDevices));
+      std::move(p2pSupport));
 }
 
 ContextImpl::ContextImpl(
-    std::string domainDescriptor,
+    std::unordered_map<Device, std::string> deviceDescriptors,
     CudaLib cudaLib,
     NvmlLib nvmlLib,
-    std::string bootId,
     std::vector<std::string> globalUuids,
-    std::vector<std::vector<bool>> p2pSupport,
-    std::vector<int> globalIdxOfVisibleDevices)
+    std::vector<std::vector<bool>> p2pSupport)
     : ContextImplBoilerplate<ContextImpl, ChannelImpl>(
-          std::move(domainDescriptor)),
+          std::move(deviceDescriptors)),
       cudaLib_(std::move(cudaLib)),
       nvmlLib_(std::move(nvmlLib)),
-      bootId_(std::move(bootId)),
       globalUuids_(std::move(globalUuids)),
       p2pSupport_(std::move(p2pSupport)),
-      globalIdxOfVisibleDevices_(std::move(globalIdxOfVisibleDevices)),
       processIdentifier_(genProcessIdentifier()) {}
 
 std::shared_ptr<Channel> ContextImpl::createChannel(
@@ -257,32 +237,24 @@ bool ContextImpl::supportsDeviceType(DeviceType type) const {
 }
 
 bool ContextImpl::canCommunicateWithRemote(
-    const std::string& remoteDomainDescriptor) const {
-  NopHolder<DomainDescriptor> nopHolder;
-  loadDescriptor(nopHolder, remoteDomainDescriptor);
-  DomainDescriptor& domainDescriptorObj = nopHolder.getObject();
+    const std::string& localDeviceDescriptor,
+    const std::string& remoteDeviceDescriptor) const {
+  DeviceDescriptor nopLocalDeviceDescriptor =
+      deserializeDeviceDescriptor(localDeviceDescriptor);
+  DeviceDescriptor nopRemoteDeviceDescriptor =
+      deserializeDeviceDescriptor(remoteDeviceDescriptor);
 
-  if (bootId_ != domainDescriptorObj.bootId) {
+  if (nopLocalDeviceDescriptor.bootId != nopRemoteDeviceDescriptor.bootId) {
     return false;
   }
 
-  std::vector<int> globalIdxOfRemoteDevice =
-      mapUuidsToGlobalIndices(domainDescriptorObj.gpuUuids, globalUuids_);
+  int localGlobalIdx =
+      globalIdxForDevice(globalUuids_, nopLocalDeviceDescriptor.deviceUuid);
+  int remoteGlobalIdx =
+      globalIdxForDevice(globalUuids_, nopRemoteDeviceDescriptor.deviceUuid);
 
-  for (int localIdx = 0; localIdx < globalIdxOfVisibleDevices_.size();
-       localIdx++) {
-    for (int remoteIdx = 0; remoteIdx < globalIdxOfRemoteDevice.size();
-         remoteIdx++) {
-      if (!p2pSupport_[globalIdxOfVisibleDevices_[localIdx]]
-                      [globalIdxOfRemoteDevice[remoteIdx]] ||
-          !p2pSupport_[globalIdxOfRemoteDevice[remoteIdx]]
-                      [globalIdxOfVisibleDevices_[localIdx]]) {
-        return false;
-      }
-    }
-  }
-
-  return true;
+  return p2pSupport_[localGlobalIdx][remoteGlobalIdx] &&
+      p2pSupport_[remoteGlobalIdx][localGlobalIdx];
 }
 
 const CudaLib& ContextImpl::getCudaLib() {

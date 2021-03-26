@@ -20,6 +20,7 @@
 #include <tensorpipe/channel/mpt/nop_types.h>
 #include <tensorpipe/common/callback.h>
 #include <tensorpipe/common/deferred_executor.h>
+#include <tensorpipe/common/device.h>
 #include <tensorpipe/transport/context.h>
 
 namespace tensorpipe {
@@ -37,7 +38,8 @@ class ContextImpl final
 
   ContextImpl(
       std::vector<std::shared_ptr<transport::Context>> contexts,
-      std::vector<std::shared_ptr<transport::Listener>> listeners);
+      std::vector<std::shared_ptr<transport::Listener>> listeners,
+      std::unordered_map<Device, std::string> deviceDescriptors);
 
   std::shared_ptr<Channel> createChannel(
       std::vector<std::shared_ptr<transport::Connection>> connections,
