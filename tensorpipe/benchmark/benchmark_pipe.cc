@@ -25,18 +25,22 @@ using namespace tensorpipe::benchmark;
 
 Measurements measurements;
 
+using Payload = std::unique_ptr<uint8_t[]>;
+using CpuTensor = std::unique_ptr<uint8_t[]>;
+
 struct Data {
   size_t numPayloads;
   size_t payloadSize;
-  std::vector<std::unique_ptr<uint8_t[]>> expectedPayload;
+  std::vector<Payload> expectedPayload;
   std::vector<std::string> expectedPayloadMetadata;
-  std::vector<std::unique_ptr<uint8_t[]>> temporaryPayload;
+  std::vector<Payload> temporaryPayload;
 
   size_t numTensors;
   size_t tensorSize;
-  std::vector<std::unique_ptr<uint8_t[]>> expectedTensor;
+  TensorType tensorType;
+  std::vector<CpuTensor> expectedCpuTensor;
   std::vector<std::string> expectedTensorMetadata;
-  std::vector<std::unique_ptr<uint8_t[]>> temporaryTensor;
+  std::vector<CpuTensor> temporaryCpuTensor;
 
   std::string expectedMetadata;
 };
@@ -65,8 +69,12 @@ static void printMeasurements(Measurements& measurements, size_t dataLen) {
       measurements.percentile(0.95).count() / 1000.0);
 }
 
-static std::unique_ptr<uint8_t[]> createData(const size_t size) {
-  auto data = std::make_unique<uint8_t[]>(size);
+static std::unique_ptr<uint8_t[]> createEmptyCpuData(size_t size) {
+  return std::make_unique<uint8_t[]>(size);
+}
+
+static std::unique_ptr<uint8_t[]> createFullCpuData(size_t size) {
+  std::unique_ptr<uint8_t[]> data = createEmptyCpuData(size);
   // Generate fixed data for validation between peers
   for (size_t i = 0; i < size; i++) {
     data[i] = (i >> 8) ^ (i & 0xff);
@@ -104,10 +112,13 @@ static void serverPongPingNonBlock(
             message.tensors[tensorIdx].metadata,
             data.expectedTensorMetadata[tensorIdx]);
         TP_DCHECK_EQ(
-            message.tensors[tensorIdx].buffer.unwrap<CpuBuffer>().length,
-            data.tensorSize);
-        message.tensors[tensorIdx].buffer.unwrap<CpuBuffer>().ptr =
-            data.temporaryTensor[tensorIdx].get();
+            message.tensors[tensorIdx].buffer.length(), data.tensorSize);
+        if (data.tensorType == TensorType::kCpu) {
+          message.tensors[tensorIdx].buffer.unwrap<CpuBuffer>().ptr =
+              data.temporaryCpuTensor[tensorIdx].get();
+        } else {
+          TP_THROW_ASSERT() << "Unknown tensor type";
+        }
       }
     } else {
       TP_DCHECK_EQ(message.tensors.size(), 0);
@@ -138,16 +149,21 @@ static void serverPongPingNonBlock(
             for (size_t tensorIdx = 0; tensorIdx < data.numTensors;
                  tensorIdx++) {
               TP_DCHECK_EQ(
-                  message.tensors[tensorIdx].buffer.unwrap<CpuBuffer>().length,
-                  data.tensorSize);
-              TP_DCHECK_EQ(
-                  memcmp(
-                      message.tensors[tensorIdx].buffer.unwrap<CpuBuffer>().ptr,
-                      data.expectedTensor[tensorIdx].get(),
-                      message.tensors[tensorIdx]
-                          .buffer.unwrap<CpuBuffer>()
-                          .length),
-                  0);
+                  message.tensors[tensorIdx].buffer.length(), data.tensorSize);
+              if (data.tensorType == TensorType::kCpu) {
+                TP_DCHECK_EQ(
+                    memcmp(
+                        message.tensors[tensorIdx]
+                            .buffer.unwrap<CpuBuffer>()
+                            .ptr,
+                        data.expectedCpuTensor[tensorIdx].get(),
+                        message.tensors[tensorIdx]
+                            .buffer.unwrap<CpuBuffer>()
+                            .length),
+                    0);
+              } else {
+                TP_THROW_ASSERT() << "Unknown tensor type";
+              }
             }
           } else {
             TP_DCHECK_EQ(message.tensors.size(), 0);
@@ -177,20 +193,23 @@ static void runServer(const Options& options) {
   data.numPayloads = options.numPayloads;
   data.payloadSize = options.payloadSize;
   for (size_t payloadIdx = 0; payloadIdx < options.numPayloads; payloadIdx++) {
-    data.expectedPayload.push_back(createData(options.payloadSize));
+    data.expectedPayload.push_back(createFullCpuData(options.payloadSize));
     data.expectedPayloadMetadata.push_back(
         std::string(options.metadataSize, 0x42));
-    data.temporaryPayload.push_back(
-        std::make_unique<uint8_t[]>(options.payloadSize));
+    data.temporaryPayload.push_back(createEmptyCpuData(options.payloadSize));
   }
   data.numTensors = options.numTensors;
   data.tensorSize = options.tensorSize;
+  data.tensorType = options.tensorType;
   for (size_t tensorIdx = 0; tensorIdx < options.numTensors; tensorIdx++) {
-    data.expectedTensor.push_back(createData(options.tensorSize));
     data.expectedTensorMetadata.push_back(
         std::string(options.metadataSize, 0x42));
-    data.temporaryTensor.push_back(
-        std::make_unique<uint8_t[]>(options.tensorSize));
+    if (options.tensorType == TensorType::kCpu) {
+      data.expectedCpuTensor.push_back(createFullCpuData(options.tensorSize));
+      data.temporaryCpuTensor.push_back(createEmptyCpuData(options.tensorSize));
+    } else {
+      TP_THROW_ASSERT() << "Unknown tensor type";
+    }
   }
   data.expectedMetadata = std::string(options.metadataSize, 0x42);
 
@@ -246,8 +265,12 @@ static void clientPingPongNonBlock(
   if (data.tensorSize > 0) {
     for (size_t tensorIdx = 0; tensorIdx < data.numTensors; tensorIdx++) {
       Message::Tensor tensor;
-      tensor.buffer =
-          CpuBuffer{data.expectedTensor[tensorIdx].get(), data.tensorSize};
+      if (data.tensorType == TensorType::kCpu) {
+        tensor.buffer =
+            CpuBuffer{data.expectedCpuTensor[tensorIdx].get(), data.tensorSize};
+      } else {
+        TP_THROW_ASSERT() << "Unknown tensor type";
+      }
       message.tensors.push_back(std::move(tensor));
     }
   } else {
@@ -258,92 +281,97 @@ static void clientPingPongNonBlock(
       [pipe, &numRoundTrips, &doneProm, &data, &measurements](
           const Error& error, Message&& message) {
         TP_THROW_ASSERT_IF(error) << error.what();
-        pipe->readDescriptor([pipe,
-                              &numRoundTrips,
-                              &doneProm,
-                              &data,
-                              &measurements](
-                                 const Error& error, Message&& message) {
-          TP_THROW_ASSERT_IF(error) << error.what();
-          TP_DCHECK_EQ(message.metadata, data.expectedMetadata);
-          if (data.payloadSize > 0) {
-            TP_DCHECK_EQ(message.payloads.size(), data.numPayloads);
-            for (size_t payloadIdx = 0; payloadIdx < data.numPayloads;
-                 payloadIdx++) {
-              TP_DCHECK_EQ(
-                  message.payloads[payloadIdx].metadata,
-                  data.expectedPayloadMetadata[payloadIdx]);
-              TP_DCHECK_EQ(
-                  message.payloads[payloadIdx].length, data.payloadSize);
-              message.payloads[payloadIdx].data =
-                  data.temporaryPayload[payloadIdx].get();
-            }
-          } else {
-            TP_DCHECK_EQ(message.payloads.size(), 0);
-          }
-          if (data.tensorSize > 0) {
-            TP_DCHECK_EQ(message.tensors.size(), data.numTensors);
-            for (size_t tensorIdx = 0; tensorIdx < data.numTensors;
-                 tensorIdx++) {
-              TP_DCHECK_EQ(
-                  message.tensors[tensorIdx].metadata,
-                  data.expectedTensorMetadata[tensorIdx]);
-              TP_DCHECK_EQ(
-                  message.tensors[tensorIdx].buffer.unwrap<CpuBuffer>().length,
-                  data.tensorSize);
-              message.tensors[tensorIdx].buffer.unwrap<CpuBuffer>().ptr =
-                  data.temporaryTensor[tensorIdx].get();
-            }
-          } else {
-            TP_DCHECK_EQ(message.tensors.size(), 0);
-          }
-          pipe->read(
-              std::move(message),
-              [pipe, &numRoundTrips, &doneProm, &data, &measurements](
-                  const Error& error, Message&& message) {
-                measurements.markStop();
-                TP_THROW_ASSERT_IF(error) << error.what();
-                if (data.payloadSize > 0) {
-                  TP_DCHECK_EQ(message.payloads.size(), data.numPayloads);
-                  for (size_t payloadIdx = 0; payloadIdx < data.numPayloads;
-                       payloadIdx++) {
-                    TP_DCHECK_EQ(
-                        memcmp(
-                            message.payloads[payloadIdx].data,
-                            data.expectedPayload[payloadIdx].get(),
-                            message.payloads[payloadIdx].length),
-                        0);
+        pipe->readDescriptor(
+            [pipe, &numRoundTrips, &doneProm, &data, &measurements](
+                const Error& error, Message&& message) {
+              TP_THROW_ASSERT_IF(error) << error.what();
+              TP_DCHECK_EQ(message.metadata, data.expectedMetadata);
+              if (data.payloadSize > 0) {
+                TP_DCHECK_EQ(message.payloads.size(), data.numPayloads);
+                for (size_t payloadIdx = 0; payloadIdx < data.numPayloads;
+                     payloadIdx++) {
+                  TP_DCHECK_EQ(
+                      message.payloads[payloadIdx].metadata,
+                      data.expectedPayloadMetadata[payloadIdx]);
+                  TP_DCHECK_EQ(
+                      message.payloads[payloadIdx].length, data.payloadSize);
+                  message.payloads[payloadIdx].data =
+                      data.temporaryPayload[payloadIdx].get();
+                }
+              } else {
+                TP_DCHECK_EQ(message.payloads.size(), 0);
+              }
+              if (data.tensorSize > 0) {
+                TP_DCHECK_EQ(message.tensors.size(), data.numTensors);
+                for (size_t tensorIdx = 0; tensorIdx < data.numTensors;
+                     tensorIdx++) {
+                  TP_DCHECK_EQ(
+                      message.tensors[tensorIdx].metadata,
+                      data.expectedTensorMetadata[tensorIdx]);
+                  TP_DCHECK_EQ(
+                      message.tensors[tensorIdx].buffer.length(),
+                      data.tensorSize);
+                  if (data.tensorType == TensorType::kCpu) {
+                    message.tensors[tensorIdx].buffer.unwrap<CpuBuffer>().ptr =
+                        data.temporaryCpuTensor[tensorIdx].get();
+                  } else {
+                    TP_THROW_ASSERT() << "Unknown tensor type";
                   }
-                } else {
-                  TP_DCHECK_EQ(message.payloads.size(), 0);
                 }
-                if (data.tensorSize > 0) {
-                  TP_DCHECK_EQ(message.tensors.size(), data.numTensors);
-                  for (size_t tensorIdx = 0; tensorIdx < data.numTensors;
-                       tensorIdx++) {
-                    TP_DCHECK_EQ(
-                        memcmp(
-                            message.tensors[tensorIdx]
-                                .buffer.unwrap<CpuBuffer>()
-                                .ptr,
-                            data.expectedTensor[tensorIdx].get(),
-                            message.tensors[tensorIdx]
-                                .buffer.unwrap<CpuBuffer>()
-                                .length),
-                        0);
-                  }
-                } else {
-                  TP_DCHECK_EQ(message.tensors.size(), 0);
-                }
-                if (--numRoundTrips > 0) {
-                  clientPingPongNonBlock(
-                      pipe, numRoundTrips, doneProm, data, measurements);
-                } else {
-                  printMeasurements(measurements, data.payloadSize);
-                  doneProm.set_value();
-                }
-              });
-        });
+              } else {
+                TP_DCHECK_EQ(message.tensors.size(), 0);
+              }
+              pipe->read(
+                  std::move(message),
+                  [pipe, &numRoundTrips, &doneProm, &data, &measurements](
+                      const Error& error, Message&& message) {
+                    measurements.markStop();
+                    TP_THROW_ASSERT_IF(error) << error.what();
+                    if (data.payloadSize > 0) {
+                      TP_DCHECK_EQ(message.payloads.size(), data.numPayloads);
+                      for (size_t payloadIdx = 0; payloadIdx < data.numPayloads;
+                           payloadIdx++) {
+                        TP_DCHECK_EQ(
+                            memcmp(
+                                message.payloads[payloadIdx].data,
+                                data.expectedPayload[payloadIdx].get(),
+                                message.payloads[payloadIdx].length),
+                            0);
+                      }
+                    } else {
+                      TP_DCHECK_EQ(message.payloads.size(), 0);
+                    }
+                    if (data.tensorSize > 0) {
+                      TP_DCHECK_EQ(message.tensors.size(), data.numTensors);
+                      for (size_t tensorIdx = 0; tensorIdx < data.numTensors;
+                           tensorIdx++) {
+                        if (data.tensorType == TensorType::kCpu) {
+                          TP_DCHECK_EQ(
+                              memcmp(
+                                  message.tensors[tensorIdx]
+                                      .buffer.unwrap<CpuBuffer>()
+                                      .ptr,
+                                  data.expectedCpuTensor[tensorIdx].get(),
+                                  message.tensors[tensorIdx]
+                                      .buffer.unwrap<CpuBuffer>()
+                                      .length),
+                              0);
+                        } else {
+                          TP_THROW_ASSERT() << "Unknown tensor type";
+                        }
+                      }
+                    } else {
+                      TP_DCHECK_EQ(message.tensors.size(), 0);
+                    }
+                    if (--numRoundTrips > 0) {
+                      clientPingPongNonBlock(
+                          pipe, numRoundTrips, doneProm, data, measurements);
+                    } else {
+                      printMeasurements(measurements, data.payloadSize);
+                      doneProm.set_value();
+                    }
+                  });
+            });
       });
 }
 
@@ -356,20 +384,23 @@ static void runClient(const Options& options) {
   data.numPayloads = options.numPayloads;
   data.payloadSize = options.payloadSize;
   for (size_t payloadIdx = 0; payloadIdx < options.numPayloads; payloadIdx++) {
-    data.expectedPayload.push_back(createData(options.payloadSize));
+    data.expectedPayload.push_back(createFullCpuData(options.payloadSize));
     data.expectedPayloadMetadata.push_back(
         std::string(options.metadataSize, 0x42));
-    data.temporaryPayload.push_back(
-        std::make_unique<uint8_t[]>(options.payloadSize));
+    data.temporaryPayload.push_back(createEmptyCpuData(options.payloadSize));
   }
   data.numTensors = options.numTensors;
   data.tensorSize = options.tensorSize;
+  data.tensorType = options.tensorType;
   for (size_t tensorIdx = 0; tensorIdx < options.numTensors; tensorIdx++) {
-    data.expectedTensor.push_back(createData(options.tensorSize));
     data.expectedTensorMetadata.push_back(
         std::string(options.metadataSize, 0x42));
-    data.temporaryTensor.push_back(
-        std::make_unique<uint8_t[]>(options.tensorSize));
+    if (data.tensorType == TensorType::kCpu) {
+      data.expectedCpuTensor.push_back(createFullCpuData(options.tensorSize));
+      data.temporaryCpuTensor.push_back(createEmptyCpuData(options.tensorSize));
+    } else {
+      TP_THROW_ASSERT() << "Unknown tensor type";
+    }
   }
   data.expectedMetadata = std::string(options.metadataSize, 0x42);
 
