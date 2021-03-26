@@ -15,7 +15,6 @@
 namespace tensorpipe {
 
 enum class DeviceType {
-  kNone,
   kCpu,
   kCuda,
 };

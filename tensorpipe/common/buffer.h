@@ -13,17 +13,10 @@
 #include <type_traits>
 #include <utility>
 
+#include <tensorpipe/common/cpu_buffer.h>
 #include <tensorpipe/common/device.h>
 
 namespace tensorpipe {
-
-struct NoneBuffer {
-  size_t length{0};
-
-  DeviceType deviceType() const {
-    return DeviceType::kNone;
-  }
-};
 
 class Buffer {
   class AbstractBufferWrapper {
@@ -74,7 +67,7 @@ class Buffer {
     new (&raw_) BufferWrapper<TBuffer>(std::move(b));
   }
 
-  Buffer() : Buffer(NoneBuffer{}) {}
+  Buffer() : Buffer(CpuBuffer{}) {}
 
   Buffer(const Buffer& other) {
     other.ptr()->copyConstructInto(&raw_);
