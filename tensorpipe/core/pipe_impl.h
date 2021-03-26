@@ -274,6 +274,8 @@ class PipeImpl final : public std::enable_shared_from_this<PipeImpl> {
   void sendTensorsOfMessage(WriteOpIter opIter);
   void writeDescriptorAndPayloadsOfMessage(WriteOpIter opIter);
   void onReadWhileServerWaitingForBrochure(const Packet& nopPacketIn);
+  uint64_t registerTransport();
+  std::vector<uint64_t>& registerChannel(const std::string& channelName);
   void onReadWhileClientWaitingForBrochureAnswer(const Packet& nopPacketIn);
   void onAcceptWhileServerWaitingForConnection(
       std::string receivedTransport,

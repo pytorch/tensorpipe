@@ -153,6 +153,84 @@ std::shared_ptr<NopHolder<Packet>> makeDescriptorForMessage(
   return nopHolderOut;
 }
 
+struct SelectedTransport {
+  std::string name;
+  std::string address;
+  std::string domainDescriptor;
+};
+
+SelectedTransport selectTransport(
+    const ContextImpl::TOrderedTransports& orderedTransports,
+    const std::unordered_map<std::string, TransportAdvertisement>&
+        nopTransportAdvertisement,
+    const std::map<std::string, std::string>& addresses) {
+  for (const auto& transportContextIter : orderedTransports) {
+    const std::string& transportName = std::get<0>(transportContextIter.second);
+    const transport::Context& transportContext =
+        *(std::get<1>(transportContextIter.second));
+
+    // This pipe's listener might not have an address for that transport.
+    const auto addressIter = addresses.find(transportName);
+    if (addressIter == addresses.cend()) {
+      continue;
+    }
+    const auto& address = addressIter->second;
+
+    const auto nopTransportAdvertisementIter =
+        nopTransportAdvertisement.find(transportName);
+    if (nopTransportAdvertisementIter == nopTransportAdvertisement.cend()) {
+      continue;
+    }
+    const TransportAdvertisement& nopCurrentTransportAdvertisement =
+        nopTransportAdvertisementIter->second;
+    const std::string& domainDescriptor =
+        nopCurrentTransportAdvertisement.domainDescriptor;
+    if (!transportContext.canCommunicateWithRemote(domainDescriptor)) {
+      continue;
+    }
+
+    return {transportName, address, transportContext.domainDescriptor()};
+  }
+
+  TP_THROW_ASSERT() << "Could not find a viable transport";
+  // Returning dummy value to silence compiler warning.
+  return {};
+}
+
+struct SelectedChannel {
+  std::string name;
+  std::string domainDescriptor;
+};
+
+std::vector<SelectedChannel> selectChannels(
+    const ContextImpl::TOrderedChannels& orderedChannels,
+    const std::unordered_map<std::string, ChannelAdvertisement>&
+        nopChannelAdvertisement) {
+  std::vector<SelectedChannel> result;
+  for (const auto& channelContextIter : orderedChannels) {
+    const std::string& channelName = std::get<0>(channelContextIter.second);
+    const channel::Context& channelContext =
+        *(std::get<1>(channelContextIter.second));
+
+    const auto nopChannelAdvertisementIter =
+        nopChannelAdvertisement.find(channelName);
+    if (nopChannelAdvertisementIter == nopChannelAdvertisement.cend()) {
+      continue;
+    }
+    const ChannelAdvertisement& nopCurrentChannelAdvertisement =
+        nopChannelAdvertisementIter->second;
+    const std::string& domainDescriptor =
+        nopCurrentChannelAdvertisement.domainDescriptor;
+    if (!channelContext.canCommunicateWithRemote(domainDescriptor)) {
+      continue;
+    }
+
+    result.push_back({channelName, channelContext.domainDescriptor()});
+  }
+
+  return result;
+}
+
 } // namespace
 
 //
@@ -830,119 +908,28 @@ void PipeImpl::onReadWhileServerWaitingForBrochure(const Packet& nopPacketIn) {
   Packet& nopPacketOut = nopHolderOut->getObject();
   nopPacketOut.Become(nopPacketOut.index_of<BrochureAnswer>());
   BrochureAnswer& nopBrochureAnswer = *nopPacketOut.get<BrochureAnswer>();
-  bool needToWaitForConnections = false;
 
-  bool foundATransport = false;
-  for (const auto& transportContextIter : context_->getOrderedTransports()) {
-    const std::string& transportName = std::get<0>(transportContextIter.second);
-    const transport::Context& transportContext =
-        *(std::get<1>(transportContextIter.second));
+  auto transport = selectTransport(
+      context_->getOrderedTransports(),
+      nopBrochure.transportAdvertisement,
+      listener_->addresses());
 
-    // This pipe's listener might not have an address for that transport.
-    const std::map<std::string, std::string>& addresses =
-        listener_->addresses();
-    const auto addressIter = addresses.find(transportName);
-    if (addressIter == addresses.cend()) {
-      continue;
-    }
-    const std::string& address = addressIter->second;
-
-    const auto nopTransportAdvertisementIter =
-        nopBrochure.transportAdvertisement.find(transportName);
-    if (nopTransportAdvertisementIter ==
-        nopBrochure.transportAdvertisement.cend()) {
-      continue;
-    }
-    const TransportAdvertisement& nopTransportAdvertisement =
-        nopTransportAdvertisementIter->second;
-    const std::string& domainDescriptor =
-        nopTransportAdvertisement.domainDescriptor;
-    if (!transportContext.canCommunicateWithRemote(domainDescriptor)) {
-      continue;
-    }
-
-    nopBrochureAnswer.transport = transportName;
-    nopBrochureAnswer.address = address;
-    nopBrochureAnswer.transportDomainDescriptor =
-        transportContext.domainDescriptor();
-
-    if (transportName != transport_) {
-      transport_ = transportName;
-      TP_DCHECK(!registrationId_.has_value());
-      TP_VLOG(3) << "Pipe " << id_
-                 << " is requesting connection (as replacement)";
-      uint64_t token = listener_->registerConnectionRequest(callbackWrapper_(
-          [](PipeImpl& impl,
-             std::string transport,
-             std::shared_ptr<transport::Connection> connection) {
-            TP_VLOG(3) << "Pipe " << impl.id_
-                       << " done requesting connection (as replacement)";
-            if (!impl.error_) {
-              impl.onAcceptWhileServerWaitingForConnection(
-                  std::move(transport), std::move(connection));
-            }
-          }));
-      registrationId_.emplace(token);
-      needToWaitForConnections = true;
-      nopBrochureAnswer.transportRegistrationId = token;
-    }
-
-    foundATransport = true;
-    break;
+  if (transport.name != transport_) {
+    transport_ = transport.name;
+    nopBrochureAnswer.transportRegistrationId = registerTransport();
   }
-  TP_THROW_ASSERT_IF(!foundATransport);
 
-  for (const auto& channelContextIter : context_->getOrderedChannels()) {
-    const std::string& channelName = std::get<0>(channelContextIter.second);
-    const channel::Context& channelContext =
-        *(std::get<1>(channelContextIter.second));
+  nopBrochureAnswer.transport = transport.name;
+  nopBrochureAnswer.address = transport.address;
+  nopBrochureAnswer.transportDomainDescriptor = transport.domainDescriptor;
 
-    const auto nopChannelAdvertisementIter =
-        nopBrochure.channelAdvertisement.find(channelName);
-    if (nopChannelAdvertisementIter ==
-        nopBrochure.channelAdvertisement.cend()) {
-      continue;
-    }
-    const ChannelAdvertisement& nopChannelAdvertisement =
-        nopChannelAdvertisementIter->second;
-    const std::string& domainDescriptor =
-        nopChannelAdvertisement.domainDescriptor;
-    if (!channelContext.canCommunicateWithRemote(domainDescriptor)) {
-      continue;
-    }
-
-    const size_t numConnectionsNeeded = channelContext.numConnectionsNeeded();
-    auto& channelRegistrationIds = channelRegistrationIds_[channelName];
-    channelRegistrationIds.resize(numConnectionsNeeded);
-    auto& channelReceivedConnections = channelReceivedConnections_[channelName];
-    channelReceivedConnections.resize(numConnectionsNeeded);
-    for (size_t connId = 0; connId < numConnectionsNeeded; ++connId) {
-      TP_VLOG(3) << "Pipe " << id_ << " is requesting connection " << connId
-                 << "/" << numConnectionsNeeded << " (for channel "
-                 << channelName << ")";
-      uint64_t token = listener_->registerConnectionRequest(callbackWrapper_(
-          [channelName, connId, numConnectionsNeeded](
-              PipeImpl& impl,
-              std::string transport,
-              std::shared_ptr<transport::Connection> connection) {
-            TP_VLOG(3) << "Pipe " << impl.id_ << " done requesting connection "
-                       << connId << "/" << numConnectionsNeeded
-                       << " (for channel " << channelName << ")";
-            if (!impl.error_) {
-              impl.onAcceptWhileServerWaitingForChannel(
-                  channelName,
-                  connId,
-                  std::move(transport),
-                  std::move(connection));
-            }
-          }));
-      channelRegistrationIds[connId] = token;
-      needToWaitForConnections = true;
-    }
+  const auto selectedChannels = selectChannels(
+      context_->getOrderedChannels(), nopBrochure.channelAdvertisement);
+  for (const auto& channel : selectedChannels) {
     ChannelSelection& nopChannelSelection =
-        nopBrochureAnswer.channelSelection[channelName];
-    nopChannelSelection.registrationIds = channelRegistrationIds;
-    nopChannelSelection.domainDescriptor = channelContext.domainDescriptor();
+        nopBrochureAnswer.channelSelection[channel.name];
+    nopChannelSelection.registrationIds = registerChannel(channel.name);
+    nopChannelSelection.domainDescriptor = channel.domainDescriptor;
   }
 
   TP_VLOG(3) << "Pipe " << id_ << " is writing nop object (brochure answer)";
@@ -952,13 +939,66 @@ void PipeImpl::onReadWhileServerWaitingForBrochure(const Packet& nopPacketIn) {
                    << " done writing nop object (brochure answer)";
       }));
 
-  if (!needToWaitForConnections) {
+  if (!pendingRegistrations()) {
     state_ = ESTABLISHED;
     startReadingUponEstablishingPipe();
     startWritingUponEstablishingPipe();
   } else {
     state_ = SERVER_WAITING_FOR_CONNECTIONS;
   }
+}
+
+uint64_t PipeImpl::registerTransport() {
+  TP_DCHECK(!registrationId_.has_value());
+  TP_VLOG(3) << "Pipe " << id_ << " is requesting connection (as replacement)";
+  uint64_t token = listener_->registerConnectionRequest(
+      callbackWrapper_([](PipeImpl& impl,
+                          std::string transport,
+                          std::shared_ptr<transport::Connection> connection) {
+        TP_VLOG(3) << "Pipe " << impl.id_
+                   << " done requesting connection (as replacement)";
+        if (!impl.error_) {
+          impl.onAcceptWhileServerWaitingForConnection(
+              std::move(transport), std::move(connection));
+        }
+      }));
+  registrationId_.emplace(token);
+
+  return token;
+}
+
+std::vector<uint64_t>& PipeImpl::registerChannel(
+    const std::string& channelName) {
+  const channel::Context& channelContext = *context_->getChannel(channelName);
+  const size_t numConnectionsNeeded = channelContext.numConnectionsNeeded();
+  auto& channelRegistrationIds = channelRegistrationIds_[channelName];
+  channelRegistrationIds.resize(numConnectionsNeeded);
+  auto& channelReceivedConnections = channelReceivedConnections_[channelName];
+  channelReceivedConnections.resize(numConnectionsNeeded);
+  for (size_t connId = 0; connId < numConnectionsNeeded; ++connId) {
+    TP_VLOG(3) << "Pipe " << id_ << " is requesting connection " << connId
+               << "/" << numConnectionsNeeded << " (for channel " << channelName
+               << ")";
+    uint64_t token = listener_->registerConnectionRequest(callbackWrapper_(
+        [channelName, connId, numConnectionsNeeded](
+            PipeImpl& impl,
+            std::string transport,
+            std::shared_ptr<transport::Connection> connection) {
+          TP_VLOG(3) << "Pipe " << impl.id_ << " done requesting connection "
+                     << connId << "/" << numConnectionsNeeded
+                     << " (for channel " << channelName << ")";
+          if (!impl.error_) {
+            impl.onAcceptWhileServerWaitingForChannel(
+                channelName,
+                connId,
+                std::move(transport),
+                std::move(connection));
+          }
+        }));
+    channelRegistrationIds[connId] = token;
+  }
+
+  return channelRegistrationIds;
 }
 
 void PipeImpl::onReadWhileClientWaitingForBrochureAnswer(
