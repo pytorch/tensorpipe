@@ -407,6 +407,8 @@ int main(int argc, char** argv) {
   std::cout << "payload_size = " << x.payloadSize << "\n";
   std::cout << "num_tensors = " << x.numTensors << "\n";
   std::cout << "tensor_size = " << x.tensorSize << "\n";
+  std::cout << "tensor_type = "
+            << (x.tensorType == TensorType::kCpu ? "cpu" : "cuda") << "\n";
   std::cout << "metadata_size = " << x.metadataSize << "\n";
 
   if (x.mode == "listen") {

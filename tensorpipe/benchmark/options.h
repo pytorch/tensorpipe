@@ -16,6 +16,11 @@
 namespace tensorpipe {
 namespace benchmark {
 
+enum class TensorType {
+  kCpu,
+  kCuda,
+};
+
 struct Options {
   std::string mode; // server or client
   std::string transport; // shm or uv
@@ -26,6 +31,7 @@ struct Options {
   size_t payloadSize{0};
   size_t numTensors{0};
   size_t tensorSize{0};
+  TensorType tensorType{TensorType::kCpu};
   size_t metadataSize{0};
 };
 
