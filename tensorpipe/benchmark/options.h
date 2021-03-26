@@ -33,6 +33,7 @@ struct Options {
   size_t tensorSize{0};
   TensorType tensorType{TensorType::kCpu};
   size_t metadataSize{0};
+  size_t cudaSyncPeriod{1};
 };
 
 struct Options parseOptions(int argc, char** argv);

@@ -54,17 +54,18 @@ static void usage(int status, const char* argv0) {
   fprintf(stderr, "Usage: %s [OPTIONS]\n", argv0);
 #define X(x) fputs(x "\n", stderr);
   X("");
-  X("--mode=MODE                     Running mode [listen|connect]");
-  X("--transport=TRANSPORT           Transport backend [shm|uv]");
-  X("--channel=CHANNEL               Channel backend [basic]");
-  X("--address=ADDRESS               Address to listen or connect to");
-  X("--num-round-trips=NUM           Number of write/read pairs to perform");
-  X("--num-payloads=NUM [optional]   Number of payloads of each write/read pair");
-  X("--payload-size=SIZE [optional]  Size of payload of each write/read pair");
-  X("--num-tensors=NUM [optional]    Number of tensors of each write/read pair");
-  X("--tensor-size=SIZE [optional]   Size of tensor of each write/read pair");
-  X("--tensor-type=TYPE [optional]   Type of tensor (cpu or cuda)");
-  X("--metadata-size=SIZE [optional] Size of metadata of each write/read pair");
+  X("--mode=MODE                      Running mode [listen|connect]");
+  X("--transport=TRANSPORT            Transport backend [shm|uv]");
+  X("--channel=CHANNEL                Channel backend [basic]");
+  X("--address=ADDRESS                Address to listen or connect to");
+  X("--num-round-trips=NUM            Number of write/read pairs to perform");
+  X("--num-payloads=NUM [optional]    Number of payloads of each write/read pair");
+  X("--payload-size=SIZE [optional]   Size of payload of each write/read pair");
+  X("--num-tensors=NUM [optional]     Number of tensors of each write/read pair");
+  X("--tensor-size=SIZE [optional]    Size of tensor of each write/read pair");
+  X("--tensor-type=TYPE [optional]    Type of tensor (cpu or cuda)");
+  X("--metadata-size=SIZE [optional]  Size of metadata of each write/read pair");
+  X("--cuda-sync-period=NUM [optiona] Number of round-trips between two stream syncs");
 
   exit(status);
 }
@@ -109,6 +110,7 @@ struct Options parseOptions(int argc, char** argv) {
     TENSOR_SIZE,
     TENSOR_TYPE,
     METADATA_SIZE,
+    CUDA_SYNC_PERIOD,
     HELP,
   };
 
@@ -124,6 +126,7 @@ struct Options parseOptions(int argc, char** argv) {
       {"tensor-size", required_argument, &flag, TENSOR_SIZE},
       {"tensor-type", required_argument, &flag, TENSOR_TYPE},
       {"metadata-size", required_argument, &flag, METADATA_SIZE},
+      {"cuda-sync-period", required_argument, &flag, CUDA_SYNC_PERIOD},
       {"help", no_argument, &flag, HELP},
       {nullptr, 0, nullptr, 0}};
 
@@ -182,6 +185,9 @@ struct Options parseOptions(int argc, char** argv) {
         break;
       case METADATA_SIZE:
         options.metadataSize = atoi(optarg);
+        break;
+      case CUDA_SYNC_PERIOD:
+        options.cudaSyncPeriod = atoi(optarg);
         break;
       case HELP:
         usage(EXIT_SUCCESS, argv[0]);
