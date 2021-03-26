@@ -25,6 +25,8 @@
 using namespace tensorpipe;
 using namespace tensorpipe::benchmark;
 
+static constexpr int kNumWarmUpRounds = 5;
+
 using Payload = std::unique_ptr<uint8_t[]>;
 using CpuTensor = std::unique_ptr<uint8_t[]>;
 
@@ -138,12 +140,17 @@ static CudaStream createCudaStream() {
 
 static void serverPongPingNonBlock(
     std::shared_ptr<Pipe> pipe,
+    int& numWarmUps,
     int& numRoundTrips,
     std::promise<void>& doneProm,
     Data& data,
     Measurements& measurements) {
-  pipe->readDescriptor([pipe, &numRoundTrips, &doneProm, &data, &measurements](
-                           const Error& error, Message&& message) {
+  pipe->readDescriptor([pipe,
+                        &numWarmUps,
+                        &numRoundTrips,
+                        &doneProm,
+                        &data,
+                        &measurements](const Error& error, Message&& message) {
     TP_THROW_ASSERT_IF(error) << error.what();
     TP_DCHECK_EQ(message.metadata, data.expectedMetadata);
     if (data.payloadSize > 0) {
@@ -184,7 +191,7 @@ static void serverPongPingNonBlock(
     }
     pipe->read(
         std::move(message),
-        [pipe, &numRoundTrips, &doneProm, &data, &measurements](
+        [pipe, &numWarmUps, &numRoundTrips, &doneProm, &data, &measurements](
             const Error& error, Message&& message) {
           TP_THROW_ASSERT_IF(error) << error.what();
           if (data.payloadSize > 0) {
@@ -231,12 +238,26 @@ static void serverPongPingNonBlock(
           }
           pipe->write(
               std::move(message),
-              [pipe, &numRoundTrips, &doneProm, &data, &measurements](
-                  const Error& error, Message&& message) {
+              [pipe,
+               &numWarmUps,
+               &numRoundTrips,
+               &doneProm,
+               &data,
+               &measurements](const Error& error, Message&& message) {
                 TP_THROW_ASSERT_IF(error) << error.what();
-                if (--numRoundTrips > 0) {
+                if (numWarmUps > 0) {
+                  numWarmUps -= 1;
+                } else {
+                  numRoundTrips -= 1;
+                }
+                if (numRoundTrips > 0) {
                   serverPongPingNonBlock(
-                      pipe, numRoundTrips, doneProm, data, measurements);
+                      pipe,
+                      numWarmUps,
+                      numRoundTrips,
+                      doneProm,
+                      data,
+                      measurements);
                 } else {
                   doneProm.set_value();
                 }
@@ -248,6 +269,7 @@ static void serverPongPingNonBlock(
 // Start with receiving ping
 static void runServer(const Options& options) {
   std::string addr = options.address;
+  int numWarmUps = kNumWarmUpRounds;
   int numRoundTrips = options.numRoundTrips;
 
   Data data;
@@ -303,7 +325,7 @@ static void runServer(const Options& options) {
 
   std::promise<void> doneProm;
   serverPongPingNonBlock(
-      std::move(pipe), numRoundTrips, doneProm, data, measurements);
+      std::move(pipe), numWarmUps, numRoundTrips, doneProm, data, measurements);
 
   doneProm.get_future().get();
   listener.reset();
@@ -312,13 +334,16 @@ static void runServer(const Options& options) {
 
 static void clientPingPongNonBlock(
     std::shared_ptr<Pipe> pipe,
+    int& numWarmUps,
     int& numRoundTrips,
     std::promise<void>& doneProm,
     Data& data,
     MultiDeviceMeasurements& measurements) {
-  measurements.cpu.markStart();
-  if (numRoundTrips % data.cudaSyncPeriod == 0) {
-    measurements.cuda.markStart();
+  if (numWarmUps == 0) {
+    measurements.cpu.markStart();
+    if (numRoundTrips % data.cudaSyncPeriod == 0) {
+      measurements.cuda.markStart();
+    }
   }
   Message message;
   message.metadata = data.expectedMetadata;
@@ -353,10 +378,11 @@ static void clientPingPongNonBlock(
   }
   pipe->write(
       std::move(message),
-      [pipe, &numRoundTrips, &doneProm, &data, &measurements](
+      [pipe, &numWarmUps, &numRoundTrips, &doneProm, &data, &measurements](
           const Error& error, Message&& message) {
         TP_THROW_ASSERT_IF(error) << error.what();
         pipe->readDescriptor([pipe,
+                              &numWarmUps,
                               &numRoundTrips,
                               &doneProm,
                               &data,
@@ -405,12 +431,18 @@ static void clientPingPongNonBlock(
           }
           pipe->read(
               std::move(message),
-              [pipe, &numRoundTrips, &doneProm, &data, &measurements](
-                  const Error& error, Message&& message) {
-                measurements.cpu.markStop();
-                if ((numRoundTrips - 1) % data.cudaSyncPeriod == 0) {
-                  TP_CUDA_CHECK(cudaStreamSynchronize(data.cudaStream.get()));
-                  measurements.cuda.markStop(data.cudaSyncPeriod);
+              [pipe,
+               &numWarmUps,
+               &numRoundTrips,
+               &doneProm,
+               &data,
+               &measurements](const Error& error, Message&& message) {
+                if (numWarmUps == 0) {
+                  measurements.cpu.markStop();
+                  if ((numRoundTrips - 1) % data.cudaSyncPeriod == 0) {
+                    TP_CUDA_CHECK(cudaStreamSynchronize(data.cudaStream.get()));
+                    measurements.cuda.markStop(data.cudaSyncPeriod);
+                  }
                 }
                 TP_THROW_ASSERT_IF(error) << error.what();
                 if (data.payloadSize > 0) {
@@ -452,9 +484,19 @@ static void clientPingPongNonBlock(
                 } else {
                   TP_DCHECK_EQ(message.tensors.size(), 0);
                 }
-                if (--numRoundTrips > 0) {
+                if (numWarmUps > 0) {
+                  numWarmUps -= 1;
+                } else {
+                  numRoundTrips -= 1;
+                }
+                if (numRoundTrips > 0) {
                   clientPingPongNonBlock(
-                      pipe, numRoundTrips, doneProm, data, measurements);
+                      pipe,
+                      numWarmUps,
+                      numRoundTrips,
+                      doneProm,
+                      data,
+                      measurements);
                 } else {
                   printMultiDeviceMeasurements(measurements, data.payloadSize);
                   doneProm.set_value();
@@ -467,6 +509,7 @@ static void clientPingPongNonBlock(
 // Start with sending ping
 static void runClient(const Options& options) {
   std::string addr = options.address;
+  int numWarmUps = kNumWarmUpRounds;
   int numRoundTrips = options.numRoundTrips;
 
   Data data;
@@ -517,7 +560,7 @@ static void runClient(const Options& options) {
 
   std::promise<void> doneProm;
   clientPingPongNonBlock(
-      std::move(pipe), numRoundTrips, doneProm, data, measurements);
+      std::move(pipe), numWarmUps, numRoundTrips, doneProm, data, measurements);
 
   doneProm.get_future().get();
   context->join();
