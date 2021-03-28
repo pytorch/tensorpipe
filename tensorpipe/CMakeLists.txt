@@ -7,7 +7,6 @@
 add_library(tensorpipe
   ${TP_STATIC_OR_SHARED}
   channel/error.cc
-  channel/helpers.cc
   common/address.cc
   common/error.cc
   common/fd.cc

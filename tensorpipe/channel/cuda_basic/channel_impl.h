@@ -31,7 +31,7 @@ struct ChunkSendOperation {
     ALLOCATING_CPU_BUFFER,
     COPYING_FROM_GPU_TO_CPU,
     INVOKED_CALLBACK,
-    SENDING_CPU_BUFFER_AND_COLLECTING_DESCRIPTOR,
+    SENDING_CPU_BUFFER,
     SENDING_CPU_BUFFER_AND_WRITING_READY_TO_SEND,
     FINISHED
   };
@@ -52,14 +52,12 @@ struct ChunkSendOperation {
 
   // Data collected during processing
   std::shared_ptr<uint8_t> tmpBuffer;
-  std::string descriptor;
 
   // Progress flags
+  bool doneWritingReadyToSend{false};
   bool doneAllocatingCpuStagingBuffer{false};
   bool doneCopyingFromGpuToCpu{false};
-  bool doneCollectingDescriptor{false};
   bool doneSendingCpuBuffer{false};
-  bool doneWritingDescriptor{false};
 };
 
 struct ChunkRecvOperation {
@@ -88,11 +86,10 @@ struct ChunkRecvOperation {
   std::function<void(const Error&)> callback;
 
   // Data collected during processing
-  std::string descriptor;
   std::shared_ptr<uint8_t> tmpBuffer;
 
   // Progress flags
-  bool doneReadingDescriptor{false};
+  bool doneReadingReadyToSend{false};
   bool doneAllocatingCpuStagingBuffer{false};
   bool doneReceivingCpuBuffer{false};
   bool doneCopyingFromCpuToGpu{false};
@@ -115,11 +112,9 @@ class ChannelImpl final
   void sendImplFromLoop(
       uint64_t sequenceNumber,
       Buffer buffer,
-      TDescriptorCallback descriptorCallback,
       TSendCallback callback) override;
   void recvImplFromLoop(
       uint64_t sequenceNumber,
-      TDescriptor descriptor,
       Buffer buffer,
       TRecvCallback callback) override;
   void handleErrorImpl() override;

@@ -45,8 +45,6 @@
 namespace tensorpipe {
 namespace channel {
 
-using TDescriptor = std::string;
-using TDescriptorCallback = std::function<void(const Error&, TDescriptor)>;
 using TSendCallback = std::function<void(const Error&)>;
 using TRecvCallback = std::function<void(const Error&)>;
 
@@ -54,16 +52,10 @@ using TRecvCallback = std::function<void(const Error&)>;
 class Channel {
  public:
   // Send memory region to peer.
-  virtual void send(
-      Buffer buffer,
-      TDescriptorCallback descriptorCallback,
-      TSendCallback callback) = 0;
+  virtual void send(Buffer buffer, TSendCallback callback) = 0;
 
   // Receive memory region from peer.
-  virtual void recv(
-      TDescriptor descriptor,
-      Buffer buffer,
-      TRecvCallback callback) = 0;
+  virtual void recv(Buffer buffer, TRecvCallback callback) = 0;
 
   // Tell the channel what its identifier is.
   //

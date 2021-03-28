@@ -45,10 +45,7 @@ class SendAcrossDevicesTest : public ClientServerChannelTestCase<CudaBuffer> {
     }
 
     // Perform send and wait for completion.
-    auto descriptorPromise = std::make_shared<
-        std::promise<std::tuple<tensorpipe::Error, std::string>>>();
     auto sendPromise = std::make_shared<std::promise<tensorpipe::Error>>();
-    auto descriptorFuture = descriptorPromise->get_future();
     auto sendFuture = sendPromise->get_future();
 
     channel->send(
@@ -57,21 +54,10 @@ class SendAcrossDevicesTest : public ClientServerChannelTestCase<CudaBuffer> {
             .length = kSize,
             .stream = sendStream,
         },
-        [descriptorPromise{std::move(descriptorPromise)}](
-            const tensorpipe::Error& error, std::string descriptor) {
-          descriptorPromise->set_value(
-              std::make_tuple(error, std::move(descriptor)));
-        },
         [sendPromise{std::move(sendPromise)}](const tensorpipe::Error& error) {
           sendPromise->set_value(error);
         });
 
-    Error descriptorError;
-    TDescriptor descriptor;
-    std::tie(descriptorError, descriptor) = descriptorFuture.get();
-
-    EXPECT_FALSE(descriptorError) << descriptorError.what();
-    this->peers_->send(PeerGroup::kClient, descriptor);
     Error sendError = sendFuture.get();
     EXPECT_FALSE(sendError) << sendError.what();
 
@@ -104,14 +90,11 @@ class SendAcrossDevicesTest : public ClientServerChannelTestCase<CudaBuffer> {
       TP_CUDA_CHECK(cudaMalloc(&ptr, kSize));
     }
 
-    auto descriptor = this->peers_->recv(PeerGroup::kClient);
-
     // Perform recv and wait for completion.
     auto recvPromise = std::make_shared<std::promise<tensorpipe::Error>>();
     auto recvFuture = recvPromise->get_future();
 
     channel->recv(
-        std::move(descriptor),
         CudaBuffer{
             .ptr = ptr,
             .length = kSize,
@@ -178,10 +161,7 @@ class SendReverseAcrossDevicesTest
     }
 
     // Perform send and wait for completion.
-    auto descriptorPromise = std::make_shared<
-        std::promise<std::tuple<tensorpipe::Error, std::string>>>();
     auto sendPromise = std::make_shared<std::promise<tensorpipe::Error>>();
-    auto descriptorFuture = descriptorPromise->get_future();
     auto sendFuture = sendPromise->get_future();
 
     channel->send(
@@ -190,21 +170,10 @@ class SendReverseAcrossDevicesTest
             .length = kSize,
             .stream = sendStream,
         },
-        [descriptorPromise{std::move(descriptorPromise)}](
-            const tensorpipe::Error& error, std::string descriptor) {
-          descriptorPromise->set_value(
-              std::make_tuple(error, std::move(descriptor)));
-        },
         [sendPromise{std::move(sendPromise)}](const tensorpipe::Error& error) {
           sendPromise->set_value(error);
         });
 
-    Error descriptorError;
-    TDescriptor descriptor;
-    std::tie(descriptorError, descriptor) = descriptorFuture.get();
-
-    EXPECT_FALSE(descriptorError) << descriptorError.what();
-    this->peers_->send(PeerGroup::kClient, descriptor);
     Error sendError = sendFuture.get();
     EXPECT_FALSE(sendError) << sendError.what();
 
@@ -237,14 +206,11 @@ class SendReverseAcrossDevicesTest
       TP_CUDA_CHECK(cudaMalloc(&ptr, kSize));
     }
 
-    auto descriptor = this->peers_->recv(PeerGroup::kClient);
-
     // Perform recv and wait for completion.
     auto recvPromise = std::make_shared<std::promise<tensorpipe::Error>>();
     auto recvFuture = recvPromise->get_future();
 
     channel->recv(
-        std::move(descriptor),
         CudaBuffer{
             .ptr = ptr,
             .length = kSize,
@@ -311,10 +277,7 @@ class SendAcrossNonDefaultDevicesTest
     }
 
     // Perform send and wait for completion.
-    auto descriptorPromise = std::make_shared<
-        std::promise<std::tuple<tensorpipe::Error, std::string>>>();
     auto sendPromise = std::make_shared<std::promise<tensorpipe::Error>>();
-    auto descriptorFuture = descriptorPromise->get_future();
     auto sendFuture = sendPromise->get_future();
 
     channel->send(
@@ -323,21 +286,10 @@ class SendAcrossNonDefaultDevicesTest
             .length = kSize,
             .stream = sendStream,
         },
-        [descriptorPromise{std::move(descriptorPromise)}](
-            const tensorpipe::Error& error, std::string descriptor) {
-          descriptorPromise->set_value(
-              std::make_tuple(error, std::move(descriptor)));
-        },
         [sendPromise{std::move(sendPromise)}](const tensorpipe::Error& error) {
           sendPromise->set_value(error);
         });
 
-    Error descriptorError;
-    TDescriptor descriptor;
-    std::tie(descriptorError, descriptor) = descriptorFuture.get();
-
-    EXPECT_FALSE(descriptorError) << descriptorError.what();
-    this->peers_->send(PeerGroup::kClient, descriptor);
     Error sendError = sendFuture.get();
     EXPECT_FALSE(sendError) << sendError.what();
 
@@ -366,14 +318,11 @@ class SendAcrossNonDefaultDevicesTest
       TP_CUDA_CHECK(cudaMalloc(&ptr, kSize));
     }
 
-    auto descriptor = this->peers_->recv(PeerGroup::kClient);
-
     // Perform recv and wait for completion.
     auto recvPromise = std::make_shared<std::promise<tensorpipe::Error>>();
     auto recvFuture = recvPromise->get_future();
 
     channel->recv(
-        std::move(descriptor),
         CudaBuffer{
             .ptr = ptr,
             .length = kSize,

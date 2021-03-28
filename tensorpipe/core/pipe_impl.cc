@@ -59,8 +59,6 @@ void parseDescriptorOfMessage(ReadOperation& op, const Packet& nopPacketIn) {
     ReadOperation::Tensor tensorBeingAllocated;
     tensorBeingAllocated.length = nopTensorDescriptor.sizeInBytes;
     tensorBeingAllocated.channelName = nopTensorDescriptor.channelName;
-    // FIXME If the nop object wasn't const we could move the string out...
-    tensorBeingAllocated.descriptor = nopTensorDescriptor.channelDescriptor;
 
     message.tensors.emplace_back();
     Message::Tensor& tensor = message.tensors.back();
@@ -143,9 +141,6 @@ std::shared_ptr<NopHolder<Packet>> makeDescriptorForMessage(
         nopMessageDescriptor.tensorDescriptors.back();
     nopTensorDescriptor.metadata = tensor.metadata;
     nopTensorDescriptor.channelName = otherTensor.channelName;
-    // FIXME In principle we could move here.
-    nopTensorDescriptor.channelDescriptor = otherTensor.descriptor;
-
     nopTensorDescriptor.deviceType = tensor.buffer.deviceType();
     nopTensorDescriptor.sizeInBytes = tensor.buffer.length();
   }
@@ -516,9 +511,7 @@ void PipeImpl::readPayloadsAndReceiveTensorsOfMessage(ReadOpIter opIter) {
                << op.sequenceNumber << "." << tensorIdx;
 
     channel->recv(
-        std::move(tensorBeingAllocated.descriptor),
-        tensor.buffer,
-        callbackWrapper_([opIter, tensorIdx](PipeImpl& impl) {
+        tensor.buffer, callbackWrapper_([opIter, tensorIdx](PipeImpl& impl) {
           TP_VLOG(3) << "Pipe " << impl.id_ << " done receiving tensor #"
                      << opIter->sequenceNumber << "." << tensorIdx;
           impl.onRecvOfTensor(opIter);
@@ -749,19 +742,17 @@ void PipeImpl::advanceWriteOperation(
   writeOps_.attemptTransition(
       opIter,
       /*from=*/WriteOperation::UNINITIALIZED,
-      /*to=*/WriteOperation::SENDING_TENSORS_AND_COLLECTING_DESCRIPTORS,
+      /*to=*/WriteOperation::SENDING_TENSORS,
       /*cond=*/!error_ && state_ == ESTABLISHED &&
-          prevOpState >=
-              WriteOperation::SENDING_TENSORS_AND_COLLECTING_DESCRIPTORS,
+          prevOpState >= WriteOperation::SENDING_TENSORS,
       /*actions=*/{&PipeImpl::sendTensorsOfMessage});
 
   // Needs to go after previous op to ensure ordering of callback invocations.
   writeOps_.attemptTransition(
       opIter,
-      /*from=*/WriteOperation::SENDING_TENSORS_AND_COLLECTING_DESCRIPTORS,
+      /*from=*/WriteOperation::SENDING_TENSORS,
       /*to=*/WriteOperation::FINISHED,
-      /*cond=*/error_ && opIter->numTensorDescriptorsBeingCollected == 0 &&
-          opIter->numTensorsBeingSent == 0 &&
+      /*cond=*/error_ && opIter->numTensorsBeingSent == 0 &&
           prevOpState >= WriteOperation::FINISHED,
       /*actions=*/{&PipeImpl::callWriteCallback});
 
@@ -769,9 +760,9 @@ void PipeImpl::advanceWriteOperation(
   // of write calls on the connection.
   writeOps_.attemptTransition(
       opIter,
-      /*from=*/WriteOperation::SENDING_TENSORS_AND_COLLECTING_DESCRIPTORS,
+      /*from=*/WriteOperation::SENDING_TENSORS,
       /*to=*/WriteOperation::WRITING_PAYLOADS_AND_SENDING_TENSORS,
-      /*cond=*/!error_ && opIter->numTensorDescriptorsBeingCollected == 0 &&
+      /*cond=*/!error_ &&
           prevOpState >= WriteOperation::WRITING_PAYLOADS_AND_SENDING_TENSORS,
       /*actions=*/{&PipeImpl::writeDescriptorAndPayloadsOfMessage});
 
@@ -851,15 +842,7 @@ void PipeImpl::sendTensorsOfMessage(WriteOpIter opIter) {
                  << op.sequenceNumber << "." << tensorIdx;
 
       channel.send(
-          tensor.buffer,
-          callbackWrapper_([opIter, tensorIdx](
-                               PipeImpl& impl,
-                               channel::TDescriptor descriptor) {
-            TP_VLOG(3) << "Pipe " << impl.id_ << " got tensor descriptor #"
-                       << opIter->sequenceNumber << "." << tensorIdx;
-            impl.onDescriptorOfTensor(opIter, tensorIdx, std::move(descriptor));
-          }),
-          callbackWrapper_([opIter, tensorIdx](PipeImpl& impl) {
+          tensor.buffer, callbackWrapper_([opIter, tensorIdx](PipeImpl& impl) {
             TP_VLOG(3) << "Pipe " << impl.id_ << " done sending tensor #"
                        << opIter->sequenceNumber << "." << tensorIdx;
             impl.onSendOfTensor(opIter);
@@ -873,7 +856,6 @@ void PipeImpl::sendTensorsOfMessage(WriteOpIter opIter) {
     }
     TP_THROW_ASSERT_IF(!foundAChannel);
 
-    ++op.numTensorDescriptorsBeingCollected;
     ++op.numTensorsBeingSent;
   }
 }
@@ -1202,21 +1184,6 @@ void PipeImpl::onReadOfMessageDescriptor(
   }
 
   readOps_.advanceOperation(opIter);
-}
-
-void PipeImpl::onDescriptorOfTensor(
-    WriteOpIter opIter,
-    int64_t tensorIdx,
-    channel::TDescriptor descriptor) {
-  TP_DCHECK(context_->inLoop());
-
-  WriteOperation& op = *opIter;
-
-  TP_DCHECK_LT(tensorIdx, op.tensors.size());
-  op.tensors[tensorIdx].descriptor = std::move(descriptor);
-  --op.numTensorDescriptorsBeingCollected;
-
-  writeOps_.advanceOperation(opIter);
 }
 
 void PipeImpl::onReadOfPayload(ReadOpIter opIter) {

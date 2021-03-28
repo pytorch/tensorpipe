@@ -38,14 +38,10 @@ class ChannelBoilerplate : public Channel {
   ChannelBoilerplate& operator=(ChannelBoilerplate&&) = delete;
 
   // Perform a send operation.
-  void send(
-      Buffer buffer,
-      TDescriptorCallback descriptorCallback,
-      TSendCallback callback) override;
+  void send(Buffer buffer, TSendCallback callback) override;
 
   // Queue a recv operation.
-  void recv(TDescriptor descriptor, Buffer buffer, TRecvCallback callback)
-      override;
+  void recv(Buffer buffer, TRecvCallback callback) override;
 
   // Tell the connection what its identifier is.
   void setId(std::string id) override;
@@ -89,21 +85,18 @@ ChannelBoilerplate<TCtx, TChan>::ChannelBoilerplate(
 template <typename TCtx, typename TChan>
 void ChannelBoilerplate<TCtx, TChan>::send(
     Buffer buffer,
-    TDescriptorCallback descriptorCallback,
     TSendCallback callback) {
   if (unlikely(!impl_)) {
     // FIXME In C++-17 perhaps a global static inline variable would be better?
     static Error error = TP_CREATE_ERROR(ContextNotViableError);
-    descriptorCallback(error, "");
     callback(error);
     return;
   }
-  impl_->send(buffer, std::move(descriptorCallback), std::move(callback));
+  impl_->send(buffer, std::move(callback));
 }
 
 template <typename TCtx, typename TChan>
 void ChannelBoilerplate<TCtx, TChan>::recv(
-    TDescriptor descriptor,
     Buffer buffer,
     TRecvCallback callback) {
   if (unlikely(!impl_)) {
@@ -112,7 +105,7 @@ void ChannelBoilerplate<TCtx, TChan>::recv(
     callback(error);
     return;
   }
-  impl_->recv(std::move(descriptor), buffer, std::move(callback));
+  impl_->recv(buffer, std::move(callback));
 }
 
 template <typename TCtx, typename TChan>

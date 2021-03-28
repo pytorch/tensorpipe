@@ -16,7 +16,6 @@
 #include <nop/structure.h>
 
 #include <tensorpipe/channel/cma/context_impl.h>
-#include <tensorpipe/channel/helpers.h>
 #include <tensorpipe/common/cpu_buffer.h>
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/error.h>
@@ -56,7 +55,6 @@ void ChannelImpl::initImplFromLoop() {
 void ChannelImpl::sendImplFromLoop(
     uint64_t sequenceNumber,
     Buffer buffer,
-    TDescriptorCallback descriptorCallback,
     TSendCallback callback) {
   SendOpIter opIter = sendOps_.emplaceBack(sequenceNumber);
   SendOperation& op = *opIter;
@@ -64,7 +62,6 @@ void ChannelImpl::sendImplFromLoop(
   op.ptr = buffer.unwrap<CpuBuffer>().ptr;
 
   sendOps_.advanceOperation(opIter);
-  descriptorCallback(Error::kSuccess, "");
 }
 
 void ChannelImpl::advanceSendOperation(
@@ -164,10 +161,8 @@ void ChannelImpl::callSendCallback(SendOpIter opIter) {
 
 void ChannelImpl::recvImplFromLoop(
     uint64_t sequenceNumber,
-    TDescriptor descriptor,
     Buffer buffer,
     TRecvCallback callback) {
-  TP_DCHECK_EQ(descriptor, "");
   RecvOpIter opIter = recvOps_.emplaceBack(sequenceNumber);
   RecvOperation& op = *opIter;
   op.ptr = buffer.unwrap<CpuBuffer>().ptr;

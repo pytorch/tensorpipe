@@ -40,7 +40,6 @@ void ChannelImpl::initImplFromLoop() {
 void ChannelImpl::sendImplFromLoop(
     uint64_t sequenceNumber,
     Buffer buffer,
-    TDescriptorCallback descriptorCallback,
     TSendCallback callback) {
   SendOpIter opIter = sendOps_.emplaceBack(sequenceNumber);
   SendOperation& op = *opIter;
@@ -49,8 +48,6 @@ void ChannelImpl::sendImplFromLoop(
   op.callback = std::move(callback);
 
   sendOps_.advanceOperation(opIter);
-
-  descriptorCallback(Error::kSuccess, std::string());
 }
 
 void ChannelImpl::advanceSendOperation(
@@ -108,11 +105,8 @@ void ChannelImpl::callSendCallback(SendOpIter opIter) {
 
 void ChannelImpl::recvImplFromLoop(
     uint64_t sequenceNumber,
-    TDescriptor descriptor,
     Buffer buffer,
     TRecvCallback callback) {
-  TP_DCHECK_EQ(descriptor, std::string());
-
   RecvOpIter opIter = recvOps_.emplaceBack(sequenceNumber);
   RecvOperation& op = *opIter;
   op.ptr = buffer.unwrap<CpuBuffer>().ptr;

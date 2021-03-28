@@ -16,7 +16,6 @@
 #include <vector>
 
 #include <tensorpipe/channel/cuda_gdr/context_impl.h>
-#include <tensorpipe/channel/helpers.h>
 #include <tensorpipe/common/cuda_buffer.h>
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/error.h>
@@ -178,7 +177,6 @@ void ChannelImpl::onReadHandshakeSetupInfo(
 void ChannelImpl::sendImplFromLoop(
     uint64_t sequenceNumber,
     Buffer buffer,
-    TDescriptorCallback descriptorCallback,
     TSendCallback callback) {
   size_t localGpuIdx = cudaDeviceForPointer(
       context_->getCudaLib(), buffer.unwrap<CudaBuffer>().ptr);
@@ -193,7 +191,6 @@ void ChannelImpl::sendImplFromLoop(
   opIter->event.record(buffer.unwrap<CudaBuffer>().stream);
 
   sendOps_.advanceOperation(opIter);
-  descriptorCallback(Error::kSuccess, "");
 }
 
 void ChannelImpl::advanceSendOperation(
@@ -413,7 +410,6 @@ void ChannelImpl::callSendCallback(SendOpIter opIter) {
 
 void ChannelImpl::recvImplFromLoop(
     uint64_t sequenceNumber,
-    TDescriptor descriptor,
     Buffer buffer,
     TRecvCallback callback) {
   size_t localGpuIdx = cudaDeviceForPointer(

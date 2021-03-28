@@ -151,43 +151,27 @@ class ChannelTestHelper {
       std::string id) = 0;
 };
 
-[[nodiscard]] inline std::pair<
-    std::future<
-        std::tuple<tensorpipe::Error, tensorpipe::channel::TDescriptor>>,
-    std::future<tensorpipe::Error>>
-sendWithFuture(
+[[nodiscard]] inline std::future<tensorpipe::Error> sendWithFuture(
     std::shared_ptr<tensorpipe::channel::Channel> channel,
     tensorpipe::Buffer buffer) {
-  auto descriptorPromise = std::make_shared<
-      std::promise<std::tuple<tensorpipe::Error, std::string>>>();
   auto promise = std::make_shared<std::promise<tensorpipe::Error>>();
-  auto descriptorFuture = descriptorPromise->get_future();
   auto future = promise->get_future();
 
   channel->send(
-      buffer,
-      [descriptorPromise{std::move(descriptorPromise)}](
-          const tensorpipe::Error& error, std::string descriptor) {
-        descriptorPromise->set_value(
-            std::make_tuple(error, std::move(descriptor)));
-      },
-      [promise{std::move(promise)}](const tensorpipe::Error& error) {
+      buffer, [promise{std::move(promise)}](const tensorpipe::Error& error) {
         promise->set_value(error);
       });
-  return {std::move(descriptorFuture), std::move(future)};
+  return std::move(future);
 }
 
 [[nodiscard]] inline std::future<tensorpipe::Error> recvWithFuture(
     std::shared_ptr<tensorpipe::channel::Channel> channel,
-    tensorpipe::channel::TDescriptor descriptor,
     tensorpipe::Buffer buffer) {
   auto promise = std::make_shared<std::promise<tensorpipe::Error>>();
   auto future = promise->get_future();
 
   channel->recv(
-      std::move(descriptor),
-      buffer,
-      [promise{std::move(promise)}](const tensorpipe::Error& error) {
+      buffer, [promise{std::move(promise)}](const tensorpipe::Error& error) {
         promise->set_value(error);
       });
   return future;

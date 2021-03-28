@@ -55,15 +55,8 @@ class ClientToServerTest : public ClientServerChannelTestCase<TBuffer> {
     DataWrapper<TBuffer> wrappedData(data);
 
     // Perform send and wait for completion.
-    std::future<std::tuple<Error, TDescriptor>> descriptorFuture;
-    std::future<Error> sendFuture;
-    std::tie(descriptorFuture, sendFuture) =
+    std::future<Error> sendFuture =
         sendWithFuture(channel, wrappedData.buffer());
-    Error descriptorError;
-    TDescriptor descriptor;
-    std::tie(descriptorError, descriptor) = descriptorFuture.get();
-    EXPECT_FALSE(descriptorError) << descriptorError.what();
-    this->peers_->send(PeerGroup::kClient, descriptor);
     Error sendError = sendFuture.get();
     EXPECT_FALSE(sendError) << sendError.what();
 
@@ -75,9 +68,8 @@ class ClientToServerTest : public ClientServerChannelTestCase<TBuffer> {
     DataWrapper<TBuffer> wrappedData(kDataSize);
 
     // Perform recv and wait for completion.
-    auto descriptor = this->peers_->recv(PeerGroup::kClient);
     std::future<Error> recvFuture =
-        recvWithFuture(channel, descriptor, wrappedData.buffer());
+        recvWithFuture(channel, wrappedData.buffer());
     Error recvError = recvFuture.get();
     EXPECT_FALSE(recvError) << recvError.what();
 
@@ -103,9 +95,8 @@ class ServerToClientTest : public ClientServerChannelTestCase<TBuffer> {
     DataWrapper<TBuffer> wrappedData(kDataSize);
 
     // Perform recv and wait for completion.
-    auto descriptor = this->peers_->recv(PeerGroup::kServer);
     std::future<Error> recvFuture =
-        recvWithFuture(channel, descriptor, wrappedData.buffer());
+        recvWithFuture(channel, wrappedData.buffer());
     Error recvError = recvFuture.get();
     EXPECT_FALSE(recvError) << recvError.what();
 
@@ -126,15 +117,8 @@ class ServerToClientTest : public ClientServerChannelTestCase<TBuffer> {
     DataWrapper<TBuffer> wrappedData(data);
 
     // Perform send and wait for completion.
-    std::future<std::tuple<Error, TDescriptor>> descriptorFuture;
-    std::future<Error> sendFuture;
-    std::tie(descriptorFuture, sendFuture) =
+    std::future<Error> sendFuture =
         sendWithFuture(channel, wrappedData.buffer());
-    Error descriptorError;
-    TDescriptor descriptor;
-    std::tie(descriptorError, descriptor) = descriptorFuture.get();
-    EXPECT_FALSE(descriptorError) << descriptorError.what();
-    this->peers_->send(PeerGroup::kServer, descriptor);
     Error sendError = sendFuture.get();
     EXPECT_FALSE(sendError) << sendError.what();
 
@@ -164,15 +148,8 @@ class SendMultipleTensorsTest : public ClientServerChannelTestCase<TBuffer> {
 
     // Perform send and wait for completion.
     for (int i = 0; i < kNumTensors; i++) {
-      std::future<std::tuple<Error, TDescriptor>> descriptorFuture;
-      std::future<Error> sendFuture;
-      std::tie(descriptorFuture, sendFuture) =
+      std::future<Error> sendFuture =
           sendWithFuture(channel, wrappedData.buffer());
-      Error descriptorError;
-      TDescriptor descriptor;
-      std::tie(descriptorError, descriptor) = descriptorFuture.get();
-      EXPECT_FALSE(descriptorError) << descriptorError.what();
-      this->peers_->send(PeerGroup::kClient, descriptor);
       sendFutures.push_back(std::move(sendFuture));
     }
     for (auto& sendFuture : sendFutures) {
@@ -195,9 +172,8 @@ class SendMultipleTensorsTest : public ClientServerChannelTestCase<TBuffer> {
 
     // Perform recv and wait for completion.
     for (auto& wrappedData : wrappedDataVec) {
-      auto descriptor = this->peers_->recv(PeerGroup::kClient);
       std::future<Error> recvFuture =
-          recvWithFuture(channel, descriptor, wrappedData.buffer());
+          recvWithFuture(channel, wrappedData.buffer());
       recvFutures.push_back(std::move(recvFuture));
     }
     for (auto& recvFuture : recvFutures) {
@@ -233,27 +209,13 @@ class SendTensorsBothWaysTest : public ClientServerChannelTestCase<TBuffer> {
     // Recv buffer.
     DataWrapper<TBuffer> wrappedRecvData(kDataSize);
 
-    std::future<Error> sendFuture;
-    std::future<Error> recvFuture;
-
     // Perform send.
-    {
-      std::future<std::tuple<Error, TDescriptor>> descriptorFuture;
-      std::tie(descriptorFuture, sendFuture) =
-          sendWithFuture(channel, wrappedSendData.buffer());
-      Error descriptorError;
-      TDescriptor descriptor;
-      std::tie(descriptorError, descriptor) = descriptorFuture.get();
-      EXPECT_FALSE(descriptorError) << descriptorError.what();
-      this->peers_->send(PeerGroup::kClient, descriptor);
-    }
+    std::future<Error> sendFuture =
+        sendWithFuture(channel, wrappedSendData.buffer());
 
     // Perform recv.
-    {
-      auto descriptor = this->peers_->recv(PeerGroup::kServer);
-      recvFuture =
-          recvWithFuture(channel, descriptor, wrappedRecvData.buffer());
-    }
+    std::future<Error> recvFuture =
+        recvWithFuture(channel, wrappedRecvData.buffer());
 
     // Wait for completion of both.
     Error sendError = sendFuture.get();
@@ -280,27 +242,13 @@ class SendTensorsBothWaysTest : public ClientServerChannelTestCase<TBuffer> {
     // Recv buffer.
     DataWrapper<TBuffer> wrappedRecvData(kDataSize);
 
-    std::future<Error> sendFuture;
-    std::future<Error> recvFuture;
-
     // Perform send.
-    {
-      std::future<std::tuple<Error, TDescriptor>> descriptorFuture;
-      std::tie(descriptorFuture, sendFuture) =
-          sendWithFuture(channel, wrappedSendData.buffer());
-      Error descriptorError;
-      TDescriptor descriptor;
-      std::tie(descriptorError, descriptor) = descriptorFuture.get();
-      EXPECT_FALSE(descriptorError) << descriptorError.what();
-      this->peers_->send(PeerGroup::kServer, descriptor);
-    }
+    std::future<Error> sendFuture =
+        sendWithFuture(channel, wrappedSendData.buffer());
 
     // Perform recv.
-    {
-      auto descriptor = this->peers_->recv(PeerGroup::kClient);
-      recvFuture =
-          recvWithFuture(channel, descriptor, wrappedRecvData.buffer());
-    }
+    std::future<Error> recvFuture =
+        recvWithFuture(channel, wrappedRecvData.buffer());
 
     // Wait for completion of both.
     Error sendError = sendFuture.get();

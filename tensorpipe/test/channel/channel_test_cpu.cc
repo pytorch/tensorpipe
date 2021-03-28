@@ -17,15 +17,8 @@ using namespace tensorpipe::channel;
 class NullPointerTest : public ClientServerChannelTestCase<CpuBuffer> {
   void server(std::shared_ptr<Channel> channel) override {
     // Perform send and wait for completion.
-    std::future<std::tuple<Error, TDescriptor>> descriptorFuture;
-    std::future<Error> sendFuture;
-    std::tie(descriptorFuture, sendFuture) =
+    std::future<Error> sendFuture =
         sendWithFuture(channel, CpuBuffer{nullptr, 0});
-    Error descriptorError;
-    TDescriptor descriptor;
-    std::tie(descriptorError, descriptor) = descriptorFuture.get();
-    EXPECT_FALSE(descriptorError) << descriptorError.what();
-    this->peers_->send(PeerGroup::kClient, descriptor);
     Error sendError = sendFuture.get();
     EXPECT_FALSE(sendError) << sendError.what();
 
@@ -35,9 +28,8 @@ class NullPointerTest : public ClientServerChannelTestCase<CpuBuffer> {
 
   void client(std::shared_ptr<Channel> channel) override {
     // Perform recv and wait for completion.
-    auto descriptor = this->peers_->recv(PeerGroup::kClient);
     std::future<Error> recvFuture =
-        recvWithFuture(channel, descriptor, CpuBuffer{nullptr, 0});
+        recvWithFuture(channel, CpuBuffer{nullptr, 0});
     Error recvError = recvFuture.get();
     EXPECT_FALSE(recvError) << recvError.what();
 
@@ -58,14 +50,7 @@ class EmptyTensorTest : public ClientServerChannelTestCase<CpuBuffer> {
     buffer.unwrap<CpuBuffer>().length = 0;
 
     // Perform send and wait for completion.
-    std::future<std::tuple<Error, TDescriptor>> descriptorFuture;
-    std::future<Error> sendFuture;
-    std::tie(descriptorFuture, sendFuture) = sendWithFuture(channel, buffer);
-    Error descriptorError;
-    TDescriptor descriptor;
-    std::tie(descriptorError, descriptor) = descriptorFuture.get();
-    EXPECT_FALSE(descriptorError) << descriptorError.what();
-    this->peers_->send(PeerGroup::kClient, descriptor);
+    std::future<Error> sendFuture = sendWithFuture(channel, buffer);
     Error sendError = sendFuture.get();
     EXPECT_FALSE(sendError) << sendError.what();
 
@@ -80,8 +65,7 @@ class EmptyTensorTest : public ClientServerChannelTestCase<CpuBuffer> {
     buffer.unwrap<CpuBuffer>().length = 0;
 
     // Perform recv and wait for completion.
-    auto descriptor = this->peers_->recv(PeerGroup::kClient);
-    std::future<Error> recvFuture = recvWithFuture(channel, descriptor, buffer);
+    std::future<Error> recvFuture = recvWithFuture(channel, buffer);
     Error recvError = recvFuture.get();
     EXPECT_FALSE(recvError) << recvError.what();
 
@@ -108,27 +92,16 @@ class CallbacksAreDeferredTest : public ClientServerChannelTestCase<CpuBuffer> {
     std::iota(data.begin(), data.end(), 0);
 
     // Perform send and wait for completion.
-    std::promise<std::tuple<Error, TDescriptor>> descriptorPromise;
     std::promise<Error> sendPromise;
     auto mutex = std::make_shared<std::mutex>();
     std::unique_lock<std::mutex> callerLock(*mutex);
     channel->send(
         CpuBuffer{data.data(), kDataSize},
-        [&descriptorPromise](const Error& error, TDescriptor descriptor) {
-          descriptorPromise.set_value(
-              std::make_tuple(error, std::move(descriptor)));
-        },
         [&sendPromise, mutex](const Error& error) {
           std::unique_lock<std::mutex> calleeLock(*mutex);
           sendPromise.set_value(error);
         });
     callerLock.unlock();
-    Error descriptorError;
-    TDescriptor descriptor;
-    std::tie(descriptorError, descriptor) =
-        descriptorPromise.get_future().get();
-    EXPECT_FALSE(descriptorError) << descriptorError.what();
-    this->peers_->send(PeerGroup::kClient, descriptor);
     Error sendError = sendPromise.get_future().get();
     EXPECT_FALSE(sendError) << sendError.what();
 
@@ -145,9 +118,7 @@ class CallbacksAreDeferredTest : public ClientServerChannelTestCase<CpuBuffer> {
     std::promise<Error> recvPromise;
     std::mutex mutex;
     std::unique_lock<std::mutex> callerLock(mutex);
-    auto descriptor = this->peers_->recv(PeerGroup::kClient);
     channel->recv(
-        descriptor,
         CpuBuffer{data.data(), kDataSize},
         [&recvPromise, &mutex](const Error& error) {
           std::unique_lock<std::mutex> calleeLock(mutex);

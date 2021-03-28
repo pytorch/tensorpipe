@@ -35,10 +35,7 @@ class ReceiverWaitsForStartEventTest
     TP_CUDA_CHECK(cudaMemsetAsync(ptr, 0x42, kSize, sendStream));
 
     // Perform send and wait for completion.
-    auto descriptorPromise = std::make_shared<
-        std::promise<std::tuple<tensorpipe::Error, std::string>>>();
     auto sendPromise = std::make_shared<std::promise<tensorpipe::Error>>();
-    auto descriptorFuture = descriptorPromise->get_future();
     auto sendFuture = sendPromise->get_future();
 
     channel->send(
@@ -47,21 +44,10 @@ class ReceiverWaitsForStartEventTest
             .length = kSize,
             .stream = sendStream,
         },
-        [descriptorPromise{std::move(descriptorPromise)}](
-            const tensorpipe::Error& error, std::string descriptor) {
-          descriptorPromise->set_value(
-              std::make_tuple(error, std::move(descriptor)));
-        },
         [sendPromise{std::move(sendPromise)}](const tensorpipe::Error& error) {
           sendPromise->set_value(error);
         });
 
-    Error descriptorError;
-    TDescriptor descriptor;
-    std::tie(descriptorError, descriptor) = descriptorFuture.get();
-
-    EXPECT_FALSE(descriptorError) << descriptorError.what();
-    this->peers_->send(PeerGroup::kClient, descriptor);
     Error sendError = sendFuture.get();
     EXPECT_FALSE(sendError) << sendError.what();
     TP_CUDA_CHECK(cudaFree(ptr));
@@ -78,14 +64,11 @@ class ReceiverWaitsForStartEventTest
     void* ptr;
     TP_CUDA_CHECK(cudaMalloc(&ptr, kSize));
 
-    auto descriptor = this->peers_->recv(PeerGroup::kClient);
-
     // Perform recv and wait for completion.
     auto recvPromise = std::make_shared<std::promise<tensorpipe::Error>>();
     auto recvFuture = recvPromise->get_future();
 
     channel->recv(
-        std::move(descriptor),
         CudaBuffer{
             .ptr = ptr,
             .length = kSize,
@@ -127,15 +110,8 @@ class SendOffsetAllocationTest
         cudaMemset(static_cast<uint8_t*>(ptr) + kOffset, 0x42, kDataSize));
 
     // Perform send and wait for completion.
-    std::future<std::tuple<Error, TDescriptor>> descriptorFuture;
-    std::future<Error> sendFuture;
-    std::tie(descriptorFuture, sendFuture) = sendWithFuture(
+    std::future<Error> sendFuture = sendWithFuture(
         channel, CudaBuffer{static_cast<uint8_t*>(ptr) + kOffset, kDataSize});
-    Error descriptorError;
-    TDescriptor descriptor;
-    std::tie(descriptorError, descriptor) = descriptorFuture.get();
-    EXPECT_FALSE(descriptorError) << descriptorError.what();
-    this->peers_->send(PeerGroup::kClient, descriptor);
     Error sendError = sendFuture.get();
     EXPECT_FALSE(sendError) << sendError.what();
 
@@ -147,9 +123,8 @@ class SendOffsetAllocationTest
     DataWrapper<CudaBuffer> wrappedData(kDataSize);
 
     // Perform recv and wait for completion.
-    auto descriptor = this->peers_->recv(PeerGroup::kClient);
     std::future<Error> recvFuture =
-        recvWithFuture(channel, descriptor, wrappedData.buffer());
+        recvWithFuture(channel, wrappedData.buffer());
     Error recvError = recvFuture.get();
     EXPECT_FALSE(recvError) << recvError.what();
 

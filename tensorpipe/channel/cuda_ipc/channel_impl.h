@@ -42,7 +42,6 @@ struct SendOperation {
   const void* const ptr;
   const int deviceIdx;
   const cudaStream_t stream;
-  TDescriptorCallback descriptorCallback;
   TSendCallback callback;
 
   // Other data
@@ -50,7 +49,6 @@ struct SendOperation {
   std::string stopEvHandle;
 
   SendOperation(
-      TDescriptorCallback descriptorCallback,
       TSendCallback callback,
       int deviceIdx,
       const void* ptr,
@@ -101,11 +99,9 @@ class ChannelImpl final
   void sendImplFromLoop(
       uint64_t sequenceNumber,
       Buffer buffer,
-      TDescriptorCallback descriptorCallback,
       TSendCallback callback) override;
   void recvImplFromLoop(
       uint64_t sequenceNumber,
-      TDescriptor descriptor,
       Buffer buffer,
       TRecvCallback callback) override;
   void handleErrorImpl() override;

@@ -17,7 +17,6 @@
 #include <nop/structure.h>
 
 #include <tensorpipe/channel/cuda_xth/context_impl.h>
-#include <tensorpipe/channel/helpers.h>
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/error.h>
 #include <tensorpipe/transport/connection.h>
@@ -94,7 +93,6 @@ void ChannelImpl::initImplFromLoop() {
 void ChannelImpl::sendImplFromLoop(
     uint64_t sequenceNumber,
     Buffer buffer,
-    TDescriptorCallback descriptorCallback,
     TSendCallback callback) {
   int deviceIdx = cudaDeviceForPointer(
       context_->getCudaLib(), buffer.unwrap<CudaBuffer>().ptr);
@@ -107,7 +105,6 @@ void ChannelImpl::sendImplFromLoop(
   SendOperation& op = *opIter;
 
   sendOps_.advanceOperation(opIter);
-  descriptorCallback(Error::kSuccess, "");
 }
 
 void ChannelImpl::advanceSendOperation(
@@ -210,10 +207,8 @@ void ChannelImpl::callSendCallback(SendOpIter opIter) {
 
 void ChannelImpl::recvImplFromLoop(
     uint64_t sequenceNumber,
-    TDescriptor descriptor,
     Buffer buffer,
     TRecvCallback callback) {
-  TP_DCHECK_EQ(descriptor, "");
   int deviceIdx = cudaDeviceForPointer(
       context_->getCudaLib(), buffer.unwrap<CudaBuffer>().ptr);
   RecvOpIter opIter = recvOps_.emplaceBack(
