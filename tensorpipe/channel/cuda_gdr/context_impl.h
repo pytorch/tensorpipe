@@ -137,6 +137,8 @@ class ContextImpl final
       std::vector<std::shared_ptr<transport::Connection>> connections,
       Endpoint endpoint);
 
+  size_t numConnectionsNeeded() const override;
+
   bool supportsDeviceType(DeviceType type) const override;
 
   const CudaLib& getCudaLib();

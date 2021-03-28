@@ -94,6 +94,7 @@ struct NopIbvSetupInformation {
 struct SendOperation {
   enum State {
     UNINITIALIZED,
+    WRITING_DESCRIPTOR,
     READING_READY_TO_RECEIVE,
     WAITING_FOR_CUDA_EVENT,
     SENDING_OVER_IB,
@@ -119,6 +120,7 @@ struct SendOperation {
   size_t localNicIdx;
   ssize_t remoteNicIdx;
 
+  bool doneWritingDescriptor{false};
   bool readReadyToReceive{false};
   bool sendEventReady{false};
   bool sentOverIb{false};
@@ -127,6 +129,7 @@ struct SendOperation {
 struct RecvOperation {
   enum State {
     UNINITIALIZED,
+    READING_DESCRIPTOR,
     WAITING_FOR_CUDA_EVENT,
     RECEIVING_OVER_IB_AND_WRITING_READY_TO_RECEIVE,
     FINISHED
@@ -137,13 +140,11 @@ struct RecvOperation {
       CudaBuffer buffer,
       TSendCallback callback,
       size_t deviceIdx,
-      size_t localNicIdx,
-      size_t remoteNicIdx)
+      size_t localNicIdx)
       : buffer(buffer),
         callback(std::move(callback)),
         event(deviceIdx),
-        localNicIdx(localNicIdx),
-        remoteNicIdx(remoteNicIdx) {}
+        localNicIdx(localNicIdx) {}
 
   size_t sequenceNumber;
   State state{UNINITIALIZED};
@@ -153,6 +154,7 @@ struct RecvOperation {
   size_t localNicIdx;
   size_t remoteNicIdx;
 
+  bool doneReadingDescriptor{false};
   bool recvEventReady{false};
   bool receivedOverIb{false};
 };
@@ -188,7 +190,8 @@ class ChannelImpl final
       ConstructorToken token,
       std::shared_ptr<ContextImpl> context,
       std::string id,
-      std::shared_ptr<transport::Connection> connection);
+      std::shared_ptr<transport::Connection> descriptorConnection,
+      std::shared_ptr<transport::Connection> notificationConnection);
 
  protected:
   // Implement the entry points called by ChannelImplBoilerplate.
@@ -206,7 +209,8 @@ class ChannelImpl final
   void handleErrorImpl() override;
 
  private:
-  const std::shared_ptr<transport::Connection> connection_;
+  const std::shared_ptr<transport::Connection> descriptorConnection_;
+  const std::shared_ptr<transport::Connection> notificationConnection_;
 
   enum State {
     INITIALIZING = 1,
@@ -253,11 +257,13 @@ class ChannelImpl final
 
   // Actions (i.e., methods that begin a state transition).
   // For send operations:
+  void writeDescriptor(SendOpIter opIter);
   void writeReadyToSendAndReadReadyToReceive(SendOpIter opIter);
   void waitForSendCudaEvent(SendOpIter opIter);
   void sendOverIb(SendOpIter opIter);
   void callSendCallback(SendOpIter opIter);
   // For recv operations:
+  void readDescriptor(RecvOpIter opIter);
   void waitForRecvCudaEvent(RecvOpIter opIter);
   void recvOverIbAndWriteReadyToRecive(RecvOpIter opIter);
   void callRecvCallback(RecvOpIter opIter);
