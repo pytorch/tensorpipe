@@ -24,7 +24,6 @@
 #include <nop/structure.h>
 
 #include <tensorpipe/channel/cuda_ipc/channel_impl.h>
-#include <tensorpipe/channel/helpers.h>
 #include <tensorpipe/common/cuda.h>
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/nop.h>
@@ -115,7 +114,8 @@ struct DeviceDescriptor {
 DeviceDescriptor deserializeDeviceDescriptor(
     const std::string& deviceDescriptor) {
   NopHolder<DeviceDescriptor> nopHolder;
-  loadDescriptor(nopHolder, deviceDescriptor);
+  // FIXME
+  // loadDescriptor(nopHolder, deviceDescriptor);
   return std::move(nopHolder.getObject());
 }
 
@@ -184,7 +184,8 @@ std::shared_ptr<ContextImpl> ContextImpl::create() {
     deviceDescriptor.bootId = bootId;
     deviceDescriptor.deviceUuid = getUuidOfDevice(cudaLib, device.index);
 
-    deviceDescriptors[device] = saveDescriptor(nopHolder);
+    // FIXME
+    // deviceDescriptors[device] = saveDescriptor(nopHolder);
   }
 
   std::vector<std::string> globalUuids;

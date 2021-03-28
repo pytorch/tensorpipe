@@ -19,7 +19,6 @@
 #include <nop/types/variant.h>
 
 #include <tensorpipe/channel/cuda_ipc/context_impl.h>
-#include <tensorpipe/channel/helpers.h>
 #include <tensorpipe/common/cuda.h>
 #include <tensorpipe/common/cuda_buffer.h>
 #include <tensorpipe/common/defs.h>
