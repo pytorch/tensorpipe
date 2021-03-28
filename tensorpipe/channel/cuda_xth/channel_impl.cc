@@ -146,7 +146,8 @@ void ChannelImpl::advanceSendOperation(
       opIter,
       /*from=*/SendOperation::WRITING_DESCRIPTOR,
       /*to=*/SendOperation::READING_NOTIFICATION,
-      /*cond=*/!error_ && prevOpState >= SendOperation::READING_NOTIFICATION,
+      /*cond=*/!error_ && op.doneWritingDescriptor &&
+          prevOpState >= SendOperation::READING_NOTIFICATION,
       /*actions=*/{&ChannelImpl::readNotification});
 
   sendOps_.attemptTransition(
