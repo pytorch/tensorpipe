@@ -241,6 +241,7 @@ void ChannelImpl::readDescriptor(RecvOpIter opIter) {
                    << opIter->sequenceNumber << ")";
         Descriptor& nopDescriptor = nopHolderIn->getObject();
         opIter->remotePtr = reinterpret_cast<void*>(nopDescriptor.ptr);
+
         opIter->doneReadingDescriptor = true;
         impl.recvOps_.advanceOperation(opIter);
       }));
