@@ -164,6 +164,7 @@ void ChannelImpl::recvImplFromLoop(
     TDescriptor descriptor,
     Buffer buffer,
     TRecvCallback callback) {
+  TP_DCHECK_EQ(descriptor, "");
   RecvOpIter opIter = recvOps_.emplaceBack(sequenceNumber);
   RecvOperation& op = *opIter;
   op.ptr = buffer.unwrap<CpuBuffer>().ptr;
