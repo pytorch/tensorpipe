@@ -24,30 +24,46 @@ namespace cuda_xth {
 class ContextImpl;
 
 struct SendOperation {
-  enum State { UNINITIALIZED, READING_NOTIFICATION, FINISHED };
+  enum State {
+    UNINITIALIZED,
+    WRITING_DESCRIPTOR,
+    READING_NOTIFICATION,
+    FINISHED
+  };
 
   // Fields used by the state machine
   uint64_t sequenceNumber{0};
   State state{UNINITIALIZED};
 
   // Progress flags
+  bool doneWritingDescriptor{false};
   bool doneReadingNotification{false};
 
   // Arguments at creation
+  int deviceIdx;
+  void* ptr;
+  cudaStream_t stream;
   TSendCallback callback;
 
   // Other stuff
   CudaEvent startEv;
 
-  SendOperation(int deviceIdx, cudaStream_t stream, TSendCallback callback);
+  SendOperation(
+      int deviceIdx,
+      void* ptr,
+      cudaStream_t stream,
+      TSendCallback callback);
 };
 
 struct RecvOperation {
-  enum State { UNINITIALIZED, COPYING, FINISHED };
+  enum State { UNINITIALIZED, READING_DESCRIPTOR, FINISHED };
 
   // Fields used by the state machine
   uint64_t sequenceNumber{0};
   State state{UNINITIALIZED};
+
+  // Progress flags
+  bool doneReadingDescriptor{false};
 
   // Arguments at creation
   void* const ptr;
@@ -74,7 +90,8 @@ class ChannelImpl final
       ConstructorToken token,
       std::shared_ptr<ContextImpl> context,
       std::string id,
-      std::shared_ptr<transport::Connection> connection);
+      std::shared_ptr<transport::Connection> descriptorConnection,
+      std::shared_ptr<transport::Connection> notificationConnection);
 
  protected:
   // Implement the entry points called by ChannelImplBoilerplate.
@@ -92,7 +109,8 @@ class ChannelImpl final
   void handleErrorImpl() override;
 
  private:
-  const std::shared_ptr<transport::Connection> connection_;
+  const std::shared_ptr<transport::Connection> descriptorConnection_;
+  const std::shared_ptr<transport::Connection> notificationConnection_;
 
   OpsStateMachine<ChannelImpl, SendOperation> sendOps_{
       *this,
@@ -113,9 +131,11 @@ class ChannelImpl final
 
   // Actions (i.e., methods that begin a state transition).
   // For send operations:
+  void writeDescriptor(SendOpIter opIter);
   void readNotification(SendOpIter opIter);
   void callSendCallback(SendOpIter opIter);
   // For recv operations:
+  void readDescriptor(RecvOpIter opIter);
   void waitOnStartEventAndCopyAndSyncWithSourceStream(RecvOpIter opIter);
   void callRecvCallback(RecvOpIter opIter);
   void writeNotification(RecvOpIter opIter);

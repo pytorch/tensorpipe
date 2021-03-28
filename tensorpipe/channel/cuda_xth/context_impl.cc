@@ -92,7 +92,12 @@ std::shared_ptr<Channel> ContextImpl::createChannel(
     std::vector<std::shared_ptr<transport::Connection>> connections,
     Endpoint /* unused */) {
   TP_DCHECK_EQ(numConnectionsNeeded(), connections.size());
-  return createChannelInternal(std::move(connections[0]));
+  return createChannelInternal(
+      std::move(connections[0]), std::move(connections[1]));
+}
+
+size_t ContextImpl::numConnectionsNeeded() const {
+  return 2;
 }
 
 bool ContextImpl::supportsDeviceType(DeviceType type) const {
