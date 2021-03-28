@@ -416,6 +416,7 @@ void ChannelImpl::recvImplFromLoop(
     TDescriptor descriptor,
     Buffer buffer,
     TRecvCallback callback) {
+  TP_DCHECK_EQ(descriptor, "");
   size_t localGpuIdx = cudaDeviceForPointer(
       context_->getCudaLib(), buffer.unwrap<CudaBuffer>().ptr);
   size_t localNicIdx = context_->getGpuToNicMapping()[localGpuIdx];
