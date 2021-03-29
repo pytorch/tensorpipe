@@ -11,9 +11,13 @@
 #include <memory>
 #include <string>
 
+#include <nop/serializer.h>
+#include <nop/structure.h>
+
 #include <tensorpipe/channel/channel_impl_boilerplate.h>
 #include <tensorpipe/common/state_machine.h>
 #include <tensorpipe/transport/context.h>
+#include <tensorpipe/transport/multiplexed_connection.h>
 
 namespace tensorpipe {
 namespace channel {
@@ -63,6 +67,16 @@ struct RecvOperation {
   void* remotePtr;
 };
 
+struct Descriptor {
+  uint32_t pid;
+  uint64_t ptr;
+  NOP_STRUCTURE(Descriptor, pid, ptr);
+};
+
+struct Notification {
+  NOP_STRUCTURE(Notification);
+};
+
 class ChannelImpl final
     : public ChannelImplBoilerplate<ContextImpl, ChannelImpl> {
  public:
@@ -70,8 +84,7 @@ class ChannelImpl final
       ConstructorToken token,
       std::shared_ptr<ContextImpl> context,
       std::string id,
-      std::shared_ptr<transport::Connection> descriptorConnection,
-      std::shared_ptr<transport::Connection> notificationConnection);
+      std::shared_ptr<transport::Connection> connection);
 
  protected:
   // Implement the entry points called by ChannelImplBoilerplate.
@@ -87,8 +100,7 @@ class ChannelImpl final
   void handleErrorImpl() override;
 
  private:
-  const std::shared_ptr<transport::Connection> descriptorConnection_;
-  const std::shared_ptr<transport::Connection> notificationConnection_;
+  transport::MultiplexedConnection<Descriptor, Notification> connection_;
 
   OpsStateMachine<ChannelImpl, SendOperation> sendOps_{
       *this,

@@ -9,6 +9,7 @@ add_executable(tensorpipe_test
   test_environment.cc
   transport/context_test.cc
   transport/connection_test.cc
+  transport/multiplexed_connection_test.cc
   transport/uv/uv_test.cc
   transport/uv/context_test.cc
   transport/uv/loop_test.cc

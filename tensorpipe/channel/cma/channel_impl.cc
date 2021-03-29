@@ -12,9 +12,6 @@
 #include <string>
 #include <utility>
 
-#include <nop/serializer.h>
-#include <nop/structure.h>
-
 #include <tensorpipe/channel/cma/context_impl.h>
 #include <tensorpipe/common/cpu_buffer.h>
 #include <tensorpipe/common/defs.h>
@@ -25,28 +22,16 @@ namespace tensorpipe {
 namespace channel {
 namespace cma {
 
-namespace {
-
-struct Descriptor {
-  uint32_t pid;
-  uint64_t ptr;
-  NOP_STRUCTURE(Descriptor, pid, ptr);
-};
-
-} // namespace
-
 ChannelImpl::ChannelImpl(
     ConstructorToken token,
     std::shared_ptr<ContextImpl> context,
     std::string id,
-    std::shared_ptr<transport::Connection> descriptorConnection,
-    std::shared_ptr<transport::Connection> notificationConnection)
+    std::shared_ptr<transport::Connection> connection)
     : ChannelImplBoilerplate<ContextImpl, ChannelImpl>(
           token,
           std::move(context),
           std::move(id)),
-      descriptorConnection_(std::move(descriptorConnection)),
-      notificationConnection_(std::move(notificationConnection)) {}
+      connection_(std::move(connection), *context_) {}
 
 void ChannelImpl::initImplFromLoop() {
   context_->enroll(*this);
@@ -115,16 +100,15 @@ void ChannelImpl::advanceSendOperation(
 void ChannelImpl::writeDescriptor(SendOpIter opIter) {
   SendOperation& op = *opIter;
 
-  auto nopHolder = std::make_shared<NopHolder<Descriptor>>();
-  Descriptor& nopDescriptor = nopHolder->getObject();
+  Descriptor descriptor;
   // TODO: Store the PID upon channel/context instantiation.
-  nopDescriptor.pid = ::getpid();
-  nopDescriptor.ptr = reinterpret_cast<uint64_t>(op.ptr);
+  descriptor.pid = ::getpid();
+  descriptor.ptr = reinterpret_cast<uint64_t>(op.ptr);
 
   TP_VLOG(6) << "Channel " << id_ << " is writing descriptor (#"
              << op.sequenceNumber << ")";
-  descriptorConnection_->write(
-      *nopHolder, callbackWrapper_([opIter, nopHolder](ChannelImpl& impl) {
+  connection_.write(
+      descriptor, callbackWrapper_([opIter](ChannelImpl& impl) {
         TP_VLOG(6) << "Channel " << impl.id_ << " done writing descriptor (#"
                    << opIter->sequenceNumber << ")";
         opIter->doneWritingDescriptor = true;
@@ -137,13 +121,10 @@ void ChannelImpl::readNotification(SendOpIter opIter) {
 
   TP_VLOG(6) << "Channel " << id_ << " is reading notification (#"
              << op.sequenceNumber << ")";
-  notificationConnection_->read(
-      nullptr,
-      0,
-      callbackWrapper_([opIter](
-                           ChannelImpl& impl,
-                           const void* /* unused */,
-                           size_t /* unused */) {
+  auto nopNotification = std::make_shared<Notification>();
+  connection_.read<Notification>(
+      *nopNotification,
+      callbackWrapper_([opIter, nopNotification](ChannelImpl& impl) {
         TP_VLOG(6) << "Channel " << impl.id_ << " done reading notification (#"
                    << opIter->sequenceNumber << ")";
         opIter->doneReadingNotification = true;
@@ -233,14 +214,14 @@ void ChannelImpl::readDescriptor(RecvOpIter opIter) {
 
   TP_VLOG(6) << "Channel " << id_ << " is reading descriptor (#"
              << op.sequenceNumber << ")";
-  auto nopHolderIn = std::make_shared<NopHolder<Descriptor>>();
-  descriptorConnection_->read(
-      *nopHolderIn, callbackWrapper_([opIter, nopHolderIn](ChannelImpl& impl) {
+  auto nopDescriptor = std::make_shared<Descriptor>();
+  connection_.read<Descriptor>(
+      *nopDescriptor,
+      callbackWrapper_([opIter, nopDescriptor](ChannelImpl& impl) {
         TP_VLOG(6) << "Channel " << impl.id_ << " done reading descriptor (#"
                    << opIter->sequenceNumber << ")";
-        Descriptor& nopDescriptor = nopHolderIn->getObject();
-        opIter->remotePid = nopDescriptor.pid;
-        opIter->remotePtr = reinterpret_cast<void*>(nopDescriptor.ptr);
+        opIter->remotePid = nopDescriptor->pid;
+        opIter->remotePtr = reinterpret_cast<void*>(nopDescriptor->ptr);
 
         opIter->doneReadingDescriptor = true;
         impl.recvOps_.advanceOperation(opIter);
@@ -278,12 +259,10 @@ void ChannelImpl::writeNotification(RecvOpIter opIter) {
 
   TP_VLOG(6) << "Channel " << id_ << " is writing notification (#"
              << op.sequenceNumber << ")";
-  notificationConnection_->write(
-      nullptr,
-      0,
-      callbackWrapper_([sequenceNumber{op.sequenceNumber}](ChannelImpl& impl) {
+  connection_.write(
+      Notification{}, callbackWrapper_([opIter](ChannelImpl& impl) {
         TP_VLOG(6) << "Channel " << impl.id_ << " done writing notification (#"
-                   << sequenceNumber << ")";
+                   << opIter->sequenceNumber << ")";
       }));
 }
 
@@ -291,8 +270,7 @@ void ChannelImpl::handleErrorImpl() {
   sendOps_.advanceAllOperations();
   recvOps_.advanceAllOperations();
 
-  descriptorConnection_->close();
-  notificationConnection_->close();
+  connection_.close();
 
   context_->unenroll(*this);
 }
