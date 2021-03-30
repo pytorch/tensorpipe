@@ -51,7 +51,7 @@ struct Ack {
 
 } // namespace
 
-SendOperation::SendOperation(
+ChunkSendOperation::ChunkSendOperation(
     TSendCallback callback,
     int deviceIdx,
     const void* ptr,
@@ -61,7 +61,7 @@ SendOperation::SendOperation(
       stream(stream),
       callback(std::move(callback)) {}
 
-RecvOperation::RecvOperation(
+ChunkRecvOperation::ChunkRecvOperation(
     int deviceIdx,
     void* ptr,
     cudaStream_t stream,
@@ -95,29 +95,29 @@ void ChannelImpl::sendImplFromLoop(
   int deviceIdx = cudaDeviceForPointer(
       context_->getCudaLib(), buffer.unwrap<CudaBuffer>().ptr);
 
-  SendOpIter opIter = sendOps_.emplaceBack(
+  ChunkSendOpIter opIter = chunkSendOps_.emplaceBack(
       sequenceNumber,
       std::move(callback),
       deviceIdx,
       buffer.unwrap<CudaBuffer>().ptr,
       buffer.unwrap<CudaBuffer>().stream);
 
-  sendOps_.advanceOperation(opIter);
+  chunkSendOps_.advanceOperation(opIter);
 
   descriptorCallback(error_, "");
 }
 
-void ChannelImpl::advanceSendOperation(
-    SendOpIter opIter,
-    SendOperation::State prevOpState) {
+void ChannelImpl::advanceChunkSendOperation(
+    ChunkSendOpIter opIter,
+    ChunkSendOperation::State prevOpState) {
   TP_DCHECK(context_->inLoop());
 
-  SendOperation& op = *opIter;
+  ChunkSendOperation& op = *opIter;
 
-  sendOps_.attemptTransition(
+  chunkSendOps_.attemptTransition(
       opIter,
-      /*from=*/SendOperation::UNINITIALIZED,
-      /*to=*/SendOperation::FINISHED,
+      /*from=*/ChunkSendOperation::UNINITIALIZED,
+      /*to=*/ChunkSendOperation::FINISHED,
       /*cond=*/error_,
       /*actions=*/
       {&ChannelImpl::callSendCallback});
@@ -128,17 +128,17 @@ void ChannelImpl::advanceSendOperation(
   // and sent, and this won't happen for later operations until earlier ones
   // have reached that stage too, and if those are blocked waiting for events
   // then we may deadlock.
-  sendOps_.attemptTransition(
+  chunkSendOps_.attemptTransition(
       opIter,
-      /*from=*/SendOperation::UNINITIALIZED,
-      /*to=*/SendOperation::REQUESTING_EVENT,
-      /*cond=*/!error_ && prevOpState >= SendOperation::REQUESTING_EVENT,
+      /*from=*/ChunkSendOperation::UNINITIALIZED,
+      /*to=*/ChunkSendOperation::REQUESTING_EVENT,
+      /*cond=*/!error_ && prevOpState >= ChunkSendOperation::REQUESTING_EVENT,
       /*actions=*/{&ChannelImpl::requestEvent});
 
-  sendOps_.attemptTransition(
+  chunkSendOps_.attemptTransition(
       opIter,
-      /*from=*/SendOperation::REQUESTING_EVENT,
-      /*to=*/SendOperation::FINISHED,
+      /*from=*/ChunkSendOperation::REQUESTING_EVENT,
+      /*to=*/ChunkSendOperation::FINISHED,
       /*cond=*/error_ && op.doneRequestingEvent,
       /*actions=*/
       {&ChannelImpl::returnEvent, &ChannelImpl::callSendCallback});
@@ -146,32 +146,32 @@ void ChannelImpl::advanceSendOperation(
   // Needs to go after previous op to ensure predictable and consistent ordering
   // of write calls on the descriptor control connection and read calls on the
   // reply control connection.
-  sendOps_.attemptTransition(
+  chunkSendOps_.attemptTransition(
       opIter,
-      /*from=*/SendOperation::REQUESTING_EVENT,
-      /*to=*/SendOperation::READING_REPLY,
+      /*from=*/ChunkSendOperation::REQUESTING_EVENT,
+      /*to=*/ChunkSendOperation::READING_REPLY,
       /*cond=*/!error_ && op.doneRequestingEvent &&
-          prevOpState >= SendOperation::READING_REPLY,
+          prevOpState >= ChunkSendOperation::READING_REPLY,
       /*actions=*/
       {&ChannelImpl::recordStartEvent,
        &ChannelImpl::writeDescriptor,
        &ChannelImpl::readReply});
 
-  sendOps_.attemptTransition(
+  chunkSendOps_.attemptTransition(
       opIter,
-      /*from=*/SendOperation::READING_REPLY,
-      /*to=*/SendOperation::FINISHED,
+      /*from=*/ChunkSendOperation::READING_REPLY,
+      /*to=*/ChunkSendOperation::FINISHED,
       /*cond=*/error_ && op.doneReadingReply,
       /*actions=*/{&ChannelImpl::returnEvent, &ChannelImpl::callSendCallback});
 
   // Needs to go after previous op to ensure predictable and consistent ordering
   // of write calls on ack control connection.
-  sendOps_.attemptTransition(
+  chunkSendOps_.attemptTransition(
       opIter,
-      /*from=*/SendOperation::READING_REPLY,
-      /*to=*/SendOperation::FINISHED,
+      /*from=*/ChunkSendOperation::READING_REPLY,
+      /*to=*/ChunkSendOperation::FINISHED,
       /*cond=*/!error_ && op.doneReadingReply &&
-          prevOpState >= SendOperation::FINISHED,
+          prevOpState >= ChunkSendOperation::FINISHED,
       /*actions=*/
       {&ChannelImpl::returnEvent,
        &ChannelImpl::waitOnStopEvent,
@@ -179,8 +179,8 @@ void ChannelImpl::advanceSendOperation(
        &ChannelImpl::writeAck});
 }
 
-void ChannelImpl::requestEvent(SendOpIter opIter) {
-  SendOperation& op = *opIter;
+void ChannelImpl::requestEvent(ChunkSendOpIter opIter) {
+  ChunkSendOperation& op = *opIter;
 
   context_->requestSendEvent(
       op.deviceIdx,
@@ -190,18 +190,18 @@ void ChannelImpl::requestEvent(SendOpIter opIter) {
             if (!impl.error_) {
               opIter->startEv = std::move(event);
             }
-            impl.sendOps_.advanceOperation(opIter);
+            impl.chunkSendOps_.advanceOperation(opIter);
           }));
 }
 
-void ChannelImpl::recordStartEvent(SendOpIter opIter) {
-  SendOperation& op = *opIter;
+void ChannelImpl::recordStartEvent(ChunkSendOpIter opIter) {
+  ChunkSendOperation& op = *opIter;
 
   op.startEv->record(op.stream);
 }
 
-void ChannelImpl::writeDescriptor(SendOpIter opIter) {
-  SendOperation& op = *opIter;
+void ChannelImpl::writeDescriptor(ChunkSendOpIter opIter) {
+  ChunkSendOperation& op = *opIter;
 
   const CudaLib& cudaLib = context_->getCudaLib();
 
@@ -248,8 +248,8 @@ void ChannelImpl::writeDescriptor(SendOpIter opIter) {
       }));
 }
 
-void ChannelImpl::readReply(SendOpIter opIter) {
-  SendOperation& op = *opIter;
+void ChannelImpl::readReply(ChunkSendOpIter opIter) {
+  ChunkSendOperation& op = *opIter;
 
   auto nopReplyHolder = std::make_shared<NopHolder<Reply>>();
   TP_VLOG(6) << "Channel " << id_ << " is reading nop object (reply #"
@@ -265,18 +265,18 @@ void ChannelImpl::readReply(SendOpIter opIter) {
           opIter->stopEvHandle =
               std::move(nopReplyHolder->getObject().stopEvHandle);
         }
-        impl.sendOps_.advanceOperation(opIter);
+        impl.chunkSendOps_.advanceOperation(opIter);
       }));
 }
 
-void ChannelImpl::returnEvent(SendOpIter opIter) {
-  SendOperation& op = *opIter;
+void ChannelImpl::returnEvent(ChunkSendOpIter opIter) {
+  ChunkSendOperation& op = *opIter;
 
   op.startEv = nullptr;
 }
 
-void ChannelImpl::waitOnStopEvent(SendOpIter opIter) {
-  SendOperation& op = *opIter;
+void ChannelImpl::waitOnStopEvent(ChunkSendOpIter opIter) {
+  ChunkSendOperation& op = *opIter;
 
   const cudaIpcEventHandle_t* stopEvHandle =
       reinterpret_cast<const cudaIpcEventHandle_t*>(op.stopEvHandle.c_str());
@@ -284,16 +284,16 @@ void ChannelImpl::waitOnStopEvent(SendOpIter opIter) {
   stopEv.wait(op.stream, op.deviceIdx);
 }
 
-void ChannelImpl::callSendCallback(SendOpIter opIter) {
-  SendOperation& op = *opIter;
+void ChannelImpl::callSendCallback(ChunkSendOpIter opIter) {
+  ChunkSendOperation& op = *opIter;
 
   op.callback(error_);
   // Reset callback to release the resources it was holding.
   op.callback = nullptr;
 }
 
-void ChannelImpl::writeAck(SendOpIter opIter) {
-  SendOperation& op = *opIter;
+void ChannelImpl::writeAck(ChunkSendOpIter opIter) {
+  ChunkSendOperation& op = *opIter;
 
   TP_VLOG(6) << "Channel " << id_ << " is writing ACK notification (#"
              << op.sequenceNumber << ")";
@@ -317,7 +317,7 @@ void ChannelImpl::recvImplFromLoop(
 
   int deviceIdx = cudaDeviceForPointer(
       context_->getCudaLib(), buffer.unwrap<CudaBuffer>().ptr);
-  RecvOpIter opIter = recvOps_.emplaceBack(
+  ChunkRecvOpIter opIter = chunkRecvOps_.emplaceBack(
       sequenceNumber,
       deviceIdx,
       buffer.unwrap<CudaBuffer>().ptr,
@@ -325,36 +325,36 @@ void ChannelImpl::recvImplFromLoop(
       buffer.unwrap<CudaBuffer>().length);
   opIter->callback = std::move(callback);
 
-  recvOps_.advanceOperation(opIter);
+  chunkRecvOps_.advanceOperation(opIter);
 }
 
-void ChannelImpl::advanceRecvOperation(
-    RecvOpIter opIter,
-    RecvOperation::State prevOpState) {
+void ChannelImpl::advanceChunkRecvOperation(
+    ChunkRecvOpIter opIter,
+    ChunkRecvOperation::State prevOpState) {
   TP_DCHECK(context_->inLoop());
 
-  RecvOperation& op = *opIter;
+  ChunkRecvOperation& op = *opIter;
 
-  recvOps_.attemptTransition(
+  chunkRecvOps_.attemptTransition(
       opIter,
-      /*from=*/RecvOperation::UNINITIALIZED,
-      /*to=*/RecvOperation::FINISHED,
+      /*from=*/ChunkRecvOperation::UNINITIALIZED,
+      /*to=*/ChunkRecvOperation::FINISHED,
       /*cond=*/error_,
       /*actions=*/{&ChannelImpl::callRecvCallback});
 
   // Needs to go after previous op to ensure predictable and consistent ordering
   // of read calls on descriptor control connection.
-  recvOps_.attemptTransition(
+  chunkRecvOps_.attemptTransition(
       opIter,
-      /*from=*/RecvOperation::UNINITIALIZED,
-      /*to=*/RecvOperation::READING_DESCRIPTOR,
-      /*cond=*/!error_ && prevOpState >= RecvOperation::READING_DESCRIPTOR,
+      /*from=*/ChunkRecvOperation::UNINITIALIZED,
+      /*to=*/ChunkRecvOperation::READING_DESCRIPTOR,
+      /*cond=*/!error_ && prevOpState >= ChunkRecvOperation::READING_DESCRIPTOR,
       /*actions=*/{&ChannelImpl::readDescriptor});
 
-  recvOps_.attemptTransition(
+  chunkRecvOps_.attemptTransition(
       opIter,
-      /*from=*/RecvOperation::READING_DESCRIPTOR,
-      /*to=*/RecvOperation::FINISHED,
+      /*from=*/ChunkRecvOperation::READING_DESCRIPTOR,
+      /*to=*/ChunkRecvOperation::FINISHED,
       /*cond=*/error_ && op.doneReadingDescriptor,
       /*actions=*/{&ChannelImpl::callRecvCallback});
 
@@ -364,46 +364,46 @@ void ChannelImpl::advanceRecvOperation(
   // and sent, and this won't happen for later operations until earlier ones
   // have reached that stage too, and if those are blocked waiting for events
   // then we may deadlock.
-  recvOps_.attemptTransition(
+  chunkRecvOps_.attemptTransition(
       opIter,
-      /*from=*/RecvOperation::READING_DESCRIPTOR,
-      /*to=*/RecvOperation::REQUESTING_EVENT,
+      /*from=*/ChunkRecvOperation::READING_DESCRIPTOR,
+      /*to=*/ChunkRecvOperation::REQUESTING_EVENT,
       /*cond=*/!error_ && op.doneReadingDescriptor &&
-          prevOpState >= RecvOperation::REQUESTING_EVENT,
+          prevOpState >= ChunkRecvOperation::REQUESTING_EVENT,
       /*actions=*/{&ChannelImpl::requestEvent});
 
-  recvOps_.attemptTransition(
+  chunkRecvOps_.attemptTransition(
       opIter,
-      /*from=*/RecvOperation::REQUESTING_EVENT,
-      /*to=*/RecvOperation::FINISHED,
+      /*from=*/ChunkRecvOperation::REQUESTING_EVENT,
+      /*to=*/ChunkRecvOperation::FINISHED,
       /*cond=*/error_ && op.doneRequestingEvent,
       /*actions=*/{&ChannelImpl::callRecvCallback, &ChannelImpl::returnEvent});
 
   // Needs to go after previous op to ensure predictable and consistent ordering
   // of write calls on reply control connection and read calls on ack control
   // connection.
-  recvOps_.attemptTransition(
+  chunkRecvOps_.attemptTransition(
       opIter,
-      /*from=*/RecvOperation::REQUESTING_EVENT,
-      /*to=*/RecvOperation::READING_ACK,
+      /*from=*/ChunkRecvOperation::REQUESTING_EVENT,
+      /*to=*/ChunkRecvOperation::READING_ACK,
       /*cond=*/!error_ && op.doneRequestingEvent &&
-          prevOpState >= RecvOperation::READING_ACK,
+          prevOpState >= ChunkRecvOperation::READING_ACK,
       /*actions=*/
       {&ChannelImpl::waitOnStartEventAndCopyAndRecordStopEvent,
        &ChannelImpl::callRecvCallback,
        &ChannelImpl::writeReply,
        &ChannelImpl::readAck});
 
-  recvOps_.attemptTransition(
+  chunkRecvOps_.attemptTransition(
       opIter,
-      /*from=*/RecvOperation::READING_ACK,
-      /*to=*/RecvOperation::FINISHED,
+      /*from=*/ChunkRecvOperation::READING_ACK,
+      /*to=*/ChunkRecvOperation::FINISHED,
       /*cond=*/op.doneReadingAck,
       /*actions=*/{&ChannelImpl::returnEvent});
 }
 
-void ChannelImpl::readDescriptor(RecvOpIter opIter) {
-  RecvOperation& op = *opIter;
+void ChannelImpl::readDescriptor(ChunkRecvOpIter opIter) {
+  ChunkRecvOperation& op = *opIter;
 
   TP_VLOG(6) << "Channel " << id_ << " is reading nop object (descriptor #"
              << op.sequenceNumber << ")";
@@ -422,12 +422,12 @@ void ChannelImpl::readDescriptor(RecvOpIter opIter) {
           opIter->offset = nopDescriptor.offset;
           opIter->startEvHandle = std::move(nopDescriptor.startEvHandle);
         }
-        impl.recvOps_.advanceOperation(opIter);
+        impl.chunkRecvOps_.advanceOperation(opIter);
       }));
 }
 
-void ChannelImpl::requestEvent(RecvOpIter opIter) {
-  RecvOperation& op = *opIter;
+void ChannelImpl::requestEvent(ChunkRecvOpIter opIter) {
+  ChunkRecvOperation& op = *opIter;
 
   context_->requestRecvEvent(
       op.deviceIdx,
@@ -437,12 +437,13 @@ void ChannelImpl::requestEvent(RecvOpIter opIter) {
             if (!impl.error_) {
               opIter->stopEv = std::move(event);
             }
-            impl.recvOps_.advanceOperation(opIter);
+            impl.chunkRecvOps_.advanceOperation(opIter);
           }));
 }
 
-void ChannelImpl::waitOnStartEventAndCopyAndRecordStopEvent(RecvOpIter opIter) {
-  RecvOperation& op = *opIter;
+void ChannelImpl::waitOnStartEventAndCopyAndRecordStopEvent(
+    ChunkRecvOpIter opIter) {
+  ChunkRecvOperation& op = *opIter;
 
   const cudaIpcEventHandle_t* startEvHandle =
       reinterpret_cast<const cudaIpcEventHandle_t*>(op.startEvHandle.c_str());
@@ -473,16 +474,16 @@ void ChannelImpl::waitOnStartEventAndCopyAndRecordStopEvent(RecvOpIter opIter) {
              << op.sequenceNumber << ")";
 }
 
-void ChannelImpl::callRecvCallback(RecvOpIter opIter) {
-  RecvOperation& op = *opIter;
+void ChannelImpl::callRecvCallback(ChunkRecvOpIter opIter) {
+  ChunkRecvOperation& op = *opIter;
 
   op.callback(error_);
   // Reset callback to release the resources it was holding.
   op.callback = nullptr;
 }
 
-void ChannelImpl::writeReply(RecvOpIter opIter) {
-  RecvOperation& op = *opIter;
+void ChannelImpl::writeReply(ChunkRecvOpIter opIter) {
+  ChunkRecvOperation& op = *opIter;
 
   TP_VLOG(6) << "Channel " << id_ << " is writing reply notification (#"
              << op.sequenceNumber << ")";
@@ -499,8 +500,8 @@ void ChannelImpl::writeReply(RecvOpIter opIter) {
       }));
 }
 
-void ChannelImpl::readAck(RecvOpIter opIter) {
-  RecvOperation& op = *opIter;
+void ChannelImpl::readAck(ChunkRecvOpIter opIter) {
+  ChunkRecvOperation& op = *opIter;
 
   TP_VLOG(6) << "Channel " << id_ << " is reading ACK notification (#"
              << op.sequenceNumber << ")";
@@ -512,19 +513,19 @@ void ChannelImpl::readAck(RecvOpIter opIter) {
                    << " done reading ACK notification (#"
                    << opIter->sequenceNumber << ")";
         opIter->doneReadingAck = true;
-        impl.recvOps_.advanceOperation(opIter);
+        impl.chunkRecvOps_.advanceOperation(opIter);
       }));
 }
 
-void ChannelImpl::returnEvent(RecvOpIter opIter) {
-  RecvOperation& op = *opIter;
+void ChannelImpl::returnEvent(ChunkRecvOpIter opIter) {
+  ChunkRecvOperation& op = *opIter;
 
   op.stopEv = nullptr;
 }
 
 void ChannelImpl::handleErrorImpl() {
-  sendOps_.advanceAllOperations();
-  recvOps_.advanceAllOperations();
+  chunkSendOps_.advanceAllOperations();
+  chunkRecvOps_.advanceAllOperations();
 
   descriptorConnection_->close();
   replyConnection_->close();

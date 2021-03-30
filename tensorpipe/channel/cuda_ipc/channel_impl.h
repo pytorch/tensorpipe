@@ -27,7 +27,7 @@ namespace cuda_ipc {
 
 class ContextImpl;
 
-struct SendOperation {
+struct ChunkSendOperation {
   enum State { UNINITIALIZED, REQUESTING_EVENT, READING_REPLY, FINISHED };
 
   // Fields used by the state machine
@@ -48,14 +48,14 @@ struct SendOperation {
   CudaEventPool::BorrowedEvent startEv;
   std::string stopEvHandle;
 
-  SendOperation(
+  ChunkSendOperation(
       TSendCallback callback,
       int deviceIdx,
       const void* ptr,
       cudaStream_t stream);
 };
 
-struct RecvOperation {
+struct ChunkRecvOperation {
   enum State {
     UNINITIALIZED,
     READING_DESCRIPTOR,
@@ -87,7 +87,11 @@ struct RecvOperation {
   size_t offset;
   std::string startEvHandle;
 
-  RecvOperation(int deviceIdx, void* ptr, cudaStream_t stream, size_t length);
+  ChunkRecvOperation(
+      int deviceIdx,
+      void* ptr,
+      cudaStream_t stream,
+      size_t length);
 };
 
 class ChannelImpl final
@@ -121,41 +125,41 @@ class ChannelImpl final
   const std::shared_ptr<transport::Connection> replyConnection_;
   const std::shared_ptr<transport::Connection> ackConnection_;
 
-  OpsStateMachine<ChannelImpl, SendOperation> sendOps_{
+  OpsStateMachine<ChannelImpl, ChunkSendOperation> chunkSendOps_{
       *this,
-      &ChannelImpl::advanceSendOperation};
-  using SendOpIter = decltype(sendOps_)::Iter;
-  OpsStateMachine<ChannelImpl, RecvOperation> recvOps_{
+      &ChannelImpl::advanceChunkSendOperation};
+  using ChunkSendOpIter = decltype(chunkSendOps_)::Iter;
+  OpsStateMachine<ChannelImpl, ChunkRecvOperation> chunkRecvOps_{
       *this,
-      &ChannelImpl::advanceRecvOperation};
-  using RecvOpIter = decltype(recvOps_)::Iter;
+      &ChannelImpl::advanceChunkRecvOperation};
+  using ChunkRecvOpIter = decltype(chunkRecvOps_)::Iter;
 
   // State machines for send and recv ops.
-  void advanceSendOperation(
-      SendOpIter opIter,
-      SendOperation::State prevOpState);
-  void advanceRecvOperation(
-      RecvOpIter opIter,
-      RecvOperation::State prevOpState);
+  void advanceChunkSendOperation(
+      ChunkSendOpIter opIter,
+      ChunkSendOperation::State prevOpState);
+  void advanceChunkRecvOperation(
+      ChunkRecvOpIter opIter,
+      ChunkRecvOperation::State prevOpState);
 
   // Actions (i.e., methods that begin a state transition).
   // For send operations:
-  void requestEvent(SendOpIter opIter);
-  void recordStartEvent(SendOpIter opIter);
-  void writeDescriptor(SendOpIter opIter);
-  void readReply(SendOpIter opIter);
-  void returnEvent(SendOpIter opIter);
-  void waitOnStopEvent(SendOpIter opIter);
-  void callSendCallback(SendOpIter opIter);
-  void writeAck(SendOpIter opIter);
+  void requestEvent(ChunkSendOpIter opIter);
+  void recordStartEvent(ChunkSendOpIter opIter);
+  void writeDescriptor(ChunkSendOpIter opIter);
+  void readReply(ChunkSendOpIter opIter);
+  void returnEvent(ChunkSendOpIter opIter);
+  void waitOnStopEvent(ChunkSendOpIter opIter);
+  void callSendCallback(ChunkSendOpIter opIter);
+  void writeAck(ChunkSendOpIter opIter);
   // For recv operations:
-  void readDescriptor(RecvOpIter opIter);
-  void requestEvent(RecvOpIter opIter);
-  void waitOnStartEventAndCopyAndRecordStopEvent(RecvOpIter opIter);
-  void callRecvCallback(RecvOpIter opIter);
-  void writeReply(RecvOpIter opIter);
-  void readAck(RecvOpIter opIter);
-  void returnEvent(RecvOpIter opIter);
+  void readDescriptor(ChunkRecvOpIter opIter);
+  void requestEvent(ChunkRecvOpIter opIter);
+  void waitOnStartEventAndCopyAndRecordStopEvent(ChunkRecvOpIter opIter);
+  void callRecvCallback(ChunkRecvOpIter opIter);
+  void writeReply(ChunkRecvOpIter opIter);
+  void readAck(ChunkRecvOpIter opIter);
+  void returnEvent(ChunkRecvOpIter opIter);
 };
 
 } // namespace cuda_ipc
