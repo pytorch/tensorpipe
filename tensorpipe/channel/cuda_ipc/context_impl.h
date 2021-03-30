@@ -17,7 +17,6 @@
 #include <tensorpipe/channel/context_impl_boilerplate.h>
 #include <tensorpipe/common/allocator.h>
 #include <tensorpipe/common/cuda.h>
-#include <tensorpipe/common/cuda_event_pool.h>
 #include <tensorpipe/common/cuda_lib.h>
 #include <tensorpipe/common/deferred_executor.h>
 #include <tensorpipe/common/device.h>
@@ -54,19 +53,6 @@ class ContextImpl final
       const std::string& remoteDeviceDescriptor) const override;
 
   const CudaLib& getCudaLib();
-
-  const std::string& getProcessIdentifier();
-
-  void* openIpcHandle(
-      std::string allocationId,
-      const cudaIpcMemHandle_t& remoteHandle,
-      int deviceIdx);
-
-  // Creating CUDA IPC events "on-the-fly" risks causing a deadlock, due to a
-  // bug in the CUDA driver that was supposedly fixed in version 460. However,
-  // to support earlier versions, we create a pool of events at the beginning
-  // and re-use them for all transfers.
-  void requestSendEvent(int deviceIdx, CudaEventPool::RequestCallback callback);
 
   // Takes the index of the slot, the (smart) pointer to the slot, and the (raw)
   // pointer to the event for the slot.
@@ -109,26 +95,9 @@ class ContextImpl final
   const std::vector<std::vector<bool>> p2pSupport_;
 
   // A combination of the process's PID namespace and its PID, which combined
-  // with CUDA's buffer ID should allow us to uniquely identify each allocation
-  // on the current machine.
+  // with the device index allows us to uniquely identify each staging buffer on
+  // the current machine.
   const std::string processIdentifier_;
-
-  // Map from device pointer and device index, to the number of times that
-  // handle has been opened. Needed to keep track of what cudaIpcCloseMemHandle
-  // calls we need to make at closing.
-  // FIXME Turn this into an unordered_map.
-  // FIXME It may make sense to break the string into the process identifier
-  // which indexes a nested map which is keyed by the buffer ID (+ the device
-  // index), because each channel will only ever look up handles for the same
-  // process identifier, hence we could do that first loopup once and cache it.
-  std::map<std::tuple<std::string, int>, void*> openIpcHandles_;
-
-  // Pools of CUDA IPC events, needed because creating/destroying IPC events on
-  // the fly can cause deadlocks on old CUDA drivers, hence we eagerly create
-  // many events upfront and reuse them. The pools themselves are lazily created
-  // when first needed. The pools are per-device (device #N will be at index N
-  // in the vector).
-  std::vector<std::unique_ptr<CudaEventPool>> sendEventPools_;
 
   // A CUDA on-device allocation that acts as the outbox for all the channels of
   // this context. We cannot directly get and open IPC handles of the user's

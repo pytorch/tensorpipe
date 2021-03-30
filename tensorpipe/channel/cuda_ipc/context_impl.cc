@@ -39,9 +39,6 @@ namespace cuda_ipc {
 
 namespace {
 
-// This number is per-device.
-static constexpr size_t kNumIpcEventsInPool = 500;
-
 std::tuple<std::vector<std::string>, std::vector<std::vector<bool>>>
 getGlobalUuidsAndP2pSupport(const NvmlLib& nvmlLib) {
   unsigned int numDevices;
@@ -328,43 +325,6 @@ const CudaLib& ContextImpl::getCudaLib() {
   return cudaLib_;
 }
 
-const std::string& ContextImpl::getProcessIdentifier() {
-  return processIdentifier_;
-}
-
-void* ContextImpl::openIpcHandle(
-    std::string allocationId,
-    const cudaIpcMemHandle_t& remoteHandle,
-    int deviceIdx) {
-  auto iter = openIpcHandles_.find(std::make_tuple(allocationId, deviceIdx));
-  if (iter != openIpcHandles_.end()) {
-    return iter->second;
-  }
-  CudaDeviceGuard guard(deviceIdx);
-  void* remotePtr;
-  TP_CUDA_CHECK(cudaIpcOpenMemHandle(
-      &remotePtr, remoteHandle, cudaIpcMemLazyEnablePeerAccess));
-  openIpcHandles_[std::make_tuple(allocationId, deviceIdx)] = remotePtr;
-  return remotePtr;
-}
-
-void ContextImpl::requestSendEvent(
-    int deviceIdx,
-    CudaEventPool::RequestCallback callback) {
-  if (error_) {
-    callback(error_, nullptr);
-    return;
-  }
-  if (sendEventPools_.size() <= deviceIdx) {
-    sendEventPools_.resize(deviceIdx + 1);
-  }
-  if (sendEventPools_[deviceIdx] == nullptr) {
-    sendEventPools_[deviceIdx] = std::make_unique<CudaEventPool>(
-        kNumIpcEventsInPool, deviceIdx, /*interprocess=*/true);
-  }
-  sendEventPools_[deviceIdx]->request(std::move(callback));
-}
-
 void ContextImpl::allocateSlot(
     int deviceIdx,
     size_t length,
@@ -444,11 +404,6 @@ const ContextImpl::RemoteOutboxHandle& ContextImpl::openRemoteOutbox(
 }
 
 void ContextImpl::handleErrorImpl() {
-  for (std::unique_ptr<CudaEventPool>& pool : sendEventPools_) {
-    if (pool != nullptr) {
-      pool->close();
-    }
-  }
   for (std::unique_ptr<Outbox>& outbox : outboxes_) {
     if (outbox != nullptr) {
       outbox->allocator.close();
@@ -456,15 +411,7 @@ void ContextImpl::handleErrorImpl() {
   }
 }
 
-void ContextImpl::joinImpl() {
-  for (const auto& handle : openIpcHandles_) {
-    int deviceIdx = std::get<1>(handle.first);
-    void* remotePtr = handle.second;
-
-    CudaDeviceGuard guard(deviceIdx);
-    TP_CUDA_CHECK(cudaIpcCloseMemHandle(remotePtr));
-  }
-}
+void ContextImpl::joinImpl() {}
 
 bool ContextImpl::inLoop() const {
   return loop_.inLoop();

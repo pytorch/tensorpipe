@@ -18,7 +18,6 @@
 #include <tensorpipe/channel/cuda_ipc/context_impl.h>
 #include <tensorpipe/common/allocator.h>
 #include <tensorpipe/common/cuda.h>
-#include <tensorpipe/common/cuda_event_pool.h>
 #include <tensorpipe/common/cuda_lib.h>
 #include <tensorpipe/common/state_machine.h>
 #include <tensorpipe/transport/context.h>
