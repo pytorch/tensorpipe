@@ -86,16 +86,14 @@ void ChannelImpl::advanceSendOperation(
   sendOps_.attemptTransition(
       opIter,
       /*from=*/SendOperation::UNINITIALIZED,
-      /*to=*/SendOperation::WRITING_DESCRIPTOR_AND_READING_COMPLETION,
-      /*cond=*/!error_ &&
-          prevOpState >=
-              SendOperation::WRITING_DESCRIPTOR_AND_READING_COMPLETION,
+      /*to=*/SendOperation::READING_COMPLETION,
+      /*cond=*/!error_ && prevOpState >= SendOperation::READING_COMPLETION,
       /*actions=*/
       {&ChannelImpl::writeDescriptor, &ChannelImpl::readCompletion});
 
   sendOps_.attemptTransition(
       opIter,
-      /*from=*/SendOperation::WRITING_DESCRIPTOR_AND_READING_COMPLETION,
+      /*from=*/SendOperation::READING_COMPLETION,
       /*to=*/SendOperation::FINISHED,
       /*cond=*/op.doneReadingCompletion,
       /*actions=*/{&ChannelImpl::callSendCallback});
@@ -229,8 +227,8 @@ void ChannelImpl::readDescriptor(RecvOpIter opIter) {
                    << opIter->sequenceNumber << ")";
         opIter->doneReadingDescriptor = true;
         if (!impl.error_) {
-            Descriptor& nopDescriptor = nopHolderIn->getObject();
-            opIter->remotePtr = reinterpret_cast<void*>(nopDescriptor.ptr);
+          Descriptor& nopDescriptor = nopHolderIn->getObject();
+          opIter->remotePtr = reinterpret_cast<void*>(nopDescriptor.ptr);
         }
         impl.recvOps_.advanceOperation(opIter);
       }));
