@@ -10,15 +10,16 @@
 
 // Note: never include this file from headers!
 
-#include <tensorpipe/channel/channel.h>
+#include <string>
+
 #include <tensorpipe/common/nop.h>
 
 namespace tensorpipe {
 namespace channel {
 
-TDescriptor saveDescriptor(const AbstractNopHolder& object);
+std::string saveDescriptor(const AbstractNopHolder& object);
 
-void loadDescriptor(AbstractNopHolder& object, const TDescriptor& in);
+void loadDescriptor(AbstractNopHolder& object, const std::string& in);
 
 } // namespace channel
 } // namespace tensorpipe
