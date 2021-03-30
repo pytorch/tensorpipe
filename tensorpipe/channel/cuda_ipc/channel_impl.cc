@@ -315,8 +315,6 @@ void ChannelImpl::recvImplFromLoop(
     uint64_t sequenceNumber,
     Buffer buffer,
     TRecvCallback callback) {
-  TP_DCHECK_EQ(descriptor, "");
-
   int deviceIdx = cudaDeviceForPointer(
       context_->getCudaLib(), buffer.unwrap<CudaBuffer>().ptr);
   const size_t bufferLength = buffer.unwrap<CudaBuffer>().length;
