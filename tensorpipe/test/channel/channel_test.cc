@@ -212,7 +212,6 @@ class SendTensorsBothWaysTest : public ClientServerChannelTestCase<TBuffer> {
     // Perform send.
     std::future<Error> sendFuture =
         sendWithFuture(channel, wrappedSendData.buffer());
-
     // Perform recv.
     std::future<Error> recvFuture =
         recvWithFuture(channel, wrappedRecvData.buffer());
@@ -245,7 +244,6 @@ class SendTensorsBothWaysTest : public ClientServerChannelTestCase<TBuffer> {
     // Perform send.
     std::future<Error> sendFuture =
         sendWithFuture(channel, wrappedSendData.buffer());
-
     // Perform recv.
     std::future<Error> recvFuture =
         recvWithFuture(channel, wrappedRecvData.buffer());
