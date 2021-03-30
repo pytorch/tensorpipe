@@ -83,7 +83,6 @@ struct WriteOperation {
   // Progress indicators.
   enum State {
     UNINITIALIZED,
-    SENDING_TENSORS,
     WRITING_PAYLOADS_AND_SENDING_TENSORS,
     FINISHED
   };

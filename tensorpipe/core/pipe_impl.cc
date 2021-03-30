@@ -738,7 +738,7 @@ void PipeImpl::advanceWriteOperation(
       /*actions=*/{&PipeImpl::callWriteCallback});
 
   // Needs to go after previous op to ensure predictable and consistent ordering
-  // of send calls on channels.
+  // of write calls on the connection and send calls on channels.
   writeOps_.attemptTransition(
       opIter,
       /*from=*/WriteOperation::UNINITIALIZED,
