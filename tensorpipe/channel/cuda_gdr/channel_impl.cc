@@ -429,7 +429,8 @@ void ChannelImpl::advanceRecvOperation(
       opIter,
       /*from=*/RecvOperation::UNINITIALIZED,
       /*to=*/RecvOperation::READING_DESCRIPTOR,
-      /*cond=*/!error_ && prevOpState >= RecvOperation::READING_DESCRIPTOR,
+      /*cond=*/!error_ && state_ == ESTABLISHED &&
+          prevOpState >= RecvOperation::READING_DESCRIPTOR,
       /*actions=*/{&ChannelImpl::readDescriptor});
 
   recvOps_.attemptTransition(
@@ -446,7 +447,7 @@ void ChannelImpl::advanceRecvOperation(
       opIter,
       /*from=*/RecvOperation::READING_DESCRIPTOR,
       /*to=*/RecvOperation::WAITING_FOR_CUDA_EVENT,
-      /*cond=*/!error_ && op.doneReadingDescriptor && state_ == ESTABLISHED &&
+      /*cond=*/!error_ && op.doneReadingDescriptor &&
           prevOpState >=
               RecvOperation::RECEIVING_OVER_IB_AND_WRITING_READY_TO_RECEIVE,
       /*actions=*/{&ChannelImpl::waitForRecvCudaEvent});
