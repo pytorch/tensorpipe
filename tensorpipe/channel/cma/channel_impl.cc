@@ -41,13 +41,13 @@ ChannelImpl::ChannelImpl(
     std::shared_ptr<ContextImpl> context,
     std::string id,
     std::shared_ptr<transport::Connection> descriptorConnection,
-    std::shared_ptr<transport::Connection> notificationConnection)
+    std::shared_ptr<transport::Connection> completionConnection)
     : ChannelImplBoilerplate<ContextImpl, ChannelImpl>(
           token,
           std::move(context),
           std::move(id)),
       descriptorConnection_(std::move(descriptorConnection)),
-      notificationConnection_(std::move(notificationConnection)) {}
+      completionConnection_(std::move(completionConnection)) {}
 
 void ChannelImpl::initImplFromLoop() {
   context_->enroll(*this);
@@ -82,36 +82,21 @@ void ChannelImpl::advanceSendOperation(
       /*actions=*/{&ChannelImpl::callSendCallback});
 
   // Needs to go after previous op to ensure predictable and consistent ordering
-  // of write calls on the control connection.
+  // of write calls on the descriptor control connection and read calls on the
+  // completion control connection.
   sendOps_.attemptTransition(
       opIter,
       /*from=*/SendOperation::UNINITIALIZED,
-      /*to=*/SendOperation::WRITING_DESCRIPTOR,
-      /*cond=*/!error_ && prevOpState >= SendOperation::WRITING_DESCRIPTOR,
-      /*actions=*/{&ChannelImpl::writeDescriptor});
+      /*to=*/SendOperation::READING_COMPLETION,
+      /*cond=*/!error_ && prevOpState >= SendOperation::READING_COMPLETION,
+      /*actions=*/
+      {&ChannelImpl::writeDescriptor, &ChannelImpl::readCompletion});
 
   sendOps_.attemptTransition(
       opIter,
-      /*from=*/SendOperation::WRITING_DESCRIPTOR,
+      /*from=*/SendOperation::READING_COMPLETION,
       /*to=*/SendOperation::FINISHED,
-      /*cond=*/error_ && op.doneWritingDescriptor,
-      /*actions=*/{&ChannelImpl::callSendCallback});
-
-  // Needs to go after previous op to ensure predictable and consistent ordering
-  // of read calls on the control connection.
-  sendOps_.attemptTransition(
-      opIter,
-      /*from=*/SendOperation::WRITING_DESCRIPTOR,
-      /*to=*/SendOperation::READING_NOTIFICATION,
-      /*cond=*/!error_ && op.doneWritingDescriptor &&
-          prevOpState >= SendOperation::READING_NOTIFICATION,
-      /*actions=*/{&ChannelImpl::readNotification});
-
-  sendOps_.attemptTransition(
-      opIter,
-      /*from=*/SendOperation::READING_NOTIFICATION,
-      /*to=*/SendOperation::FINISHED,
-      /*cond=*/op.doneReadingNotification,
+      /*cond=*/op.doneReadingCompletion,
       /*actions=*/{&ChannelImpl::callSendCallback});
 }
 
@@ -127,29 +112,29 @@ void ChannelImpl::writeDescriptor(SendOpIter opIter) {
   TP_VLOG(6) << "Channel " << id_ << " is writing descriptor (#"
              << op.sequenceNumber << ")";
   descriptorConnection_->write(
-      *nopHolder, callbackWrapper_([opIter, nopHolder](ChannelImpl& impl) {
+      *nopHolder,
+      callbackWrapper_([sequenceNumber{op.sequenceNumber},
+                        nopHolder](ChannelImpl& impl) {
         TP_VLOG(6) << "Channel " << impl.id_ << " done writing descriptor (#"
-                   << opIter->sequenceNumber << ")";
-        opIter->doneWritingDescriptor = true;
-        impl.sendOps_.advanceOperation(opIter);
+                   << sequenceNumber << ")";
       }));
 }
 
-void ChannelImpl::readNotification(SendOpIter opIter) {
+void ChannelImpl::readCompletion(SendOpIter opIter) {
   SendOperation& op = *opIter;
 
-  TP_VLOG(6) << "Channel " << id_ << " is reading notification (#"
+  TP_VLOG(6) << "Channel " << id_ << " is reading completion (#"
              << op.sequenceNumber << ")";
-  notificationConnection_->read(
+  completionConnection_->read(
       nullptr,
       0,
       callbackWrapper_([opIter](
                            ChannelImpl& impl,
                            const void* /* unused */,
                            size_t /* unused */) {
-        TP_VLOG(6) << "Channel " << impl.id_ << " done reading notification (#"
+        TP_VLOG(6) << "Channel " << impl.id_ << " done reading completion (#"
                    << opIter->sequenceNumber << ")";
-        opIter->doneReadingNotification = true;
+        opIter->doneReadingCompletion = true;
         impl.sendOps_.advanceOperation(opIter);
       }));
 }
@@ -192,7 +177,7 @@ void ChannelImpl::advanceRecvOperation(
       /*actions=*/{&ChannelImpl::callRecvCallback});
 
   // Needs to go after previous op to ensure predictable and consistent ordering
-  // of read calls on the control connection.
+  // of read calls on the descriptor control connection.
   recvOps_.attemptTransition(
       opIter,
       /*from=*/RecvOperation::UNINITIALIZED,
@@ -222,7 +207,7 @@ void ChannelImpl::advanceRecvOperation(
       /*actions=*/{&ChannelImpl::callRecvCallback});
 
   // Needs to go after previous op to ensure predictable and consistent ordering
-  // of write calls on the control connection.
+  // of write calls on the completion control connection.
   recvOps_.attemptTransition(
       opIter,
       /*from=*/RecvOperation::COPYING,
@@ -230,7 +215,7 @@ void ChannelImpl::advanceRecvOperation(
       /*cond=*/!error_ && op.doneCopying &&
           prevOpState >= RecvOperation::FINISHED,
       /*actions=*/
-      {&ChannelImpl::callRecvCallback, &ChannelImpl::writeNotification});
+      {&ChannelImpl::callRecvCallback, &ChannelImpl::writeCompletion});
 }
 
 void ChannelImpl::readDescriptor(RecvOpIter opIter) {
@@ -243,11 +228,12 @@ void ChannelImpl::readDescriptor(RecvOpIter opIter) {
       *nopHolderIn, callbackWrapper_([opIter, nopHolderIn](ChannelImpl& impl) {
         TP_VLOG(6) << "Channel " << impl.id_ << " done reading descriptor (#"
                    << opIter->sequenceNumber << ")";
-        Descriptor& nopDescriptor = nopHolderIn->getObject();
-        opIter->remotePid = nopDescriptor.pid;
-        opIter->remotePtr = reinterpret_cast<void*>(nopDescriptor.ptr);
-
         opIter->doneReadingDescriptor = true;
+        if (!impl.error_) {
+          Descriptor& nopDescriptor = nopHolderIn->getObject();
+          opIter->remotePid = nopDescriptor.pid;
+          opIter->remotePtr = reinterpret_cast<void*>(nopDescriptor.ptr);
+        }
         impl.recvOps_.advanceOperation(opIter);
       }));
 }
@@ -278,16 +264,16 @@ void ChannelImpl::callRecvCallback(RecvOpIter opIter) {
   op.callback = nullptr;
 }
 
-void ChannelImpl::writeNotification(RecvOpIter opIter) {
+void ChannelImpl::writeCompletion(RecvOpIter opIter) {
   RecvOperation& op = *opIter;
 
-  TP_VLOG(6) << "Channel " << id_ << " is writing notification (#"
+  TP_VLOG(6) << "Channel " << id_ << " is writing completion (#"
              << op.sequenceNumber << ")";
-  notificationConnection_->write(
+  completionConnection_->write(
       nullptr,
       0,
       callbackWrapper_([sequenceNumber{op.sequenceNumber}](ChannelImpl& impl) {
-        TP_VLOG(6) << "Channel " << impl.id_ << " done writing notification (#"
+        TP_VLOG(6) << "Channel " << impl.id_ << " done writing completion (#"
                    << sequenceNumber << ")";
       }));
 }
@@ -297,7 +283,7 @@ void ChannelImpl::handleErrorImpl() {
   recvOps_.advanceAllOperations();
 
   descriptorConnection_->close();
-  notificationConnection_->close();
+  completionConnection_->close();
 
   context_->unenroll(*this);
 }
