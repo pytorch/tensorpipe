@@ -31,6 +31,12 @@ namespace tensorpipe {
 namespace channel {
 namespace cuda_ipc {
 
+NOP_EXTERNAL_STRUCTURE(
+    ContextImpl::OutboxInfo,
+    processIdentifier,
+    memHandle,
+    eventHandles);
+
 namespace {
 
 size_t ceilOfRatio(size_t n, size_t d) {
@@ -38,11 +44,10 @@ size_t ceilOfRatio(size_t n, size_t d) {
 }
 
 struct Descriptor {
-  std::string allocationId;
-  std::string handle;
-  size_t offset;
-  std::string eventHandle;
-  NOP_STRUCTURE(Descriptor, allocationId, handle, offset, eventHandle);
+  int deviceIdx;
+  size_t slotIdx;
+  nop::Optional<ContextImpl::OutboxInfo> outboxInfo;
+  NOP_STRUCTURE(Descriptor, deviceIdx, slotIdx, outboxInfo);
 };
 
 } // namespace
@@ -156,74 +161,92 @@ void ChannelImpl::advanceChunkSendOperation(
   chunkSendOps_.attemptTransition(
       opIter,
       /*from=*/ChunkSendOperation::UNINITIALIZED,
-      /*to=*/ChunkSendOperation::REQUESTING_EVENT,
-      /*cond=*/!error_ && prevOpState >= ChunkSendOperation::REQUESTING_EVENT,
-      /*actions=*/{&ChannelImpl::requestEvent});
+      /*to=*/ChunkSendOperation::ALLOCATING_STAGING_BUFFER,
+      /*cond=*/!error_ &&
+          prevOpState >= ChunkSendOperation::ALLOCATING_STAGING_BUFFER,
+      /*actions=*/
+      {&ChannelImpl::allocateStagingBuffer});
 
   // See above for why this needs to go after previous op.
   chunkSendOps_.attemptTransition(
       opIter,
-      /*from=*/ChunkSendOperation::REQUESTING_EVENT,
+      /*from=*/
+      ChunkSendOperation::ALLOCATING_STAGING_BUFFER,
       /*to=*/ChunkSendOperation::FINISHED,
-      /*cond=*/error_ && op.doneRequestingEvent &&
+      /*cond=*/error_ && op.doneAllocatingStagingBuffer &&
           prevOpState >= ChunkSendOperation::FINISHED,
       /*actions=*/
-      {&ChannelImpl::returnEvent, &ChannelImpl::callSendCallback});
+      {&ChannelImpl::callSendCallback, &ChannelImpl::releaseStagingBuffer});
 
   // Needs to go after previous op to ensure predictable and consistent ordering
   // of write calls on the descriptor control connection and read calls on the
   // reply control connection.
   chunkSendOps_.attemptTransition(
       opIter,
-      /*from=*/ChunkSendOperation::REQUESTING_EVENT,
+      /*from=*/
+      ChunkSendOperation::ALLOCATING_STAGING_BUFFER,
       /*to=*/ChunkSendOperation::READING_REPLY,
-      /*cond=*/!error_ && op.doneRequestingEvent &&
+      /*cond=*/!error_ && op.doneAllocatingStagingBuffer &&
           prevOpState >= ChunkSendOperation::READING_REPLY,
       /*actions=*/
-      {&ChannelImpl::recordStartEvent,
+      {&ChannelImpl::copyFromSourceToStaging,
        &ChannelImpl::writeDescriptor,
-       &ChannelImpl::readReply});
+       &ChannelImpl::readReply,
+       &ChannelImpl::callSendCallback});
 
   // See above for why this needs to go after previous op.
   chunkSendOps_.attemptTransition(
       opIter,
       /*from=*/ChunkSendOperation::READING_REPLY,
       /*to=*/ChunkSendOperation::FINISHED,
-      /*cond=*/error_ && op.doneReadingReply &&
-          prevOpState >= ChunkSendOperation::FINISHED,
-      /*actions=*/{&ChannelImpl::returnEvent, &ChannelImpl::callSendCallback});
-
-  // See above for why this needs to go after previous op.
-  chunkSendOps_.attemptTransition(
-      opIter,
-      /*from=*/ChunkSendOperation::READING_REPLY,
-      /*to=*/ChunkSendOperation::FINISHED,
-      /*cond=*/!error_ && op.doneReadingReply &&
+      /*cond=*/op.doneReadingReply &&
           prevOpState >= ChunkSendOperation::FINISHED,
       /*actions=*/
-      {&ChannelImpl::waitOnStopEvent,
-       &ChannelImpl::returnEvent,
-       &ChannelImpl::callSendCallback});
+      {&ChannelImpl::releaseStagingBuffer});
 }
 
-void ChannelImpl::requestEvent(ChunkSendOpIter opIter) {
+void ChannelImpl::allocateStagingBuffer(ChunkSendOpIter opIter) {
   ChunkSendOperation& op = *opIter;
 
-  context_->requestSendEvent(
+  TP_VLOG(5) << "Channel " << id_
+             << " is allocating temporary memory for chunk #" << op.chunkId
+             << " of " << op.numChunks << " for buffer #"
+             << op.bufferSequenceNumber;
+  context_->allocateSlot(
       op.deviceIdx,
-      callbackWrapper_(
-          [opIter](ChannelImpl& impl, CudaEventPool::BorrowedEvent event) {
-            opIter->doneRequestingEvent = true;
-            if (!impl.error_) {
-              opIter->event = std::move(event);
-            }
-            impl.chunkSendOps_.advanceOperation(opIter);
-          }));
+      op.length,
+      callbackWrapper_([opIter](
+                           ChannelImpl& impl,
+                           size_t slotIdx,
+                           Allocator::TChunk buffer,
+                           CudaEvent* event) {
+        TP_VLOG(5) << "Channel " << impl.id_
+                   << " is done allocating temporary memory for chunk #"
+                   << opIter->chunkId << " of " << opIter->numChunks
+                   << " for buffer #" << opIter->bufferSequenceNumber;
+        opIter->doneAllocatingStagingBuffer = true;
+        if (!impl.error_) {
+          opIter->slotIdx = slotIdx;
+          opIter->stagingBuffer = std::move(buffer);
+          opIter->event = event;
+        }
+        impl.chunkSendOps_.advanceOperation(opIter);
+      }));
 }
 
-void ChannelImpl::recordStartEvent(ChunkSendOpIter opIter) {
+void ChannelImpl::copyFromSourceToStaging(ChunkSendOpIter opIter) {
   ChunkSendOperation& op = *opIter;
 
+  op.event->wait(op.stream, op.deviceIdx);
+  {
+    CudaDeviceGuard guard(op.deviceIdx);
+    TP_CUDA_CHECK(cudaMemcpyAsync(
+        op.stagingBuffer.get(),
+        op.ptr,
+        op.length,
+        cudaMemcpyDeviceToDevice,
+        op.stream));
+  }
   op.event->record(op.stream);
 }
 
@@ -232,37 +255,18 @@ void ChannelImpl::writeDescriptor(ChunkSendOpIter opIter) {
 
   const CudaLib& cudaLib = context_->getCudaLib();
 
-  cudaIpcMemHandle_t handle;
-  size_t offset;
-  unsigned long long bufferId;
-  {
-    CudaDeviceGuard guard(op.deviceIdx);
-    TP_CUDA_CHECK(cudaIpcGetMemHandle(&handle, const_cast<void*>(op.ptr)));
-
-    CUdeviceptr basePtr;
-    TP_CUDA_DRIVER_CHECK(
-        cudaLib,
-        cudaLib.memGetAddressRange(
-            &basePtr, nullptr, reinterpret_cast<CUdeviceptr>(op.ptr)));
-    offset = reinterpret_cast<const uint8_t*>(op.ptr) -
-        reinterpret_cast<uint8_t*>(basePtr);
-
-    TP_CUDA_DRIVER_CHECK(
-        cudaLib,
-        cudaLib.pointerGetAttribute(
-            &bufferId, CU_POINTER_ATTRIBUTE_BUFFER_ID, basePtr));
-  }
-
   auto nopDescriptorHolder = std::make_shared<NopHolder<Descriptor>>();
   Descriptor& nopDescriptor = nopDescriptorHolder->getObject();
-  // FIXME The process identifier will be the same each time, hence we could
-  // just send it once during the setup of the channel and omit it later.
-  nopDescriptor.allocationId =
-      context_->getProcessIdentifier() + "_" + std::to_string(bufferId);
-  nopDescriptor.handle =
-      std::string(reinterpret_cast<const char*>(&handle), sizeof(handle));
-  nopDescriptor.offset = offset;
-  nopDescriptor.eventHandle = op.event->serializedHandle();
+  nopDescriptor.deviceIdx = op.deviceIdx;
+  nopDescriptor.slotIdx = op.slotIdx;
+  if (localOutboxesSent_.size() <= op.deviceIdx) {
+    localOutboxesSent_.resize(op.deviceIdx + 1, false);
+  }
+  if (!localOutboxesSent_[op.deviceIdx]) {
+    localOutboxesSent_[op.deviceIdx] = true;
+    nopDescriptor.outboxInfo = context_->getLocalOutboxInfo(op.deviceIdx);
+  }
+
   TP_VLOG(6) << "Channel " << id_ << " is writing nop object (descriptor #"
              << op.sequenceNumber << ")";
   descriptorConnection_->write(
@@ -295,16 +299,10 @@ void ChannelImpl::readReply(ChunkSendOpIter opIter) {
       }));
 }
 
-void ChannelImpl::waitOnStopEvent(ChunkSendOpIter opIter) {
+void ChannelImpl::releaseStagingBuffer(ChunkSendOpIter opIter) {
   ChunkSendOperation& op = *opIter;
 
-  op.event->wait(op.stream, op.deviceIdx);
-}
-
-void ChannelImpl::returnEvent(ChunkSendOpIter opIter) {
-  ChunkSendOperation& op = *opIter;
-
-  op.event = nullptr;
+  op.stagingBuffer = nullptr;
 }
 
 void ChannelImpl::callSendCallback(ChunkSendOpIter opIter) {
@@ -390,9 +388,9 @@ void ChannelImpl::advanceChunkRecvOperation(
       /*cond=*/!error_ && op.doneReadingDescriptor &&
           prevOpState >= ChunkRecvOperation::FINISHED,
       /*actions=*/
-      {&ChannelImpl::waitOnStartEventAndCopyAndRecordStopEvent,
-       &ChannelImpl::callRecvCallback,
-       &ChannelImpl::writeReply});
+      {&ChannelImpl::copyFromStagingToTarget,
+       &ChannelImpl::writeReply,
+       &ChannelImpl::callRecvCallback});
 }
 
 void ChannelImpl::readDescriptor(ChunkRecvOpIter opIter) {
@@ -410,43 +408,56 @@ void ChannelImpl::readDescriptor(ChunkRecvOpIter opIter) {
         opIter->doneReadingDescriptor = true;
         if (!impl.error_) {
           Descriptor& nopDescriptor = nopDescriptorHolder->getObject();
-          opIter->allocationId = std::move(nopDescriptor.allocationId);
-          opIter->bufferHandle = std::move(nopDescriptor.handle);
-          opIter->offset = nopDescriptor.offset;
-          opIter->eventHandle = std::move(nopDescriptor.eventHandle);
+          opIter->remoteDeviceIdx = nopDescriptor.deviceIdx;
+          opIter->remoteSlotIdx = nopDescriptor.slotIdx;
+          if (!nopDescriptor.outboxInfo.empty()) {
+            if (impl.remoteOutboxesReceived_.size() <=
+                opIter->remoteDeviceIdx) {
+              impl.remoteOutboxesReceived_.resize(opIter->remoteDeviceIdx + 1);
+            }
+            TP_DCHECK(!impl.remoteOutboxesReceived_[opIter->remoteDeviceIdx]
+                           .has_value());
+            impl.remoteOutboxesReceived_[opIter->remoteDeviceIdx] =
+                std::move(nopDescriptor.outboxInfo.take());
+          }
         }
         impl.chunkRecvOps_.advanceOperation(opIter);
       }));
 }
 
-void ChannelImpl::waitOnStartEventAndCopyAndRecordStopEvent(
-    ChunkRecvOpIter opIter) {
+void ChannelImpl::copyFromStagingToTarget(ChunkRecvOpIter opIter) {
   ChunkRecvOperation& op = *opIter;
 
-  const cudaIpcEventHandle_t* startEvHandle =
-      reinterpret_cast<const cudaIpcEventHandle_t*>(op.eventHandle.c_str());
-  const cudaIpcMemHandle_t* remoteHandle =
-      reinterpret_cast<const cudaIpcMemHandle_t*>(op.bufferHandle.c_str());
+  if (remoteOutboxesOpened_.size() <= op.remoteDeviceIdx) {
+    remoteOutboxesOpened_.resize(op.remoteDeviceIdx + 1);
+  }
+  if (remoteOutboxesOpened_[op.remoteDeviceIdx].size() <= op.deviceIdx) {
+    remoteOutboxesOpened_[op.remoteDeviceIdx].resize(op.deviceIdx + 1, nullptr);
+  }
+  if (remoteOutboxesOpened_[op.remoteDeviceIdx][op.deviceIdx] == nullptr) {
+    remoteOutboxesOpened_[op.remoteDeviceIdx][op.deviceIdx] =
+        &context_->openRemoteOutbox(
+            op.deviceIdx,
+            op.remoteDeviceIdx,
+            remoteOutboxesReceived_[op.remoteDeviceIdx].value());
+  }
+  const ContextImpl::RemoteOutboxHandle& outbox =
+      *remoteOutboxesOpened_[op.remoteDeviceIdx][op.deviceIdx];
 
   TP_VLOG(6) << "Channel " << id_ << " is copying payload (#"
              << op.sequenceNumber << ")";
 
-  CudaEvent event(op.deviceIdx, *startEvHandle);
-  event.wait(op.stream, op.deviceIdx);
-
-  void* remoteBasePtr =
-      context_->openIpcHandle(op.allocationId, *remoteHandle, op.deviceIdx);
+  outbox.events[op.remoteSlotIdx]->wait(op.stream, op.deviceIdx);
   {
     CudaDeviceGuard guard(op.deviceIdx);
     TP_CUDA_CHECK(cudaMemcpyAsync(
         op.ptr,
-        static_cast<uint8_t*>(remoteBasePtr) + op.offset,
+        outbox.buffer.ptr() + kSlotSize * op.remoteSlotIdx,
         op.length,
         cudaMemcpyDeviceToDevice,
         op.stream));
   }
-
-  event.record(op.stream);
+  outbox.events[op.remoteSlotIdx]->record(op.stream);
 
   TP_VLOG(6) << "Channel " << id_ << " done copying payload (#"
              << op.sequenceNumber << ")";

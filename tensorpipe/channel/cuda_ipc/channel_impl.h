@@ -15,6 +15,8 @@
 #include <cuda_runtime.h>
 
 #include <tensorpipe/channel/channel_impl_boilerplate.h>
+#include <tensorpipe/channel/cuda_ipc/context_impl.h>
+#include <tensorpipe/common/allocator.h>
 #include <tensorpipe/common/cuda.h>
 #include <tensorpipe/common/cuda_event_pool.h>
 #include <tensorpipe/common/cuda_lib.h>
@@ -28,14 +30,19 @@ namespace cuda_ipc {
 class ContextImpl;
 
 struct ChunkSendOperation {
-  enum State { UNINITIALIZED, REQUESTING_EVENT, READING_REPLY, FINISHED };
+  enum State {
+    UNINITIALIZED,
+    ALLOCATING_STAGING_BUFFER,
+    READING_REPLY,
+    FINISHED
+  };
 
   // Fields used by the state machine
   uint64_t sequenceNumber{0};
   State state{UNINITIALIZED};
 
   // Progress flags
-  bool doneRequestingEvent{false};
+  bool doneAllocatingStagingBuffer{false};
   bool doneReadingReply{false};
 
   // Arguments at creation
@@ -49,7 +56,9 @@ struct ChunkSendOperation {
   TSendCallback callback;
 
   // Other data
-  CudaEventPool::BorrowedEvent event;
+  size_t slotIdx{static_cast<size_t>(-1)};
+  Allocator::TChunk stagingBuffer;
+  CudaEvent* event{nullptr};
 
   ChunkSendOperation(
       uint64_t bufferSequenceNumber,
@@ -63,13 +72,7 @@ struct ChunkSendOperation {
 };
 
 struct ChunkRecvOperation {
-  enum State {
-    UNINITIALIZED,
-    READING_DESCRIPTOR,
-    REQUESTING_EVENT,
-    READING_ACK,
-    FINISHED
-  };
+  enum State { UNINITIALIZED, READING_DESCRIPTOR, FINISHED };
 
   // Fields used by the state machine
   uint64_t sequenceNumber{0};
@@ -77,6 +80,8 @@ struct ChunkRecvOperation {
 
   // Progress flags
   bool doneReadingDescriptor{false};
+  bool doneRequestingEvent{false};
+  bool doneReadingAck{false};
 
   // Arguments at creation
   const uint64_t bufferSequenceNumber;
@@ -89,10 +94,8 @@ struct ChunkRecvOperation {
   TRecvCallback callback;
 
   // Other data
-  std::string allocationId;
-  std::string bufferHandle;
-  size_t offset;
-  std::string eventHandle;
+  int remoteDeviceIdx;
+  size_t remoteSlotIdx;
 
   ChunkRecvOperation(
       uint64_t bufferSequenceNumber,
@@ -134,6 +137,23 @@ class ChannelImpl final
   const std::shared_ptr<transport::Connection> descriptorConnection_;
   const std::shared_ptr<transport::Connection> replyConnection_;
 
+  // For each local device, whether we've already sent the information about the
+  // device's outbox to the remote, who needs it to open a handle to the outbox.
+  // Used during the send path.
+  std::vector<bool> localOutboxesSent_;
+
+  // For each remote device, the information about the remote's outbox for that
+  // device (or nullopt, if we haven't received it yet). We store it because we
+  // will only receive it once (for the first buffer coming from that device)
+  // but we might need it multiple time, as we need to open it for every local
+  // target device where it might be needed. Used during the receive path.
+  std::vector<optional<ContextImpl::OutboxInfo>> remoteOutboxesReceived_;
+  // For each remote and local device, the handle to the opened remote outbox
+  // for that device (or nullptr if we haven't opened it yet). Used during the
+  // receive path.
+  std::vector<std::vector<const ContextImpl::RemoteOutboxHandle*>>
+      remoteOutboxesOpened_;
+
   // A sequence number for the chunks.
   uint64_t nextChunkBeingSent_{0};
   uint64_t nextChunkBeingReceived_{0};
@@ -157,16 +177,15 @@ class ChannelImpl final
 
   // Actions (i.e., methods that begin a state transition).
   // For send operations:
-  void requestEvent(ChunkSendOpIter opIter);
-  void recordStartEvent(ChunkSendOpIter opIter);
+  void allocateStagingBuffer(ChunkSendOpIter opIter);
+  void copyFromSourceToStaging(ChunkSendOpIter opIter);
   void writeDescriptor(ChunkSendOpIter opIter);
   void readReply(ChunkSendOpIter opIter);
-  void waitOnStopEvent(ChunkSendOpIter opIter);
-  void returnEvent(ChunkSendOpIter opIter);
+  void releaseStagingBuffer(ChunkSendOpIter opIter);
   void callSendCallback(ChunkSendOpIter opIter);
   // For recv operations:
   void readDescriptor(ChunkRecvOpIter opIter);
-  void waitOnStartEventAndCopyAndRecordStopEvent(ChunkRecvOpIter opIter);
+  void copyFromStagingToTarget(ChunkRecvOpIter opIter);
   void callRecvCallback(ChunkRecvOpIter opIter);
   void writeReply(ChunkRecvOpIter opIter);
 };
