@@ -158,12 +158,14 @@ class ChannelImpl final
   void callSendCallback(ChunkSendOpIter opIter);
   void sendCpuBuffer(ChunkSendOpIter opIter);
   void writeReadyToSend(ChunkSendOpIter opIter);
+  void returnSendCpuBuffer(ChunkSendOpIter opIter);
   // For recv operations:
   void readReadyToSend(ChunkRecvOpIter opIter);
   void allocateRecvCpuBuffer(ChunkRecvOpIter opIter);
   void receiveCpuBuffer(ChunkRecvOpIter opIter);
   void copyFromCpuToGpu(ChunkRecvOpIter opIter);
   void callRecvCallback(ChunkRecvOpIter opIter);
+  void returnRecvCpuBuffer(ChunkRecvOpIter opIter);
 
   void cudaCopy(
       void* dst,
