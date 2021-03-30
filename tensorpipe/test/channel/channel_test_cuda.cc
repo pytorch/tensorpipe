@@ -44,10 +44,6 @@ class ReceiverWaitsForStartEventTest
             .length = kSize,
             .stream = sendStream,
         },
-        [](const tensorpipe::Error& error, std::string descriptor) {
-          EXPECT_FALSE(error);
-          EXPECT_EQ(descriptor, "");
-        },
         [sendPromise{std::move(sendPromise)}](const tensorpipe::Error& error) {
           sendPromise->set_value(error);
         });
@@ -73,7 +69,6 @@ class ReceiverWaitsForStartEventTest
     auto recvFuture = recvPromise->get_future();
 
     channel->recv(
-        "",
         CudaBuffer{
             .ptr = ptr,
             .length = kSize,

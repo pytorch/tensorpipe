@@ -8,15 +8,17 @@
 
 #include <tensorpipe/channel/helpers.h>
 
+#include <string>
+
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/nop.h>
 
 namespace tensorpipe {
 namespace channel {
 
-TDescriptor saveDescriptor(const AbstractNopHolder& object) {
+std::string saveDescriptor(const AbstractNopHolder& object) {
   const size_t len = object.getSize();
-  TDescriptor out(len, '\0');
+  std::string out(len, '\0');
   NopWriter writer(
       const_cast<uint8_t*>(reinterpret_cast<const uint8_t*>(out.data())), len);
 
@@ -27,7 +29,7 @@ TDescriptor saveDescriptor(const AbstractNopHolder& object) {
   return out;
 }
 
-void loadDescriptor(AbstractNopHolder& object, const TDescriptor& in) {
+void loadDescriptor(AbstractNopHolder& object, const std::string& in) {
   const size_t len = in.size();
   NopReader reader(reinterpret_cast<const uint8_t*>(in.data()), len);
 

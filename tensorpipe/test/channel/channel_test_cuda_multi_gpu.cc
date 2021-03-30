@@ -54,10 +54,6 @@ class SendAcrossDevicesTest : public ClientServerChannelTestCase<CudaBuffer> {
             .length = kSize,
             .stream = sendStream,
         },
-        [](const tensorpipe::Error& error, std::string descriptor) {
-          EXPECT_FALSE(error);
-          EXPECT_EQ(descriptor, "");
-        },
         [sendPromise{std::move(sendPromise)}](const tensorpipe::Error& error) {
           sendPromise->set_value(error);
         });
@@ -99,7 +95,6 @@ class SendAcrossDevicesTest : public ClientServerChannelTestCase<CudaBuffer> {
     auto recvFuture = recvPromise->get_future();
 
     channel->recv(
-        "",
         CudaBuffer{
             .ptr = ptr,
             .length = kSize,
@@ -175,10 +170,6 @@ class SendReverseAcrossDevicesTest
             .length = kSize,
             .stream = sendStream,
         },
-        [](const tensorpipe::Error& error, std::string descriptor) {
-          EXPECT_FALSE(error);
-          EXPECT_EQ(descriptor, "");
-        },
         [sendPromise{std::move(sendPromise)}](const tensorpipe::Error& error) {
           sendPromise->set_value(error);
         });
@@ -220,7 +211,6 @@ class SendReverseAcrossDevicesTest
     auto recvFuture = recvPromise->get_future();
 
     channel->recv(
-        "",
         CudaBuffer{
             .ptr = ptr,
             .length = kSize,
@@ -296,10 +286,6 @@ class SendAcrossNonDefaultDevicesTest
             .length = kSize,
             .stream = sendStream,
         },
-        [](const tensorpipe::Error& error, std::string descriptor) {
-          EXPECT_FALSE(error);
-          EXPECT_EQ(descriptor, "");
-        },
         [sendPromise{std::move(sendPromise)}](const tensorpipe::Error& error) {
           sendPromise->set_value(error);
         });
@@ -337,7 +323,6 @@ class SendAcrossNonDefaultDevicesTest
     auto recvFuture = recvPromise->get_future();
 
     channel->recv(
-        "",
         CudaBuffer{
             .ptr = ptr,
             .length = kSize,

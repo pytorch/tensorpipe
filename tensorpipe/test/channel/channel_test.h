@@ -158,12 +158,7 @@ class ChannelTestHelper {
   auto future = promise->get_future();
 
   channel->send(
-      buffer,
-      [](const tensorpipe::Error& error, std::string descriptor) {
-        EXPECT_FALSE(error);
-        EXPECT_EQ(descriptor, "");
-      },
-      [promise{std::move(promise)}](const tensorpipe::Error& error) {
+      buffer, [promise{std::move(promise)}](const tensorpipe::Error& error) {
         promise->set_value(error);
       });
   return future;
@@ -176,9 +171,7 @@ class ChannelTestHelper {
   auto future = promise->get_future();
 
   channel->recv(
-      "",
-      buffer,
-      [promise{std::move(promise)}](const tensorpipe::Error& error) {
+      buffer, [promise{std::move(promise)}](const tensorpipe::Error& error) {
         promise->set_value(error);
       });
   return future;

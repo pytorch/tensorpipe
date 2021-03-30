@@ -20,7 +20,6 @@
 
 #include <tensorpipe/channel/cuda_ipc/constants.h>
 #include <tensorpipe/channel/cuda_ipc/context_impl.h>
-#include <tensorpipe/channel/helpers.h>
 #include <tensorpipe/common/cuda.h>
 #include <tensorpipe/common/cuda_buffer.h>
 #include <tensorpipe/common/defs.h>
@@ -108,7 +107,6 @@ void ChannelImpl::initImplFromLoop() {
 void ChannelImpl::sendImplFromLoop(
     uint64_t sequenceNumber,
     Buffer buffer,
-    TDescriptorCallback descriptorCallback,
     TSendCallback callback) {
   int deviceIdx = cudaDeviceForPointer(
       context_->getCudaLib(), buffer.unwrap<CudaBuffer>().ptr);
@@ -130,8 +128,6 @@ void ChannelImpl::sendImplFromLoop(
 
     chunkSendOps_.advanceOperation(opIter);
   }
-
-  descriptorCallback(error_, "");
 }
 
 void ChannelImpl::advanceChunkSendOperation(
@@ -317,11 +313,8 @@ void ChannelImpl::callSendCallback(ChunkSendOpIter opIter) {
 
 void ChannelImpl::recvImplFromLoop(
     uint64_t sequenceNumber,
-    TDescriptor descriptor,
     Buffer buffer,
     TRecvCallback callback) {
-  TP_DCHECK_EQ(descriptor, "");
-
   int deviceIdx = cudaDeviceForPointer(
       context_->getCudaLib(), buffer.unwrap<CudaBuffer>().ptr);
   const size_t bufferLength = buffer.unwrap<CudaBuffer>().length;

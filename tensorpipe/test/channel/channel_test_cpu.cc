@@ -97,10 +97,6 @@ class CallbacksAreDeferredTest : public ClientServerChannelTestCase<CpuBuffer> {
     std::unique_lock<std::mutex> callerLock(*mutex);
     channel->send(
         CpuBuffer{data.data(), kDataSize},
-        [](const Error& error, TDescriptor descriptor) {
-          EXPECT_FALSE(error);
-          EXPECT_EQ(descriptor, "");
-        },
         [&sendPromise, mutex](const Error& error) {
           std::unique_lock<std::mutex> calleeLock(*mutex);
           sendPromise.set_value(error);
@@ -123,7 +119,6 @@ class CallbacksAreDeferredTest : public ClientServerChannelTestCase<CpuBuffer> {
     std::mutex mutex;
     std::unique_lock<std::mutex> callerLock(mutex);
     channel->recv(
-        "",
         CpuBuffer{data.data(), kDataSize},
         [&recvPromise, &mutex](const Error& error) {
           std::unique_lock<std::mutex> calleeLock(mutex);
