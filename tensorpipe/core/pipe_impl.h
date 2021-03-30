@@ -81,11 +81,7 @@ struct WriteOperation {
   int64_t sequenceNumber{-1};
 
   // Progress indicators.
-  enum State {
-    UNINITIALIZED,
-    WRITING_PAYLOADS_AND_SENDING_TENSORS,
-    FINISHED
-  };
+  enum State { UNINITIALIZED, WRITING_PAYLOADS_AND_SENDING_TENSORS, FINISHED };
   State state{UNINITIALIZED};
   int64_t numPayloadsBeingWritten{0};
   int64_t numTensorsBeingSent{0};
