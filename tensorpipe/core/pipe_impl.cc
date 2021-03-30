@@ -742,29 +742,12 @@ void PipeImpl::advanceWriteOperation(
   writeOps_.attemptTransition(
       opIter,
       /*from=*/WriteOperation::UNINITIALIZED,
-      /*to=*/WriteOperation::SENDING_TENSORS,
-      /*cond=*/!error_ && state_ == ESTABLISHED &&
-          prevOpState >= WriteOperation::SENDING_TENSORS,
-      /*actions=*/{&PipeImpl::sendTensorsOfMessage});
-
-  // Needs to go after previous op to ensure ordering of callback invocations.
-  writeOps_.attemptTransition(
-      opIter,
-      /*from=*/WriteOperation::SENDING_TENSORS,
-      /*to=*/WriteOperation::FINISHED,
-      /*cond=*/error_ && opIter->numTensorsBeingSent == 0 &&
-          prevOpState >= WriteOperation::FINISHED,
-      /*actions=*/{&PipeImpl::callWriteCallback});
-
-  // Needs to go after previous op to ensure predictable and consistent ordering
-  // of write calls on the connection.
-  writeOps_.attemptTransition(
-      opIter,
-      /*from=*/WriteOperation::SENDING_TENSORS,
       /*to=*/WriteOperation::WRITING_PAYLOADS_AND_SENDING_TENSORS,
-      /*cond=*/!error_ &&
+      /*cond=*/!error_ && state_ == ESTABLISHED &&
           prevOpState >= WriteOperation::WRITING_PAYLOADS_AND_SENDING_TENSORS,
-      /*actions=*/{&PipeImpl::writeDescriptorAndPayloadsOfMessage});
+      /*actions=*/
+      {&PipeImpl::sendTensorsOfMessage,
+       &PipeImpl::writeDescriptorAndPayloadsOfMessage});
 
   // Needs to go after previous op to ensure ordering of callback invocations.
   writeOps_.attemptTransition(
