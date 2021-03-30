@@ -161,17 +161,26 @@ inline int cudaDeviceForPointer(const CudaLib& cudaLib, const void* ptr) {
   return deviceIdx;
 }
 
-using CudaPinnedBuffer = std::shared_ptr<uint8_t>;
+class CudaPinnedMemoryDeleter {
+ public:
+  explicit CudaPinnedMemoryDeleter(int deviceIdx) : deviceIdx_(deviceIdx) {}
+
+  void operator()(uint8_t* ptr) {
+    CudaDeviceGuard guard(deviceIdx_);
+    TP_CUDA_CHECK(cudaFreeHost(ptr));
+  }
+
+ private:
+  const int deviceIdx_;
+};
+
+using CudaPinnedBuffer = std::unique_ptr<uint8_t[], CudaPinnedMemoryDeleter>;
 
 inline CudaPinnedBuffer makeCudaPinnedBuffer(size_t length, int deviceIdx) {
   CudaDeviceGuard guard(deviceIdx);
-  void* ptr;
+  uint8_t* ptr;
   TP_CUDA_CHECK(cudaMallocHost(&ptr, length));
-  return CudaPinnedBuffer(
-      reinterpret_cast<uint8_t*>(ptr), [deviceIdx](uint8_t* ptr) {
-        CudaDeviceGuard guard(deviceIdx);
-        TP_CUDA_CHECK(cudaFreeHost(ptr));
-      });
+  return CudaPinnedBuffer(ptr, CudaPinnedMemoryDeleter(deviceIdx));
 }
 
 inline std::string getUuidOfDevice(const CudaLib& cudaLib, int deviceIdx) {

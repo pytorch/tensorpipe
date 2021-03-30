@@ -76,8 +76,7 @@ void ChannelImpl::sendImplFromLoop(
     TSendCallback callback) {
   int deviceIdx = cudaDeviceForPointer(
       context_->getCudaLib(), buffer.unwrap<CudaBuffer>().ptr);
-  CudaHostAllocator& cudaHostAllocator =
-      context_->getCudaHostSendAllocator(deviceIdx);
+  Allocator& cudaHostAllocator = context_->getCudaHostSendAllocator(deviceIdx);
   const size_t chunkLength = cudaHostAllocator.getChunkLength();
   const size_t bufferLength = buffer.unwrap<CudaBuffer>().length;
   const size_t numChunks = ceilOfRatio(bufferLength, chunkLength);
@@ -225,7 +224,7 @@ void ChannelImpl::allocateSendCpuBuffer(ChunkSendOpIter opIter) {
              << " is allocating temporary memory for chunk #" << op.chunkId
              << " of " << op.numChunks << " for buffer #"
              << op.bufferSequenceNumber;
-  CudaHostAllocator& cudaHostAllocator =
+  Allocator& cudaHostAllocator =
       context_->getCudaHostSendAllocator(op.deviceIdx);
   cudaHostAllocator.alloc(
       op.length,
@@ -340,8 +339,7 @@ void ChannelImpl::recvImplFromLoop(
     TRecvCallback callback) {
   int deviceIdx = cudaDeviceForPointer(
       context_->getCudaLib(), buffer.unwrap<CudaBuffer>().ptr);
-  CudaHostAllocator& cudaHostAllocator =
-      context_->getCudaHostRecvAllocator(deviceIdx);
+  Allocator& cudaHostAllocator = context_->getCudaHostRecvAllocator(deviceIdx);
   const size_t chunkLength = cudaHostAllocator.getChunkLength();
   const size_t bufferLength = buffer.unwrap<CudaBuffer>().length;
   const size_t numChunks = ceilOfRatio(bufferLength, chunkLength);
@@ -501,7 +499,7 @@ void ChannelImpl::allocateRecvCpuBuffer(ChunkRecvOpIter opIter) {
              << " is allocating temporary memory for chunk #" << op.chunkId
              << " of " << op.numChunks << " for buffer #"
              << op.bufferSequenceNumber;
-  CudaHostAllocator& cudaHostAllocator =
+  Allocator& cudaHostAllocator =
       context_->getCudaHostRecvAllocator(op.deviceIdx);
   cudaHostAllocator.alloc(
       op.length,

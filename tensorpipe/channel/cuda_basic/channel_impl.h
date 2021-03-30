@@ -13,9 +13,9 @@
 #include <string>
 
 #include <tensorpipe/channel/channel_impl_boilerplate.h>
+#include <tensorpipe/common/allocator.h>
 #include <tensorpipe/common/cuda.h>
 #include <tensorpipe/common/cuda_buffer.h>
-#include <tensorpipe/common/cuda_host_allocator.h>
 #include <tensorpipe/common/cuda_loop.h>
 #include <tensorpipe/common/state_machine.h>
 
