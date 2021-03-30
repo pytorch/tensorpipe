@@ -70,7 +70,6 @@ struct ReadOperation {
     DeviceType type;
     ssize_t length{-1};
     std::string channelName;
-    channel::TDescriptor descriptor;
   };
   std::vector<Tensor> tensors;
 
@@ -84,13 +83,12 @@ struct WriteOperation {
   // Progress indicators.
   enum State {
     UNINITIALIZED,
-    SENDING_TENSORS_AND_COLLECTING_DESCRIPTORS,
+    SENDING_TENSORS,
     WRITING_PAYLOADS_AND_SENDING_TENSORS,
     FINISHED
   };
   State state{UNINITIALIZED};
   int64_t numPayloadsBeingWritten{0};
-  int64_t numTensorDescriptorsBeingCollected{0};
   int64_t numTensorsBeingSent{0};
 
   // Callbacks.
@@ -103,7 +101,6 @@ struct WriteOperation {
   struct Tensor {
     DeviceType type;
     std::string channelName;
-    channel::TDescriptor descriptor;
   };
   std::vector<Tensor> tensors;
 };
@@ -286,10 +283,6 @@ class PipeImpl final : public std::enable_shared_from_this<PipeImpl> {
       std::string receivedTransport,
       std::shared_ptr<transport::Connection> receivedConnection);
   void onReadOfMessageDescriptor(ReadOpIter opIter, const Packet& nopPacketIn);
-  void onDescriptorOfTensor(
-      WriteOpIter opIter,
-      int64_t tensorIdx,
-      channel::TDescriptor descriptor);
   void onReadOfPayload(ReadOpIter opIter);
   void onRecvOfTensor(ReadOpIter opIter);
   void onWriteOfPayload(WriteOpIter opIter);
