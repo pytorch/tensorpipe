@@ -222,14 +222,16 @@ std::shared_ptr<Channel> ContextImpl::createChannel(
     Endpoint /* unused */) {
   TP_DCHECK_EQ(numConnectionsNeeded(), connections.size());
   return createChannelInternal(
-      std::move(connections[0]), std::move(connections[1]));
+      std::move(connections[0]),
+      std::move(connections[1]),
+      std::move(connections[2]));
 }
 
 size_t ContextImpl::numConnectionsNeeded() const {
-  // The control connection needs to carry two unrelated streams in each
-  // direction (the replies and the acks), and it's thus simpler to just use two
-  // such connections.
-  return 2;
+  // The control connection needs to carry three unrelated streams in each
+  // direction (the descriptors, the replies and the acks), and it's thus
+  // simpler to just use three such connections.
+  return 3;
 }
 
 bool ContextImpl::supportsDeviceType(DeviceType type) const {

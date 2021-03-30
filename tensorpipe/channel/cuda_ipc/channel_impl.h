@@ -42,7 +42,6 @@ struct SendOperation {
   const void* const ptr;
   const int deviceIdx;
   const cudaStream_t stream;
-  TDescriptorCallback descriptorCallback;
   TSendCallback callback;
 
   // Other data
@@ -50,7 +49,6 @@ struct SendOperation {
   std::string stopEvHandle;
 
   SendOperation(
-      TDescriptorCallback descriptorCallback,
       TSendCallback callback,
       int deviceIdx,
       const void* ptr,
@@ -58,13 +56,20 @@ struct SendOperation {
 };
 
 struct RecvOperation {
-  enum State { UNINITIALIZED, REQUESTING_EVENT, READING_ACK, FINISHED };
+  enum State {
+    UNINITIALIZED,
+    READING_DESCRIPTOR,
+    REQUESTING_EVENT,
+    READING_ACK,
+    FINISHED
+  };
 
   // Fields used by the state machine
   uint64_t sequenceNumber{0};
   State state{UNINITIALIZED};
 
   // Progress flags
+  bool doneReadingDescriptor{false};
   bool doneRequestingEvent{false};
   bool doneReadingAck{false};
 
@@ -92,6 +97,7 @@ class ChannelImpl final
       ConstructorToken token,
       std::shared_ptr<ContextImpl> context,
       std::string id,
+      std::shared_ptr<transport::Connection> descriptorConnection,
       std::shared_ptr<transport::Connection> replyConnection,
       std::shared_ptr<transport::Connection> ackConnection);
 
@@ -111,6 +117,7 @@ class ChannelImpl final
   void handleErrorImpl() override;
 
  private:
+  const std::shared_ptr<transport::Connection> descriptorConnection_;
   const std::shared_ptr<transport::Connection> replyConnection_;
   const std::shared_ptr<transport::Connection> ackConnection_;
 
@@ -135,17 +142,19 @@ class ChannelImpl final
   // For send operations:
   void requestEvent(SendOpIter opIter);
   void recordStartEvent(SendOpIter opIter);
-  void callDescriptorCallback(SendOpIter opIter);
+  void writeDescriptor(SendOpIter opIter);
   void readReply(SendOpIter opIter);
   void returnEvent(SendOpIter opIter);
   void waitOnStopEvent(SendOpIter opIter);
   void callSendCallback(SendOpIter opIter);
   void writeAck(SendOpIter opIter);
   // For recv operations:
+  void readDescriptor(RecvOpIter opIter);
   void requestEvent(RecvOpIter opIter);
   void waitOnStartEventAndCopyAndRecordStopEvent(RecvOpIter opIter);
   void callRecvCallback(RecvOpIter opIter);
-  void writeReplyAndReadAck(RecvOpIter opIter);
+  void writeReply(RecvOpIter opIter);
+  void readAck(RecvOpIter opIter);
   void returnEvent(RecvOpIter opIter);
 };
 
