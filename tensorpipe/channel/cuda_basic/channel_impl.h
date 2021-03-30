@@ -29,7 +29,6 @@ struct ChunkSendOperation {
   enum State {
     UNINITIALIZED,
     ALLOCATING_CPU_BUFFER,
-    WRITING_READY_TO_SEND,
     COPYING_FROM_GPU_TO_CPU,
     INVOKED_CALLBACK,
     SENDING_CPU_BUFFER,
@@ -54,7 +53,6 @@ struct ChunkSendOperation {
   std::shared_ptr<uint8_t> tmpBuffer;
 
   // Progress flags
-  bool doneWritingReadyToSend{false};
   bool doneAllocatingCpuStagingBuffer{false};
   bool doneCopyingFromGpuToCpu{false};
   bool doneSendingCpuBuffer{false};

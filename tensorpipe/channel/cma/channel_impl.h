@@ -22,20 +22,14 @@ namespace cma {
 class ContextImpl;
 
 struct SendOperation {
-  enum State {
-    UNINITIALIZED,
-    WRITING_DESCRIPTOR,
-    READING_NOTIFICATION,
-    FINISHED
-  };
+  enum State { UNINITIALIZED, READING_COMPLETION, FINISHED };
 
   // Fields used by the state machine
   uint64_t sequenceNumber{0};
   State state{UNINITIALIZED};
 
   // Progress flags
-  bool doneWritingDescriptor{false};
-  bool doneReadingNotification{false};
+  bool doneReadingCompletion{false};
 
   // Arguments at creation
   void* ptr;
@@ -71,7 +65,7 @@ class ChannelImpl final
       std::shared_ptr<ContextImpl> context,
       std::string id,
       std::shared_ptr<transport::Connection> descriptorConnection,
-      std::shared_ptr<transport::Connection> notificationConnection);
+      std::shared_ptr<transport::Connection> completionConnection);
 
  protected:
   // Implement the entry points called by ChannelImplBoilerplate.
@@ -88,7 +82,7 @@ class ChannelImpl final
 
  private:
   const std::shared_ptr<transport::Connection> descriptorConnection_;
-  const std::shared_ptr<transport::Connection> notificationConnection_;
+  const std::shared_ptr<transport::Connection> completionConnection_;
 
   OpsStateMachine<ChannelImpl, SendOperation> sendOps_{
       *this,
@@ -110,13 +104,13 @@ class ChannelImpl final
   // Actions (i.e., methods that begin a state transition).
   // For send operations:
   void writeDescriptor(SendOpIter opIter);
-  void readNotification(SendOpIter opIter);
+  void readCompletion(SendOpIter opIter);
   void callSendCallback(SendOpIter opIter);
   // For recv operations:
   void readDescriptor(RecvOpIter opIter);
   void copy(RecvOpIter opIter);
   void callRecvCallback(RecvOpIter opIter);
-  void writeNotification(RecvOpIter opIter);
+  void writeCompletion(RecvOpIter opIter);
 };
 
 } // namespace cma
