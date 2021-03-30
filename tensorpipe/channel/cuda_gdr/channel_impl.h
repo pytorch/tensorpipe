@@ -94,7 +94,7 @@ struct NopIbvSetupInformation {
 struct SendOperation {
   enum State {
     UNINITIALIZED,
-    WRITING_DESCRIPTOR_AND_READING_READY_TO_RECEIVE,
+    READING_READY_TO_RECEIVE,
     WAITING_FOR_CUDA_EVENT,
     SENDING_OVER_IB,
     FINISHED

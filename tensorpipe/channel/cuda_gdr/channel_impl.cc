@@ -216,16 +216,15 @@ void ChannelImpl::advanceSendOperation(
   sendOps_.attemptTransition(
       opIter,
       /*from=*/SendOperation::UNINITIALIZED,
-      /*to=*/SendOperation::WRITING_DESCRIPTOR_AND_READING_READY_TO_RECEIVE,
+      /*to=*/SendOperation::READING_READY_TO_RECEIVE,
       /*cond=*/!error_ && state_ == ESTABLISHED &&
-          prevOpState >=
-              SendOperation::WRITING_DESCRIPTOR_AND_READING_READY_TO_RECEIVE,
+          prevOpState >= SendOperation::READING_READY_TO_RECEIVE,
       /*actions=*/
       {&ChannelImpl::writeDescriptor, &ChannelImpl::readReadyToReceive});
 
   sendOps_.attemptTransition(
       opIter,
-      /*from=*/SendOperation::WRITING_DESCRIPTOR_AND_READING_READY_TO_RECEIVE,
+      /*from=*/SendOperation::READING_READY_TO_RECEIVE,
       /*to=*/SendOperation::FINISHED,
       /*cond=*/error_ && op.readReadyToReceive,
       /*actions=*/{&ChannelImpl::callSendCallback});
@@ -235,7 +234,7 @@ void ChannelImpl::advanceSendOperation(
   // then make progress.
   sendOps_.attemptTransition(
       opIter,
-      /*from=*/SendOperation::WRITING_DESCRIPTOR_AND_READING_READY_TO_RECEIVE,
+      /*from=*/SendOperation::READING_READY_TO_RECEIVE,
       /*to=*/SendOperation::WAITING_FOR_CUDA_EVENT,
       /*cond=*/!error_ && opIter->readReadyToReceive &&
           prevOpState >= SendOperation::SENDING_OVER_IB,

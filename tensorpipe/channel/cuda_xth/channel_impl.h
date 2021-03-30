@@ -24,11 +24,7 @@ namespace cuda_xth {
 class ContextImpl;
 
 struct SendOperation {
-  enum State {
-    UNINITIALIZED,
-    WRITING_DESCRIPTOR_AND_READING_COMPLETION,
-    FINISHED
-  };
+  enum State { UNINITIALIZED, READING_COMPLETION, FINISHED };
 
   // Fields used by the state machine
   uint64_t sequenceNumber{0};
