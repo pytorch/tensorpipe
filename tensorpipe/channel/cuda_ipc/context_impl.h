@@ -15,6 +15,8 @@
 #include <vector>
 
 #include <tensorpipe/channel/context_impl_boilerplate.h>
+#include <tensorpipe/common/allocator.h>
+#include <tensorpipe/common/cuda.h>
 #include <tensorpipe/common/cuda_event_pool.h>
 #include <tensorpipe/common/cuda_lib.h>
 #include <tensorpipe/common/deferred_executor.h>
@@ -66,6 +68,28 @@ class ContextImpl final
   // and re-use them for all transfers.
   void requestSendEvent(int deviceIdx, CudaEventPool::RequestCallback callback);
 
+  // Takes the index of the slot, the (smart) pointer to the slot, and the (raw)
+  // pointer to the event for the slot.
+  using SlotAllocCallback =
+      std::function<void(const Error&, size_t, Allocator::TChunk, CudaEvent*)>;
+  void allocateSlot(int deviceIdx, size_t length, SlotAllocCallback callback);
+
+  struct OutboxInfo {
+    std::string processIdentifier;
+    std::string memHandle;
+    std::vector<std::string> eventHandles;
+  };
+  OutboxInfo getLocalOutboxInfo(int deviceIdx);
+
+  struct RemoteOutboxHandle {
+    CudaIpcBuffer buffer;
+    std::unique_ptr<optional<CudaEvent>[]> events;
+  };
+  const RemoteOutboxHandle& openRemoteOutbox(
+      int localDeviceIdx,
+      int remoteDeviceIdx,
+      OutboxInfo remoteOutboxInfo);
+
   // Implement the DeferredExecutor interface.
   bool inLoop() const override;
   void deferToLoop(std::function<void()> fn) override;
@@ -87,7 +111,7 @@ class ContextImpl final
   // A combination of the process's PID namespace and its PID, which combined
   // with CUDA's buffer ID should allow us to uniquely identify each allocation
   // on the current machine.
-  std::string processIdentifier_;
+  const std::string processIdentifier_;
 
   // Map from device pointer and device index, to the number of times that
   // handle has been opened. Needed to keep track of what cudaIpcCloseMemHandle
@@ -105,6 +129,55 @@ class ContextImpl final
   // when first needed. The pools are per-device (device #N will be at index N
   // in the vector).
   std::vector<std::unique_ptr<CudaEventPool>> sendEventPools_;
+
+  // A CUDA on-device allocation that acts as the outbox for all the channels of
+  // this context. We cannot directly get and open IPC handles of the user's
+  // buffers, as this will fail if the user already opened such a handle (this
+  // limitation was lifted in CUDA 11.1). Moreover, since we "leak" the opened
+  // IPC handles (i.e., we leave them open, and close them all when the context
+  // closes), if we opened an IPC handle to a user buffer and the user freed
+  // that buffer we would prevent CUDA from really making that memory available
+  // again (this is an undocumented behavior which was observed experimentally).
+  // As a solution, we create our own allocation and get and open an IPC handle
+  // to that, as we can guarantee its lifetime and that no other IPC handle
+  // exists. We then use it as a staging ground for outgoing transfers, copying
+  // chunks to it from source buffers, and having the remote copy them to the
+  // target buffer.
+  struct Outbox {
+    const CudaDeviceBuffer buffer;
+    std::unique_ptr<optional<CudaEvent>[]> events;
+    const cudaIpcMemHandle_t handle;
+    const std::vector<cudaIpcEventHandle_t> eventHandles;
+    Allocator allocator;
+
+    explicit Outbox(int deviceIdx);
+    ~Outbox();
+  };
+  std::vector<std::unique_ptr<Outbox>> outboxes_;
+
+  struct RemoteOutboxKey {
+    std::string processIdentifier;
+    int remoteDeviceIdx;
+    int localDeviceIdx;
+
+    bool operator==(const RemoteOutboxKey& other) const noexcept {
+      return processIdentifier == other.processIdentifier &&
+          remoteDeviceIdx == other.remoteDeviceIdx &&
+          localDeviceIdx == other.localDeviceIdx;
+    }
+  };
+  struct RemoteOutboxKeyHash {
+    size_t operator()(const RemoteOutboxKey& key) const noexcept {
+      size_t h1 = std::hash<std::string>{}(key.processIdentifier);
+      size_t h2 = std::hash<int>{}(key.remoteDeviceIdx);
+      size_t h3 = std::hash<int>{}(key.localDeviceIdx);
+      // Byte-shift hashes in order to "capture" the order of members.
+      // FIXME Should we use a proper hash combiner? We can copy Boost's one.
+      return h1 ^ (h2 << 1) ^ (h3 << 2);
+    }
+  };
+  std::unordered_map<RemoteOutboxKey, RemoteOutboxHandle, RemoteOutboxKeyHash>
+      remoteOutboxes_;
 };
 
 } // namespace cuda_ipc

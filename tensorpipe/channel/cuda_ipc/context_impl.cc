@@ -24,6 +24,7 @@
 #include <nop/structure.h>
 
 #include <tensorpipe/channel/cuda_ipc/channel_impl.h>
+#include <tensorpipe/channel/cuda_ipc/constants.h>
 #include <tensorpipe/channel/helpers.h>
 #include <tensorpipe/common/cuda.h>
 #include <tensorpipe/common/defs.h>
@@ -132,7 +133,74 @@ std::string genProcessIdentifier() {
   return oss.str();
 }
 
+// FIXME We'd want this to return a std::vector<CudaEvent>, but CudaEvents
+// aren't default-constructible nor movable. Hence either we make them such,
+// or we use some pointer magic (like placement new). For now, we work around
+// this by using a unique_ptr and wrapping them in optional<>, but it's silly.
+std::unique_ptr<optional<CudaEvent>[]> createIpcEventArray(
+    int deviceIdx,
+    size_t numEvents) {
+  auto events = std::make_unique<optional<CudaEvent>[]>(numEvents);
+  // The CUDA driver has a bug where creating and/or destroying IPC events
+  // sometimes causes a deadlock (it's unclear which of the two steps is the
+  // cause). The deadlock tends to manifest as a cudaStreamSynchronize call
+  // never returning. Just to be safe, and to catch such a deadlock early and
+  // clearly, let's add extra syncs here. (The bug is fixed in v460).
+  {
+    CudaDeviceGuard guard(deviceIdx);
+    TP_CUDA_CHECK(cudaDeviceSynchronize());
+  }
+  for (size_t idx = 0; idx < numEvents; idx++) {
+    events[idx].emplace(deviceIdx, true);
+    // One day we might get tempted to have CudaEvent lazily initialize its
+    // cudaEvent_t, just like PyTorch does. However here we explicitly want to
+    // eagerly initialize IPC events, as creating them late might deadlock with
+    // old CUDA driver versions. This check should hopefully catch if the event
+    // is lazy-initialized.
+    TP_THROW_ASSERT_IF(events[idx]->raw() == nullptr);
+  }
+  {
+    CudaDeviceGuard guard(deviceIdx);
+    TP_CUDA_CHECK(cudaDeviceSynchronize());
+  }
+  return events;
+}
+
+std::vector<cudaIpcEventHandle_t> getIpcHandlesForEventArray(
+    optional<CudaEvent> events[],
+    size_t numEvents) {
+  std::vector<cudaIpcEventHandle_t> eventHandles(numEvents);
+  for (size_t idx = 0; idx < numEvents; idx++) {
+    eventHandles[idx] = events[idx]->getIpcHandle();
+  }
+  return eventHandles;
+}
+
 } // namespace
+
+ContextImpl::Outbox::Outbox(int deviceIdx)
+    : buffer(kStagingAreaSize, deviceIdx),
+      events(createIpcEventArray(deviceIdx, kNumSlots)),
+      handle(this->buffer.getIpcHandle()),
+      eventHandles(getIpcHandlesForEventArray(this->events.get(), kNumSlots)),
+      allocator(this->buffer.ptr(), kNumSlots, kSlotSize) {}
+
+ContextImpl::Outbox::~Outbox() {
+  // The CUDA driver has a bug where creating and/or destroying IPC events
+  // sometimes causes a deadlock (it's unclear which of the two steps is the
+  // cause). The deadlock tends to manifest as a cudaStreamSynchronize call
+  // never returning. Just to be safe, and to catch such a deadlock early and
+  // clearly, let's add extra syncs here. (The bug is fixed in v460).
+  {
+    CudaDeviceGuard guard(buffer.deviceIdx());
+    TP_CUDA_CHECK(cudaDeviceSynchronize());
+  }
+  events.reset();
+  {
+    CudaDeviceGuard guard(buffer.deviceIdx());
+    TP_CUDA_CHECK(cudaDeviceSynchronize());
+  }
+}
 
 std::shared_ptr<ContextImpl> ContextImpl::create() {
   Error error;
@@ -297,10 +365,93 @@ void ContextImpl::requestSendEvent(
   sendEventPools_[deviceIdx]->request(std::move(callback));
 }
 
+void ContextImpl::allocateSlot(
+    int deviceIdx,
+    size_t length,
+    SlotAllocCallback callback) {
+  if (outboxes_.size() <= deviceIdx) {
+    outboxes_.resize(deviceIdx + 1);
+  }
+  if (outboxes_[deviceIdx] == nullptr) {
+    outboxes_[deviceIdx] = std::make_unique<Outbox>(deviceIdx);
+  }
+
+  // We don't need to wrap this callback with the callbackWrapper_ because the
+  // callback that was passed to this method already is, and because all we're
+  // doing here is wrap that callback and do read-only accesses to the outbox.
+  outboxes_[deviceIdx]->allocator.alloc(
+      length,
+      [&outbox{*outboxes_[deviceIdx]}, callback{std::move(callback)}](
+          const Error& error, Allocator::TChunk chunk) {
+        if (error) {
+          callback(error, 0, std::move(chunk), nullptr);
+          return;
+        }
+        size_t slotIdx = (chunk.get() - outbox.buffer.ptr()) / kSlotSize;
+        callback(
+            error, slotIdx, std::move(chunk), &outbox.events[slotIdx].value());
+      });
+}
+
+ContextImpl::OutboxInfo ContextImpl::getLocalOutboxInfo(int deviceIdx) {
+  TP_DCHECK(outboxes_.size() > deviceIdx);
+  TP_DCHECK(outboxes_[deviceIdx] != nullptr);
+  OutboxInfo info;
+  info.processIdentifier = processIdentifier_;
+  info.memHandle = std::string(
+      reinterpret_cast<const char*>(&outboxes_[deviceIdx]->handle),
+      sizeof(cudaIpcMemHandle_t));
+  info.eventHandles.reserve(kNumSlots);
+  for (size_t slotIdx = 0; slotIdx < kNumSlots; slotIdx++) {
+    info.eventHandles.emplace_back(
+        reinterpret_cast<const char*>(
+            &outboxes_[deviceIdx]->eventHandles[slotIdx]),
+        sizeof(cudaIpcEventHandle_t));
+  }
+  return info;
+}
+
+const ContextImpl::RemoteOutboxHandle& ContextImpl::openRemoteOutbox(
+    int localDeviceIdx,
+    int remoteDeviceIdx,
+    OutboxInfo remoteOutboxInfo) {
+  RemoteOutboxKey key{
+      std::move(remoteOutboxInfo.processIdentifier),
+      remoteDeviceIdx,
+      localDeviceIdx};
+  decltype(remoteOutboxes_)::iterator iter;
+  bool didntExist;
+  std::tie(iter, didntExist) =
+      remoteOutboxes_.emplace(std::move(key), RemoteOutboxHandle{});
+  RemoteOutboxHandle& outbox = iter->second;
+
+  if (didntExist) {
+    CudaDeviceGuard guard(localDeviceIdx);
+    outbox.buffer = CudaIpcBuffer(
+        localDeviceIdx,
+        *reinterpret_cast<cudaIpcMemHandle_t*>(
+            remoteOutboxInfo.memHandle.data()));
+    outbox.events = std::make_unique<optional<CudaEvent>[]>(kNumSlots);
+    for (size_t slotIdx = 0; slotIdx < kNumSlots; slotIdx++) {
+      outbox.events[slotIdx].emplace(
+          localDeviceIdx,
+          *reinterpret_cast<cudaIpcEventHandle_t*>(
+              remoteOutboxInfo.eventHandles[slotIdx].data()));
+    }
+  }
+
+  return outbox;
+}
+
 void ContextImpl::handleErrorImpl() {
   for (std::unique_ptr<CudaEventPool>& pool : sendEventPools_) {
     if (pool != nullptr) {
       pool->close();
+    }
+  }
+  for (std::unique_ptr<Outbox>& outbox : outboxes_) {
+    if (outbox != nullptr) {
+      outbox->allocator.close();
     }
   }
 }

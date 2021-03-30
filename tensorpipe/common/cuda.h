@@ -116,11 +116,15 @@ class CudaEvent {
     return ev_;
   }
 
-  std::string serializedHandle() {
+  cudaIpcEventHandle_t getIpcHandle() const {
     CudaDeviceGuard guard(deviceIdx_);
     cudaIpcEventHandle_t handle;
     TP_CUDA_CHECK(cudaIpcGetEventHandle(&handle, ev_));
+    return handle;
+  }
 
+  std::string serializedHandle() {
+    cudaIpcEventHandle_t handle = getIpcHandle();
     return std::string(reinterpret_cast<const char*>(&handle), sizeof(handle));
   }
 
@@ -182,6 +186,86 @@ inline CudaPinnedBuffer makeCudaPinnedBuffer(size_t length, int deviceIdx) {
   TP_CUDA_CHECK(cudaMallocHost(&ptr, length));
   return CudaPinnedBuffer(ptr, CudaPinnedMemoryDeleter(deviceIdx));
 }
+
+class CudaDeviceBuffer {
+ public:
+  CudaDeviceBuffer() = default;
+
+  CudaDeviceBuffer(size_t length, int deviceIdx) {
+    CudaDeviceGuard guard(deviceIdx);
+    uint8_t* ptr;
+    TP_CUDA_CHECK(cudaMalloc(&ptr, length));
+    ptr_ = {ptr, Deleter{deviceIdx}};
+  }
+
+  uint8_t* ptr() const {
+    return ptr_.get();
+  }
+
+  int deviceIdx() const {
+    return ptr_.get_deleter().deviceIdx;
+  }
+
+  void reset() {
+    ptr_.reset();
+  }
+
+  cudaIpcMemHandle_t getIpcHandle() const {
+    CudaDeviceGuard guard(deviceIdx());
+    cudaIpcMemHandle_t handle;
+    TP_CUDA_CHECK(cudaIpcGetMemHandle(&handle, ptr_.get()));
+    return handle;
+  }
+
+ private:
+  struct Deleter {
+    int deviceIdx{-1};
+
+    void operator()(uint8_t* ptr) {
+      CudaDeviceGuard guard(deviceIdx);
+      TP_CUDA_CHECK(cudaFree(ptr));
+    }
+  };
+
+  std::unique_ptr<uint8_t[], Deleter> ptr_{nullptr, Deleter{}};
+};
+
+class CudaIpcBuffer {
+ public:
+  CudaIpcBuffer() = default;
+
+  CudaIpcBuffer(int deviceIdx, const cudaIpcMemHandle_t& handle) {
+    CudaDeviceGuard guard(deviceIdx);
+    void* ptr;
+    TP_CUDA_CHECK(
+        cudaIpcOpenMemHandle(&ptr, handle, cudaIpcMemLazyEnablePeerAccess));
+    ptr_ = {reinterpret_cast<uint8_t*>(ptr), Deleter{deviceIdx}};
+  }
+
+  uint8_t* ptr() const {
+    return ptr_.get();
+  }
+
+  int deviceIdx() const {
+    return ptr_.get_deleter().deviceIdx;
+  }
+
+  void reset() {
+    ptr_.reset();
+  }
+
+ private:
+  struct Deleter {
+    int deviceIdx{-1};
+
+    void operator()(uint8_t* ptr) {
+      CudaDeviceGuard guard(deviceIdx);
+      TP_CUDA_CHECK(cudaIpcCloseMemHandle(ptr));
+    }
+  };
+
+  std::unique_ptr<uint8_t[], Deleter> ptr_{nullptr, Deleter{}};
+};
 
 inline std::string getUuidOfDevice(const CudaLib& cudaLib, int deviceIdx) {
   CUdevice device;
