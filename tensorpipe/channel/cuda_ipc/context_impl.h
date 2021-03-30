@@ -65,7 +65,6 @@ class ContextImpl final
   // to support earlier versions, we create a pool of events at the beginning
   // and re-use them for all transfers.
   void requestSendEvent(int deviceIdx, CudaEventPool::RequestCallback callback);
-  void requestRecvEvent(int deviceIdx, CudaEventPool::RequestCallback callback);
 
   // Implement the DeferredExecutor interface.
   bool inLoop() const override;
@@ -104,13 +103,8 @@ class ContextImpl final
   // the fly can cause deadlocks on old CUDA drivers, hence we eagerly create
   // many events upfront and reuse them. The pools themselves are lazily created
   // when first needed. The pools are per-device (device #N will be at index N
-  // in the vector). We need separate send and recv pools to avoid deadlocks: in
-  // order for a transfer to succeed both the sender and receiver must hold an
-  // event at the same time, with the receiver requesting its event once the
-  // sender received its one, and we don't want to risk all pools being full
-  // with send events thus preventing recv events from being obtained.
+  // in the vector).
   std::vector<std::unique_ptr<CudaEventPool>> sendEventPools_;
-  std::vector<std::unique_ptr<CudaEventPool>> recvEventPools_;
 };
 
 } // namespace cuda_ipc

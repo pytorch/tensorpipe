@@ -38,9 +38,8 @@ namespace cuda_ipc {
 
 namespace {
 
-// Half of them will go in the send pool, the other half in the recv pool.
 // This number is per-device.
-static constexpr size_t kNumIpcEventsInPool = 1000;
+static constexpr size_t kNumIpcEventsInPool = 500;
 
 std::tuple<std::vector<std::string>, std::vector<std::vector<bool>>>
 getGlobalUuidsAndP2pSupport(const NvmlLib& nvmlLib) {
@@ -222,16 +221,14 @@ std::shared_ptr<Channel> ContextImpl::createChannel(
     Endpoint /* unused */) {
   TP_DCHECK_EQ(numConnectionsNeeded(), connections.size());
   return createChannelInternal(
-      std::move(connections[0]),
-      std::move(connections[1]),
-      std::move(connections[2]));
+      std::move(connections[0]), std::move(connections[1]));
 }
 
 size_t ContextImpl::numConnectionsNeeded() const {
-  // The control connection needs to carry three unrelated streams in each
-  // direction (the descriptors, the replies and the acks), and it's thus
-  // simpler to just use three such connections.
-  return 3;
+  // The control connection needs to carry two unrelated streams in each
+  // direction (the descriptors and the replies), and it's thus simpler to just
+  // use two such connections.
+  return 2;
 }
 
 bool ContextImpl::supportsDeviceType(DeviceType type) const {
@@ -295,35 +292,13 @@ void ContextImpl::requestSendEvent(
   }
   if (sendEventPools_[deviceIdx] == nullptr) {
     sendEventPools_[deviceIdx] = std::make_unique<CudaEventPool>(
-        kNumIpcEventsInPool / 2, deviceIdx, /*interprocess=*/true);
+        kNumIpcEventsInPool, deviceIdx, /*interprocess=*/true);
   }
   sendEventPools_[deviceIdx]->request(std::move(callback));
 }
 
-void ContextImpl::requestRecvEvent(
-    int deviceIdx,
-    CudaEventPool::RequestCallback callback) {
-  if (error_) {
-    callback(error_, nullptr);
-    return;
-  }
-  if (recvEventPools_.size() <= deviceIdx) {
-    recvEventPools_.resize(deviceIdx + 1);
-  }
-  if (recvEventPools_[deviceIdx] == nullptr) {
-    recvEventPools_[deviceIdx] = std::make_unique<CudaEventPool>(
-        kNumIpcEventsInPool / 2, deviceIdx, /*interprocess=*/true);
-  }
-  recvEventPools_[deviceIdx]->request(std::move(callback));
-}
-
 void ContextImpl::handleErrorImpl() {
   for (std::unique_ptr<CudaEventPool>& pool : sendEventPools_) {
-    if (pool != nullptr) {
-      pool->close();
-    }
-  }
-  for (std::unique_ptr<CudaEventPool>& pool : recvEventPools_) {
     if (pool != nullptr) {
       pool->close();
     }

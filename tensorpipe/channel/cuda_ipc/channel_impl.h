@@ -49,8 +49,7 @@ struct ChunkSendOperation {
   TSendCallback callback;
 
   // Other data
-  CudaEventPool::BorrowedEvent startEv;
-  std::string stopEvHandle;
+  CudaEventPool::BorrowedEvent event;
 
   ChunkSendOperation(
       uint64_t bufferSequenceNumber,
@@ -78,8 +77,6 @@ struct ChunkRecvOperation {
 
   // Progress flags
   bool doneReadingDescriptor{false};
-  bool doneRequestingEvent{false};
-  bool doneReadingAck{false};
 
   // Arguments at creation
   const uint64_t bufferSequenceNumber;
@@ -92,11 +89,10 @@ struct ChunkRecvOperation {
   TRecvCallback callback;
 
   // Other data
-  CudaEventPool::BorrowedEvent stopEv;
   std::string allocationId;
   std::string bufferHandle;
   size_t offset;
-  std::string startEvHandle;
+  std::string eventHandle;
 
   ChunkRecvOperation(
       uint64_t bufferSequenceNumber,
@@ -117,8 +113,7 @@ class ChannelImpl final
       std::shared_ptr<ContextImpl> context,
       std::string id,
       std::shared_ptr<transport::Connection> descriptorConnection,
-      std::shared_ptr<transport::Connection> replyConnection,
-      std::shared_ptr<transport::Connection> ackConnection);
+      std::shared_ptr<transport::Connection> replyConnection);
 
  protected:
   // Implement the entry points called by ChannelImplBoilerplate.
@@ -138,7 +133,6 @@ class ChannelImpl final
  private:
   const std::shared_ptr<transport::Connection> descriptorConnection_;
   const std::shared_ptr<transport::Connection> replyConnection_;
-  const std::shared_ptr<transport::Connection> ackConnection_;
 
   // A sequence number for the chunks.
   uint64_t nextChunkBeingSent_{0};
@@ -167,18 +161,14 @@ class ChannelImpl final
   void recordStartEvent(ChunkSendOpIter opIter);
   void writeDescriptor(ChunkSendOpIter opIter);
   void readReply(ChunkSendOpIter opIter);
-  void returnEvent(ChunkSendOpIter opIter);
   void waitOnStopEvent(ChunkSendOpIter opIter);
+  void returnEvent(ChunkSendOpIter opIter);
   void callSendCallback(ChunkSendOpIter opIter);
-  void writeAck(ChunkSendOpIter opIter);
   // For recv operations:
   void readDescriptor(ChunkRecvOpIter opIter);
-  void requestEvent(ChunkRecvOpIter opIter);
   void waitOnStartEventAndCopyAndRecordStopEvent(ChunkRecvOpIter opIter);
   void callRecvCallback(ChunkRecvOpIter opIter);
   void writeReply(ChunkRecvOpIter opIter);
-  void readAck(ChunkRecvOpIter opIter);
-  void returnEvent(ChunkRecvOpIter opIter);
 };
 
 } // namespace cuda_ipc
