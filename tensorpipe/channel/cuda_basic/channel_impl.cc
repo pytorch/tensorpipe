@@ -274,7 +274,7 @@ void ChannelImpl::sendCpuBuffer(ChunkSendOpIter opIter) {
   CpuBuffer cpuBuffer{op.tmpBuffer.get(), op.length};
   cpuChannel_->send(
       cpuBuffer,
-      callbackWrapper_([opIter](ChannelImpl& impl, std::string descriptor) {
+      callbackWrapper_([](ChannelImpl& /* unused */, std::string descriptor) {
         TP_DCHECK_EQ(descriptor, "");
       }),
       callbackWrapper_([opIter](ChannelImpl& impl) {
