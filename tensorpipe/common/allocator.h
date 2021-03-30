@@ -18,34 +18,22 @@
 
 namespace tensorpipe {
 
-class CudaHostAllocatorClosedError final : public BaseError {
+class AllocatorClosedError final : public BaseError {
   std::string what() const override {
-    return "CUDA host allocator closed";
+    return "allocator closed";
   }
 };
 
-class CudaPinnedMemoryDeleter {
- public:
-  explicit CudaPinnedMemoryDeleter(int deviceIdx);
-  void operator()(uint8_t* ptr);
-
- private:
-  const int deviceIdx_;
-};
-
-class CudaHostAllocator {
+class Allocator {
  public:
   // Note: this is a std::shared_ptr<uint8_t[]> semantically. A shared_ptr with
   // array type is supported in C++17 and higher.
-  using THostPtr = std::shared_ptr<uint8_t>;
-  using TAllocCallback = std::function<void(const Error&, THostPtr)>;
+  using TChunk = std::shared_ptr<uint8_t>;
+  using TAllocCallback = std::function<void(const Error&, TChunk)>;
 
-  explicit CudaHostAllocator(
-      int deviceIdx,
-      size_t numChunks = 16,
-      size_t chunkSize = 1024 * 1024);
+  explicit Allocator(uint8_t* data, size_t numChunks, size_t chunkSize);
 
-  ~CudaHostAllocator();
+  ~Allocator();
 
   void alloc(size_t size, TAllocCallback callback);
   size_t getChunkLength() const;
@@ -55,14 +43,14 @@ class CudaHostAllocator {
  private:
   const size_t numChunks_;
   const size_t chunkSize_;
-  const std::unique_ptr<uint8_t[], CudaPinnedMemoryDeleter> data_;
+  uint8_t* const data_;
   std::vector<bool> chunkAvailable_;
   size_t allocatedChunks_{0};
   std::deque<TAllocCallback> pendingAllocations_;
   bool closed_{false};
 
   void processAllocations();
-  THostPtr getAvailableChunk();
+  TChunk getAvailableChunk();
   void releaseChunk(uint8_t* ptr);
 };
 

@@ -158,19 +158,19 @@ struct Options parseOptions(int argc, char** argv) {
         options.address = std::string(optarg);
         break;
       case NUM_ROUND_TRIPS:
-        options.numRoundTrips = atoi(optarg);
+        options.numRoundTrips = std::strtol(optarg, nullptr, 10);
         break;
       case NUM_PAYLOADS:
-        options.numPayloads = atoi(optarg);
+        options.numPayloads = std::strtoull(optarg, nullptr, 10);
         break;
       case PAYLOAD_SIZE:
-        options.payloadSize = atoi(optarg);
+        options.payloadSize = std::strtoull(optarg, nullptr, 10);
         break;
       case NUM_TENSORS:
-        options.numTensors = atoi(optarg);
+        options.numTensors = std::strtoull(optarg, nullptr, 10);
         break;
       case TENSOR_SIZE:
-        options.tensorSize = atoi(optarg);
+        options.tensorSize = std::strtoull(optarg, nullptr, 10);
         break;
       case TENSOR_TYPE:
         if (std::string(optarg) == "cpu") {
@@ -184,10 +184,10 @@ struct Options parseOptions(int argc, char** argv) {
         }
         break;
       case METADATA_SIZE:
-        options.metadataSize = atoi(optarg);
+        options.metadataSize = std::strtoull(optarg, nullptr, 10);
         break;
       case CUDA_SYNC_PERIOD:
-        options.cudaSyncPeriod = atoi(optarg);
+        options.cudaSyncPeriod = std::strtoull(optarg, nullptr, 10);
         break;
       case HELP:
         usage(EXIT_SUCCESS, argv[0]);
