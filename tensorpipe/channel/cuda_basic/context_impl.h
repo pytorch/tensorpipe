@@ -9,8 +9,9 @@
 #pragma once
 
 #include <tensorpipe/channel/context_impl_boilerplate.h>
+#include <tensorpipe/common/allocator.h>
+#include <tensorpipe/common/cuda.h>
 #include <tensorpipe/common/cuda_buffer.h>
-#include <tensorpipe/common/cuda_host_allocator.h>
 #include <tensorpipe/common/cuda_lib.h>
 #include <tensorpipe/common/cuda_loop.h>
 #include <tensorpipe/common/deferred_executor.h>
@@ -43,8 +44,8 @@ class ContextImpl final
   bool supportsDeviceType(DeviceType type) const override;
 
   const CudaLib& getCudaLib();
-  CudaHostAllocator& getCudaHostSendAllocator(int deviceIdx);
-  CudaHostAllocator& getCudaHostRecvAllocator(int deviceIdx);
+  Allocator& getCudaHostSendAllocator(int deviceIdx);
+  Allocator& getCudaHostRecvAllocator(int deviceIdx);
 
   // Implement the DeferredExecutor interface.
   bool inLoop() const override;
@@ -64,6 +65,11 @@ class ContextImpl final
   const std::shared_ptr<Context> cpuContext_;
   // TODO: Lazy initialization of cuda loop.
   CudaLoop cudaLoop_;
+
+  struct CudaHostAllocator {
+    CudaPinnedBuffer buffer;
+    Allocator allocator;
+  };
   optional<CudaHostAllocator> cudaHostSendAllocator_;
   optional<CudaHostAllocator> cudaHostRecvAllocator_;
 };
