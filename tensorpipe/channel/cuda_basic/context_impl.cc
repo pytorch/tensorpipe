@@ -13,6 +13,7 @@
 #include <utility>
 
 #include <tensorpipe/channel/cuda_basic/channel_impl.h>
+#include <tensorpipe/channel/cuda_basic/constants.h>
 #include <tensorpipe/common/cuda.h>
 
 namespace tensorpipe {
@@ -88,20 +89,26 @@ const CudaLib& ContextImpl::getCudaLib() {
   return cudaLib_;
 }
 
-CudaHostAllocator& ContextImpl::getCudaHostSendAllocator(int deviceIdx) {
+Allocator& ContextImpl::getCudaHostSendAllocator(int deviceIdx) {
   if (!cudaHostSendAllocator_.has_value()) {
-    cudaHostSendAllocator_.emplace(deviceIdx);
+    CudaPinnedBuffer buffer = makeCudaPinnedBuffer(kStagingAreaSize, deviceIdx);
+    uint8_t* ptr = buffer.get();
+    cudaHostSendAllocator_.emplace(CudaHostAllocator{
+        std::move(buffer), Allocator(ptr, kNumSlots, kSlotSize)});
   }
 
-  return cudaHostSendAllocator_.value();
+  return cudaHostSendAllocator_->allocator;
 }
 
-CudaHostAllocator& ContextImpl::getCudaHostRecvAllocator(int deviceIdx) {
+Allocator& ContextImpl::getCudaHostRecvAllocator(int deviceIdx) {
   if (!cudaHostRecvAllocator_.has_value()) {
-    cudaHostRecvAllocator_.emplace(deviceIdx);
+    CudaPinnedBuffer buffer = makeCudaPinnedBuffer(kStagingAreaSize, deviceIdx);
+    uint8_t* ptr = buffer.get();
+    cudaHostRecvAllocator_.emplace(CudaHostAllocator{
+        std::move(buffer), Allocator(ptr, kNumSlots, kSlotSize)});
   }
 
-  return cudaHostRecvAllocator_.value();
+  return cudaHostRecvAllocator_->allocator;
 }
 
 void ContextImpl::handleErrorImpl() {
@@ -111,10 +118,10 @@ void ContextImpl::handleErrorImpl() {
   cudaLoop_.close();
 
   if (cudaHostSendAllocator_.has_value()) {
-    cudaHostSendAllocator_->close();
+    cudaHostSendAllocator_->allocator.close();
   }
   if (cudaHostRecvAllocator_.has_value()) {
-    cudaHostRecvAllocator_->close();
+    cudaHostRecvAllocator_->allocator.close();
   }
 }
 
