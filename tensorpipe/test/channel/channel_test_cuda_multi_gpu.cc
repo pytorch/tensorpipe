@@ -56,7 +56,7 @@ class SendAcrossDevicesTest : public ClientServerChannelTestCase<CudaBuffer> {
         },
         [](const tensorpipe::Error& error, std::string descriptor) {
           EXPECT_FALSE(error);
-          EXPECT_EQ(descriptor);
+          EXPECT_EQ(descriptor, "");
         },
         [sendPromise{std::move(sendPromise)}](const tensorpipe::Error& error) {
           sendPromise->set_value(error);
