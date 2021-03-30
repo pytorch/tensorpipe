@@ -161,7 +161,7 @@ class ChannelTestHelper {
       buffer, [promise{std::move(promise)}](const tensorpipe::Error& error) {
         promise->set_value(error);
       });
-  return std::move(future);
+  return future;
 }
 
 [[nodiscard]] inline std::future<tensorpipe::Error> recvWithFuture(
