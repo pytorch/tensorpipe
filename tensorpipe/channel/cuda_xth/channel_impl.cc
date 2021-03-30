@@ -102,7 +102,6 @@ void ChannelImpl::sendImplFromLoop(
       buffer.unwrap<CudaBuffer>().ptr,
       buffer.unwrap<CudaBuffer>().stream,
       std::move(callback));
-  SendOperation& op = *opIter;
 
   sendOps_.advanceOperation(opIter);
 }
