@@ -22,27 +22,29 @@ namespace xth {
 class ContextImpl;
 
 struct SendOperation {
-  enum State { UNINITIALIZED, READING_NOTIFICATION, FINISHED };
+  enum State { UNINITIALIZED, READING_COMPLETION, FINISHED };
 
   // Fields used by the state machine
   uint64_t sequenceNumber{0};
   State state{UNINITIALIZED};
 
   // Progress flags
-  bool doneReadingNotification{false};
+  bool doneReadingCompletion{false};
 
   // Arguments at creation
+  void* ptr;
   TSendCallback callback;
 };
 
 struct RecvOperation {
-  enum State { UNINITIALIZED, COPYING, FINISHED };
+  enum State { UNINITIALIZED, READING_DESCRIPTOR, COPYING, FINISHED };
 
   // Fields used by the state machine
   uint64_t sequenceNumber{0};
   State state{UNINITIALIZED};
 
   // Progress flags
+  bool doneReadingDescriptor{false};
   bool doneCopying{false};
 
   // Arguments at creation
@@ -61,7 +63,8 @@ class ChannelImpl final
       ConstructorToken token,
       std::shared_ptr<ContextImpl> context,
       std::string id,
-      std::shared_ptr<transport::Connection> connection);
+      std::shared_ptr<transport::Connection> descriptorConnection,
+      std::shared_ptr<transport::Connection> completionConnection);
 
  protected:
   // Implement the entry points called by ChannelImplBoilerplate.
@@ -79,7 +82,8 @@ class ChannelImpl final
   void handleErrorImpl() override;
 
  private:
-  const std::shared_ptr<transport::Connection> connection_;
+  const std::shared_ptr<transport::Connection> descriptorConnection_;
+  const std::shared_ptr<transport::Connection> completionConnection_;
 
   OpsStateMachine<ChannelImpl, SendOperation> sendOps_{
       *this,
@@ -100,12 +104,14 @@ class ChannelImpl final
 
   // Actions (i.e., methods that begin a state transition).
   // For send operations:
-  void readNotification(SendOpIter opIter);
+  void writeDescriptor(SendOpIter opIter);
+  void readCompletion(SendOpIter opIter);
   void callSendCallback(SendOpIter opIter);
   // For recv operations:
+  void readDescriptor(RecvOpIter opIter);
   void copy(RecvOpIter opIter);
   void callRecvCallback(RecvOpIter opIter);
-  void writeNotification(RecvOpIter opIter);
+  void writeCompletion(RecvOpIter opIter);
 };
 
 } // namespace xth
