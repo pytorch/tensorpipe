@@ -30,12 +30,14 @@ ChannelImpl::ChannelImpl(
     ConstructorToken token,
     std::shared_ptr<ContextImpl> context,
     std::string id,
-    std::shared_ptr<transport::Connection> connection)
+    std::shared_ptr<transport::Connection> descriptorConnection,
+    std::shared_ptr<transport::Connection> readyToReceiveConnection)
     : ChannelImplBoilerplate<ContextImpl, ChannelImpl>(
           token,
           std::move(context),
           std::move(id)),
-      connection_(std::move(connection)) {}
+      descriptorConnection_(std::move(descriptorConnection)),
+      readyToReceiveConnection_(std::move(readyToReceiveConnection)) {}
 
 void ChannelImpl::initImplFromLoop() {
   TP_DCHECK(context_->inLoop());
@@ -53,7 +55,7 @@ void ChannelImpl::initImplFromLoop() {
   nopHandshakeNumNics.numNics = numLocalNics_;
   TP_VLOG(6) << "Channel " << id_
              << " is writing nop object (handshake num NICs)";
-  connection_->write(
+  readyToReceiveConnection_->write(
       *nopHolderOut, callbackWrapper_([nopHolderOut](ChannelImpl& impl) {
         TP_VLOG(6) << "Channel " << impl.id_
                    << " done writing nop object (handshake num NICs)";
@@ -62,7 +64,7 @@ void ChannelImpl::initImplFromLoop() {
   auto nopHolderIn = std::make_shared<NopHolder<HandshakeNumNics>>();
   TP_VLOG(6) << "Channel " << id_
              << " is reading nop object (handshake num NICs)";
-  connection_->read(
+  readyToReceiveConnection_->read(
       *nopHolderIn, callbackWrapper_([nopHolderIn](ChannelImpl& impl) {
         TP_VLOG(6) << "Channel " << impl.id_
                    << " done reading nop object (handshake num NICs)";
@@ -121,7 +123,7 @@ void ChannelImpl::onReadHandshakeNumNics(
   HandshakeSetupInfo& nopHandshakeSetupInfo = nopHolderOut->getObject();
   nopHandshakeSetupInfo.setupInfo = std::move(allSetupInfo);
   TP_VLOG(6) << "Channel " << id_ << " is writing nop object (handshake two)";
-  connection_->write(
+  readyToReceiveConnection_->write(
       *nopHolderOut, callbackWrapper_([nopHolderOut](ChannelImpl& impl) {
         TP_VLOG(6) << "Channel " << impl.id_
                    << " done writing nop object (handshake two)";
@@ -129,7 +131,7 @@ void ChannelImpl::onReadHandshakeNumNics(
 
   auto nopHolderIn = std::make_shared<NopHolder<HandshakeSetupInfo>>();
   TP_VLOG(6) << "Channel " << id_ << " is reading nop object (handshake two)";
-  connection_->read(
+  readyToReceiveConnection_->read(
       *nopHolderIn, callbackWrapper_([nopHolderIn](ChannelImpl& impl) {
         TP_VLOG(6) << "Channel " << impl.id_
                    << " done reading nop object (handshake two)";
@@ -191,17 +193,15 @@ void ChannelImpl::sendImplFromLoop(
   opIter->event.record(buffer.unwrap<CudaBuffer>().stream);
 
   sendOps_.advanceOperation(opIter);
-
-  NopHolder<Descriptor> nopHolder;
-  Descriptor& nopDescriptor = nopHolder.getObject();
-  nopDescriptor.originNicIdx = localNicIdx;
-  descriptorCallback(Error::kSuccess, saveDescriptor(nopHolder));
+  descriptorCallback(Error::kSuccess, "");
 }
 
 void ChannelImpl::advanceSendOperation(
     SendOpIter opIter,
     SendOperation::State prevOpState) {
   TP_DCHECK(context_->inLoop());
+
+  SendOperation& op = *opIter;
 
   sendOps_.attemptTransition(
       opIter,
@@ -211,20 +211,22 @@ void ChannelImpl::advanceSendOperation(
       /*actions=*/{&ChannelImpl::callSendCallback});
 
   // Needs to go after previous op to ensure predictable and consistent ordering
-  // of read calls on control connection.
+  // of write calls on the descriptor control connection and read calls on the
+  // completion control connection.
   sendOps_.attemptTransition(
       opIter,
       /*from=*/SendOperation::UNINITIALIZED,
       /*to=*/SendOperation::READING_READY_TO_RECEIVE,
       /*cond=*/!error_ && state_ == ESTABLISHED &&
           prevOpState >= SendOperation::READING_READY_TO_RECEIVE,
-      /*actions=*/{&ChannelImpl::writeReadyToSendAndReadReadyToReceive});
+      /*actions=*/
+      {&ChannelImpl::writeDescriptor, &ChannelImpl::readReadyToReceive});
 
   sendOps_.attemptTransition(
       opIter,
       /*from=*/SendOperation::READING_READY_TO_RECEIVE,
       /*to=*/SendOperation::FINISHED,
-      /*cond=*/error_ && opIter->readReadyToReceive,
+      /*cond=*/error_ && op.readReadyToReceive,
       /*actions=*/{&ChannelImpl::callSendCallback});
 
   // This doesn't strictly need to go after the previous op, but it doesn't make
@@ -263,33 +265,44 @@ void ChannelImpl::advanceSendOperation(
       /*actions=*/{&ChannelImpl::callSendCallback});
 }
 
-void ChannelImpl::writeReadyToSendAndReadReadyToReceive(SendOpIter opIter) {
+void ChannelImpl::writeDescriptor(SendOpIter opIter) {
+  TP_DCHECK(context_->inLoop());
+  SendOperation& op = *opIter;
+
+  auto nopHolder = std::make_shared<NopHolder<Descriptor>>();
+  Descriptor& nopDescriptor = nopHolder->getObject();
+  nopDescriptor.originNicIdx = op.localNicIdx;
+
+  TP_VLOG(6) << "Channel " << id_ << " is writing descriptor (#"
+             << op.sequenceNumber << ")";
+  descriptorConnection_->write(
+      *nopHolder,
+      callbackWrapper_([sequenceNumber{op.sequenceNumber},
+                        nopHolder](ChannelImpl& impl) {
+        TP_VLOG(6) << "Channel " << impl.id_ << " done writing descriptor (# "
+                   << sequenceNumber << ")";
+      }));
+}
+
+void ChannelImpl::readReadyToReceive(SendOpIter opIter) {
   TP_DCHECK(context_->inLoop());
   SendOperation& op = *opIter;
 
   auto nopHolderIn = std::make_shared<NopHolder<ReadyToReceive>>();
   TP_VLOG(6) << "Channel " << id_ << " is reading ready-to-receive (#"
              << op.sequenceNumber << ")";
-  connection_->read(
+  readyToReceiveConnection_->read(
       *nopHolderIn, callbackWrapper_([opIter, nopHolderIn](ChannelImpl& impl) {
         TP_VLOG(6) << "Channel " << impl.id_
                    << " done reading ready-to-receive (# "
                    << opIter->sequenceNumber << ")";
-        impl.onReadReadyToReceive(opIter, nopHolderIn->getObject());
+        opIter->readReadyToReceive = true;
+        if (!impl.error_) {
+          const auto& readyToReceive = nopHolderIn->getObject();
+          opIter->remoteNicIdx = readyToReceive.destinationNicIdx;
+        }
+        impl.sendOps_.advanceOperation(opIter);
       }));
-}
-
-void ChannelImpl::onReadReadyToReceive(
-    SendOpIter opIter,
-    const ReadyToReceive& readyToReceive) {
-  TP_DCHECK(context_->inLoop());
-
-  SendOperation& op = *opIter;
-
-  op.readReadyToReceive = true;
-  op.remoteNicIdx = readyToReceive.destinationNicIdx;
-
-  sendOps_.advanceOperation(opIter);
 }
 
 void ChannelImpl::waitForSendCudaEvent(SendOpIter opIter) {
@@ -380,22 +393,17 @@ void ChannelImpl::recvImplFromLoop(
     TDescriptor descriptor,
     Buffer buffer,
     TRecvCallback callback) {
+  TP_DCHECK_EQ(descriptor, "");
   size_t localGpuIdx = cudaDeviceForPointer(
       context_->getCudaLib(), buffer.unwrap<CudaBuffer>().ptr);
   size_t localNicIdx = context_->getGpuToNicMapping()[localGpuIdx];
-
-  NopHolder<Descriptor> nopHolder;
-  loadDescriptor(nopHolder, descriptor);
-  Descriptor& nopDescriptor = nopHolder.getObject();
-  size_t remoteNicIdx = nopDescriptor.originNicIdx;
 
   RecvOpIter opIter = recvOps_.emplaceBack(
       sequenceNumber,
       buffer.unwrap<CudaBuffer>(),
       std::move(callback),
       localGpuIdx,
-      localNicIdx,
-      remoteNicIdx);
+      localNicIdx);
   opIter->event.record(buffer.unwrap<CudaBuffer>().stream);
 
   recvOps_.advanceOperation(opIter);
@@ -406,6 +414,8 @@ void ChannelImpl::advanceRecvOperation(
     RecvOperation::State prevOpState) {
   TP_DCHECK(context_->inLoop());
 
+  RecvOperation& op = *opIter;
+
   recvOps_.attemptTransition(
       opIter,
       /*from=*/RecvOperation::UNINITIALIZED,
@@ -413,14 +423,31 @@ void ChannelImpl::advanceRecvOperation(
       /*cond=*/error_,
       /*actions=*/{&ChannelImpl::callRecvCallback});
 
+  // Needs to go after previous op to ensure predictable and consistent ordering
+  // of write calls on the descriptor control connection.
+  recvOps_.attemptTransition(
+      opIter,
+      /*from=*/RecvOperation::UNINITIALIZED,
+      /*to=*/RecvOperation::READING_DESCRIPTOR,
+      /*cond=*/!error_ && state_ == ESTABLISHED &&
+          prevOpState >= RecvOperation::READING_DESCRIPTOR,
+      /*actions=*/{&ChannelImpl::readDescriptor});
+
+  recvOps_.attemptTransition(
+      opIter,
+      /*from=*/RecvOperation::READING_DESCRIPTOR,
+      /*to=*/RecvOperation::FINISHED,
+      /*cond=*/error_ && op.doneReadingDescriptor,
+      /*actions=*/{&ChannelImpl::callRecvCallback});
+
   // This doesn't strictly need to go after the previous op, but it doesn't make
   // sense to busy poll multiple events if only one of them is actually able to
   // then make progress.
   recvOps_.attemptTransition(
       opIter,
-      /*from=*/RecvOperation::UNINITIALIZED,
+      /*from=*/RecvOperation::READING_DESCRIPTOR,
       /*to=*/RecvOperation::WAITING_FOR_CUDA_EVENT,
-      /*cond=*/!error_ && state_ == ESTABLISHED &&
+      /*cond=*/!error_ && op.doneReadingDescriptor &&
           prevOpState >=
               RecvOperation::RECEIVING_OVER_IB_AND_WRITING_READY_TO_RECEIVE,
       /*actions=*/{&ChannelImpl::waitForRecvCudaEvent});
@@ -433,8 +460,8 @@ void ChannelImpl::advanceRecvOperation(
       /*actions=*/{&ChannelImpl::callRecvCallback});
 
   // Needs to go after previous op to ensure predictable and consistent ordering
-  // of recv calls on InfiniBand queue pair and write calls on control
-  // connection.
+  // of recv calls on InfiniBand queue pair and write calls on the completion
+  // control connection.
   recvOps_.attemptTransition(
       opIter,
       /*from=*/RecvOperation::WAITING_FOR_CUDA_EVENT,
@@ -450,6 +477,27 @@ void ChannelImpl::advanceRecvOperation(
       /*to=*/RecvOperation::FINISHED,
       /*cond=*/opIter->receivedOverIb,
       /*actions=*/{&ChannelImpl::callRecvCallback});
+}
+
+void ChannelImpl::readDescriptor(RecvOpIter opIter) {
+  TP_DCHECK(context_->inLoop());
+
+  RecvOperation& op = *opIter;
+
+  TP_VLOG(6) << "Channel " << id_ << " is reading descriptor (#"
+             << op.sequenceNumber << ")";
+  auto nopHolderIn = std::make_shared<NopHolder<Descriptor>>();
+  descriptorConnection_->read(
+      *nopHolderIn, callbackWrapper_([opIter, nopHolderIn](ChannelImpl& impl) {
+        TP_VLOG(6) << "Channel " << impl.id_ << " done reading descriptor (# "
+                   << opIter->sequenceNumber << ")";
+        opIter->doneReadingDescriptor = true;
+        if (!impl.error_) {
+          Descriptor& nopDescriptor = nopHolderIn->getObject();
+          opIter->remoteNicIdx = nopDescriptor.originNicIdx;
+        }
+        impl.recvOps_.advanceOperation(opIter);
+      }));
 }
 
 void ChannelImpl::waitForRecvCudaEvent(RecvOpIter opIter) {
@@ -515,7 +563,7 @@ void ChannelImpl::recvOverIbAndWriteReadyToRecive(RecvOpIter opIter) {
   nopReadyToReceive.destinationNicIdx = op.localNicIdx;
   TP_VLOG(6) << "Channel " << id_ << " is writing ready-to-receive (#"
              << op.sequenceNumber << ")";
-  connection_->write(
+  readyToReceiveConnection_->write(
       *nopHolderOut,
       callbackWrapper_([sequenceNumber{opIter->sequenceNumber},
                         nopHolderOut](ChannelImpl& impl) {
@@ -562,7 +610,8 @@ void ChannelImpl::handleErrorImpl() {
 
   tryCleanup();
 
-  connection_->close();
+  descriptorConnection_->close();
+  readyToReceiveConnection_->close();
 }
 
 void ChannelImpl::tryCleanup() {
