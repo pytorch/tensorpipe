@@ -15,8 +15,9 @@
 #include <cuda_runtime.h>
 
 #include <tensorpipe/channel/channel_impl_boilerplate.h>
+#include <tensorpipe/channel/cuda_ipc/context_impl.h>
+#include <tensorpipe/common/allocator.h>
 #include <tensorpipe/common/cuda.h>
-#include <tensorpipe/common/cuda_event_pool.h>
 #include <tensorpipe/common/cuda_lib.h>
 #include <tensorpipe/common/state_machine.h>
 #include <tensorpipe/transport/context.h>
@@ -27,48 +28,64 @@ namespace cuda_ipc {
 
 class ContextImpl;
 
-struct SendOperation {
-  enum State { UNINITIALIZED, REQUESTING_EVENT, READING_REPLY, FINISHED };
+struct ChunkSendOperation {
+  enum State {
+    UNINITIALIZED,
+    ALLOCATING_STAGING_BUFFER,
+    READING_REPLY,
+    FINISHED
+  };
 
   // Fields used by the state machine
   uint64_t sequenceNumber{0};
   State state{UNINITIALIZED};
 
   // Progress flags
-  bool doneRequestingEvent{false};
+  bool doneAllocatingStagingBuffer{false};
   bool doneReadingReply{false};
 
   // Arguments at creation
+  const uint64_t bufferSequenceNumber;
+  const size_t chunkId;
+  const size_t numChunks;
   const void* const ptr;
+  const size_t length;
   const int deviceIdx;
   const cudaStream_t stream;
-  TDescriptorCallback descriptorCallback;
   TSendCallback callback;
 
   // Other data
-  CudaEventPool::BorrowedEvent startEv;
-  std::string stopEvHandle;
+  size_t slotIdx{static_cast<size_t>(-1)};
+  Allocator::TChunk stagingBuffer;
+  CudaEvent* event{nullptr};
 
-  SendOperation(
-      TDescriptorCallback descriptorCallback,
+  ChunkSendOperation(
+      uint64_t bufferSequenceNumber,
+      size_t chunkId,
+      size_t numChunks,
       TSendCallback callback,
       int deviceIdx,
       const void* ptr,
+      size_t length,
       cudaStream_t stream);
 };
 
-struct RecvOperation {
-  enum State { UNINITIALIZED, REQUESTING_EVENT, READING_ACK, FINISHED };
+struct ChunkRecvOperation {
+  enum State { UNINITIALIZED, READING_DESCRIPTOR, FINISHED };
 
   // Fields used by the state machine
   uint64_t sequenceNumber{0};
   State state{UNINITIALIZED};
 
   // Progress flags
+  bool doneReadingDescriptor{false};
   bool doneRequestingEvent{false};
   bool doneReadingAck{false};
 
   // Arguments at creation
+  const uint64_t bufferSequenceNumber;
+  const size_t chunkId;
+  const size_t numChunks;
   void* const ptr;
   const size_t length;
   const int deviceIdx;
@@ -76,13 +93,18 @@ struct RecvOperation {
   TRecvCallback callback;
 
   // Other data
-  CudaEventPool::BorrowedEvent stopEv;
-  std::string allocationId;
-  std::string bufferHandle;
-  size_t offset;
-  std::string startEvHandle;
+  int remoteDeviceIdx;
+  size_t remoteSlotIdx;
 
-  RecvOperation(int deviceIdx, void* ptr, cudaStream_t stream, size_t length);
+  ChunkRecvOperation(
+      uint64_t bufferSequenceNumber,
+      size_t chunkId,
+      size_t numChunks,
+      TRecvCallback callback,
+      int deviceIdx,
+      void* ptr,
+      size_t length,
+      cudaStream_t stream);
 };
 
 class ChannelImpl final
@@ -92,8 +114,8 @@ class ChannelImpl final
       ConstructorToken token,
       std::shared_ptr<ContextImpl> context,
       std::string id,
-      std::shared_ptr<transport::Connection> replyConnection,
-      std::shared_ptr<transport::Connection> ackConnection);
+      std::shared_ptr<transport::Connection> descriptorConnection,
+      std::shared_ptr<transport::Connection> replyConnection);
 
  protected:
   // Implement the entry points called by ChannelImplBoilerplate.
@@ -111,42 +133,60 @@ class ChannelImpl final
   void handleErrorImpl() override;
 
  private:
+  const std::shared_ptr<transport::Connection> descriptorConnection_;
   const std::shared_ptr<transport::Connection> replyConnection_;
-  const std::shared_ptr<transport::Connection> ackConnection_;
 
-  OpsStateMachine<ChannelImpl, SendOperation> sendOps_{
+  // For each local device, whether we've already sent the information about the
+  // device's outbox to the remote, who needs it to open a handle to the outbox.
+  // Used during the send path.
+  std::vector<bool> localOutboxesSent_;
+
+  // For each remote device, the information about the remote's outbox for that
+  // device (or nullopt, if we haven't received it yet). We store it because we
+  // will only receive it once (for the first buffer coming from that device)
+  // but we might need it multiple time, as we need to open it for every local
+  // target device where it might be needed. Used during the receive path.
+  std::vector<optional<ContextImpl::OutboxInfo>> remoteOutboxesReceived_;
+  // For each remote and local device, the handle to the opened remote outbox
+  // for that device (or nullptr if we haven't opened it yet). Used during the
+  // receive path.
+  std::vector<std::vector<const ContextImpl::RemoteOutboxHandle*>>
+      remoteOutboxesOpened_;
+
+  // A sequence number for the chunks.
+  uint64_t nextChunkBeingSent_{0};
+  uint64_t nextChunkBeingReceived_{0};
+
+  OpsStateMachine<ChannelImpl, ChunkSendOperation> chunkSendOps_{
       *this,
-      &ChannelImpl::advanceSendOperation};
-  using SendOpIter = decltype(sendOps_)::Iter;
-  OpsStateMachine<ChannelImpl, RecvOperation> recvOps_{
+      &ChannelImpl::advanceChunkSendOperation};
+  using ChunkSendOpIter = decltype(chunkSendOps_)::Iter;
+  OpsStateMachine<ChannelImpl, ChunkRecvOperation> chunkRecvOps_{
       *this,
-      &ChannelImpl::advanceRecvOperation};
-  using RecvOpIter = decltype(recvOps_)::Iter;
+      &ChannelImpl::advanceChunkRecvOperation};
+  using ChunkRecvOpIter = decltype(chunkRecvOps_)::Iter;
 
   // State machines for send and recv ops.
-  void advanceSendOperation(
-      SendOpIter opIter,
-      SendOperation::State prevOpState);
-  void advanceRecvOperation(
-      RecvOpIter opIter,
-      RecvOperation::State prevOpState);
+  void advanceChunkSendOperation(
+      ChunkSendOpIter opIter,
+      ChunkSendOperation::State prevOpState);
+  void advanceChunkRecvOperation(
+      ChunkRecvOpIter opIter,
+      ChunkRecvOperation::State prevOpState);
 
   // Actions (i.e., methods that begin a state transition).
   // For send operations:
-  void requestEvent(SendOpIter opIter);
-  void recordStartEvent(SendOpIter opIter);
-  void callDescriptorCallback(SendOpIter opIter);
-  void readReply(SendOpIter opIter);
-  void returnEvent(SendOpIter opIter);
-  void waitOnStopEvent(SendOpIter opIter);
-  void callSendCallback(SendOpIter opIter);
-  void writeAck(SendOpIter opIter);
+  void allocateStagingBuffer(ChunkSendOpIter opIter);
+  void copyFromSourceToStaging(ChunkSendOpIter opIter);
+  void writeDescriptor(ChunkSendOpIter opIter);
+  void readReply(ChunkSendOpIter opIter);
+  void releaseStagingBuffer(ChunkSendOpIter opIter);
+  void callSendCallback(ChunkSendOpIter opIter);
   // For recv operations:
-  void requestEvent(RecvOpIter opIter);
-  void waitOnStartEventAndCopyAndRecordStopEvent(RecvOpIter opIter);
-  void callRecvCallback(RecvOpIter opIter);
-  void writeReplyAndReadAck(RecvOpIter opIter);
-  void returnEvent(RecvOpIter opIter);
+  void readDescriptor(ChunkRecvOpIter opIter);
+  void copyFromStagingToTarget(ChunkRecvOpIter opIter);
+  void callRecvCallback(ChunkRecvOpIter opIter);
+  void writeReply(ChunkRecvOpIter opIter);
 };
 
 } // namespace cuda_ipc
