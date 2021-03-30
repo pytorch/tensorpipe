@@ -145,28 +145,15 @@ void ChannelImpl::advanceChunkSendOperation(
       /*actions=*/{&ChannelImpl::callSendCallback});
 
   // Needs to go after previous op to ensure predictable and consistent ordering
-  // of write calls on control connection.
+  // of write calls on the control connection.
   chunkSendOps_.attemptTransition(
       opIter,
       /*from=*/ChunkSendOperation::ALLOCATING_CPU_BUFFER,
-      /*to=*/ChunkSendOperation::WRITING_READY_TO_SEND,
-      /*cond=*/!error_ && op.doneAllocatingCpuStagingBuffer &&
-          prevOpState >= ChunkSendOperation::WRITING_READY_TO_SEND,
-      /*actions=*/{&ChannelImpl::writeReadyToSend});
-
-  chunkSendOps_.attemptTransition(
-      opIter,
-      /*from=*/ChunkSendOperation::WRITING_READY_TO_SEND,
-      /*to=*/ChunkSendOperation::FINISHED,
-      /*cond=*/error_ && op.doneWritingReadyToSend,
-      /*actions=*/{&ChannelImpl::callSendCallback});
-
-  chunkSendOps_.attemptTransition(
-      opIter,
-      /*from=*/ChunkSendOperation::WRITING_READY_TO_SEND,
       /*to=*/ChunkSendOperation::COPYING_FROM_GPU_TO_CPU,
-      /*cond=*/!error_ && op.doneWritingReadyToSend,
-      /*actions=*/{&ChannelImpl::copyFromGpuToCpu});
+      /*cond=*/!error_ && op.doneAllocatingCpuStagingBuffer &&
+          prevOpState >= ChunkSendOperation::COPYING_FROM_GPU_TO_CPU,
+      /*actions=*/
+      {&ChannelImpl::writeReadyToSend, &ChannelImpl::copyFromGpuToCpu});
 
   // See above for why this needs to go after previous op.
   chunkSendOps_.attemptTransition(
@@ -206,13 +193,6 @@ void ChannelImpl::advanceChunkSendOperation(
       opIter,
       /*from=*/ChunkSendOperation::SENDING_CPU_BUFFER,
       /*to=*/ChunkSendOperation::FINISHED,
-      /*cond=*/error_ && op.doneSendingCpuBuffer,
-      /*actions=*/{});
-
-  chunkSendOps_.attemptTransition(
-      opIter,
-      /*from=*/ChunkSendOperation::SENDING_CPU_BUFFER,
-      /*to=*/ChunkSendOperation::FINISHED,
       /*cond=*/op.doneSendingCpuBuffer,
       /*actions=*/{});
 
@@ -237,7 +217,9 @@ void ChannelImpl::allocateSendCpuBuffer(ChunkSendOpIter opIter) {
                        << opIter->chunkId << " of " << opIter->numChunks
                        << " for buffer #" << opIter->bufferSequenceNumber;
             opIter->doneAllocatingCpuStagingBuffer = true;
-            opIter->tmpBuffer = std::move(tmpBuffer);
+            if (!impl.error_) {
+              opIter->tmpBuffer = std::move(tmpBuffer);
+            }
             impl.chunkSendOps_.advanceOperation(opIter);
           }));
 }
@@ -250,13 +232,15 @@ void ChannelImpl::writeReadyToSend(ChunkSendOpIter opIter) {
              << op.chunkId << " of " << op.numChunks << " for buffer #"
              << op.bufferSequenceNumber;
   connection_->write(
-      nullptr, 0, callbackWrapper_([opIter](ChannelImpl& impl) {
+      nullptr,
+      0,
+      callbackWrapper_([bufferSequenceNumber{op.bufferSequenceNumber},
+                        chunkId{op.chunkId},
+                        numChunks{op.numChunks}](ChannelImpl& impl) {
         TP_VLOG(6) << "Channel " << impl.id_
                    << " is done sending ready-to-send notification for chunk #"
-                   << opIter->chunkId << " of " << opIter->numChunks
-                   << " for buffer #" << opIter->bufferSequenceNumber;
-        opIter->doneWritingReadyToSend = true;
-        impl.chunkSendOps_.advanceOperation(opIter);
+                   << chunkId << " of " << numChunks << " for buffer #"
+                   << bufferSequenceNumber;
       }));
 }
 
@@ -496,7 +480,9 @@ void ChannelImpl::allocateRecvCpuBuffer(ChunkRecvOpIter opIter) {
                        << opIter->chunkId << " of " << opIter->numChunks
                        << " for buffer #" << opIter->bufferSequenceNumber;
             opIter->doneAllocatingCpuStagingBuffer = true;
-            opIter->tmpBuffer = std::move(tmpBuffer);
+            if (!impl.error_) {
+              opIter->tmpBuffer = std::move(tmpBuffer);
+            }
             impl.chunkRecvOps_.advanceOperation(opIter);
           }));
 }
