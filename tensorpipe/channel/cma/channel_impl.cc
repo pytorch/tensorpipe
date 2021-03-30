@@ -82,8 +82,8 @@ void ChannelImpl::advanceSendOperation(
       /*actions=*/{&ChannelImpl::callSendCallback});
 
   // Needs to go after previous op to ensure predictable and consistent ordering
-  // of write calls on the descriptor connection and read calls on the
-  // completion connection.
+  // of write calls on the descriptor control connection and read calls on the
+  // completion control connection.
   sendOps_.attemptTransition(
       opIter,
       /*from=*/SendOperation::UNINITIALIZED,
@@ -179,7 +179,7 @@ void ChannelImpl::advanceRecvOperation(
       /*actions=*/{&ChannelImpl::callRecvCallback});
 
   // Needs to go after previous op to ensure predictable and consistent ordering
-  // of read calls on the descriptor connection.
+  // of read calls on the descriptor control connection.
   recvOps_.attemptTransition(
       opIter,
       /*from=*/RecvOperation::UNINITIALIZED,
@@ -209,7 +209,7 @@ void ChannelImpl::advanceRecvOperation(
       /*actions=*/{&ChannelImpl::callRecvCallback});
 
   // Needs to go after previous op to ensure predictable and consistent ordering
-  // of write calls on the completion connection.
+  // of write calls on the completion control connection.
   recvOps_.attemptTransition(
       opIter,
       /*from=*/RecvOperation::COPYING,
@@ -231,13 +231,11 @@ void ChannelImpl::readDescriptor(RecvOpIter opIter) {
         TP_VLOG(6) << "Channel " << impl.id_ << " done reading descriptor (#"
                    << opIter->sequenceNumber << ")";
         opIter->doneReadingDescriptor = true;
-
         if (!impl.error_) {
           Descriptor& nopDescriptor = nopHolderIn->getObject();
           opIter->remotePid = nopDescriptor.pid;
           opIter->remotePtr = reinterpret_cast<void*>(nopDescriptor.ptr);
         }
-
         impl.recvOps_.advanceOperation(opIter);
       }));
 }
