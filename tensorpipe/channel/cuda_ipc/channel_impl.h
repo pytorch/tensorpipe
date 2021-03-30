@@ -39,7 +39,11 @@ struct ChunkSendOperation {
   bool doneReadingReply{false};
 
   // Arguments at creation
+  const uint64_t bufferSequenceNumber;
+  const size_t chunkId;
+  const size_t numChunks;
   const void* const ptr;
+  const size_t length;
   const int deviceIdx;
   const cudaStream_t stream;
   TSendCallback callback;
@@ -49,9 +53,13 @@ struct ChunkSendOperation {
   std::string stopEvHandle;
 
   ChunkSendOperation(
+      uint64_t bufferSequenceNumber,
+      size_t chunkId,
+      size_t numChunks,
       TSendCallback callback,
       int deviceIdx,
       const void* ptr,
+      size_t length,
       cudaStream_t stream);
 };
 
@@ -74,6 +82,9 @@ struct ChunkRecvOperation {
   bool doneReadingAck{false};
 
   // Arguments at creation
+  const uint64_t bufferSequenceNumber;
+  const size_t chunkId;
+  const size_t numChunks;
   void* const ptr;
   const size_t length;
   const int deviceIdx;
@@ -88,10 +99,14 @@ struct ChunkRecvOperation {
   std::string startEvHandle;
 
   ChunkRecvOperation(
+      uint64_t bufferSequenceNumber,
+      size_t chunkId,
+      size_t numChunks,
+      TRecvCallback callback,
       int deviceIdx,
       void* ptr,
-      cudaStream_t stream,
-      size_t length);
+      size_t length,
+      cudaStream_t stream);
 };
 
 class ChannelImpl final
@@ -124,6 +139,10 @@ class ChannelImpl final
   const std::shared_ptr<transport::Connection> descriptorConnection_;
   const std::shared_ptr<transport::Connection> replyConnection_;
   const std::shared_ptr<transport::Connection> ackConnection_;
+
+  // A sequence number for the chunks.
+  uint64_t nextChunkBeingSent_{0};
+  uint64_t nextChunkBeingReceived_{0};
 
   OpsStateMachine<ChannelImpl, ChunkSendOperation> chunkSendOps_{
       *this,

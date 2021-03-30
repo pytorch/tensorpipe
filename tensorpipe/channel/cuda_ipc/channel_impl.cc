@@ -18,6 +18,7 @@
 #include <nop/structure.h>
 #include <nop/types/variant.h>
 
+#include <tensorpipe/channel/cuda_ipc/constants.h>
 #include <tensorpipe/channel/cuda_ipc/context_impl.h>
 #include <tensorpipe/channel/helpers.h>
 #include <tensorpipe/common/cuda.h>
@@ -31,6 +32,10 @@ namespace channel {
 namespace cuda_ipc {
 
 namespace {
+
+size_t ceilOfRatio(size_t n, size_t d) {
+  return (n + d - 1) / d;
+}
 
 struct Descriptor {
   std::string allocationId;
@@ -52,21 +57,40 @@ struct Ack {
 } // namespace
 
 ChunkSendOperation::ChunkSendOperation(
+    uint64_t bufferSequenceNumber,
+    size_t chunkId,
+    size_t numChunks,
     TSendCallback callback,
     int deviceIdx,
     const void* ptr,
+    size_t length,
     cudaStream_t stream)
-    : ptr(ptr),
+    : bufferSequenceNumber(bufferSequenceNumber),
+      chunkId(chunkId),
+      numChunks(numChunks),
+      ptr(ptr),
+      length(length),
       deviceIdx(deviceIdx),
       stream(stream),
       callback(std::move(callback)) {}
 
 ChunkRecvOperation::ChunkRecvOperation(
+    uint64_t bufferSequenceNumber,
+    size_t chunkId,
+    size_t numChunks,
+    TRecvCallback callback,
     int deviceIdx,
     void* ptr,
-    cudaStream_t stream,
-    size_t length)
-    : ptr(ptr), length(length), deviceIdx(deviceIdx), stream(stream) {}
+    size_t length,
+    cudaStream_t stream)
+    : bufferSequenceNumber(bufferSequenceNumber),
+      chunkId(chunkId),
+      numChunks(numChunks),
+      ptr(ptr),
+      length(length),
+      deviceIdx(deviceIdx),
+      stream(stream),
+      callback(std::move(callback)) {}
 
 ChannelImpl::ChannelImpl(
     ConstructorToken token,
@@ -94,15 +118,24 @@ void ChannelImpl::sendImplFromLoop(
     TSendCallback callback) {
   int deviceIdx = cudaDeviceForPointer(
       context_->getCudaLib(), buffer.unwrap<CudaBuffer>().ptr);
+  const size_t bufferLength = buffer.unwrap<CudaBuffer>().length;
+  const size_t numChunks = ceilOfRatio(bufferLength, kSlotSize);
 
-  ChunkSendOpIter opIter = chunkSendOps_.emplaceBack(
-      sequenceNumber,
-      std::move(callback),
-      deviceIdx,
-      buffer.unwrap<CudaBuffer>().ptr,
-      buffer.unwrap<CudaBuffer>().stream);
+  for (size_t chunkIdx = 0; chunkIdx < numChunks; chunkIdx += 1) {
+    size_t offset = chunkIdx * kSlotSize;
+    ChunkSendOpIter opIter = chunkSendOps_.emplaceBack(
+        nextChunkBeingSent_++,
+        sequenceNumber,
+        chunkIdx,
+        numChunks,
+        chunkIdx == numChunks - 1 ? std::move(callback) : nullptr,
+        deviceIdx,
+        reinterpret_cast<uint8_t*>(buffer.unwrap<CudaBuffer>().ptr) + offset,
+        std::min(bufferLength - offset, kSlotSize),
+        buffer.unwrap<CudaBuffer>().stream);
 
-  chunkSendOps_.advanceOperation(opIter);
+    chunkSendOps_.advanceOperation(opIter);
+  }
 
   descriptorCallback(error_, "");
 }
@@ -114,11 +147,14 @@ void ChannelImpl::advanceChunkSendOperation(
 
   ChunkSendOperation& op = *opIter;
 
+  // Needs to go after previous op invoked its callback because the last chunk
+  // in a series (that corresponds to one operation) must invoke its callback
+  // only when all chunks in the series are done.
   chunkSendOps_.attemptTransition(
       opIter,
       /*from=*/ChunkSendOperation::UNINITIALIZED,
       /*to=*/ChunkSendOperation::FINISHED,
-      /*cond=*/error_,
+      /*cond=*/error_ && prevOpState >= ChunkSendOperation::FINISHED,
       /*actions=*/
       {&ChannelImpl::callSendCallback});
 
@@ -135,11 +171,13 @@ void ChannelImpl::advanceChunkSendOperation(
       /*cond=*/!error_ && prevOpState >= ChunkSendOperation::REQUESTING_EVENT,
       /*actions=*/{&ChannelImpl::requestEvent});
 
+  // See above for why this needs to go after previous op.
   chunkSendOps_.attemptTransition(
       opIter,
       /*from=*/ChunkSendOperation::REQUESTING_EVENT,
       /*to=*/ChunkSendOperation::FINISHED,
-      /*cond=*/error_ && op.doneRequestingEvent,
+      /*cond=*/error_ && op.doneRequestingEvent &&
+          prevOpState >= ChunkSendOperation::FINISHED,
       /*actions=*/
       {&ChannelImpl::returnEvent, &ChannelImpl::callSendCallback});
 
@@ -157,11 +195,13 @@ void ChannelImpl::advanceChunkSendOperation(
        &ChannelImpl::writeDescriptor,
        &ChannelImpl::readReply});
 
+  // See above for why this needs to go after previous op.
   chunkSendOps_.attemptTransition(
       opIter,
       /*from=*/ChunkSendOperation::READING_REPLY,
       /*to=*/ChunkSendOperation::FINISHED,
-      /*cond=*/error_ && op.doneReadingReply,
+      /*cond=*/error_ && op.doneReadingReply &&
+          prevOpState >= ChunkSendOperation::FINISHED,
       /*actions=*/{&ChannelImpl::returnEvent, &ChannelImpl::callSendCallback});
 
   // Needs to go after previous op to ensure predictable and consistent ordering
@@ -287,9 +327,11 @@ void ChannelImpl::waitOnStopEvent(ChunkSendOpIter opIter) {
 void ChannelImpl::callSendCallback(ChunkSendOpIter opIter) {
   ChunkSendOperation& op = *opIter;
 
-  op.callback(error_);
-  // Reset callback to release the resources it was holding.
-  op.callback = nullptr;
+  if (op.callback) {
+    op.callback(error_);
+    // Reset callback to release the resources it was holding.
+    op.callback = nullptr;
+  }
 }
 
 void ChannelImpl::writeAck(ChunkSendOpIter opIter) {
@@ -317,15 +359,24 @@ void ChannelImpl::recvImplFromLoop(
 
   int deviceIdx = cudaDeviceForPointer(
       context_->getCudaLib(), buffer.unwrap<CudaBuffer>().ptr);
-  ChunkRecvOpIter opIter = chunkRecvOps_.emplaceBack(
-      sequenceNumber,
-      deviceIdx,
-      buffer.unwrap<CudaBuffer>().ptr,
-      buffer.unwrap<CudaBuffer>().stream,
-      buffer.unwrap<CudaBuffer>().length);
-  opIter->callback = std::move(callback);
+  const size_t bufferLength = buffer.unwrap<CudaBuffer>().length;
+  const size_t numChunks = ceilOfRatio(bufferLength, kSlotSize);
 
-  chunkRecvOps_.advanceOperation(opIter);
+  for (size_t chunkIdx = 0; chunkIdx < numChunks; chunkIdx += 1) {
+    size_t offset = chunkIdx * kSlotSize;
+    ChunkRecvOpIter opIter = chunkRecvOps_.emplaceBack(
+        nextChunkBeingReceived_++,
+        sequenceNumber,
+        chunkIdx,
+        numChunks,
+        chunkIdx == numChunks - 1 ? std::move(callback) : nullptr,
+        deviceIdx,
+        reinterpret_cast<uint8_t*>(buffer.unwrap<CudaBuffer>().ptr) + offset,
+        std::min(bufferLength - offset, kSlotSize),
+        buffer.unwrap<CudaBuffer>().stream);
+
+    chunkRecvOps_.advanceOperation(opIter);
+  }
 }
 
 void ChannelImpl::advanceChunkRecvOperation(
@@ -335,11 +386,14 @@ void ChannelImpl::advanceChunkRecvOperation(
 
   ChunkRecvOperation& op = *opIter;
 
+  // Needs to go after previous op invoked its callback because the last chunk
+  // in a series (that corresponds to one operation) must invoke its callback
+  // only when all chunks in the series are done.
   chunkRecvOps_.attemptTransition(
       opIter,
       /*from=*/ChunkRecvOperation::UNINITIALIZED,
       /*to=*/ChunkRecvOperation::FINISHED,
-      /*cond=*/error_,
+      /*cond=*/error_ && prevOpState >= ChunkRecvOperation::READING_ACK,
       /*actions=*/{&ChannelImpl::callRecvCallback});
 
   // Needs to go after previous op to ensure predictable and consistent ordering
@@ -351,11 +405,13 @@ void ChannelImpl::advanceChunkRecvOperation(
       /*cond=*/!error_ && prevOpState >= ChunkRecvOperation::READING_DESCRIPTOR,
       /*actions=*/{&ChannelImpl::readDescriptor});
 
+  // See above for why this needs to go after previous op.
   chunkRecvOps_.attemptTransition(
       opIter,
       /*from=*/ChunkRecvOperation::READING_DESCRIPTOR,
       /*to=*/ChunkRecvOperation::FINISHED,
-      /*cond=*/error_ && op.doneReadingDescriptor,
+      /*cond=*/error_ && op.doneReadingDescriptor &&
+          prevOpState >= ChunkRecvOperation::READING_ACK,
       /*actions=*/{&ChannelImpl::callRecvCallback});
 
   // Needs to go after previous op to ensure later operations are not holding
@@ -372,11 +428,13 @@ void ChannelImpl::advanceChunkRecvOperation(
           prevOpState >= ChunkRecvOperation::REQUESTING_EVENT,
       /*actions=*/{&ChannelImpl::requestEvent});
 
+  // See above for why this needs to go after previous op.
   chunkRecvOps_.attemptTransition(
       opIter,
       /*from=*/ChunkRecvOperation::REQUESTING_EVENT,
       /*to=*/ChunkRecvOperation::FINISHED,
-      /*cond=*/error_ && op.doneRequestingEvent,
+      /*cond=*/error_ && op.doneRequestingEvent &&
+          prevOpState >= ChunkRecvOperation::READING_ACK,
       /*actions=*/{&ChannelImpl::callRecvCallback, &ChannelImpl::returnEvent});
 
   // Needs to go after previous op to ensure predictable and consistent ordering
@@ -477,9 +535,11 @@ void ChannelImpl::waitOnStartEventAndCopyAndRecordStopEvent(
 void ChannelImpl::callRecvCallback(ChunkRecvOpIter opIter) {
   ChunkRecvOperation& op = *opIter;
 
-  op.callback(error_);
-  // Reset callback to release the resources it was holding.
-  op.callback = nullptr;
+  if (op.callback) {
+    op.callback(error_);
+    // Reset callback to release the resources it was holding.
+    op.callback = nullptr;
+  }
 }
 
 void ChannelImpl::writeReply(ChunkRecvOpIter opIter) {
