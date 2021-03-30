@@ -144,15 +144,16 @@ void ChannelImpl::advanceChunkSendOperation(
       /*actions=*/
       {&ChannelImpl::callSendCallback, &ChannelImpl::returnSendCpuBuffer});
 
-  // FIXME In principle we could write the ready-to-send as soon as we received
-  // the allocation, if we didn't have to collect the descriptor.
-
+  // Needs to go after previous op to ensure predictable and consistent ordering
+  // of write calls on the control connection.
   chunkSendOps_.attemptTransition(
       opIter,
       /*from=*/ChunkSendOperation::ALLOCATING_CPU_BUFFER,
       /*to=*/ChunkSendOperation::COPYING_FROM_GPU_TO_CPU,
-      /*cond=*/!error_ && op.doneAllocatingCpuStagingBuffer,
-      /*actions=*/{&ChannelImpl::copyFromGpuToCpu});
+      /*cond=*/!error_ && op.doneAllocatingCpuStagingBuffer &&
+          prevOpState >= ChunkSendOperation::COPYING_FROM_GPU_TO_CPU,
+      /*actions=*/
+      {&ChannelImpl::writeReadyToSend, &ChannelImpl::copyFromGpuToCpu});
 
   // See above for why this needs to go after previous op.
   chunkSendOps_.attemptTransition(
@@ -185,35 +186,15 @@ void ChannelImpl::advanceChunkSendOperation(
   chunkSendOps_.attemptTransition(
       opIter,
       /*from=*/ChunkSendOperation::INVOKED_CALLBACK,
-      /*to=*/ChunkSendOperation::SENDING_CPU_BUFFER_AND_COLLECTING_DESCRIPTOR,
-      /*cond=*/!error_ &&
-          prevOpState >=
-              ChunkSendOperation::SENDING_CPU_BUFFER_AND_COLLECTING_DESCRIPTOR,
+      /*to=*/ChunkSendOperation::SENDING_CPU_BUFFER,
+      /*cond=*/!error_ && prevOpState >= ChunkSendOperation::SENDING_CPU_BUFFER,
       /*actions=*/{&ChannelImpl::sendCpuBuffer});
 
   chunkSendOps_.attemptTransition(
       opIter,
-      /*from=*/ChunkSendOperation::SENDING_CPU_BUFFER_AND_COLLECTING_DESCRIPTOR,
+      /*from=*/ChunkSendOperation::SENDING_CPU_BUFFER,
       /*to=*/ChunkSendOperation::FINISHED,
-      /*cond=*/error_ && op.doneSendingCpuBuffer && op.doneCollectingDescriptor,
-      /*actions=*/{&ChannelImpl::returnSendCpuBuffer});
-
-  // Needs to go after previous op to ensure predictable and consistent ordering
-  // of write calls on control connection.
-  chunkSendOps_.attemptTransition(
-      opIter,
-      /*from=*/ChunkSendOperation::SENDING_CPU_BUFFER_AND_COLLECTING_DESCRIPTOR,
-      /*to=*/ChunkSendOperation::SENDING_CPU_BUFFER_AND_WRITING_READY_TO_SEND,
-      /*cond=*/!error_ && op.doneCollectingDescriptor &&
-          prevOpState >=
-              ChunkSendOperation::SENDING_CPU_BUFFER_AND_WRITING_READY_TO_SEND,
-      /*actions=*/{&ChannelImpl::writeReadyToSend});
-
-  chunkSendOps_.attemptTransition(
-      opIter,
-      /*from=*/ChunkSendOperation::SENDING_CPU_BUFFER_AND_WRITING_READY_TO_SEND,
-      /*to=*/ChunkSendOperation::FINISHED,
-      /*cond=*/op.doneSendingCpuBuffer && op.doneWritingDescriptor,
+      /*cond=*/op.doneSendingCpuBuffer,
       /*actions=*/{&ChannelImpl::returnSendCpuBuffer});
 }
 
@@ -240,6 +221,26 @@ void ChannelImpl::allocateSendCpuBuffer(ChunkSendOpIter opIter) {
             }
             impl.chunkSendOps_.advanceOperation(opIter);
           }));
+}
+
+void ChannelImpl::writeReadyToSend(ChunkSendOpIter opIter) {
+  ChunkSendOperation& op = *opIter;
+
+  TP_VLOG(6) << "Channel " << id_
+             << " is sending ready-to-send notification for chunk #"
+             << op.chunkId << " of " << op.numChunks << " for buffer #"
+             << op.bufferSequenceNumber;
+  connection_->write(
+      nullptr,
+      0,
+      callbackWrapper_([bufferSequenceNumber{op.bufferSequenceNumber},
+                        chunkId{op.chunkId},
+                        numChunks{op.numChunks}](ChannelImpl& impl) {
+        TP_VLOG(6) << "Channel " << impl.id_
+                   << " is done sending ready-to-send notification for chunk #"
+                   << chunkId << " of " << numChunks << " for buffer #"
+                   << bufferSequenceNumber;
+      }));
 }
 
 void ChannelImpl::copyFromGpuToCpu(ChunkSendOpIter opIter) {
@@ -273,44 +274,15 @@ void ChannelImpl::sendCpuBuffer(ChunkSendOpIter opIter) {
   CpuBuffer cpuBuffer{op.tmpBuffer.get(), op.length};
   cpuChannel_->send(
       cpuBuffer,
-      callbackWrapper_(
-          [opIter](ChannelImpl& impl, std::string descriptor) mutable {
-            TP_VLOG(6) << "Channel " << impl.id_
-                       << " is done collecting the descriptor for chunk #"
-                       << opIter->chunkId << " of " << opIter->numChunks
-                       << " for buffer #" << opIter->bufferSequenceNumber
-                       << " from CPU channel";
-            opIter->doneCollectingDescriptor = true;
-            opIter->descriptor = std::move(descriptor);
-            impl.chunkSendOps_.advanceOperation(opIter);
-          }),
+      callbackWrapper_([](ChannelImpl& /* unused */, std::string descriptor) {
+        TP_DCHECK_EQ(descriptor, "");
+      }),
       callbackWrapper_([opIter](ChannelImpl& impl) {
         TP_VLOG(6) << "Channel " << impl.id_ << " is done sending chunk #"
                    << opIter->chunkId << " of " << opIter->numChunks
                    << " for buffer #" << opIter->bufferSequenceNumber
                    << " through CPU channel";
         opIter->doneSendingCpuBuffer = true;
-        impl.chunkSendOps_.advanceOperation(opIter);
-      }));
-}
-
-void ChannelImpl::writeReadyToSend(ChunkSendOpIter opIter) {
-  ChunkSendOperation& op = *opIter;
-
-  TP_VLOG(6) << "Channel " << id_ << " is sending descriptor for chunk #"
-             << op.chunkId << " of " << op.numChunks << " for buffer #"
-             << op.bufferSequenceNumber;
-  const void* descriptorPtr = &op.descriptor[0];
-  size_t descriptorLength = op.descriptor.length();
-  connection_->write(
-      descriptorPtr,
-      descriptorLength,
-      callbackWrapper_([opIter](ChannelImpl& impl) {
-        TP_VLOG(6) << "Channel " << impl.id_
-                   << " is done sending descriptor for chunk #"
-                   << opIter->chunkId << " of " << opIter->numChunks
-                   << " for buffer #" << opIter->bufferSequenceNumber;
-        opIter->doneWritingDescriptor = true;
         impl.chunkSendOps_.advanceOperation(opIter);
       }));
 }
@@ -337,6 +309,7 @@ void ChannelImpl::recvImplFromLoop(
     TDescriptor descriptor,
     Buffer buffer,
     TRecvCallback callback) {
+  TP_DCHECK_EQ(descriptor, "");
   int deviceIdx = cudaDeviceForPointer(
       context_->getCudaLib(), buffer.unwrap<CudaBuffer>().ptr);
   Allocator& cudaHostAllocator = context_->getCudaHostRecvAllocator(deviceIdx);
@@ -400,7 +373,7 @@ void ChannelImpl::advanceChunkRecvOperation(
       opIter,
       /*from=*/ChunkRecvOperation::READING_READY_TO_SEND,
       /*to=*/ChunkRecvOperation::FINISHED,
-      /*cond=*/error_ && op.doneReadingDescriptor &&
+      /*cond=*/error_ && op.doneReadingReadyToSend &&
           prevOpState >=
               ChunkRecvOperation::COPYING_FROM_CPU_TO_GPU_AND_INVOKED_CALLBACK,
       /*actions=*/{&ChannelImpl::callRecvCallback});
@@ -414,7 +387,7 @@ void ChannelImpl::advanceChunkRecvOperation(
       opIter,
       /*from=*/ChunkRecvOperation::READING_READY_TO_SEND,
       /*to=*/ChunkRecvOperation::ALLOCATING_CPU_BUFFER,
-      /*cond=*/!error_ && op.doneReadingDescriptor &&
+      /*cond=*/!error_ && op.doneReadingReadyToSend &&
           prevOpState >= ChunkRecvOperation::ALLOCATING_CPU_BUFFER,
       /*actions=*/{&ChannelImpl::allocateRecvCpuBuffer});
 
@@ -477,17 +450,18 @@ void ChannelImpl::advanceChunkRecvOperation(
 void ChannelImpl::readReadyToSend(ChunkRecvOpIter opIter) {
   ChunkRecvOperation& op = *opIter;
 
-  TP_VLOG(6) << "Channel " << id_ << " is reading descriptor for chunk #"
+  TP_VLOG(6) << "Channel " << id_
+             << " is reading ready-to-send notification for chunk #"
              << op.chunkId << " of " << op.numChunks << " for buffer #"
              << op.bufferSequenceNumber;
   connection_->read(callbackWrapper_(
-      [opIter](ChannelImpl& impl, const void* ptr, size_t length) {
+      [opIter](
+          ChannelImpl& impl, const void* /* unused */, size_t /* unused */) {
         TP_VLOG(6) << "Channel " << impl.id_
-                   << " is done reading descriptor for chunk #"
+                   << " is done reading ready-to-send notification for chunk #"
                    << opIter->chunkId << " of " << opIter->numChunks
                    << " for buffer #" << opIter->bufferSequenceNumber;
-        opIter->doneReadingDescriptor = true;
-        opIter->descriptor = std::string(static_cast<const char*>(ptr), length);
+        opIter->doneReadingReadyToSend = true;
         impl.chunkRecvOps_.advanceOperation(opIter);
       }));
 }
@@ -525,7 +499,7 @@ void ChannelImpl::receiveCpuBuffer(ChunkRecvOpIter opIter) {
              << " of " << op.numChunks << " for buffer #"
              << op.bufferSequenceNumber << " through CPU channel";
   cpuChannel_->recv(
-      std::move(op.descriptor),
+      "",
       CpuBuffer{op.tmpBuffer.get(), op.length},
       callbackWrapper_([opIter](ChannelImpl& impl) {
         TP_VLOG(6) << "Channel " << impl.id_ << " is done sending chunk #"
