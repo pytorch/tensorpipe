@@ -13,9 +13,9 @@
 #include <string>
 
 #include <tensorpipe/channel/channel_impl_boilerplate.h>
+#include <tensorpipe/common/allocator.h>
 #include <tensorpipe/common/cuda.h>
 #include <tensorpipe/common/cuda_buffer.h>
-#include <tensorpipe/common/cuda_host_allocator.h>
 #include <tensorpipe/common/cuda_loop.h>
 #include <tensorpipe/common/state_machine.h>
 
@@ -158,12 +158,14 @@ class ChannelImpl final
   void callSendCallback(ChunkSendOpIter opIter);
   void sendCpuBuffer(ChunkSendOpIter opIter);
   void writeReadyToSend(ChunkSendOpIter opIter);
+  void returnSendCpuBuffer(ChunkSendOpIter opIter);
   // For recv operations:
   void readReadyToSend(ChunkRecvOpIter opIter);
   void allocateRecvCpuBuffer(ChunkRecvOpIter opIter);
   void receiveCpuBuffer(ChunkRecvOpIter opIter);
   void copyFromCpuToGpu(ChunkRecvOpIter opIter);
   void callRecvCallback(ChunkRecvOpIter opIter);
+  void returnRecvCpuBuffer(ChunkRecvOpIter opIter);
 
   void cudaCopy(
       void* dst,

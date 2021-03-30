@@ -9,6 +9,7 @@ add_library(tensorpipe
   channel/error.cc
   channel/helpers.cc
   common/address.cc
+  common/allocator.cc
   common/error.cc
   common/fd.cc
   common/socket.cc
@@ -113,7 +114,6 @@ if(TP_USE_CUDA)
     channel/cuda_basic/channel_impl.cc
     channel/cuda_basic/context_impl.cc
     channel/cuda_basic/factory.cc
-    common/cuda_host_allocator.cc
     common/cuda_loop.cc)
   set(TP_PUBLIC_HEADERS ${TP_PUBLIC_HEADERS}
     channel/cuda_basic/factory.h)
