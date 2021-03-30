@@ -339,9 +339,10 @@ void ContextImpl::allocateSlot(
   // We don't need to wrap this callback with the callbackWrapper_ because the
   // callback that was passed to this method already is, and because all we're
   // doing here is wrap that callback and do read-only accesses to the outbox.
+  Outbox& outbox = *outboxes_[deviceIdx];
   outboxes_[deviceIdx]->allocator.alloc(
       length,
-      [&outbox{*outboxes_[deviceIdx]}, callback{std::move(callback)}](
+      [&outbox, callback{std::move(callback)}](
           const Error& error, Allocator::TChunk chunk) {
         if (error) {
           callback(error, 0, std::move(chunk), nullptr);
@@ -389,13 +390,13 @@ const ContextImpl::RemoteOutboxHandle& ContextImpl::openRemoteOutbox(
     CudaDeviceGuard guard(localDeviceIdx);
     outbox.buffer = CudaIpcBuffer(
         localDeviceIdx,
-        *reinterpret_cast<cudaIpcMemHandle_t*>(
+        *reinterpret_cast<const cudaIpcMemHandle_t*>(
             remoteOutboxInfo.memHandle.data()));
     outbox.events = std::make_unique<optional<CudaEvent>[]>(kNumSlots);
     for (size_t slotIdx = 0; slotIdx < kNumSlots; slotIdx++) {
       outbox.events[slotIdx].emplace(
           localDeviceIdx,
-          *reinterpret_cast<cudaIpcEventHandle_t*>(
+          *reinterpret_cast<const cudaIpcEventHandle_t*>(
               remoteOutboxInfo.eventHandles[slotIdx].data()));
     }
   }

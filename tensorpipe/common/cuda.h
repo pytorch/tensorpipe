@@ -219,7 +219,7 @@ class CudaDeviceBuffer {
 
  private:
   struct Deleter {
-    int deviceIdx{-1};
+    int deviceIdx;
 
     void operator()(uint8_t* ptr) {
       CudaDeviceGuard guard(deviceIdx);
@@ -227,7 +227,7 @@ class CudaDeviceBuffer {
     }
   };
 
-  std::unique_ptr<uint8_t[], Deleter> ptr_{nullptr, Deleter{}};
+  std::unique_ptr<uint8_t[], Deleter> ptr_;
 };
 
 class CudaIpcBuffer {
@@ -256,7 +256,7 @@ class CudaIpcBuffer {
 
  private:
   struct Deleter {
-    int deviceIdx{-1};
+    int deviceIdx;
 
     void operator()(uint8_t* ptr) {
       CudaDeviceGuard guard(deviceIdx);
@@ -264,7 +264,7 @@ class CudaIpcBuffer {
     }
   };
 
-  std::unique_ptr<uint8_t[], Deleter> ptr_{nullptr, Deleter{}};
+  std::unique_ptr<uint8_t[], Deleter> ptr_;
 };
 
 inline std::string getUuidOfDevice(const CudaLib& cudaLib, int deviceIdx) {
