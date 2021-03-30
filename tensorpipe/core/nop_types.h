@@ -94,14 +94,12 @@ struct MessageDescriptor {
 
     DeviceType deviceType;
     std::string channelName;
-    std::string channelDescriptor;
     NOP_STRUCTURE(
         TensorDescriptor,
         sizeInBytes,
         metadata,
         deviceType,
-        channelName,
-        channelDescriptor);
+        channelName);
   };
 
   std::string metadata;
