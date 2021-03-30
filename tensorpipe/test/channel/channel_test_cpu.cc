@@ -6,6 +6,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <tensorpipe/test/channel/channel_test_cpu.h>
+
 #include <numeric>
 
 #include <tensorpipe/test/channel/channel_test.h>
@@ -14,7 +16,7 @@ using namespace tensorpipe;
 using namespace tensorpipe::channel;
 
 // Call send and recv with a null pointer and a length of 0.
-class NullPointerTest : public ClientServerChannelTestCase<CpuBuffer> {
+class NullPointerTest : public ClientServerChannelTestCase {
   void server(std::shared_ptr<Channel> channel) override {
     // Perform send and wait for completion.
     std::future<std::tuple<Error, TDescriptor>> descriptorFuture;
@@ -49,12 +51,12 @@ class NullPointerTest : public ClientServerChannelTestCase<CpuBuffer> {
 CHANNEL_TEST(CpuChannelTestSuite, NullPointer);
 
 // Call send and recv with a length of 0 but a non-null pointer.
-class EmptyTensorTest : public ClientServerChannelTestCase<CpuBuffer> {
+class EmptyTensorTest : public ClientServerChannelTestCase {
   void server(std::shared_ptr<Channel> channel) override {
     // Allocate a non-empty vector so that its .data() pointer is non-null.
     std::vector<uint8_t> data(1);
-    DataWrapper<CpuBuffer> wrappedData(data);
-    Buffer buffer = wrappedData.buffer();
+    std::unique_ptr<DataWrapper> wrappedData = helper_->makeDataWrapper(data);
+    Buffer buffer = wrappedData->buffer();
     buffer.unwrap<CpuBuffer>().length = 0;
 
     // Perform send and wait for completion.
@@ -75,8 +77,8 @@ class EmptyTensorTest : public ClientServerChannelTestCase<CpuBuffer> {
 
   void client(std::shared_ptr<Channel> channel) override {
     // Allocate a non-empty vector so that its .data() pointer is non-null.
-    DataWrapper<CpuBuffer> wrappedData(1);
-    Buffer buffer = wrappedData.buffer();
+    std::unique_ptr<DataWrapper> wrappedData = helper_->makeDataWrapper(1);
+    Buffer buffer = wrappedData->buffer();
     buffer.unwrap<CpuBuffer>().length = 0;
 
     // Perform recv and wait for completion.
@@ -98,7 +100,7 @@ CHANNEL_TEST(CpuChannelTestSuite, EmptyTensor);
 // However, since we can't really check that behavior, we'll check a highly
 // correlated one: that the recv callback isn't called inline from within the
 // recv method. We do so by having that behavior cause a deadlock.
-class CallbacksAreDeferredTest : public ClientServerChannelTestCase<CpuBuffer> {
+class CallbacksAreDeferredTest : public ClientServerChannelTestCase {
   static constexpr auto kDataSize = 256;
 
  public:

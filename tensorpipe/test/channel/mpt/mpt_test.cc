@@ -9,12 +9,12 @@
 #include <tensorpipe/channel/context.h>
 #include <tensorpipe/channel/mpt/factory.h>
 #include <tensorpipe/common/cpu_buffer.h>
-#include <tensorpipe/test/channel/channel_test.h>
+#include <tensorpipe/test/channel/channel_test_cpu.h>
 #include <tensorpipe/transport/connection.h>
 
 namespace {
 
-class MptChannelTestHelper : public ChannelTestHelper<tensorpipe::CpuBuffer> {
+class MptChannelTestHelper : public CpuChannelTestHelper {
  protected:
   std::shared_ptr<tensorpipe::channel::Context> makeContextInternal(
       std::string id) override {
@@ -35,17 +35,17 @@ class MptChannelTestHelper : public ChannelTestHelper<tensorpipe::CpuBuffer> {
 
 MptChannelTestHelper helper;
 
-class MptChannelTestSuite : public CpuChannelTestSuite {};
+class MptChannelTestSuite : public ChannelTestSuite {};
 
 } // namespace
 
-class ContextIsNotJoinedTest : public ChannelTestCase<tensorpipe::CpuBuffer> {
+class ContextIsNotJoinedTest : public ChannelTestCase {
   // Because it's static we must define it out-of-line (until C++-17, where we
   // can mark this inline).
   static const std::string kReady;
 
  public:
-  void run(ChannelTestHelper<tensorpipe::CpuBuffer>* helper) override {
+  void run(ChannelTestHelper* helper) override {
     auto addr = "127.0.0.1";
 
     helper_ = helper;
@@ -100,13 +100,15 @@ class ContextIsNotJoinedTest : public ChannelTestCase<tensorpipe::CpuBuffer> {
   }
 
  protected:
-  ChannelTestHelper<tensorpipe::CpuBuffer>* helper_;
+  ChannelTestHelper* helper_;
   std::shared_ptr<PeerGroup> peers_;
 };
 
 const std::string ContextIsNotJoinedTest::kReady = "ready";
 
 CHANNEL_TEST(MptChannelTestSuite, ContextIsNotJoined);
+
+INSTANTIATE_TEST_CASE_P(Mpt, ChannelTestSuite, ::testing::Values(&helper));
 
 INSTANTIATE_TEST_CASE_P(Mpt, CpuChannelTestSuite, ::testing::Values(&helper));
 
