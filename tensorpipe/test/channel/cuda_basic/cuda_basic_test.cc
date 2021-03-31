@@ -10,12 +10,11 @@
 
 #include <tensorpipe/channel/basic/factory.h>
 #include <tensorpipe/channel/cuda_basic/factory.h>
-#include <tensorpipe/test/channel/channel_test.h>
+#include <tensorpipe/test/channel/channel_test_cuda.h>
 
 namespace {
 
-class CudaBasicChannelTestHelper
-    : public ChannelTestHelper<tensorpipe::CudaBuffer> {
+class CudaBasicChannelTestHelper : public CudaChannelTestHelper {
  protected:
   std::shared_ptr<tensorpipe::channel::Context> makeContextInternal(
       std::string id) override {
@@ -35,6 +34,11 @@ class CudaBasicChannelTestHelper
 CudaBasicChannelTestHelper helper;
 
 } // namespace
+
+INSTANTIATE_TEST_CASE_P(
+    CudaBasic,
+    ChannelTestSuite,
+    ::testing::Values(&helper));
 
 INSTANTIATE_TEST_CASE_P(
     CudaBasic,

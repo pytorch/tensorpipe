@@ -9,24 +9,23 @@
 #include <cuda_runtime.h>
 #include <gmock/gmock.h>
 
-#include <tensorpipe/common/cuda.h>
-#include <tensorpipe/test/channel/channel_test.h>
+#include <tensorpipe/test/channel/channel_test_cuda.h>
 #include <tensorpipe/test/channel/cuda_helpers.h>
 #include <tensorpipe/test/test_environment.h>
 
 using namespace tensorpipe;
 using namespace tensorpipe::channel;
 
-class SendAcrossDevicesTest : public ClientServerChannelTestCase<CudaBuffer> {
+class SendAcrossDevicesTest : public ClientServerChannelTestCase {
   static constexpr size_t kSize = 1024;
 
  public:
-  void run(ChannelTestHelper<CudaBuffer>* helper) override {
+  void run(ChannelTestHelper* helper) override {
     if (TestEnvironment::numCudaDevices() < 2) {
       GTEST_SKIP() << "Skipping test requiring >=2 CUDA devices.";
     }
 
-    ClientServerChannelTestCase<CudaBuffer>::run(helper);
+    ClientServerChannelTestCase::run(helper);
   }
 
  private:
@@ -132,17 +131,16 @@ class SendAcrossDevicesTest : public ClientServerChannelTestCase<CudaBuffer> {
 
 CHANNEL_TEST(CudaMultiGPUChannelTestSuite, SendAcrossDevices);
 
-class SendReverseAcrossDevicesTest
-    : public ClientServerChannelTestCase<CudaBuffer> {
+class SendReverseAcrossDevicesTest : public ClientServerChannelTestCase {
   static constexpr size_t kSize = 1024;
 
  public:
-  void run(ChannelTestHelper<CudaBuffer>* helper) override {
+  void run(ChannelTestHelper* helper) override {
     if (TestEnvironment::numCudaDevices() < 2) {
       GTEST_SKIP() << "Skipping test requiring >=2 CUDA devices.";
     }
 
-    ClientServerChannelTestCase<CudaBuffer>::run(helper);
+    ClientServerChannelTestCase::run(helper);
   }
 
  private:
@@ -248,17 +246,16 @@ class SendReverseAcrossDevicesTest
 
 CHANNEL_TEST(CudaMultiGPUChannelTestSuite, SendReverseAcrossDevices);
 
-class SendAcrossNonDefaultDevicesTest
-    : public ClientServerChannelTestCase<CudaBuffer> {
+class SendAcrossNonDefaultDevicesTest : public ClientServerChannelTestCase {
   static constexpr size_t kSize = 1024;
 
  public:
-  void run(ChannelTestHelper<CudaBuffer>* helper) override {
+  void run(ChannelTestHelper* helper) override {
     if (TestEnvironment::numCudaDevices() < 2) {
       GTEST_SKIP() << "Skipping test requiring >=2 CUDA devices.";
     }
 
-    ClientServerChannelTestCase<CudaBuffer>::run(helper);
+    ClientServerChannelTestCase::run(helper);
   }
 
  private:

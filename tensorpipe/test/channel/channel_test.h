@@ -22,111 +22,20 @@
 #include <tensorpipe/channel/context.h>
 #include <tensorpipe/common/buffer.h>
 #include <tensorpipe/common/cpu_buffer.h>
-#include <tensorpipe/config.h>
 #include <tensorpipe/test/peer_group.h>
 #include <tensorpipe/transport/connection.h>
 #include <tensorpipe/transport/listener.h>
 #include <tensorpipe/transport/uv/factory.h>
 
-#if TENSORPIPE_SUPPORTS_CUDA
-#include <tensorpipe/common/cuda.h>
-#include <tensorpipe/common/cuda_buffer.h>
-#endif
-
-template <typename TBuffer>
-class DataWrapper {};
-
-template <>
-class DataWrapper<tensorpipe::CpuBuffer> {
+class DataWrapper {
  public:
-  explicit DataWrapper(size_t length) : vector_(length) {}
+  virtual tensorpipe::Buffer buffer() const = 0;
 
-  explicit DataWrapper(std::vector<uint8_t> v) : vector_(v) {}
+  virtual std::vector<uint8_t> unwrap() = 0;
 
-  tensorpipe::Buffer buffer() const {
-    return tensorpipe::CpuBuffer{
-        const_cast<uint8_t*>(vector_.data()), vector_.size()};
-  }
-
-  const std::vector<uint8_t>& unwrap() {
-    return vector_;
-  }
-
- private:
-  std::vector<uint8_t> vector_;
+  virtual ~DataWrapper() = default;
 };
 
-#if TENSORPIPE_SUPPORTS_CUDA
-
-template <>
-class DataWrapper<tensorpipe::CudaBuffer> {
- public:
-  // Non-copyable.
-  DataWrapper(const DataWrapper&) = delete;
-  DataWrapper& operator=(const DataWrapper&) = delete;
-
-  explicit DataWrapper(size_t length) : length_(length) {
-    if (length_ > 0) {
-      TP_CUDA_CHECK(cudaSetDevice(0));
-      TP_CUDA_CHECK(cudaStreamCreateWithFlags(&stream_, cudaStreamNonBlocking));
-      TP_CUDA_CHECK(cudaMalloc(&cudaPtr_, length_));
-    }
-  }
-
-  explicit DataWrapper(std::vector<uint8_t> v) : DataWrapper(v.size()) {
-    if (length_ > 0) {
-      TP_CUDA_CHECK(cudaMemcpyAsync(
-          cudaPtr_, v.data(), length_, cudaMemcpyDefault, stream_));
-    }
-  }
-
-  explicit DataWrapper(DataWrapper&& other) noexcept
-      : cudaPtr_(other.cudaPtr_),
-        length_(other.length_),
-        stream_(other.stream_) {
-    other.cudaPtr_ = nullptr;
-    other.length_ = 0;
-    other.stream_ = cudaStreamDefault;
-  }
-
-  DataWrapper& operator=(DataWrapper&& other) {
-    std::swap(cudaPtr_, other.cudaPtr_);
-    std::swap(length_, other.length_);
-    std::swap(stream_, other.stream_);
-
-    return *this;
-  }
-
-  tensorpipe::Buffer buffer() const {
-    return tensorpipe::CudaBuffer{cudaPtr_, length_, stream_};
-  }
-
-  std::vector<uint8_t> unwrap() {
-    std::vector<uint8_t> v(length_);
-    if (length_ > 0) {
-      TP_CUDA_CHECK(cudaStreamSynchronize(stream_));
-      TP_CUDA_CHECK(cudaMemcpy(v.data(), cudaPtr_, length_, cudaMemcpyDefault));
-    }
-
-    return v;
-  }
-
-  ~DataWrapper() {
-    if (length_ > 0) {
-      TP_CUDA_CHECK(cudaFree(cudaPtr_));
-      TP_CUDA_CHECK(cudaStreamDestroy(stream_));
-    }
-  }
-
- private:
-  void* cudaPtr_{nullptr};
-  size_t length_{0};
-  cudaStream_t stream_{cudaStreamDefault};
-};
-
-#endif // TENSORPIPE_SUPPORTS_CUDA
-
-template <typename TBuffer>
 class ChannelTestHelper {
  public:
   virtual ~ChannelTestHelper() = default;
@@ -145,6 +54,10 @@ class ChannelTestHelper {
   virtual std::shared_ptr<PeerGroup> makePeerGroup() {
     return std::make_shared<ThreadPeerGroup>();
   }
+
+  virtual std::unique_ptr<DataWrapper> makeDataWrapper(size_t length) = 0;
+  virtual std::unique_ptr<DataWrapper> makeDataWrapper(
+      std::vector<uint8_t> v) = 0;
 
  protected:
   virtual std::shared_ptr<tensorpipe::channel::Context> makeContextInternal(
@@ -177,16 +90,14 @@ class ChannelTestHelper {
   return future;
 }
 
-template <typename TBuffer>
 class ChannelTestCase {
  public:
-  virtual void run(ChannelTestHelper<TBuffer>* helper) = 0;
+  virtual void run(ChannelTestHelper* helper) = 0;
 
   virtual ~ChannelTestCase() = default;
 };
 
-template <typename TBuffer>
-class ClientServerChannelTestCase : public ChannelTestCase<TBuffer> {
+class ClientServerChannelTestCase : public ChannelTestCase {
   using MultiAcceptResult = std::pair<
       tensorpipe::Error,
       std::vector<std::shared_ptr<tensorpipe::transport::Connection>>>;
@@ -287,7 +198,7 @@ class ClientServerChannelTestCase : public ChannelTestCase<TBuffer> {
   }
 
  public:
-  void run(ChannelTestHelper<TBuffer>* helper) override {
+  void run(ChannelTestHelper* helper) override {
     auto addr = "127.0.0.1";
 
     helper_ = helper;
@@ -351,40 +262,13 @@ class ClientServerChannelTestCase : public ChannelTestCase<TBuffer> {
   virtual void afterClient() {}
 
  protected:
-  ChannelTestHelper<TBuffer>* helper_;
+  ChannelTestHelper* helper_;
   std::shared_ptr<PeerGroup> peers_;
 };
 
-class CpuChannelTestSuite : public ::testing::TestWithParam<
-                                ChannelTestHelper<tensorpipe::CpuBuffer>*> {};
-#if TENSORPIPE_SUPPORTS_CUDA
-class CudaChannelTestSuite : public ::testing::TestWithParam<
-                                 ChannelTestHelper<tensorpipe::CudaBuffer>*> {};
-class CudaMultiGPUChannelTestSuite
-    : public ::testing::TestWithParam<
-          ChannelTestHelper<tensorpipe::CudaBuffer>*> {};
-#endif // TENSORPIPE_SUPPORTS_CUDA
+class ChannelTestSuite : public ::testing::TestWithParam<ChannelTestHelper*> {};
 
-#define _CHANNEL_TEST(type, suite, name)    \
-  TEST_P(suite, name) {                     \
-    name##Test<tensorpipe::type##Buffer> t; \
-    t.run(GetParam());                      \
-  }
-
-#define _CHANNEL_TEST_CPU(name) _CHANNEL_TEST(Cpu, CpuChannelTestSuite, name)
-
-#if TENSORPIPE_SUPPORTS_CUDA
-#define _CHANNEL_TEST_CUDA(name) _CHANNEL_TEST(Cuda, CudaChannelTestSuite, name)
-#else // TENSORPIPE_SUPPORTS_CUDA
-#define _CHANNEL_TEST_CUDA(name)
-#endif // TENSORPIPE_SUPPORTS_CUDA
-
-// Register a generic (template) channel test.
-#define CHANNEL_TEST_GENERIC(name) \
-  _CHANNEL_TEST_CPU(name);         \
-  _CHANNEL_TEST_CUDA(name);
-
-// Register a (non-template) channel test.
+// Register a channel test.
 #define CHANNEL_TEST(suite, name) \
   TEST_P(suite, name) {           \
     name##Test t;                 \

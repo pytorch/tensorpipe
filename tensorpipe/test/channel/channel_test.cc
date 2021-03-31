@@ -15,10 +15,9 @@ using namespace tensorpipe::channel;
 
 // Implement this in a subprocess as in some cases it may initialize CUDA and
 // thus would otherwise "pollute" the parent process.
-template <typename TBuffer>
-class DeviceDescriptorsTest : public ChannelTestCase<TBuffer> {
+class DeviceDescriptorsTest : public ChannelTestCase {
  public:
-  void run(ChannelTestHelper<TBuffer>* helper) override {
+  void run(ChannelTestHelper* helper) override {
     auto peerGroup = helper->makePeerGroup();
     peerGroup->spawn(
         [&] {
@@ -41,10 +40,9 @@ class DeviceDescriptorsTest : public ChannelTestCase<TBuffer> {
   }
 };
 
-CHANNEL_TEST_GENERIC(DeviceDescriptors);
+CHANNEL_TEST(ChannelTestSuite, DeviceDescriptors);
 
-template <typename TBuffer>
-class ClientToServerTest : public ClientServerChannelTestCase<TBuffer> {
+class ClientToServerTest : public ClientServerChannelTestCase {
  public:
   static constexpr int kDataSize = 256;
 
@@ -52,11 +50,11 @@ class ClientToServerTest : public ClientServerChannelTestCase<TBuffer> {
     // Initialize with sequential values.
     std::vector<uint8_t> data(kDataSize);
     std::iota(data.begin(), data.end(), 0);
-    DataWrapper<TBuffer> wrappedData(data);
+    std::unique_ptr<DataWrapper> wrappedData = helper_->makeDataWrapper(data);
 
     // Perform send and wait for completion.
     std::future<Error> sendFuture =
-        sendWithFuture(channel, wrappedData.buffer());
+        sendWithFuture(channel, wrappedData->buffer());
     Error sendError = sendFuture.get();
     EXPECT_FALSE(sendError) << sendError.what();
 
@@ -65,16 +63,17 @@ class ClientToServerTest : public ClientServerChannelTestCase<TBuffer> {
   }
 
   void client(std::shared_ptr<Channel> channel) override {
-    DataWrapper<TBuffer> wrappedData(kDataSize);
+    std::unique_ptr<DataWrapper> wrappedData =
+        helper_->makeDataWrapper(kDataSize);
 
     // Perform recv and wait for completion.
     std::future<Error> recvFuture =
-        recvWithFuture(channel, wrappedData.buffer());
+        recvWithFuture(channel, wrappedData->buffer());
     Error recvError = recvFuture.get();
     EXPECT_FALSE(recvError) << recvError.what();
 
     // Validate contents of vector.
-    auto unwrappedData = wrappedData.unwrap();
+    auto unwrappedData = wrappedData->unwrap();
     for (auto i = 0; i < kDataSize; i++) {
       EXPECT_EQ(unwrappedData[i], i);
     }
@@ -84,24 +83,24 @@ class ClientToServerTest : public ClientServerChannelTestCase<TBuffer> {
   }
 };
 
-CHANNEL_TEST_GENERIC(ClientToServer);
+CHANNEL_TEST(ChannelTestSuite, ClientToServer);
 
-template <typename TBuffer>
-class ServerToClientTest : public ClientServerChannelTestCase<TBuffer> {
+class ServerToClientTest : public ClientServerChannelTestCase {
   static constexpr int kDataSize = 256;
 
  public:
   void server(std::shared_ptr<Channel> channel) override {
-    DataWrapper<TBuffer> wrappedData(kDataSize);
+    std::unique_ptr<DataWrapper> wrappedData =
+        helper_->makeDataWrapper(kDataSize);
 
     // Perform recv and wait for completion.
     std::future<Error> recvFuture =
-        recvWithFuture(channel, wrappedData.buffer());
+        recvWithFuture(channel, wrappedData->buffer());
     Error recvError = recvFuture.get();
     EXPECT_FALSE(recvError) << recvError.what();
 
     // Validate contents of vector.
-    auto unwrappedData = wrappedData.unwrap();
+    auto unwrappedData = wrappedData->unwrap();
     for (auto i = 0; i < kDataSize; i++) {
       EXPECT_EQ(unwrappedData[i], i);
     }
@@ -114,11 +113,11 @@ class ServerToClientTest : public ClientServerChannelTestCase<TBuffer> {
     // Initialize with sequential values.
     std::vector<uint8_t> data(kDataSize);
     std::iota(data.begin(), data.end(), 0);
-    DataWrapper<TBuffer> wrappedData(data);
+    std::unique_ptr<DataWrapper> wrappedData = helper_->makeDataWrapper(data);
 
     // Perform send and wait for completion.
     std::future<Error> sendFuture =
-        sendWithFuture(channel, wrappedData.buffer());
+        sendWithFuture(channel, wrappedData->buffer());
     Error sendError = sendFuture.get();
     EXPECT_FALSE(sendError) << sendError.what();
 
@@ -127,10 +126,9 @@ class ServerToClientTest : public ClientServerChannelTestCase<TBuffer> {
   }
 };
 
-CHANNEL_TEST_GENERIC(ServerToClient);
+CHANNEL_TEST(ChannelTestSuite, ServerToClient);
 
-template <typename TBuffer>
-class SendMultipleTensorsTest : public ClientServerChannelTestCase<TBuffer> {
+class SendMultipleTensorsTest : public ClientServerChannelTestCase {
   // FIXME This is very puzzling, as in CircleCI making this field static (and
   // possibly even constexpr) causes a undefined symbol link error.
   const int dataSize_ = 256 * 1024; // 256KB
@@ -141,7 +139,7 @@ class SendMultipleTensorsTest : public ClientServerChannelTestCase<TBuffer> {
     // Initialize with sequential values.
     std::vector<uint8_t> data(dataSize_);
     std::iota(data.begin(), data.end(), 0);
-    DataWrapper<TBuffer> wrappedData(data);
+    std::unique_ptr<DataWrapper> wrappedData = helper_->makeDataWrapper(data);
 
     // Error futures
     std::vector<std::future<Error>> sendFutures;
@@ -149,7 +147,7 @@ class SendMultipleTensorsTest : public ClientServerChannelTestCase<TBuffer> {
     // Perform send and wait for completion.
     for (int i = 0; i < kNumTensors; i++) {
       std::future<Error> sendFuture =
-          sendWithFuture(channel, wrappedData.buffer());
+          sendWithFuture(channel, wrappedData->buffer());
       sendFutures.push_back(std::move(sendFuture));
     }
     for (auto& sendFuture : sendFutures) {
@@ -162,9 +160,9 @@ class SendMultipleTensorsTest : public ClientServerChannelTestCase<TBuffer> {
   }
 
   void client(std::shared_ptr<Channel> channel) override {
-    std::vector<DataWrapper<TBuffer>> wrappedDataVec;
+    std::vector<std::unique_ptr<DataWrapper>> wrappedDataVec;
     for (int i = 0; i < kNumTensors; i++) {
-      wrappedDataVec.emplace_back(dataSize_);
+      wrappedDataVec.push_back(helper_->makeDataWrapper(dataSize_));
     }
 
     // Error futures
@@ -173,7 +171,7 @@ class SendMultipleTensorsTest : public ClientServerChannelTestCase<TBuffer> {
     // Perform recv and wait for completion.
     for (auto& wrappedData : wrappedDataVec) {
       std::future<Error> recvFuture =
-          recvWithFuture(channel, wrappedData.buffer());
+          recvWithFuture(channel, wrappedData->buffer());
       recvFutures.push_back(std::move(recvFuture));
     }
     for (auto& recvFuture : recvFutures) {
@@ -183,7 +181,7 @@ class SendMultipleTensorsTest : public ClientServerChannelTestCase<TBuffer> {
 
     // Validate contents of vector.
     for (auto& wrappedData : wrappedDataVec) {
-      auto unwrappedData = wrappedData.unwrap();
+      auto unwrappedData = wrappedData->unwrap();
       for (int i = 0; i < dataSize_; i++) {
         EXPECT_EQ(unwrappedData[i], i % 256);
       }
@@ -194,27 +192,28 @@ class SendMultipleTensorsTest : public ClientServerChannelTestCase<TBuffer> {
   }
 };
 
-CHANNEL_TEST_GENERIC(SendMultipleTensors);
+CHANNEL_TEST(ChannelTestSuite, SendMultipleTensors);
 
-template <typename TBuffer>
-class SendTensorsBothWaysTest : public ClientServerChannelTestCase<TBuffer> {
+class SendTensorsBothWaysTest : public ClientServerChannelTestCase {
   static constexpr int kDataSize = 256;
 
   void server(std::shared_ptr<Channel> channel) override {
     // Initialize sendBuffer with sequential values.
     std::vector<uint8_t> sendData(kDataSize);
     std::iota(sendData.begin(), sendData.end(), 0);
-    DataWrapper<TBuffer> wrappedSendData(sendData);
+    std::unique_ptr<DataWrapper> wrappedSendData =
+        helper_->makeDataWrapper(sendData);
 
     // Recv buffer.
-    DataWrapper<TBuffer> wrappedRecvData(kDataSize);
+    std::unique_ptr<DataWrapper> wrappedRecvData =
+        helper_->makeDataWrapper(kDataSize);
 
     // Perform send.
     std::future<Error> sendFuture =
-        sendWithFuture(channel, wrappedSendData.buffer());
+        sendWithFuture(channel, wrappedSendData->buffer());
     // Perform recv.
     std::future<Error> recvFuture =
-        recvWithFuture(channel, wrappedRecvData.buffer());
+        recvWithFuture(channel, wrappedRecvData->buffer());
 
     // Wait for completion of both.
     Error sendError = sendFuture.get();
@@ -223,7 +222,7 @@ class SendTensorsBothWaysTest : public ClientServerChannelTestCase<TBuffer> {
     EXPECT_FALSE(recvError) << recvError.what();
 
     // Verify recvd buffers.
-    auto unwrappedData = wrappedRecvData.unwrap();
+    auto unwrappedData = wrappedRecvData->unwrap();
     for (int i = 0; i < kDataSize; i++) {
       EXPECT_EQ(unwrappedData[i], i % 256);
     }
@@ -236,17 +235,19 @@ class SendTensorsBothWaysTest : public ClientServerChannelTestCase<TBuffer> {
     // Initialize sendBuffer with sequential values.
     std::vector<uint8_t> sendData(kDataSize);
     std::iota(sendData.begin(), sendData.end(), 0);
-    DataWrapper<TBuffer> wrappedSendData(sendData);
+    std::unique_ptr<DataWrapper> wrappedSendData =
+        helper_->makeDataWrapper(sendData);
 
     // Recv buffer.
-    DataWrapper<TBuffer> wrappedRecvData(kDataSize);
+    std::unique_ptr<DataWrapper> wrappedRecvData =
+        helper_->makeDataWrapper(kDataSize);
 
     // Perform send.
     std::future<Error> sendFuture =
-        sendWithFuture(channel, wrappedSendData.buffer());
+        sendWithFuture(channel, wrappedSendData->buffer());
     // Perform recv.
     std::future<Error> recvFuture =
-        recvWithFuture(channel, wrappedRecvData.buffer());
+        recvWithFuture(channel, wrappedRecvData->buffer());
 
     // Wait for completion of both.
     Error sendError = sendFuture.get();
@@ -255,7 +256,7 @@ class SendTensorsBothWaysTest : public ClientServerChannelTestCase<TBuffer> {
     EXPECT_FALSE(recvError) << recvError.what();
 
     // Verify recvd buffers.
-    auto unwrappedData = wrappedRecvData.unwrap();
+    auto unwrappedData = wrappedRecvData->unwrap();
     for (int i = 0; i < kDataSize; i++) {
       EXPECT_EQ(unwrappedData[i], i % 256);
     }
@@ -265,4 +266,4 @@ class SendTensorsBothWaysTest : public ClientServerChannelTestCase<TBuffer> {
   }
 };
 
-CHANNEL_TEST_GENERIC(SendTensorsBothWays);
+CHANNEL_TEST(ChannelTestSuite, SendTensorsBothWays);

@@ -7,11 +7,11 @@
  */
 
 #include <tensorpipe/channel/basic/factory.h>
-#include <tensorpipe/test/channel/channel_test.h>
+#include <tensorpipe/test/channel/channel_test_cpu.h>
 
 namespace {
 
-class BasicChannelTestHelper : public ChannelTestHelper<tensorpipe::CpuBuffer> {
+class BasicChannelTestHelper : public CpuChannelTestHelper {
  protected:
   std::shared_ptr<tensorpipe::channel::Context> makeContextInternal(
       std::string id) override {
@@ -24,5 +24,7 @@ class BasicChannelTestHelper : public ChannelTestHelper<tensorpipe::CpuBuffer> {
 BasicChannelTestHelper helper;
 
 } // namespace
+
+INSTANTIATE_TEST_CASE_P(Basic, ChannelTestSuite, ::testing::Values(&helper));
 
 INSTANTIATE_TEST_CASE_P(Basic, CpuChannelTestSuite, ::testing::Values(&helper));

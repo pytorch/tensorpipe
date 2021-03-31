@@ -9,12 +9,11 @@
 #include <numeric>
 
 #include <tensorpipe/channel/cuda_gdr/factory.h>
-#include <tensorpipe/test/channel/channel_test.h>
+#include <tensorpipe/test/channel/channel_test_cuda.h>
 
 namespace {
 
-class CudaGdrChannelTestHelper
-    : public ChannelTestHelper<tensorpipe::CudaBuffer> {
+class CudaGdrChannelTestHelper : public CudaChannelTestHelper {
  protected:
   std::shared_ptr<tensorpipe::channel::Context> makeContextInternal(
       std::string id) override {
@@ -32,6 +31,8 @@ class CudaGdrChannelTestHelper
 CudaGdrChannelTestHelper helper;
 
 } // namespace
+
+INSTANTIATE_TEST_CASE_P(CudaGdr, ChannelTestSuite, ::testing::Values(&helper));
 
 INSTANTIATE_TEST_CASE_P(
     CudaGdr,

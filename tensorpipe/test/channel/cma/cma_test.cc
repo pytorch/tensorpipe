@@ -7,11 +7,11 @@
  */
 
 #include <tensorpipe/channel/cma/factory.h>
-#include <tensorpipe/test/channel/channel_test.h>
+#include <tensorpipe/test/channel/channel_test_cpu.h>
 
 namespace {
 
-class CmaChannelTestHelper : public ChannelTestHelper<tensorpipe::CpuBuffer> {
+class CmaChannelTestHelper : public CpuChannelTestHelper {
  protected:
   std::shared_ptr<tensorpipe::channel::Context> makeContextInternal(
       std::string id) override {
@@ -24,5 +24,7 @@ class CmaChannelTestHelper : public ChannelTestHelper<tensorpipe::CpuBuffer> {
 CmaChannelTestHelper helper;
 
 } // namespace
+
+INSTANTIATE_TEST_CASE_P(Cma, ChannelTestSuite, ::testing::Values(&helper));
 
 INSTANTIATE_TEST_CASE_P(Cma, CpuChannelTestSuite, ::testing::Values(&helper));

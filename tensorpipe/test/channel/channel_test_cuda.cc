@@ -6,18 +6,17 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <tensorpipe/test/channel/channel_test_cuda.h>
+
 #include <cuda_runtime.h>
 #include <gmock/gmock.h>
 
-#include <tensorpipe/common/cuda.h>
-#include <tensorpipe/test/channel/channel_test.h>
 #include <tensorpipe/test/channel/kernel.cuh>
 
 using namespace tensorpipe;
 using namespace tensorpipe::channel;
 
-class ReceiverWaitsForStartEventTest
-    : public ClientServerChannelTestCase<CudaBuffer> {
+class ReceiverWaitsForStartEventTest : public ClientServerChannelTestCase {
   static constexpr size_t kSize = 1024;
 
   void server(std::shared_ptr<Channel> channel) override {
@@ -94,8 +93,7 @@ class ReceiverWaitsForStartEventTest
 
 CHANNEL_TEST(CudaChannelTestSuite, ReceiverWaitsForStartEvent);
 
-class SendOffsetAllocationTest
-    : public ClientServerChannelTestCase<CudaBuffer> {
+class SendOffsetAllocationTest : public ClientServerChannelTestCase {
  public:
   static constexpr int kDataSize = 256;
   static constexpr int kOffset = 128;
@@ -120,16 +118,17 @@ class SendOffsetAllocationTest
   }
 
   void client(std::shared_ptr<Channel> channel) override {
-    DataWrapper<CudaBuffer> wrappedData(kDataSize);
+    std::unique_ptr<DataWrapper> wrappedData =
+        helper_->makeDataWrapper(kDataSize);
 
     // Perform recv and wait for completion.
     std::future<Error> recvFuture =
-        recvWithFuture(channel, wrappedData.buffer());
+        recvWithFuture(channel, wrappedData->buffer());
     Error recvError = recvFuture.get();
     EXPECT_FALSE(recvError) << recvError.what();
 
     // Validate contents of vector.
-    EXPECT_THAT(wrappedData.unwrap(), ::testing::Each(0x42));
+    EXPECT_THAT(wrappedData->unwrap(), ::testing::Each(0x42));
 
     this->peers_->done(PeerGroup::kClient);
     this->peers_->join(PeerGroup::kClient);
