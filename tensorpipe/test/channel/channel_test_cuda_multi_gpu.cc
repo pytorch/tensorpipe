@@ -50,9 +50,10 @@ class SendAcrossDevicesTest : public ClientServerChannelTestCase {
     channel->send(
         CudaBuffer{
             .ptr = ptr,
-            .length = kSize,
+            .length = 0,
             .stream = sendStream,
         },
+        kSize,
         [sendPromise{std::move(sendPromise)}](const tensorpipe::Error& error) {
           sendPromise->set_value(error);
         });
@@ -96,9 +97,10 @@ class SendAcrossDevicesTest : public ClientServerChannelTestCase {
     channel->recv(
         CudaBuffer{
             .ptr = ptr,
-            .length = kSize,
+            .length = 0,
             .stream = recvStream,
         },
+        kSize,
         [recvPromise{std::move(recvPromise)}](const tensorpipe::Error& error) {
           recvPromise->set_value(error);
         });
@@ -165,9 +167,10 @@ class SendReverseAcrossDevicesTest : public ClientServerChannelTestCase {
     channel->send(
         CudaBuffer{
             .ptr = ptr,
-            .length = kSize,
+            .length = 0,
             .stream = sendStream,
         },
+        kSize,
         [sendPromise{std::move(sendPromise)}](const tensorpipe::Error& error) {
           sendPromise->set_value(error);
         });
@@ -211,9 +214,10 @@ class SendReverseAcrossDevicesTest : public ClientServerChannelTestCase {
     channel->recv(
         CudaBuffer{
             .ptr = ptr,
-            .length = kSize,
+            .length = 0,
             .stream = recvStream,
         },
+        kSize,
         [recvPromise{std::move(recvPromise)}](const tensorpipe::Error& error) {
           recvPromise->set_value(error);
         });
@@ -280,9 +284,10 @@ class SendAcrossNonDefaultDevicesTest : public ClientServerChannelTestCase {
     channel->send(
         CudaBuffer{
             .ptr = ptr,
-            .length = kSize,
+            .length = 0,
             .stream = sendStream,
         },
+        kSize,
         [sendPromise{std::move(sendPromise)}](const tensorpipe::Error& error) {
           sendPromise->set_value(error);
         });
@@ -322,9 +327,10 @@ class SendAcrossNonDefaultDevicesTest : public ClientServerChannelTestCase {
     channel->recv(
         CudaBuffer{
             .ptr = ptr,
-            .length = kSize,
+            .length = 0,
             .stream = recvStream,
         },
+        kSize,
         [recvPromise{std::move(recvPromise)}](const tensorpipe::Error& error) {
           recvPromise->set_value(error);
         });

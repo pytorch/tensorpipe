@@ -40,9 +40,10 @@ class ReceiverWaitsForStartEventTest : public ClientServerChannelTestCase {
     channel->send(
         CudaBuffer{
             .ptr = ptr,
-            .length = kSize,
+            .length = 0,
             .stream = sendStream,
         },
+        kSize,
         [sendPromise{std::move(sendPromise)}](const tensorpipe::Error& error) {
           sendPromise->set_value(error);
         });
@@ -70,9 +71,10 @@ class ReceiverWaitsForStartEventTest : public ClientServerChannelTestCase {
     channel->recv(
         CudaBuffer{
             .ptr = ptr,
-            .length = kSize,
+            .length = 0,
             .stream = recvStream,
         },
+        kSize,
         [recvPromise{std::move(recvPromise)}](const tensorpipe::Error& error) {
           recvPromise->set_value(error);
         });
@@ -109,7 +111,7 @@ class SendOffsetAllocationTest : public ClientServerChannelTestCase {
 
     // Perform send and wait for completion.
     std::future<Error> sendFuture = sendWithFuture(
-        channel, CudaBuffer{static_cast<uint8_t*>(ptr) + kOffset, kDataSize});
+        channel, CudaBuffer{static_cast<uint8_t*>(ptr) + kOffset}, kDataSize);
     Error sendError = sendFuture.get();
     EXPECT_FALSE(sendError) << sendError.what();
 
@@ -122,8 +124,7 @@ class SendOffsetAllocationTest : public ClientServerChannelTestCase {
         helper_->makeDataWrapper(kDataSize);
 
     // Perform recv and wait for completion.
-    std::future<Error> recvFuture =
-        recvWithFuture(channel, wrappedData->buffer());
+    std::future<Error> recvFuture = recvWithFuture(channel, *wrappedData);
     Error recvError = recvFuture.get();
     EXPECT_FALSE(recvError) << recvError.what();
 

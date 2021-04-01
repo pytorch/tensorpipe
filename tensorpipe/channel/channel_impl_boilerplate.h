@@ -51,10 +51,10 @@ class ChannelImplBoilerplate : public std::enable_shared_from_this<TChan> {
   void init();
 
   // Perform a send operation.
-  void send(Buffer buffer, TSendCallback callback);
+  void send(Buffer buffer, size_t length, TSendCallback callback);
 
   // Queue a recv operation.
-  void recv(Buffer buffer, TRecvCallback callback);
+  void recv(Buffer buffer, size_t length, TRecvCallback callback);
 
   // Tell the connection what its identifier is.
   void setId(std::string id);
@@ -69,10 +69,12 @@ class ChannelImplBoilerplate : public std::enable_shared_from_this<TChan> {
   virtual void sendImplFromLoop(
       uint64_t sequenceNumber,
       Buffer buffer,
+      size_t length,
       TSendCallback callback) = 0;
   virtual void recvImplFromLoop(
       uint64_t sequenceNumber,
       Buffer buffer,
+      size_t length,
       TRecvCallback callback) = 0;
   virtual void handleErrorImpl() = 0;
   virtual void setIdImpl() {}
@@ -95,10 +97,10 @@ class ChannelImplBoilerplate : public std::enable_shared_from_this<TChan> {
   void initFromLoop();
 
   // Perform a send operation.
-  void sendFromLoop(Buffer buffer, TSendCallback callback);
+  void sendFromLoop(Buffer buffer, size_t length, TSendCallback callback);
 
   // Queue a recv operation.
-  void recvFromLoop(Buffer buffer, TRecvCallback callback);
+  void recvFromLoop(Buffer buffer, size_t length, TRecvCallback callback);
 
   void setIdFromLoop(std::string id);
 
@@ -153,17 +155,20 @@ void ChannelImplBoilerplate<TCtx, TChan>::initFromLoop() {
 template <typename TCtx, typename TChan>
 void ChannelImplBoilerplate<TCtx, TChan>::send(
     Buffer buffer,
+    size_t length,
     TSendCallback callback) {
   context_->deferToLoop([impl{this->shared_from_this()},
                          buffer,
+                         length,
                          callback{std::move(callback)}]() mutable {
-    impl->sendFromLoop(buffer, std::move(callback));
+    impl->sendFromLoop(buffer, length, std::move(callback));
   });
 }
 
 template <typename TCtx, typename TChan>
 void ChannelImplBoilerplate<TCtx, TChan>::sendFromLoop(
     Buffer buffer,
+    size_t length,
     TSendCallback callback) {
   TP_DCHECK(context_->inLoop());
 
@@ -186,23 +191,26 @@ void ChannelImplBoilerplate<TCtx, TChan>::sendFromLoop(
     return;
   }
 
-  sendImplFromLoop(sequenceNumber, buffer, std::move(callback));
+  sendImplFromLoop(sequenceNumber, buffer, length, std::move(callback));
 }
 
 template <typename TCtx, typename TChan>
 void ChannelImplBoilerplate<TCtx, TChan>::recv(
     Buffer buffer,
+    size_t length,
     TRecvCallback callback) {
   context_->deferToLoop([impl{this->shared_from_this()},
                          buffer,
+                         length,
                          callback{std::move(callback)}]() mutable {
-    impl->recvFromLoop(buffer, std::move(callback));
+    impl->recvFromLoop(buffer, length, std::move(callback));
   });
 }
 
 template <typename TCtx, typename TChan>
 void ChannelImplBoilerplate<TCtx, TChan>::recvFromLoop(
     Buffer buffer,
+    size_t length,
     TRecvCallback callback) {
   TP_DCHECK(context_->inLoop());
 
@@ -225,7 +233,7 @@ void ChannelImplBoilerplate<TCtx, TChan>::recvFromLoop(
     return;
   }
 
-  recvImplFromLoop(sequenceNumber, buffer, std::move(callback));
+  recvImplFromLoop(sequenceNumber, buffer, length, std::move(callback));
 }
 
 template <typename TCtx, typename TChan>

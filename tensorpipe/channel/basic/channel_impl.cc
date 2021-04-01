@@ -40,11 +40,12 @@ void ChannelImpl::initImplFromLoop() {
 void ChannelImpl::sendImplFromLoop(
     uint64_t sequenceNumber,
     Buffer buffer,
+    size_t length,
     TSendCallback callback) {
   SendOpIter opIter = sendOps_.emplaceBack(sequenceNumber);
   SendOperation& op = *opIter;
   op.ptr = buffer.unwrap<CpuBuffer>().ptr;
-  op.length = buffer.unwrap<CpuBuffer>().length;
+  op.length = length;
   op.callback = std::move(callback);
 
   sendOps_.advanceOperation(opIter);
@@ -106,11 +107,12 @@ void ChannelImpl::callSendCallback(SendOpIter opIter) {
 void ChannelImpl::recvImplFromLoop(
     uint64_t sequenceNumber,
     Buffer buffer,
+    size_t length,
     TRecvCallback callback) {
   RecvOpIter opIter = recvOps_.emplaceBack(sequenceNumber);
   RecvOperation& op = *opIter;
   op.ptr = buffer.unwrap<CpuBuffer>().ptr;
-  op.length = buffer.unwrap<CpuBuffer>().length;
+  op.length = length;
   op.callback = std::move(callback);
 
   recvOps_.advanceOperation(opIter);

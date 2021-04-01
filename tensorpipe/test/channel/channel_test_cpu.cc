@@ -20,7 +20,7 @@ class NullPointerTest : public ClientServerChannelTestCase {
   void server(std::shared_ptr<Channel> channel) override {
     // Perform send and wait for completion.
     std::future<Error> sendFuture =
-        sendWithFuture(channel, CpuBuffer{nullptr, 0});
+        sendWithFuture(channel, CpuBuffer{nullptr}, 0);
     Error sendError = sendFuture.get();
     EXPECT_FALSE(sendError) << sendError.what();
 
@@ -31,7 +31,7 @@ class NullPointerTest : public ClientServerChannelTestCase {
   void client(std::shared_ptr<Channel> channel) override {
     // Perform recv and wait for completion.
     std::future<Error> recvFuture =
-        recvWithFuture(channel, CpuBuffer{nullptr, 0});
+        recvWithFuture(channel, CpuBuffer{nullptr}, 0);
     Error recvError = recvFuture.get();
     EXPECT_FALSE(recvError) << recvError.what();
 
@@ -49,10 +49,9 @@ class EmptyTensorTest : public ClientServerChannelTestCase {
     std::vector<uint8_t> data(1);
     std::unique_ptr<DataWrapper> wrappedData = helper_->makeDataWrapper(data);
     Buffer buffer = wrappedData->buffer();
-    buffer.unwrap<CpuBuffer>().length = 0;
 
     // Perform send and wait for completion.
-    std::future<Error> sendFuture = sendWithFuture(channel, buffer);
+    std::future<Error> sendFuture = sendWithFuture(channel, buffer, 0);
     Error sendError = sendFuture.get();
     EXPECT_FALSE(sendError) << sendError.what();
 
@@ -64,10 +63,9 @@ class EmptyTensorTest : public ClientServerChannelTestCase {
     // Allocate a non-empty vector so that its .data() pointer is non-null.
     std::unique_ptr<DataWrapper> wrappedData = helper_->makeDataWrapper(1);
     Buffer buffer = wrappedData->buffer();
-    buffer.unwrap<CpuBuffer>().length = 0;
 
     // Perform recv and wait for completion.
-    std::future<Error> recvFuture = recvWithFuture(channel, buffer);
+    std::future<Error> recvFuture = recvWithFuture(channel, buffer, 0);
     Error recvError = recvFuture.get();
     EXPECT_FALSE(recvError) << recvError.what();
 
@@ -98,7 +96,8 @@ class CallbacksAreDeferredTest : public ClientServerChannelTestCase {
     auto mutex = std::make_shared<std::mutex>();
     std::unique_lock<std::mutex> callerLock(*mutex);
     channel->send(
-        CpuBuffer{data.data(), kDataSize},
+        CpuBuffer{data.data()},
+        kDataSize,
         [&sendPromise, mutex](const Error& error) {
           std::unique_lock<std::mutex> calleeLock(*mutex);
           sendPromise.set_value(error);
@@ -121,7 +120,8 @@ class CallbacksAreDeferredTest : public ClientServerChannelTestCase {
     std::mutex mutex;
     std::unique_lock<std::mutex> callerLock(mutex);
     channel->recv(
-        CpuBuffer{data.data(), kDataSize},
+        CpuBuffer{data.data()},
+        kDataSize,
         [&recvPromise, &mutex](const Error& error) {
           std::unique_lock<std::mutex> calleeLock(mutex);
           recvPromise.set_value(error);
