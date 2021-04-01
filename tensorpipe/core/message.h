@@ -51,6 +51,8 @@ class Message final {
 
   struct Tensor {
     tensorpipe::Buffer buffer;
+    // FIXME: Default to 0 once we fully move to the new length API.
+    size_t length{static_cast<size_t>(-1)};
 
     // Users may include arbitrary metadata in the following field.
     // This may contain allocation hints for the receiver, for example.

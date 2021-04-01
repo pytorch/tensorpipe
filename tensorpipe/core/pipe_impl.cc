@@ -62,8 +62,8 @@ void parseDescriptorOfMessage(ReadOperation& op, const Packet& nopPacketIn) {
 
     message.tensors.emplace_back();
     Message::Tensor& tensor = message.tensors.back();
-    op.tensors.push_back(std::move(tensorBeingAllocated));
     tensor.metadata = nopTensorDescriptor.metadata;
+    // FIXME: Remove once we fully transition to the new length API.
     switch (nopTensorDescriptor.deviceType) {
       case DeviceType::kCpu: {
         CpuBuffer buffer;
@@ -82,6 +82,8 @@ void parseDescriptorOfMessage(ReadOperation& op, const Packet& nopPacketIn) {
       default:
         TP_THROW_ASSERT() << "Unexpected device type.";
     };
+    tensor.length = static_cast<size_t>(tensorBeingAllocated.length);
+    op.tensors.push_back(std::move(tensorBeingAllocated));
   }
 }
 
@@ -105,7 +107,7 @@ void checkAllocationCompatibility(
     const Message::Tensor& tensor = message.tensors[tensorIdx];
     const ReadOperation::Tensor& tensorBeingAllocated = op.tensors[tensorIdx];
     TP_DCHECK_GE(tensorBeingAllocated.length, 0);
-    TP_THROW_ASSERT_IF(tensor.buffer.length() != tensorBeingAllocated.length);
+    TP_THROW_ASSERT_IF(tensor.length != tensorBeingAllocated.length);
   }
 }
 
@@ -142,7 +144,7 @@ std::shared_ptr<NopHolder<Packet>> makeDescriptorForMessage(
     nopTensorDescriptor.metadata = tensor.metadata;
     nopTensorDescriptor.channelName = otherTensor.channelName;
     nopTensorDescriptor.deviceType = tensor.buffer.deviceType();
-    nopTensorDescriptor.sizeInBytes = tensor.buffer.length();
+    nopTensorDescriptor.sizeInBytes = tensor.length;
   }
 
   return nopHolderOut;
@@ -245,6 +247,15 @@ std::vector<SelectedChannel> selectChannels(
   }
 
   return result;
+}
+
+// FIXME: Remove once we fully move to the new length API.
+void sanitizeTensorLengths(Message& message) {
+  for (auto& tensor : message.tensors) {
+    if (tensor.length == static_cast<size_t>(-1)) {
+      tensor.length = tensor.buffer.length();
+    }
+  }
 }
 
 } // namespace
@@ -437,6 +448,12 @@ void PipeImpl::read(Message message, read_callback_fn fn) {
 void PipeImpl::readFromLoop(Message message, read_callback_fn fn) {
   TP_DCHECK(context_->inLoop());
 
+  // FIXME: Remove once we fully move to the new length API.
+  // NOTE: This is not strictly needed provided the Message was created by
+  // readDescriptor(), but as this method is part of the public Pipe API, we
+  // sanitize anyway.
+  sanitizeTensorLengths(message);
+
   // This is such a bad logical error on the user's side that it doesn't deserve
   // to pass through the channel for "expected errors" (i.e., the callback).
   // This check fails when there is no message for which we are expecting an
@@ -512,7 +529,7 @@ void PipeImpl::readPayloadsAndReceiveTensorsOfMessage(ReadOpIter opIter) {
 
     channel->recv(
         tensor.buffer,
-        tensor.buffer.length(),
+        tensor.length,
         callbackWrapper_([opIter, tensorIdx](PipeImpl& impl) {
           TP_VLOG(3) << "Pipe " << impl.id_ << " done receiving tensor #"
                      << opIter->sequenceNumber << "." << tensorIdx;
@@ -535,6 +552,9 @@ void PipeImpl::write(Message message, write_callback_fn fn) {
 
 void PipeImpl::writeFromLoop(Message message, write_callback_fn fn) {
   TP_DCHECK(context_->inLoop());
+
+  // FIXME: Remove once we fully move to the new length API.
+  sanitizeTensorLengths(message);
 
   WriteOpIter opIter = writeOps_.emplaceBack(nextMessageBeingWritten_++);
   WriteOperation& op = *opIter;
@@ -828,7 +848,7 @@ void PipeImpl::sendTensorsOfMessage(WriteOpIter opIter) {
 
       channel.send(
           tensor.buffer,
-          tensor.buffer.length(),
+          tensor.length,
           callbackWrapper_([opIter, tensorIdx](PipeImpl& impl) {
             TP_VLOG(3) << "Pipe " << impl.id_ << " done sending tensor #"
                        << opIter->sequenceNumber << "." << tensorIdx;
