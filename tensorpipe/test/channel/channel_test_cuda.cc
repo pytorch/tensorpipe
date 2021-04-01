@@ -111,7 +111,9 @@ class SendOffsetAllocationTest : public ClientServerChannelTestCase {
 
     // Perform send and wait for completion.
     std::future<Error> sendFuture = sendWithFuture(
-        channel, CudaBuffer{static_cast<uint8_t*>(ptr) + kOffset}, kDataSize);
+        channel,
+        CudaBuffer{.ptr = static_cast<uint8_t*>(ptr) + kOffset},
+        kDataSize);
     Error sendError = sendFuture.get();
     EXPECT_FALSE(sendError) << sendError.what();
 

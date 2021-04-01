@@ -270,7 +270,7 @@ void ChannelImpl::sendCpuBuffer(ChunkSendOpIter opIter) {
              << op.bufferSequenceNumber << " through CPU channel";
 
   cpuChannel_->send(
-      CpuBuffer{op.tmpBuffer.get()},
+      CpuBuffer{.ptr = op.tmpBuffer.get()},
       op.length,
       callbackWrapper_([opIter](ChannelImpl& impl) {
         TP_VLOG(6) << "Channel " << impl.id_ << " is done sending chunk #"
@@ -492,7 +492,7 @@ void ChannelImpl::receiveCpuBuffer(ChunkRecvOpIter opIter) {
              << " of " << op.numChunks << " for buffer #"
              << op.bufferSequenceNumber << " through CPU channel";
   cpuChannel_->recv(
-      CpuBuffer{op.tmpBuffer.get()},
+      CpuBuffer{.ptr = op.tmpBuffer.get()},
       op.length,
       callbackWrapper_([opIter](ChannelImpl& impl) {
         TP_VLOG(6) << "Channel " << impl.id_ << " is done sending chunk #"
