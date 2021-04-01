@@ -118,11 +118,8 @@ tensorpipe::Message prepareToWrite(std::shared_ptr<OutgoingMessage> pyMessage) {
   tpMessage.tensors.reserve(pyMessage->tensors.size());
   for (const auto& pyTensor : pyMessage->tensors) {
     tensorpipe::Message::Tensor tpTensor{
-        .buffer =
-            tensorpipe::CpuBuffer{
-                .ptr = pyTensor->buffer.ptr(),
-                .length = pyTensor->buffer.length(),
-            },
+        .buffer = tensorpipe::CpuBuffer{.ptr = pyTensor->buffer.ptr()},
+        .length = pyTensor->buffer.length(),
         .metadata =
             {reinterpret_cast<char*>(pyTensor->metadata.ptr()),
              pyTensor->metadata.length()},
@@ -196,9 +193,8 @@ std::shared_ptr<IncomingMessage> prepareToAllocate(
   pyTensors.reserve(tpMessage.tensors.size());
   for (const auto& tpTensor : tpMessage.tensors) {
     TP_DCHECK(tpTensor.buffer.unwrap<tensorpipe::CpuBuffer>().ptr == nullptr);
-    pyTensors.push_back(std::make_shared<IncomingTensor>(
-        tpTensor.buffer.unwrap<tensorpipe::CpuBuffer>().length,
-        tpTensor.metadata));
+    pyTensors.push_back(
+        std::make_shared<IncomingTensor>(tpTensor.length, tpTensor.metadata));
   }
   auto pyMessage = std::make_shared<IncomingMessage>(
       tpMessage.metadata, std::move(pyPayloads), std::move(pyTensors));
@@ -220,10 +216,9 @@ tensorpipe::Message prepareToRead(std::shared_ptr<IncomingMessage> pyMessage) {
   for (const auto& pyTensor : pyMessage->tensors) {
     TP_THROW_ASSERT_IF(!pyTensor->buffer.has_value()) << "No buffer";
     tensorpipe::Message::Tensor tpTensor{
-        .buffer = tensorpipe::CpuBuffer{
-            .ptr = pyTensor->buffer.value().ptr(),
-            .length = pyTensor->buffer.value().length(),
-        }};
+        .buffer = tensorpipe::CpuBuffer{.ptr = pyTensor->buffer.value().ptr()},
+        .length = pyTensor->buffer.value().length(),
+    };
     tpMessage.tensors.push_back(std::move(tpTensor));
   }
   return tpMessage;
