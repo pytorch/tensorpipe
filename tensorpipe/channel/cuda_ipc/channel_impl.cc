@@ -107,11 +107,11 @@ void ChannelImpl::initImplFromLoop() {
 void ChannelImpl::sendImplFromLoop(
     uint64_t sequenceNumber,
     Buffer buffer,
+    size_t length,
     TSendCallback callback) {
   int deviceIdx = cudaDeviceForPointer(
       context_->getCudaLib(), buffer.unwrap<CudaBuffer>().ptr);
-  const size_t bufferLength = buffer.unwrap<CudaBuffer>().length;
-  const size_t numChunks = ceilOfRatio(bufferLength, kSlotSize);
+  const size_t numChunks = ceilOfRatio(length, kSlotSize);
 
   for (size_t chunkIdx = 0; chunkIdx < numChunks; chunkIdx += 1) {
     size_t offset = chunkIdx * kSlotSize;
@@ -123,7 +123,7 @@ void ChannelImpl::sendImplFromLoop(
         chunkIdx == numChunks - 1 ? std::move(callback) : nullptr,
         deviceIdx,
         reinterpret_cast<uint8_t*>(buffer.unwrap<CudaBuffer>().ptr) + offset,
-        std::min(bufferLength - offset, kSlotSize),
+        std::min(length - offset, kSlotSize),
         buffer.unwrap<CudaBuffer>().stream);
 
     chunkSendOps_.advanceOperation(opIter);
@@ -314,11 +314,11 @@ void ChannelImpl::callSendCallback(ChunkSendOpIter opIter) {
 void ChannelImpl::recvImplFromLoop(
     uint64_t sequenceNumber,
     Buffer buffer,
+    size_t length,
     TRecvCallback callback) {
   int deviceIdx = cudaDeviceForPointer(
       context_->getCudaLib(), buffer.unwrap<CudaBuffer>().ptr);
-  const size_t bufferLength = buffer.unwrap<CudaBuffer>().length;
-  const size_t numChunks = ceilOfRatio(bufferLength, kSlotSize);
+  const size_t numChunks = ceilOfRatio(length, kSlotSize);
 
   for (size_t chunkIdx = 0; chunkIdx < numChunks; chunkIdx += 1) {
     size_t offset = chunkIdx * kSlotSize;
@@ -330,7 +330,7 @@ void ChannelImpl::recvImplFromLoop(
         chunkIdx == numChunks - 1 ? std::move(callback) : nullptr,
         deviceIdx,
         reinterpret_cast<uint8_t*>(buffer.unwrap<CudaBuffer>().ptr) + offset,
-        std::min(bufferLength - offset, kSlotSize),
+        std::min(length - offset, kSlotSize),
         buffer.unwrap<CudaBuffer>().stream);
 
     chunkRecvOps_.advanceOperation(opIter);

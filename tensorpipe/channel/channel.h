@@ -52,10 +52,10 @@ using TRecvCallback = std::function<void(const Error&)>;
 class Channel {
  public:
   // Send memory region to peer.
-  virtual void send(Buffer buffer, TSendCallback callback) = 0;
+  virtual void send(Buffer buffer, size_t length, TSendCallback callback) = 0;
 
   // Receive memory region from peer.
-  virtual void recv(Buffer buffer, TRecvCallback callback) = 0;
+  virtual void recv(Buffer buffer, size_t length, TRecvCallback callback) = 0;
 
   // Tell the channel what its identifier is.
   //

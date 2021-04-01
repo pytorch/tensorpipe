@@ -103,10 +103,12 @@ struct SendOperation {
   // Provide a constructor so we can create the CudaEvent in-place.
   SendOperation(
       CudaBuffer buffer,
+      size_t length,
       TSendCallback callback,
       size_t localGpuIdx,
       size_t localNicIdx)
       : buffer(buffer),
+        length(length),
         callback(std::move(callback)),
         event(localGpuIdx),
         localNicIdx(localNicIdx) {}
@@ -114,6 +116,7 @@ struct SendOperation {
   size_t sequenceNumber;
   State state{UNINITIALIZED};
   CudaBuffer buffer;
+  size_t length;
   TSendCallback callback;
   CudaEvent event;
   size_t localNicIdx;
@@ -136,10 +139,12 @@ struct RecvOperation {
   // Provide a constructor so we can create the CudaEvent in-place.
   RecvOperation(
       CudaBuffer buffer,
+      size_t length,
       TSendCallback callback,
       size_t deviceIdx,
       size_t localNicIdx)
       : buffer(buffer),
+        length(length),
         callback(std::move(callback)),
         event(deviceIdx),
         localNicIdx(localNicIdx) {}
@@ -147,6 +152,7 @@ struct RecvOperation {
   size_t sequenceNumber;
   State state{UNINITIALIZED};
   CudaBuffer buffer;
+  size_t length;
   TSendCallback callback;
   CudaEvent event;
   size_t localNicIdx;
@@ -197,10 +203,12 @@ class ChannelImpl final
   void sendImplFromLoop(
       uint64_t sequenceNumber,
       Buffer buffer,
+      size_t length,
       TSendCallback callback) override;
   void recvImplFromLoop(
       uint64_t sequenceNumber,
       Buffer buffer,
+      size_t length,
       TRecvCallback callback) override;
   void handleErrorImpl() override;
 

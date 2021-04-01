@@ -26,6 +26,10 @@ class CpuDataWrapper : public DataWrapper {
         const_cast<uint8_t*>(vector_.data()), vector_.size()};
   }
 
+  size_t bufferLength() const override {
+    return vector_.size();
+  }
+
   std::vector<uint8_t> unwrap() override {
     return vector_;
   }

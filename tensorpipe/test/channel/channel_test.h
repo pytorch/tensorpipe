@@ -31,6 +31,8 @@ class DataWrapper {
  public:
   virtual tensorpipe::Buffer buffer() const = 0;
 
+  virtual size_t bufferLength() const = 0;
+
   virtual std::vector<uint8_t> unwrap() = 0;
 
   virtual ~DataWrapper() = default;
@@ -66,12 +68,38 @@ class ChannelTestHelper {
 
 [[nodiscard]] inline std::future<tensorpipe::Error> sendWithFuture(
     std::shared_ptr<tensorpipe::channel::Channel> channel,
-    tensorpipe::Buffer buffer) {
+    tensorpipe::Buffer buffer,
+    size_t length) {
   auto promise = std::make_shared<std::promise<tensorpipe::Error>>();
   auto future = promise->get_future();
 
   channel->send(
-      buffer, [promise{std::move(promise)}](const tensorpipe::Error& error) {
+      buffer,
+      length,
+      [promise{std::move(promise)}](const tensorpipe::Error& error) {
+        promise->set_value(error);
+      });
+  return future;
+}
+
+[[nodiscard]] inline std::future<tensorpipe::Error> sendWithFuture(
+    std::shared_ptr<tensorpipe::channel::Channel> channel,
+    const DataWrapper& dataWrapper) {
+  return sendWithFuture(
+      std::move(channel), dataWrapper.buffer(), dataWrapper.bufferLength());
+}
+
+[[nodiscard]] inline std::future<tensorpipe::Error> recvWithFuture(
+    std::shared_ptr<tensorpipe::channel::Channel> channel,
+    tensorpipe::Buffer buffer,
+    size_t length) {
+  auto promise = std::make_shared<std::promise<tensorpipe::Error>>();
+  auto future = promise->get_future();
+
+  channel->recv(
+      buffer,
+      length,
+      [promise{std::move(promise)}](const tensorpipe::Error& error) {
         promise->set_value(error);
       });
   return future;
@@ -79,15 +107,9 @@ class ChannelTestHelper {
 
 [[nodiscard]] inline std::future<tensorpipe::Error> recvWithFuture(
     std::shared_ptr<tensorpipe::channel::Channel> channel,
-    tensorpipe::Buffer buffer) {
-  auto promise = std::make_shared<std::promise<tensorpipe::Error>>();
-  auto future = promise->get_future();
-
-  channel->recv(
-      buffer, [promise{std::move(promise)}](const tensorpipe::Error& error) {
-        promise->set_value(error);
-      });
-  return future;
+    const DataWrapper& dataWrapper) {
+  return recvWithFuture(
+      std::move(channel), dataWrapper.buffer(), dataWrapper.bufferLength());
 }
 
 class ChannelTestCase {

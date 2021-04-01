@@ -53,9 +53,10 @@ SendOperation::SendOperation(
 RecvOperation::RecvOperation(
     int deviceIdx,
     CudaBuffer buffer,
+    size_t length,
     TRecvCallback callback)
     : ptr(buffer.ptr),
-      length(buffer.length),
+      length(length),
       deviceIdx(deviceIdx),
       stream(buffer.stream),
       callback(std::move(callback)) {}
@@ -93,6 +94,7 @@ void ChannelImpl::initImplFromLoop() {
 void ChannelImpl::sendImplFromLoop(
     uint64_t sequenceNumber,
     Buffer buffer,
+    size_t /* length */,
     TSendCallback callback) {
   int deviceIdx = cudaDeviceForPointer(
       context_->getCudaLib(), buffer.unwrap<CudaBuffer>().ptr);
@@ -192,6 +194,7 @@ void ChannelImpl::callSendCallback(SendOpIter opIter) {
 void ChannelImpl::recvImplFromLoop(
     uint64_t sequenceNumber,
     Buffer buffer,
+    size_t length,
     TRecvCallback callback) {
   int deviceIdx = cudaDeviceForPointer(
       context_->getCudaLib(), buffer.unwrap<CudaBuffer>().ptr);
@@ -199,6 +202,7 @@ void ChannelImpl::recvImplFromLoop(
       sequenceNumber,
       deviceIdx,
       buffer.unwrap<CudaBuffer>(),
+      length,
       std::move(callback));
 
   recvOps_.advanceOperation(opIter);

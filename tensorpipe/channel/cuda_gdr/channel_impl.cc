@@ -177,6 +177,7 @@ void ChannelImpl::onReadHandshakeSetupInfo(
 void ChannelImpl::sendImplFromLoop(
     uint64_t sequenceNumber,
     Buffer buffer,
+    size_t length,
     TSendCallback callback) {
   size_t localGpuIdx = cudaDeviceForPointer(
       context_->getCudaLib(), buffer.unwrap<CudaBuffer>().ptr);
@@ -185,6 +186,7 @@ void ChannelImpl::sendImplFromLoop(
   SendOpIter opIter = sendOps_.emplaceBack(
       sequenceNumber,
       buffer.unwrap<CudaBuffer>(),
+      length,
       std::move(callback),
       localGpuIdx,
       localNicIdx);
@@ -342,7 +344,7 @@ void ChannelImpl::sendOverIb(SendOpIter opIter) {
 
   IbvLib::sge list;
   list.addr = reinterpret_cast<uint64_t>(op.buffer.ptr);
-  list.length = op.buffer.length;
+  list.length = op.length;
   list.lkey = mr->lkey;
 
   IbvLib::send_wr wr;
@@ -388,6 +390,7 @@ void ChannelImpl::callSendCallback(SendOpIter opIter) {
 void ChannelImpl::recvImplFromLoop(
     uint64_t sequenceNumber,
     Buffer buffer,
+    size_t length,
     TRecvCallback callback) {
   size_t localGpuIdx = cudaDeviceForPointer(
       context_->getCudaLib(), buffer.unwrap<CudaBuffer>().ptr);
@@ -396,6 +399,7 @@ void ChannelImpl::recvImplFromLoop(
   RecvOpIter opIter = recvOps_.emplaceBack(
       sequenceNumber,
       buffer.unwrap<CudaBuffer>(),
+      length,
       std::move(callback),
       localGpuIdx,
       localNicIdx);
@@ -535,7 +539,7 @@ void ChannelImpl::recvOverIbAndWriteReadyToRecive(RecvOpIter opIter) {
 
   IbvLib::sge list;
   list.addr = reinterpret_cast<uint64_t>(op.buffer.ptr);
-  list.length = op.buffer.length;
+  list.length = op.length;
   list.lkey = mr->lkey;
 
   IbvLib::recv_wr wr;

@@ -76,10 +76,12 @@ class ChannelImpl final
   void sendImplFromLoop(
       uint64_t sequenceNumber,
       Buffer buffer,
+      size_t length,
       TSendCallback callback) override;
   void recvImplFromLoop(
       uint64_t sequenceNumber,
       Buffer buffer,
+      size_t length,
       TRecvCallback callback) override;
   void handleErrorImpl() override;
 
