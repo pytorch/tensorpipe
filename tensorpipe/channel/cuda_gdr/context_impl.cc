@@ -20,6 +20,9 @@
 #include <utility>
 #include <vector>
 
+#include <sys/stat.h>
+#include <sys/types.h>
+
 #include <cuda.h>
 #include <cuda_runtime.h>
 
@@ -165,6 +168,61 @@ std::vector<std::string> matchGpusToIbvNics(
   }
 
   return gpuIdxToIbvNicName;
+}
+
+// In GpuDirect, the way an InfiniBand NIC accesses the GPU's memory is by
+// issuing a PCIe read to some address within the GPU's "base address register"
+// (BAR), i.e., a slice of the "physical" PCIe address space that belongs to the
+// GPU. BARs in principle provide only "windows" into a device's memory, and
+// could be re-mapped over time. When a CUDA allocation is registered on
+// InfiniBand, its backing memory is mapped into the BAR and its address is
+// given to the InfiniBand driver. That mapping must remain in place until the
+// registration is destroyed. See
+// https://docs.nvidia.com/cuda/gpudirect-rdma/index.html#how-gpudirect-rdma-works.
+// CUDA GDR doesn't work well with that, because:
+// - It attempts to register the entire user allocation with InfiniBand, hence
+//   allocations that exceed the BAR's size can never be transferred.
+// - It "caches" (or "leaks") the InfiniBand registration, because creating it
+//   is expensive, so that this can be done once and then reused. This means
+//   that even if each tensor that is sent is smaller than the BAR, we'd start
+//   seeing failures if their cumulative size exceeded the one of the BAR.
+// On some GPUs though the BAR size spans the entire GPU memory. In such cases
+// what CUDA GDR is doing should be "safe". In all other cases, however, it
+// isn't, and it's better to thus disable CUDA GDR entirely in these scenarios,
+// so that users end up using a fully functioning (but slower) CUDA channel.
+// There are multiple BARs for each GPU, but from an experimental investigation
+// it seems the one that maps to the device's memory is BAR1. The programmatic
+// way that the Linux kernel offers to access information about PCIe and its
+// BARs is through sysfs. See
+// https://www.kernel.org/doc/html/latest/PCI/sysfs-pci.html.
+
+size_t getBar1SizeOfGpu(int gpuIdx) {
+  std::string pciPath = getPciPathForGpu(gpuIdx);
+  pciPath += "/resource1";
+
+  struct stat bar1Stats;
+  int rv = ::stat(pciPath.c_str(), &bar1Stats);
+  TP_THROW_SYSTEM_IF(rv < 0, errno);
+
+  return bar1Stats.st_size;
+}
+
+bool allGpusHaveEnoughBar1Size() {
+  int numGpus;
+  TP_CUDA_CHECK(cudaGetDeviceCount(&numGpus));
+  for (int gpuIdx = 0; gpuIdx < numGpus; gpuIdx++) {
+    cudaDeviceProp gpuProps;
+    TP_CUDA_CHECK(cudaGetDeviceProperties(&gpuProps, gpuIdx));
+    size_t memorySize = gpuProps.totalGlobalMem;
+    size_t bar1Size = getBar1SizeOfGpu(gpuIdx);
+    TP_VLOG(5) << "GPU #" << gpuIdx << " has " << memorySize
+               << " bytes of memory and the size of its PCIe BAR1 is "
+               << bar1Size << " bytes";
+    if (bar1Size < memorySize) {
+      return false;
+    }
+  }
+  return true;
 }
 
 } // namespace
@@ -375,6 +433,14 @@ std::shared_ptr<ContextImpl> ContextImpl::create(
   if (deviceList.size() == 0) {
     TP_VLOG(5)
         << "CUDA GDR channel is not viable because it couldn't find any InfiniBand NICs";
+    return nullptr;
+  }
+
+  // FIXME In principle we could just exclude the GPUs that violate this check
+  // but keep working with the other ones (if any).
+  if (!allGpusHaveEnoughBar1Size()) {
+    TP_VLOG(5)
+        << "CUDA GDR channel is not viable because some GPUs don't have a large enough PCIe BAR1 size";
     return nullptr;
   }
 
