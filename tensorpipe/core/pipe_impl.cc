@@ -511,7 +511,9 @@ void PipeImpl::readPayloadsAndReceiveTensorsOfMessage(ReadOpIter opIter) {
                << op.sequenceNumber << "." << tensorIdx;
 
     channel->recv(
-        tensor.buffer, callbackWrapper_([opIter, tensorIdx](PipeImpl& impl) {
+        tensor.buffer,
+        tensor.buffer.length(),
+        callbackWrapper_([opIter, tensorIdx](PipeImpl& impl) {
           TP_VLOG(3) << "Pipe " << impl.id_ << " done receiving tensor #"
                      << opIter->sequenceNumber << "." << tensorIdx;
           impl.onRecvOfTensor(opIter);
@@ -825,7 +827,9 @@ void PipeImpl::sendTensorsOfMessage(WriteOpIter opIter) {
                  << op.sequenceNumber << "." << tensorIdx;
 
       channel.send(
-          tensor.buffer, callbackWrapper_([opIter, tensorIdx](PipeImpl& impl) {
+          tensor.buffer,
+          tensor.buffer.length(),
+          callbackWrapper_([opIter, tensorIdx](PipeImpl& impl) {
             TP_VLOG(3) << "Pipe " << impl.id_ << " done sending tensor #"
                        << opIter->sequenceNumber << "." << tensorIdx;
             impl.onSendOfTensor(opIter);

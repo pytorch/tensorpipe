@@ -44,6 +44,10 @@ class CudaDataWrapper : public DataWrapper {
     return tensorpipe::CudaBuffer{cudaPtr_, length_, stream_};
   }
 
+  size_t bufferLength() const override {
+    return length_;
+  }
+
   std::vector<uint8_t> unwrap() override {
     std::vector<uint8_t> v(length_);
     if (length_ > 0) {

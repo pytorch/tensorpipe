@@ -72,15 +72,15 @@ void ChannelImpl::cudaCopy(
 void ChannelImpl::sendImplFromLoop(
     uint64_t sequenceNumber,
     Buffer buffer,
+    size_t length,
     TSendCallback callback) {
   int deviceIdx = cudaDeviceForPointer(
       context_->getCudaLib(), buffer.unwrap<CudaBuffer>().ptr);
   Allocator& cudaHostAllocator = context_->getCudaHostSendAllocator(deviceIdx);
   const size_t chunkLength = cudaHostAllocator.getChunkLength();
-  const size_t bufferLength = buffer.unwrap<CudaBuffer>().length;
-  const size_t numChunks = ceilOfRatio(bufferLength, chunkLength);
+  const size_t numChunks = ceilOfRatio(length, chunkLength);
 
-  for (size_t offset = 0; offset < bufferLength; offset += chunkLength) {
+  for (size_t offset = 0; offset < length; offset += chunkLength) {
     ChunkSendOpIter opIter = chunkSendOps_.emplaceBack(nextChunkBeingSent_++);
     ChunkSendOperation& op = *opIter;
     op.bufferSequenceNumber = sequenceNumber;
@@ -90,7 +90,7 @@ void ChannelImpl::sendImplFromLoop(
     op.deviceIdx = deviceIdx;
     op.cudaPtr =
         static_cast<uint8_t*>(buffer.unwrap<CudaBuffer>().ptr) + offset;
-    op.length = std::min(bufferLength - offset, chunkLength);
+    op.length = std::min(length - offset, chunkLength);
     // Operations are processed in order, so we can afford to trigger the
     // callback once the last operation is done.
     if (op.chunkId == numChunks - 1) {
@@ -268,17 +268,18 @@ void ChannelImpl::sendCpuBuffer(ChunkSendOpIter opIter) {
   TP_VLOG(6) << "Channel " << id_ << " is sending chunk #" << op.chunkId
              << " of " << op.numChunks << " for buffer #"
              << op.bufferSequenceNumber << " through CPU channel";
-  CpuBuffer cpuBuffer{op.tmpBuffer.get(), op.length};
-  cpuChannel_->send(cpuBuffer, callbackWrapper_([opIter](ChannelImpl& impl) {
-                      TP_VLOG(6)
-                          << "Channel " << impl.id_
-                          << " is done sending chunk #" << opIter->chunkId
-                          << " of " << opIter->numChunks << " for buffer #"
-                          << opIter->bufferSequenceNumber
-                          << " through CPU channel";
-                      opIter->doneSendingCpuBuffer = true;
-                      impl.chunkSendOps_.advanceOperation(opIter);
-                    }));
+
+  cpuChannel_->send(
+      CpuBuffer{op.tmpBuffer.get()},
+      op.length,
+      callbackWrapper_([opIter](ChannelImpl& impl) {
+        TP_VLOG(6) << "Channel " << impl.id_ << " is done sending chunk #"
+                   << opIter->chunkId << " of " << opIter->numChunks
+                   << " for buffer #" << opIter->bufferSequenceNumber
+                   << " through CPU channel";
+        opIter->doneSendingCpuBuffer = true;
+        impl.chunkSendOps_.advanceOperation(opIter);
+      }));
 }
 
 void ChannelImpl::callSendCallback(ChunkSendOpIter opIter) {
@@ -301,15 +302,15 @@ void ChannelImpl::returnSendCpuBuffer(ChunkSendOpIter opIter) {
 void ChannelImpl::recvImplFromLoop(
     uint64_t sequenceNumber,
     Buffer buffer,
+    size_t length,
     TRecvCallback callback) {
   int deviceIdx = cudaDeviceForPointer(
       context_->getCudaLib(), buffer.unwrap<CudaBuffer>().ptr);
   Allocator& cudaHostAllocator = context_->getCudaHostRecvAllocator(deviceIdx);
   const size_t chunkLength = cudaHostAllocator.getChunkLength();
-  const size_t bufferLength = buffer.unwrap<CudaBuffer>().length;
-  const size_t numChunks = ceilOfRatio(bufferLength, chunkLength);
+  const size_t numChunks = ceilOfRatio(length, chunkLength);
 
-  for (size_t offset = 0; offset < bufferLength; offset += chunkLength) {
+  for (size_t offset = 0; offset < length; offset += chunkLength) {
     ChunkRecvOpIter opIter =
         chunkRecvOps_.emplaceBack(nextChunkBeingReceived_++);
     ChunkRecvOperation& op = *opIter;
@@ -320,7 +321,7 @@ void ChannelImpl::recvImplFromLoop(
     op.deviceIdx = deviceIdx;
     op.cudaPtr =
         static_cast<uint8_t*>(buffer.unwrap<CudaBuffer>().ptr) + offset;
-    op.length = std::min(bufferLength - offset, chunkLength);
+    op.length = std::min(length - offset, chunkLength);
     // Operations are processed in order, so we can afford to trigger the
     // callback once the last operation is done.
     if (op.chunkId == numChunks - 1) {
@@ -491,7 +492,8 @@ void ChannelImpl::receiveCpuBuffer(ChunkRecvOpIter opIter) {
              << " of " << op.numChunks << " for buffer #"
              << op.bufferSequenceNumber << " through CPU channel";
   cpuChannel_->recv(
-      CpuBuffer{op.tmpBuffer.get(), op.length},
+      CpuBuffer{op.tmpBuffer.get()},
+      op.length,
       callbackWrapper_([opIter](ChannelImpl& impl) {
         TP_VLOG(6) << "Channel " << impl.id_ << " is done sending chunk #"
                    << opIter->chunkId << " of " << opIter->numChunks

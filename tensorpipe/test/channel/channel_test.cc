@@ -53,8 +53,7 @@ class ClientToServerTest : public ClientServerChannelTestCase {
     std::unique_ptr<DataWrapper> wrappedData = helper_->makeDataWrapper(data);
 
     // Perform send and wait for completion.
-    std::future<Error> sendFuture =
-        sendWithFuture(channel, wrappedData->buffer());
+    std::future<Error> sendFuture = sendWithFuture(channel, *wrappedData);
     Error sendError = sendFuture.get();
     EXPECT_FALSE(sendError) << sendError.what();
 
@@ -67,8 +66,7 @@ class ClientToServerTest : public ClientServerChannelTestCase {
         helper_->makeDataWrapper(kDataSize);
 
     // Perform recv and wait for completion.
-    std::future<Error> recvFuture =
-        recvWithFuture(channel, wrappedData->buffer());
+    std::future<Error> recvFuture = recvWithFuture(channel, *wrappedData);
     Error recvError = recvFuture.get();
     EXPECT_FALSE(recvError) << recvError.what();
 
@@ -94,8 +92,7 @@ class ServerToClientTest : public ClientServerChannelTestCase {
         helper_->makeDataWrapper(kDataSize);
 
     // Perform recv and wait for completion.
-    std::future<Error> recvFuture =
-        recvWithFuture(channel, wrappedData->buffer());
+    std::future<Error> recvFuture = recvWithFuture(channel, *wrappedData);
     Error recvError = recvFuture.get();
     EXPECT_FALSE(recvError) << recvError.what();
 
@@ -116,8 +113,7 @@ class ServerToClientTest : public ClientServerChannelTestCase {
     std::unique_ptr<DataWrapper> wrappedData = helper_->makeDataWrapper(data);
 
     // Perform send and wait for completion.
-    std::future<Error> sendFuture =
-        sendWithFuture(channel, wrappedData->buffer());
+    std::future<Error> sendFuture = sendWithFuture(channel, *wrappedData);
     Error sendError = sendFuture.get();
     EXPECT_FALSE(sendError) << sendError.what();
 
@@ -146,8 +142,7 @@ class SendMultipleTensorsTest : public ClientServerChannelTestCase {
 
     // Perform send and wait for completion.
     for (int i = 0; i < kNumTensors; i++) {
-      std::future<Error> sendFuture =
-          sendWithFuture(channel, wrappedData->buffer());
+      std::future<Error> sendFuture = sendWithFuture(channel, *wrappedData);
       sendFutures.push_back(std::move(sendFuture));
     }
     for (auto& sendFuture : sendFutures) {
@@ -170,8 +165,7 @@ class SendMultipleTensorsTest : public ClientServerChannelTestCase {
 
     // Perform recv and wait for completion.
     for (auto& wrappedData : wrappedDataVec) {
-      std::future<Error> recvFuture =
-          recvWithFuture(channel, wrappedData->buffer());
+      std::future<Error> recvFuture = recvWithFuture(channel, *wrappedData);
       recvFutures.push_back(std::move(recvFuture));
     }
     for (auto& recvFuture : recvFutures) {
@@ -209,11 +203,9 @@ class SendTensorsBothWaysTest : public ClientServerChannelTestCase {
         helper_->makeDataWrapper(kDataSize);
 
     // Perform send.
-    std::future<Error> sendFuture =
-        sendWithFuture(channel, wrappedSendData->buffer());
+    std::future<Error> sendFuture = sendWithFuture(channel, *wrappedSendData);
     // Perform recv.
-    std::future<Error> recvFuture =
-        recvWithFuture(channel, wrappedRecvData->buffer());
+    std::future<Error> recvFuture = recvWithFuture(channel, *wrappedRecvData);
 
     // Wait for completion of both.
     Error sendError = sendFuture.get();
@@ -243,11 +235,9 @@ class SendTensorsBothWaysTest : public ClientServerChannelTestCase {
         helper_->makeDataWrapper(kDataSize);
 
     // Perform send.
-    std::future<Error> sendFuture =
-        sendWithFuture(channel, wrappedSendData->buffer());
+    std::future<Error> sendFuture = sendWithFuture(channel, *wrappedSendData);
     // Perform recv.
-    std::future<Error> recvFuture =
-        recvWithFuture(channel, wrappedRecvData->buffer());
+    std::future<Error> recvFuture = recvWithFuture(channel, *wrappedRecvData);
 
     // Wait for completion of both.
     Error sendError = sendFuture.get();

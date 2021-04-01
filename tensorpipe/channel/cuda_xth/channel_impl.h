@@ -72,7 +72,11 @@ struct RecvOperation {
   int srcDeviceIdx;
   cudaStream_t srcStream;
 
-  RecvOperation(int deviceIdx, CudaBuffer buffer, TRecvCallback callback);
+  RecvOperation(
+      int deviceIdx,
+      CudaBuffer buffer,
+      size_t length,
+      TRecvCallback callback);
 
   void process();
 };
@@ -93,10 +97,12 @@ class ChannelImpl final
   void sendImplFromLoop(
       uint64_t sequenceNumber,
       Buffer buffer,
+      size_t length,
       TSendCallback callback) override;
   void recvImplFromLoop(
       uint64_t sequenceNumber,
       Buffer buffer,
+      size_t length,
       TRecvCallback callback) override;
   void handleErrorImpl() override;
 
