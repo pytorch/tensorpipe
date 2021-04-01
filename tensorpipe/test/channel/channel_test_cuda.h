@@ -41,7 +41,11 @@ class CudaDataWrapper : public DataWrapper {
   }
 
   tensorpipe::Buffer buffer() const override {
-    return tensorpipe::CudaBuffer{cudaPtr_, length_, stream_};
+    return tensorpipe::CudaBuffer{
+        .ptr = cudaPtr_,
+        .length = length_,
+        .stream = stream_,
+    };
   }
 
   size_t bufferLength() const override {
