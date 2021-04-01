@@ -459,13 +459,16 @@ static void clientPingPongNonBlock(
     for (size_t tensorIdx = 0; tensorIdx < data.numTensors; tensorIdx++) {
       Message::Tensor tensor;
       if (data.tensorType == TensorType::kCpu) {
-        tensor.buffer =
-            CpuBuffer{data.expectedCpuTensor[tensorIdx].get(), data.tensorSize};
+        tensor.buffer = CpuBuffer{
+            .ptr = data.expectedCpuTensor[tensorIdx].get(),
+            .length = data.tensorSize,
+        };
       } else if (data.tensorType == TensorType::kCuda) {
         tensor.buffer = CudaBuffer{
-            data.expectedCudaTensor[tensorIdx].get(),
-            data.tensorSize,
-            data.cudaStream.get()};
+            .ptr = data.expectedCudaTensor[tensorIdx].get(),
+            .length = data.tensorSize,
+            .stream = data.cudaStream.get(),
+        };
       } else {
         TP_THROW_ASSERT() << "Unknown tensor type";
       }

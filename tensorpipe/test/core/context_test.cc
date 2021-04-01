@@ -99,9 +99,12 @@ Message makeMessage(int numPayloads, int numTensors) {
     message.payloads.push_back(std::move(payload));
   }
   for (int i = 0; i < numTensors; i++) {
-    Message::Tensor tensor{CpuBuffer{
-        reinterpret_cast<void*>(const_cast<char*>(kTensorData.data())),
-        kTensorData.length()}};
+    Message::Tensor tensor{
+        .buffer = CpuBuffer{
+            .ptr =
+                reinterpret_cast<void*>(const_cast<char*>(kTensorData.data())),
+            .length = kTensorData.length(),
+        }};
     message.tensors.push_back(std::move(tensor));
   }
   return message;

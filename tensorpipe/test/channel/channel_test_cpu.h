@@ -23,7 +23,9 @@ class CpuDataWrapper : public DataWrapper {
 
   tensorpipe::Buffer buffer() const override {
     return tensorpipe::CpuBuffer{
-        const_cast<uint8_t*>(vector_.data()), vector_.size()};
+        .ptr = const_cast<uint8_t*>(vector_.data()),
+        .length = vector_.size(),
+    };
   }
 
   size_t bufferLength() const override {
