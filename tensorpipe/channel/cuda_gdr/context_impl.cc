@@ -22,6 +22,7 @@
 
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <unistd.h>
 
 #include <cuda.h>
 #include <cuda_runtime.h>
@@ -57,6 +58,39 @@ auto applyFunc(IbvNic& subject, TMethod&& method, TArgsTuple&& args) {
       std::forward<TArgsTuple>(args),
       std::make_index_sequence<
           std::tuple_size<std::remove_reference_t<TArgsTuple>>::value>{});
+}
+
+// We can only pass CUDA pointers to InfiniBand (for example when registering
+// some memory) if InfiniBand "knows about" CUDA. Those pointers refer to the
+// section of the process's virtual address space that is being used by CUDA to
+// represent device memory (as part of CUDA's unified memory approach). Thus
+// InfiniBand needs to talk to CUDA to translate those pointers to physical PCIe
+// hardware addresses.
+// This is achieved by CUDA providing a so-called "peer memory client" and
+// registering it with the InfiniBand kernel module. The peer memory client is
+// itself a kernel module, see https://github.com/Mellanox/nv_peer_memory.
+// The "catch" is that the whole "peer memory client" system is not part of the
+// official Linux InfiniBand. It's provided by a Mellanox extension, and it's
+// part of their "OpenFabrics Enterprise Distribution" (MLNX_OFED), see
+// https://www.mellanox.com/products/infiniband-drivers/linux/mlnx_ofed. (In
+// particular, on Ubuntu, this seems to be provided by the mlnx-ofed-kernel-dkms
+// package). Note that this difference between "vanilla" InfiniBand and OFED is
+// only in kernel space; from our perspective the two have the same API. Also
+// note that Mellanox has tried at least a couple of time to upstream this, but
+// apparently without success:
+// https://lore.kernel.org/linux-rdma/1412602019-30659-1-git-send-email-yishaih@mellanox.com/
+// https://lore.kernel.org/linux-rdma/1455207177-11949-1-git-send-email-artemyko@mellanox.com/
+// The check we use to verify if the peer memory client is active is the same as
+// NCCL's one, see
+// https://github.com/NVIDIA/nccl/blob/911d61f214d45c98df1ee8c0ac23c33fb94b63de/src/transport/net_ib.cc#L216-L227
+// Whereas TensorFlow does it slightly differently, see
+// https://github.com/tensorflow/networking/blob/671e2548b602f93a6c6502432b8bc131b5cc4914/tensorflow_networking/gdr/gdr_memory_manager.cc#L43-L60
+static std::string kNvidiaPeerMemoryClientPath =
+    "/sys/kernel/mm/memory_peers/nv_mem/version";
+
+bool isNvidiaPeerMemoryClientActive() {
+  int rv = ::access(kNvidiaPeerMemoryClientPath.c_str(), F_OK);
+  return rv >= 0;
 }
 
 // The PCI topology is a tree, with the root being the host bridge, the leaves
@@ -416,8 +450,11 @@ std::shared_ptr<ContextImpl> ContextImpl::create(
     return nullptr;
   }
 
-  // TODO Check whether the NVIDIA memory peering kernel module is available.
-  // And maybe even allocate and register some CUDA memory to ensure it works.
+  if (!isNvidiaPeerMemoryClientActive()) {
+    TP_VLOG(5)
+        << "CUDA GDR channel is not viable because the nv_peer_mem kernel module isn't active";
+    return nullptr;
+  }
 
   IbvDeviceList deviceList;
   std::tie(error, deviceList) = IbvDeviceList::create(ibvLib);
