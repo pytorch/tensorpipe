@@ -79,9 +79,9 @@ namespace {
   for (size_t idx = 0; idx < m1.tensors.size(); idx++) {
     EXPECT_TRUE(buffersAreEqual(
         m1.tensors[idx].buffer.unwrap<CpuBuffer>().ptr,
-        m1.tensors[idx].buffer.unwrap<CpuBuffer>().length,
+        m1.tensors[idx].length,
         m2.tensors[idx].buffer.unwrap<CpuBuffer>().ptr,
-        m2.tensors[idx].buffer.unwrap<CpuBuffer>().length));
+        m2.tensors[idx].length));
   }
   return ::testing::AssertionSuccess();
 }
@@ -100,11 +100,10 @@ Message makeMessage(int numPayloads, int numTensors) {
   }
   for (int i = 0; i < numTensors; i++) {
     Message::Tensor tensor{
-        .buffer = CpuBuffer{
-            .ptr =
-                reinterpret_cast<void*>(const_cast<char*>(kTensorData.data())),
-            .length = kTensorData.length(),
-        }};
+        .buffer = CpuBuffer{reinterpret_cast<void*>(
+            const_cast<char*>(kTensorData.data()))},
+        .length = kTensorData.length(),
+    };
     message.tensors.push_back(std::move(tensor));
   }
   return message;
@@ -190,8 +189,7 @@ TEST(Context, ClientPingSerial) {
     buffers.push_back(std::move(payloadData));
   }
   for (auto& tensor : message.tensors) {
-    auto tensorData =
-        std::make_unique<uint8_t[]>(tensor.buffer.unwrap<CpuBuffer>().length);
+    auto tensorData = std::make_unique<uint8_t[]>(tensor.length);
     tensor.buffer.unwrap<CpuBuffer>().ptr = tensorData.get();
     buffers.push_back(std::move(tensorData));
   }
@@ -257,8 +255,7 @@ TEST(Context, ClientPingInline) {
         buffers.push_back(std::move(payloadData));
       }
       for (auto& tensor : message.tensors) {
-        auto tensorData = std::make_unique<uint8_t[]>(
-            tensor.buffer.unwrap<CpuBuffer>().length);
+        auto tensorData = std::make_unique<uint8_t[]>(tensor.length);
         tensor.buffer.unwrap<CpuBuffer>().ptr = tensorData.get();
         buffers.push_back(std::move(tensorData));
       }
@@ -354,8 +351,7 @@ TEST(Context, ServerPingPongTwice) {
                 buffers.push_back(std::move(payloadData));
               }
               for (auto& tensor : message.tensors) {
-                auto tensorData = std::make_unique<uint8_t[]>(
-                    tensor.buffer.unwrap<CpuBuffer>().length);
+                auto tensorData = std::make_unique<uint8_t[]>(tensor.length);
                 tensor.buffer.unwrap<CpuBuffer>().ptr = tensorData.get();
                 buffers.push_back(std::move(tensorData));
               }
@@ -397,8 +393,7 @@ TEST(Context, ServerPingPongTwice) {
             buffers.push_back(std::move(payloadData));
           }
           for (auto& tensor : message.tensors) {
-            auto tensorData = std::make_unique<uint8_t[]>(
-                tensor.buffer.unwrap<CpuBuffer>().length);
+            auto tensorData = std::make_unique<uint8_t[]>(tensor.length);
             tensor.buffer.unwrap<CpuBuffer>().ptr = tensorData.get();
             buffers.push_back(std::move(tensorData));
           }
@@ -452,8 +447,7 @@ static void pipeRead(
       buffers.push_back(std::move(payloadData));
     }
     for (auto& tensor : message.tensors) {
-      auto tensorData =
-          std::make_unique<uint8_t[]>(tensor.buffer.unwrap<CpuBuffer>().length);
+      auto tensorData = std::make_unique<uint8_t[]>(tensor.length);
       tensor.buffer.unwrap<CpuBuffer>().ptr = tensorData.get();
       buffers.push_back(std::move(tensorData));
     }

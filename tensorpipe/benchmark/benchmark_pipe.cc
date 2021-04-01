@@ -225,8 +225,7 @@ static void serverPongPingNonBlock(
         TP_DCHECK_EQ(
             message.tensors[tensorIdx].metadata,
             data.expectedTensorMetadata[tensorIdx]);
-        TP_DCHECK_EQ(
-            message.tensors[tensorIdx].buffer.length(), data.tensorSize);
+        TP_DCHECK_EQ(message.tensors[tensorIdx].length, data.tensorSize);
         if (data.tensorType == TensorType::kCpu) {
           message.tensors[tensorIdx].buffer.unwrap<CpuBuffer>().ptr =
               data.temporaryCpuTensor[tensorIdx].get();
@@ -267,8 +266,7 @@ static void serverPongPingNonBlock(
             TP_DCHECK_EQ(message.tensors.size(), data.numTensors);
             for (size_t tensorIdx = 0; tensorIdx < data.numTensors;
                  tensorIdx++) {
-              TP_DCHECK_EQ(
-                  message.tensors[tensorIdx].buffer.length(), data.tensorSize);
+              TP_DCHECK_EQ(message.tensors[tensorIdx].length, data.tensorSize);
               if (data.tensorType == TensorType::kCpu) {
                 TP_DCHECK_EQ(
                     memcmp(
@@ -276,9 +274,7 @@ static void serverPongPingNonBlock(
                             .buffer.unwrap<CpuBuffer>()
                             .ptr,
                         data.expectedCpuTensor[tensorIdx].get(),
-                        message.tensors[tensorIdx]
-                            .buffer.unwrap<CpuBuffer>()
-                            .length),
+                        message.tensors[tensorIdx].length),
                     0);
               } else if (data.tensorType == TensorType::kCuda) {
                 // No (easy) way to do a memcmp with CUDA, I believe...
@@ -458,11 +454,10 @@ static void clientPingPongNonBlock(
   if (data.tensorSize > 0) {
     for (size_t tensorIdx = 0; tensorIdx < data.numTensors; tensorIdx++) {
       Message::Tensor tensor;
+      tensor.length = data.tensorSize;
       if (data.tensorType == TensorType::kCpu) {
-        tensor.buffer = CpuBuffer{
-            .ptr = data.expectedCpuTensor[tensorIdx].get(),
-            .length = data.tensorSize,
-        };
+        tensor.buffer =
+            CpuBuffer{.ptr = data.expectedCpuTensor[tensorIdx].get()};
       } else if (data.tensorType == TensorType::kCuda) {
         tensor.buffer = CudaBuffer{
             .ptr = data.expectedCudaTensor[tensorIdx].get(),
@@ -513,8 +508,7 @@ static void clientPingPongNonBlock(
               TP_DCHECK_EQ(
                   message.tensors[tensorIdx].metadata,
                   data.expectedTensorMetadata[tensorIdx]);
-              TP_DCHECK_EQ(
-                  message.tensors[tensorIdx].buffer.length(), data.tensorSize);
+              TP_DCHECK_EQ(message.tensors[tensorIdx].length, data.tensorSize);
               if (data.tensorType == TensorType::kCpu) {
                 message.tensors[tensorIdx].buffer.unwrap<CpuBuffer>().ptr =
                     data.temporaryCpuTensor[tensorIdx].get();
@@ -571,9 +565,7 @@ static void clientPingPongNonBlock(
                                   .buffer.unwrap<CpuBuffer>()
                                   .ptr,
                               data.expectedCpuTensor[tensorIdx].get(),
-                              message.tensors[tensorIdx]
-                                  .buffer.unwrap<CpuBuffer>()
-                                  .length),
+                              message.tensors[tensorIdx].length),
                           0);
                     } else if (data.tensorType == TensorType::kCuda) {
                       // No (easy) way to do a memcmp with CUDA, I
