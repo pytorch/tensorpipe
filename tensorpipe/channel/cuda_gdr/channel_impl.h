@@ -67,18 +67,21 @@ struct NopIbvSetupInformation {
   NopIbvGid globalIdentifier;
   uint32_t queuePairNumber;
   IbvLib::mtu maximumTransmissionUnit;
+  uint32_t maximumMessageSize;
   NOP_STRUCTURE(
       NopIbvSetupInformation,
       localIdentifier,
       globalIdentifier,
       queuePairNumber,
-      maximumTransmissionUnit);
+      maximumTransmissionUnit,
+      maximumMessageSize);
 
   void fromIbvSetupInformation(const IbvSetupInformation& setupInfo) {
     localIdentifier = setupInfo.localIdentifier;
     globalIdentifier.fromIbvGid(setupInfo.globalIdentifier);
     queuePairNumber = setupInfo.queuePairNumber;
     maximumTransmissionUnit = setupInfo.maximumTransmissionUnit;
+    maximumMessageSize = setupInfo.maximumMessageSize;
   }
 
   IbvSetupInformation toIbvSetupInformation() const {
@@ -87,6 +90,7 @@ struct NopIbvSetupInformation {
     setupInfo.globalIdentifier = globalIdentifier.toIbvGid();
     setupInfo.queuePairNumber = queuePairNumber;
     setupInfo.maximumTransmissionUnit = maximumTransmissionUnit;
+    setupInfo.maximumMessageSize = maximumMessageSize;
     return setupInfo;
   }
 };
@@ -124,7 +128,7 @@ struct SendOperation {
 
   bool readReadyToReceive{false};
   bool sendEventReady{false};
-  bool sentOverIb{false};
+  uint64_t numChunksBeingSent{0};
 };
 
 struct RecvOperation {
@@ -160,7 +164,7 @@ struct RecvOperation {
 
   bool doneReadingDescriptor{false};
   bool recvEventReady{false};
-  bool receivedOverIb{false};
+  uint64_t numChunksBeingReceived{0};
 };
 
 // First "round" of handshake.
@@ -228,7 +232,17 @@ class ChannelImpl final
   size_t numLocalNics_{0};
   size_t numRemoteNics_{0};
 
-  std::vector<std::vector<IbvQueuePair>> queuePairs_;
+  // This struct is used to bundle the queue pair with some additional metadata.
+  struct QueuePair {
+    IbvQueuePair queuePair;
+    // The CUDA GDR channel could be asked to transmit arbitrarily large tensors
+    // and in principle it could directly forward them to the NIC as they are.
+    // However IB NICs have limits on the size of each message. Hence we
+    // determine these sizes, one per queue pair (as the minimum of the local
+    // and remote sizes) and then split our tensors in chunks of that size.
+    uint32_t maximumMessageSize;
+  };
+  std::vector<std::vector<QueuePair>> queuePairs_;
 
   OpsStateMachine<ChannelImpl, SendOperation> sendOps_{
       *this,

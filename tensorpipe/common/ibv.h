@@ -223,6 +223,7 @@ struct IbvAddress {
   // The already-resolved GID of the above device+port+index combination.
   IbvLib::gid globalIdentifier;
   IbvLib::mtu maximumTransmissionUnit;
+  uint32_t maximumMessageSize;
 };
 
 struct IbvSetupInformation {
@@ -230,6 +231,7 @@ struct IbvSetupInformation {
   IbvLib::gid globalIdentifier;
   uint32_t queuePairNumber;
   IbvLib::mtu maximumTransmissionUnit;
+  uint32_t maximumMessageSize;
 };
 
 struct IbvAddress makeIbvAddress(

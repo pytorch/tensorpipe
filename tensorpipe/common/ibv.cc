@@ -52,6 +52,7 @@ struct IbvAddress makeIbvAddress(
   TP_CHECK_IBV_INT(ibvLib.query_port(context.get(), portNum, &portAttr));
   addr.localIdentifier = portAttr.lid;
   addr.maximumTransmissionUnit = portAttr.active_mtu;
+  addr.maximumMessageSize = portAttr.max_msg_sz;
 
   TP_CHECK_IBV_INT(ibvLib.query_gid(
       context.get(), portNum, globalIdentifierIndex, &addr.globalIdentifier));
@@ -69,6 +70,7 @@ struct IbvSetupInformation makeIbvSetupInformation(
   info.globalIdentifier = addr.globalIdentifier;
   info.queuePairNumber = qp->qp_num;
   info.maximumTransmissionUnit = addr.maximumTransmissionUnit;
+  info.maximumMessageSize = addr.maximumMessageSize;
 
   return info;
 }

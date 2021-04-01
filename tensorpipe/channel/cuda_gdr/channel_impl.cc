@@ -25,6 +25,14 @@ namespace tensorpipe {
 namespace channel {
 namespace cuda_gdr {
 
+namespace {
+
+size_t ceilOfRatio(size_t n, size_t d) {
+  return (n + d - 1) / d;
+}
+
+} // namespace
+
 ChannelImpl::ChannelImpl(
     ConstructorToken token,
     std::shared_ptr<ContextImpl> context,
@@ -112,7 +120,9 @@ void ChannelImpl::onReadHandshakeNumNics(
       IbvSetupInformation setupInfo =
           makeIbvSetupInformation(localNic.getIbvAddress(), qp);
 
-      queuePairs_[localNicIdx][remoteNicIdx] = std::move(qp);
+      // The maximum message size will be filled in later.
+      queuePairs_[localNicIdx][remoteNicIdx] =
+          QueuePair{std::move(qp), /*maximumMessageSize=*/0};
       allSetupInfo[localNicIdx][remoteNicIdx].fromIbvSetupInformation(
           setupInfo);
     }
@@ -158,14 +168,19 @@ void ChannelImpl::onReadHandshakeSetupInfo(
       IbvNic& localNic = context_->getIbvNic(localNicIdx);
       IbvSetupInformation setupInfo =
           remoteSetupInfo[remoteNicIdx][localNicIdx].toIbvSetupInformation();
+      const IbvAddress& localAddress = localNic.getIbvAddress();
 
       transitionIbvQueuePairToReadyToReceive(
           context_->getIbvLib(),
-          queuePairs_[localNicIdx][remoteNicIdx],
-          localNic.getIbvAddress(),
+          queuePairs_[localNicIdx][remoteNicIdx].queuePair,
+          localAddress,
           setupInfo);
       transitionIbvQueuePairToReadyToSend(
-          context_->getIbvLib(), queuePairs_[localNicIdx][remoteNicIdx]);
+          context_->getIbvLib(),
+          queuePairs_[localNicIdx][remoteNicIdx].queuePair);
+
+      queuePairs_[localNicIdx][remoteNicIdx].maximumMessageSize = std::min(
+          localAddress.maximumMessageSize, setupInfo.maximumMessageSize);
     }
   }
 
@@ -260,7 +275,7 @@ void ChannelImpl::advanceSendOperation(
       opIter,
       /*from=*/SendOperation::SENDING_OVER_IB,
       /*to=*/SendOperation::FINISHED,
-      /*cond=*/opIter->sentOverIb,
+      /*cond=*/opIter->numChunksBeingSent == 0,
       /*actions=*/{&ChannelImpl::callSendCallback});
 }
 
@@ -336,32 +351,40 @@ void ChannelImpl::sendOverIb(SendOpIter opIter) {
   SendOperation& op = *opIter;
 
   IbvNic& localNic = context_->getIbvNic(op.localNicIdx);
-  IbvQueuePair& qp = queuePairs_[op.localNicIdx][op.remoteNicIdx];
+  IbvQueuePair& qp = queuePairs_[op.localNicIdx][op.remoteNicIdx].queuePair;
+  size_t chunkSize =
+      queuePairs_[op.localNicIdx][op.remoteNicIdx].maximumMessageSize;
 
   // This could be VEEERY slow the first time we encounter the buffer, but the
   // result will be cached and subsequent calls will be much faster.
   IbvMemoryRegion& mr = localNic.registerMemory(op.buffer);
 
-  IbvLib::sge list;
-  list.addr = reinterpret_cast<uint64_t>(op.buffer.ptr);
-  list.length = op.length;
-  list.lkey = mr->lkey;
+  size_t numChunks = ceilOfRatio(op.length, chunkSize);
+  for (size_t chunkIdx = 0; chunkIdx < numChunks; chunkIdx++) {
+    IbvLib::sge list;
+    list.addr = reinterpret_cast<uint64_t>(
+        reinterpret_cast<uint8_t*>(op.buffer.ptr) + chunkIdx * chunkSize);
+    list.length = std::min(op.length - chunkIdx * chunkSize, chunkSize);
+    list.lkey = mr->lkey;
 
-  IbvLib::send_wr wr;
-  std::memset(&wr, 0, sizeof(wr));
-  wr.sg_list = &list;
-  wr.num_sge = 1;
-  wr.opcode = IbvLib::WR_SEND;
+    IbvLib::send_wr wr;
+    std::memset(&wr, 0, sizeof(wr));
+    wr.sg_list = &list;
+    wr.num_sge = 1;
+    wr.opcode = IbvLib::WR_SEND;
 
-  TP_VLOG(6) << "Channel " << id_ << " is sending tensor (#"
-             << op.sequenceNumber << ") on QP " << qp->qp_num;
-  localNic.postSend(qp, wr, callbackWrapper_([opIter](ChannelImpl& impl) {
-                      TP_VLOG(6) << "Channel " << impl.id_
-                                 << " done sending tensor (# "
-                                 << opIter->sequenceNumber << ")";
-                      impl.onIbvSendDone(opIter);
-                    }));
-  numSendsInFlight_++;
+    TP_VLOG(6) << "Channel " << id_ << " is sending chunk #" << chunkIdx
+               << " (out of " << numChunks << ") of tensor #"
+               << op.sequenceNumber << " on QP " << qp->qp_num;
+    localNic.postSend(
+        qp, wr, callbackWrapper_([opIter, chunkIdx](ChannelImpl& impl) {
+          TP_VLOG(6) << "Channel " << impl.id_ << " done sending chunk #"
+                     << chunkIdx << " of tensor #" << opIter->sequenceNumber;
+          impl.onIbvSendDone(opIter);
+        }));
+    op.numChunksBeingSent++;
+    numSendsInFlight_++;
+  }
 }
 
 void ChannelImpl::onIbvSendDone(SendOpIter opIter) {
@@ -369,7 +392,7 @@ void ChannelImpl::onIbvSendDone(SendOpIter opIter) {
 
   SendOperation& op = *opIter;
 
-  op.sentOverIb = true;
+  op.numChunksBeingSent--;
 
   sendOps_.advanceOperation(opIter);
 
@@ -474,7 +497,7 @@ void ChannelImpl::advanceRecvOperation(
       opIter,
       /*from=*/RecvOperation::RECEIVING_OVER_IB_AND_WRITING_READY_TO_RECEIVE,
       /*to=*/RecvOperation::FINISHED,
-      /*cond=*/opIter->receivedOverIb,
+      /*cond=*/opIter->numChunksBeingReceived == 0,
       /*actions=*/{&ChannelImpl::callRecvCallback});
 }
 
@@ -531,31 +554,39 @@ void ChannelImpl::recvOverIbAndWriteReadyToRecive(RecvOpIter opIter) {
   RecvOperation& op = *opIter;
 
   IbvNic& localNic = context_->getIbvNic(op.localNicIdx);
-  IbvQueuePair& qp = queuePairs_[op.localNicIdx][op.remoteNicIdx];
+  IbvQueuePair& qp = queuePairs_[op.localNicIdx][op.remoteNicIdx].queuePair;
+  size_t chunkSize =
+      queuePairs_[op.localNicIdx][op.remoteNicIdx].maximumMessageSize;
 
   // This could be VEEERY slow the first time we encounter the buffer, but the
   // result will be cached and subsequent calls will be much faster.
   IbvMemoryRegion& mr = localNic.registerMemory(op.buffer);
 
-  IbvLib::sge list;
-  list.addr = reinterpret_cast<uint64_t>(op.buffer.ptr);
-  list.length = op.length;
-  list.lkey = mr->lkey;
+  size_t numChunks = ceilOfRatio(op.length, chunkSize);
+  for (size_t chunkIdx = 0; chunkIdx < numChunks; chunkIdx++) {
+    IbvLib::sge list;
+    list.addr = reinterpret_cast<uint64_t>(
+        reinterpret_cast<uint8_t*>(op.buffer.ptr) + chunkIdx * chunkSize);
+    list.length = std::min(op.length - chunkIdx * chunkSize, chunkSize);
+    list.lkey = mr->lkey;
 
-  IbvLib::recv_wr wr;
-  std::memset(&wr, 0, sizeof(wr));
-  wr.sg_list = &list;
-  wr.num_sge = 1;
+    IbvLib::recv_wr wr;
+    std::memset(&wr, 0, sizeof(wr));
+    wr.sg_list = &list;
+    wr.num_sge = 1;
 
-  TP_VLOG(6) << "Channel " << id_ << " is receiving tensor (#"
-             << op.sequenceNumber << ") on QP " << qp->qp_num;
-  localNic.postRecv(qp, wr, callbackWrapper_([opIter](ChannelImpl& impl) {
-                      TP_VLOG(6) << "Channel " << impl.id_
-                                 << " done receiving tensor (# "
-                                 << opIter->sequenceNumber << ")";
-                      impl.onReceivedOverIb(opIter);
-                    }));
-  numRecvsInFlight_++;
+    TP_VLOG(6) << "Channel " << id_ << " is receiving chunk #" << chunkIdx
+               << " (out of " << numChunks << ") of tensor #"
+               << op.sequenceNumber << " on QP " << qp->qp_num;
+    localNic.postRecv(
+        qp, wr, callbackWrapper_([opIter, chunkIdx](ChannelImpl& impl) {
+          TP_VLOG(6) << "Channel " << impl.id_ << " done receiving chunk #"
+                     << chunkIdx << " of tensor #" << opIter->sequenceNumber;
+          impl.onReceivedOverIb(opIter);
+        }));
+    op.numChunksBeingReceived++;
+    numRecvsInFlight_++;
+  }
 
   auto nopHolderOut = std::make_shared<NopHolder<ReadyToReceive>>();
   ReadyToReceive& nopReadyToReceive = nopHolderOut->getObject();
@@ -577,7 +608,7 @@ void ChannelImpl::onReceivedOverIb(RecvOpIter opIter) {
 
   RecvOperation& op = *opIter;
 
-  op.receivedOverIb = true;
+  op.numChunksBeingReceived--;
 
   recvOps_.advanceOperation(opIter);
 
@@ -603,7 +634,8 @@ void ChannelImpl::handleErrorImpl() {
     for (size_t remoteNicIdx = 0; remoteNicIdx < numRemoteNics_;
          remoteNicIdx++) {
       transitionIbvQueuePairToError(
-          context_->getIbvLib(), queuePairs_[localNicIdx][remoteNicIdx]);
+          context_->getIbvLib(),
+          queuePairs_[localNicIdx][remoteNicIdx].queuePair);
     }
   }
 
