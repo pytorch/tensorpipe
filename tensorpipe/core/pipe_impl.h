@@ -40,9 +40,6 @@ class ContextImpl;
 class ListenerImpl;
 
 struct ReadOperation {
-  int64_t sequenceNumber{-1};
-
-  // Progress indicators.
   enum State {
     UNINITIALIZED,
     READING_DESCRIPTOR,
@@ -51,11 +48,16 @@ struct ReadOperation {
     READING_PAYLOADS_AND_RECEIVING_TENSORS,
     FINISHED
   };
+
+  // Fields used by the state machine
+  uint64_t sequenceNumber{0};
   State state{UNINITIALIZED};
+
+  // Progress flags
   bool doneReadingDescriptor{false};
   bool doneGettingAllocation{false};
-  int64_t numPayloadsBeingRead{0};
-  int64_t numTensorsBeingReceived{0};
+  uint64_t numPayloadsBeingRead{0};
+  uint64_t numTensorsBeingReceived{0};
 
   // Callbacks.
   Pipe::read_descriptor_callback_fn readDescriptorCallback;
@@ -78,13 +80,15 @@ struct ReadOperation {
 };
 
 struct WriteOperation {
-  int64_t sequenceNumber{-1};
-
-  // Progress indicators.
   enum State { UNINITIALIZED, WRITING_PAYLOADS_AND_SENDING_TENSORS, FINISHED };
+
+  // Fields used by the state machine
+  uint64_t sequenceNumber{0};
   State state{UNINITIALIZED};
-  int64_t numPayloadsBeingWritten{0};
-  int64_t numTensorsBeingSent{0};
+
+  // Progress flags
+  uint64_t numPayloadsBeingWritten{0};
+  uint64_t numTensorsBeingSent{0};
 
   // Callbacks.
   Pipe::write_callback_fn writeCallback;
@@ -208,7 +212,7 @@ class PipeImpl final : public std::enable_shared_from_this<PipeImpl> {
   // sequence number of which message that will be for.
   enum ConnectionState { AWAITING_DESCRIPTOR, AWAITING_PAYLOADS };
   ConnectionState connectionState_{AWAITING_DESCRIPTOR};
-  int64_t messageBeingReadFromConnection_{0};
+  uint64_t messageBeingReadFromConnection_{0};
 
   // When reading, each message will be presented to the user in order for some
   // memory to be allocated for its payloads and tensors (this happens by
@@ -231,14 +235,6 @@ class PipeImpl final : public std::enable_shared_from_this<PipeImpl> {
   CallbackWrapper<PipeImpl> callbackWrapper_{*this, *this->context_};
 
   //
-  // Helpers to schedule our callbacks into user code
-  //
-
-  void callReadDescriptorCallback(ReadOpIter opIter);
-  void callReadCallback(ReadOpIter opIter);
-  void callWriteCallback(WriteOpIter opIter);
-
-  //
   // Error handling
   //
 
@@ -247,28 +243,14 @@ class PipeImpl final : public std::enable_shared_from_this<PipeImpl> {
   void handleError();
 
   //
-  // Everything else
+  // State machines
   //
 
-  void startReadingUponEstablishingPipe();
-  void startWritingUponEstablishingPipe();
-
-  void advanceReadOperation(
-      ReadOpIter opIter,
-      ReadOperation::State prevOpState);
-  void advanceWriteOperation(
-      WriteOpIter opIter,
-      WriteOperation::State prevOpState);
-
-  void readDescriptorOfMessage(ReadOpIter opIter);
-  void expectReadCall(ReadOpIter opIter);
-  void readPayloadsAndReceiveTensorsOfMessage(ReadOpIter opIter);
-  void sendTensorsOfMessage(WriteOpIter opIter);
-  void writeDescriptorAndPayloadsOfMessage(WriteOpIter opIter);
-  void onReadWhileServerWaitingForBrochure(const Packet& nopPacketIn);
-  uint64_t registerTransport();
-  std::vector<uint64_t>& registerChannel(const std::string& channelName);
+  // Transitions for the pipe's initial handshake.
+  // On the client side:
   void onReadWhileClientWaitingForBrochureAnswer(const Packet& nopPacketIn);
+  // On the server side:
+  void onReadWhileServerWaitingForBrochure(const Packet& nopPacketIn);
   void onAcceptWhileServerWaitingForConnection(
       std::string receivedTransport,
       std::shared_ptr<transport::Connection> receivedConnection);
@@ -277,11 +259,33 @@ class PipeImpl final : public std::enable_shared_from_this<PipeImpl> {
       size_t connId,
       std::string receivedTransport,
       std::shared_ptr<transport::Connection> receivedConnection);
-  void onReadOfMessageDescriptor(ReadOpIter opIter, const Packet& nopPacketIn);
-  void onReadOfPayload(ReadOpIter opIter);
-  void onRecvOfTensor(ReadOpIter opIter);
-  void onWriteOfPayload(WriteOpIter opIter);
-  void onSendOfTensor(WriteOpIter opIter);
+
+  // State machines for read and write ops.
+  void advanceReadOperation(
+      ReadOpIter opIter,
+      ReadOperation::State prevOpState);
+  void advanceWriteOperation(
+      WriteOpIter opIter,
+      WriteOperation::State prevOpState);
+
+  // Actions (i.e., methods that begin a state transition).
+  // For read operations:
+  void readDescriptorOfMessage(ReadOpIter opIter);
+  void callReadDescriptorCallback(ReadOpIter opIter);
+  void expectReadCall(ReadOpIter opIter);
+  void readPayloadsAndReceiveTensorsOfMessage(ReadOpIter opIter);
+  void callReadCallback(ReadOpIter opIter);
+  // For write operations:
+  void sendTensorsOfMessage(WriteOpIter opIter);
+  void writeDescriptorAndPayloadsOfMessage(WriteOpIter opIter);
+  void callWriteCallback(WriteOpIter opIter);
+
+  //
+  // Everything else
+  //
+
+  uint64_t registerTransport();
+  std::vector<uint64_t>& registerChannel(const std::string& channelName);
 
   bool pendingRegistrations();
 

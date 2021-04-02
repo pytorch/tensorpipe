@@ -511,7 +511,8 @@ void PipeImpl::readPayloadsAndReceiveTensorsOfMessage(ReadOpIter opIter) {
                 PipeImpl& impl, const void* /* unused */, size_t /* unused */) {
               TP_VLOG(3) << "Pipe " << impl.id_ << " done reading payload #"
                          << opIter->sequenceNumber << "." << payloadIdx;
-              impl.onReadOfPayload(opIter);
+              opIter->numPayloadsBeingRead--;
+              impl.readOps_.advanceOperation(opIter);
             }));
     ++op.numPayloadsBeingRead;
   }
@@ -533,7 +534,8 @@ void PipeImpl::readPayloadsAndReceiveTensorsOfMessage(ReadOpIter opIter) {
         callbackWrapper_([opIter, tensorIdx](PipeImpl& impl) {
           TP_VLOG(3) << "Pipe " << impl.id_ << " done receiving tensor #"
                      << opIter->sequenceNumber << "." << tensorIdx;
-          impl.onRecvOfTensor(opIter);
+          opIter->numTensorsBeingReceived--;
+          impl.readOps_.advanceOperation(opIter);
         }));
     ++op.numTensorsBeingReceived;
   }
@@ -659,24 +661,12 @@ void PipeImpl::handleError() {
 // Everything else
 //
 
-void PipeImpl::startReadingUponEstablishingPipe() {
-  TP_DCHECK(context_->inLoop());
-  TP_DCHECK_EQ(state_, ESTABLISHED);
-
-  readOps_.advanceAllOperations();
-}
-
-void PipeImpl::startWritingUponEstablishingPipe() {
-  TP_DCHECK(context_->inLoop());
-  TP_DCHECK_EQ(state_, ESTABLISHED);
-
-  writeOps_.advanceAllOperations();
-}
-
 void PipeImpl::advanceReadOperation(
     ReadOpIter opIter,
     ReadOperation::State prevOpState) {
   TP_DCHECK(context_->inLoop());
+
+  ReadOperation& op = *opIter;
 
   // Needs to go after previous op to ensure ordering of callback invocations.
   readOps_.attemptTransition(
@@ -703,7 +693,7 @@ void PipeImpl::advanceReadOperation(
       opIter,
       /*from=*/ReadOperation::READING_DESCRIPTOR,
       /*to=*/ReadOperation::ASKING_FOR_ALLOCATION,
-      /*cond=*/opIter->doneReadingDescriptor &&
+      /*cond=*/op.doneReadingDescriptor &&
           prevOpState >= ReadOperation::ASKING_FOR_ALLOCATION,
       /*actions=*/{&PipeImpl::callReadDescriptorCallback});
 
@@ -713,7 +703,7 @@ void PipeImpl::advanceReadOperation(
       opIter,
       /*from=*/ReadOperation::ASKING_FOR_ALLOCATION,
       /*to=*/ReadOperation::ASKING_FOR_ALLOCATION_FIRST_IN_LINE,
-      /*cond=*/opIter->doneReadingDescriptor &&
+      /*cond=*/op.doneReadingDescriptor &&
           prevOpState >= ReadOperation::READING_PAYLOADS_AND_RECEIVING_TENSORS,
       /*actions=*/{&PipeImpl::expectReadCall});
 
@@ -722,7 +712,7 @@ void PipeImpl::advanceReadOperation(
       opIter,
       /*from=*/ReadOperation::ASKING_FOR_ALLOCATION_FIRST_IN_LINE,
       /*to=*/ReadOperation::FINISHED,
-      /*cond=*/error_ && opIter->doneGettingAllocation &&
+      /*cond=*/error_ && op.doneGettingAllocation &&
           prevOpState >= ReadOperation::FINISHED,
       /*actions=*/{&PipeImpl::callReadCallback});
 
@@ -732,7 +722,7 @@ void PipeImpl::advanceReadOperation(
       opIter,
       /*from=*/ReadOperation::ASKING_FOR_ALLOCATION_FIRST_IN_LINE,
       /*to=*/ReadOperation::READING_PAYLOADS_AND_RECEIVING_TENSORS,
-      /*cond=*/!error_ && opIter->doneGettingAllocation,
+      /*cond=*/!error_ && op.doneGettingAllocation,
       /*actions=*/{&PipeImpl::readPayloadsAndReceiveTensorsOfMessage});
 
   // Needs to go after previous op to ensure ordering of callback invocations.
@@ -740,8 +730,8 @@ void PipeImpl::advanceReadOperation(
       opIter,
       /*from=*/ReadOperation::READING_PAYLOADS_AND_RECEIVING_TENSORS,
       /*to=*/ReadOperation::FINISHED,
-      /*cond=*/opIter->numPayloadsBeingRead == 0 &&
-          opIter->numTensorsBeingReceived == 0 &&
+      /*cond=*/op.numPayloadsBeingRead == 0 &&
+          op.numTensorsBeingReceived == 0 &&
           prevOpState >= ReadOperation::FINISHED,
       /*actions=*/{&PipeImpl::callReadCallback});
 }
@@ -750,6 +740,8 @@ void PipeImpl::advanceWriteOperation(
     WriteOpIter opIter,
     WriteOperation::State prevOpState) {
   TP_DCHECK(context_->inLoop());
+
+  WriteOperation& op = *opIter;
 
   // Needs to go after previous op to ensure ordering of callback invocations.
   writeOps_.attemptTransition(
@@ -776,8 +768,7 @@ void PipeImpl::advanceWriteOperation(
       opIter,
       /*from=*/WriteOperation::WRITING_PAYLOADS_AND_SENDING_TENSORS,
       /*to=*/WriteOperation::FINISHED,
-      /*cond=*/opIter->numPayloadsBeingWritten == 0 &&
-          opIter->numTensorsBeingSent == 0 &&
+      /*cond=*/op.numPayloadsBeingWritten == 0 && op.numTensorsBeingSent == 0 &&
           prevOpState >= WriteOperation::FINISHED,
       /*actions=*/{&PipeImpl::callWriteCallback});
 }
@@ -800,7 +791,11 @@ void PipeImpl::readDescriptorOfMessage(ReadOpIter opIter) {
         TP_VLOG(3) << "Pipe " << impl.id_
                    << " done reading nop object (message descriptor #"
                    << opIter->sequenceNumber << ")";
-        impl.onReadOfMessageDescriptor(opIter, nopHolderIn->getObject());
+        opIter->doneReadingDescriptor = true;
+        if (!impl.error_) {
+          parseDescriptorOfMessage(*opIter, nopHolderIn->getObject());
+        }
+        impl.readOps_.advanceOperation(opIter);
       }));
   connectionState_ = AWAITING_PAYLOADS;
 }
@@ -852,7 +847,8 @@ void PipeImpl::sendTensorsOfMessage(WriteOpIter opIter) {
           callbackWrapper_([opIter, tensorIdx](PipeImpl& impl) {
             TP_VLOG(3) << "Pipe " << impl.id_ << " done sending tensor #"
                        << opIter->sequenceNumber << "." << tensorIdx;
-            impl.onSendOfTensor(opIter);
+            opIter->numTensorsBeingSent--;
+            impl.writeOps_.advanceOperation(opIter);
           }));
 
       op.tensors.push_back(
@@ -900,7 +896,8 @@ void PipeImpl::writeDescriptorAndPayloadsOfMessage(WriteOpIter opIter) {
         callbackWrapper_([opIter, payloadIdx](PipeImpl& impl) {
           TP_VLOG(3) << "Pipe " << impl.id_ << " done writing payload #"
                      << opIter->sequenceNumber << "." << payloadIdx;
-          impl.onWriteOfPayload(opIter);
+          opIter->numPayloadsBeingWritten--;
+          impl.writeOps_.advanceOperation(opIter);
         }));
     ++op.numPayloadsBeingWritten;
   }
@@ -949,8 +946,8 @@ void PipeImpl::onReadWhileServerWaitingForBrochure(const Packet& nopPacketIn) {
 
   if (!pendingRegistrations()) {
     state_ = ESTABLISHED;
-    startReadingUponEstablishingPipe();
-    startWritingUponEstablishingPipe();
+    readOps_.advanceAllOperations();
+    writeOps_.advanceAllOperations();
   } else {
     state_ = SERVER_WAITING_FOR_CONNECTIONS;
   }
@@ -1107,8 +1104,8 @@ void PipeImpl::onReadWhileClientWaitingForBrochureAnswer(
   }
 
   state_ = ESTABLISHED;
-  startReadingUponEstablishingPipe();
-  startWritingUponEstablishingPipe();
+  readOps_.advanceAllOperations();
+  writeOps_.advanceAllOperations();
 }
 
 void PipeImpl::onAcceptWhileServerWaitingForConnection(
@@ -1126,8 +1123,8 @@ void PipeImpl::onAcceptWhileServerWaitingForConnection(
 
   if (!pendingRegistrations()) {
     state_ = ESTABLISHED;
-    startReadingUponEstablishingPipe();
-    startWritingUponEstablishingPipe();
+    readOps_.advanceAllOperations();
+    writeOps_.advanceAllOperations();
   }
 }
 
@@ -1173,64 +1170,9 @@ void PipeImpl::onAcceptWhileServerWaitingForChannel(
 
   if (!pendingRegistrations()) {
     state_ = ESTABLISHED;
-    startReadingUponEstablishingPipe();
-    startWritingUponEstablishingPipe();
+    readOps_.advanceAllOperations();
+    writeOps_.advanceAllOperations();
   }
-}
-
-void PipeImpl::onReadOfMessageDescriptor(
-    ReadOpIter opIter,
-    const Packet& nopPacketIn) {
-  TP_DCHECK(context_->inLoop());
-
-  ReadOperation& op = *opIter;
-
-  op.doneReadingDescriptor = true;
-  if (!error_) {
-    parseDescriptorOfMessage(op, nopPacketIn);
-  }
-
-  readOps_.advanceOperation(opIter);
-}
-
-void PipeImpl::onReadOfPayload(ReadOpIter opIter) {
-  TP_DCHECK(context_->inLoop());
-
-  ReadOperation& op = *opIter;
-
-  op.numPayloadsBeingRead--;
-
-  readOps_.advanceOperation(opIter);
-}
-
-void PipeImpl::onRecvOfTensor(ReadOpIter opIter) {
-  TP_DCHECK(context_->inLoop());
-
-  ReadOperation& op = *opIter;
-
-  op.numTensorsBeingReceived--;
-
-  readOps_.advanceOperation(opIter);
-}
-
-void PipeImpl::onWriteOfPayload(WriteOpIter opIter) {
-  TP_DCHECK(context_->inLoop());
-
-  WriteOperation& op = *opIter;
-
-  op.numPayloadsBeingWritten--;
-
-  writeOps_.advanceOperation(opIter);
-}
-
-void PipeImpl::onSendOfTensor(WriteOpIter opIter) {
-  TP_DCHECK(context_->inLoop());
-
-  WriteOperation& op = *opIter;
-
-  op.numTensorsBeingSent--;
-
-  writeOps_.advanceOperation(opIter);
 }
 
 bool PipeImpl::pendingRegistrations() {
