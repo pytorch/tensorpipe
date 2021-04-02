@@ -52,7 +52,7 @@ void parseDescriptorOfMessage(ReadOperation& op, const Packet& nopPacketIn) {
        nopMessageDescriptor.tensorDescriptors) {
     ReadOperation::Tensor tensorBeingAllocated;
     tensorBeingAllocated.length = nopTensorDescriptor.sizeInBytes;
-    tensorBeingAllocated.channelName = nopTensorDescriptor.channelName;
+    tensorBeingAllocated.sourceDevice = nopTensorDescriptor.sourceDevice;
 
     message.tensors.emplace_back();
     Message::Tensor& tensor = message.tensors.back();
@@ -117,8 +117,7 @@ std::shared_ptr<NopHolder<Packet>> makeDescriptorForMessage(
     MessageDescriptor::TensorDescriptor& nopTensorDescriptor =
         nopMessageDescriptor.tensorDescriptors.back();
     nopTensorDescriptor.metadata = tensor.metadata;
-    nopTensorDescriptor.channelName = otherTensor.channelName;
-    nopTensorDescriptor.deviceType = tensor.buffer.deviceType();
+    nopTensorDescriptor.sourceDevice = tensor.buffer.device();
     nopTensorDescriptor.sizeInBytes = tensor.length;
   }
 
@@ -133,8 +132,7 @@ struct SelectedTransport {
 
 SelectedTransport selectTransport(
     const ContextImpl::TOrderedTransports& orderedTransports,
-    const std::unordered_map<std::string, TransportAdvertisement>&
-        nopTransportAdvertisement,
+    const std::unordered_map<std::string, std::string>& remoteDomainDescriptors,
     const std::map<std::string, std::string>& addresses) {
   for (const auto& transportContextIter : orderedTransports) {
     const std::string& transportName = std::get<0>(transportContextIter.second);
@@ -148,16 +146,14 @@ SelectedTransport selectTransport(
     }
     const auto& address = addressIter->second;
 
-    const auto nopTransportAdvertisementIter =
-        nopTransportAdvertisement.find(transportName);
-    if (nopTransportAdvertisementIter == nopTransportAdvertisement.cend()) {
+    const auto remoteDomainDescriptorsIter =
+        remoteDomainDescriptors.find(transportName);
+    if (remoteDomainDescriptorsIter == remoteDomainDescriptors.cend()) {
       continue;
     }
-    const TransportAdvertisement& nopCurrentTransportAdvertisement =
-        nopTransportAdvertisementIter->second;
-    const std::string& domainDescriptor =
-        nopCurrentTransportAdvertisement.domainDescriptor;
-    if (!transportContext.canCommunicateWithRemote(domainDescriptor)) {
+    const std::string& remoteDomainDescriptor =
+        remoteDomainDescriptorsIter->second;
+    if (!transportContext.canCommunicateWithRemote(remoteDomainDescriptor)) {
       continue;
     }
 
@@ -169,55 +165,68 @@ SelectedTransport selectTransport(
   return {};
 }
 
-struct SelectedChannel {
-  std::string name;
-  std::unordered_map<Device, std::string> deviceDescriptors;
+struct SelectedChannels {
+  std::unordered_map<std::string, std::unordered_map<Device, std::string>>
+      descriptorsMap;
+  std::unordered_map<std::pair<Device, Device>, std::string>
+      channelForDevicePair;
 };
 
-std::vector<SelectedChannel> selectChannels(
+SelectedChannels selectChannels(
     const ContextImpl::TOrderedChannels& orderedChannels,
-    const std::unordered_map<std::string, ChannelAdvertisement>&
-        nopChannelAdvertisement) {
-  std::vector<SelectedChannel> result;
-  for (const auto& channelContextIter : orderedChannels) {
-    const std::string& channelName = std::get<0>(channelContextIter.second);
-    const channel::Context& channelContext =
-        *(std::get<1>(channelContextIter.second));
+    const std::unordered_map<
+        std::string,
+        std::unordered_map<Device, std::string>>& remoteDescriptorsMap) {
+  SelectedChannels result;
 
-    const auto nopChannelAdvertisementIter =
-        nopChannelAdvertisement.find(channelName);
-    if (nopChannelAdvertisementIter == nopChannelAdvertisement.cend()) {
+  for (const auto& channelIter : orderedChannels) {
+    const std::string& channelName = std::get<0>(channelIter.second);
+    const channel::Context& channelContext = *std::get<1>(channelIter.second);
+
+    const auto& remoteDescriptorsMapIter =
+        remoteDescriptorsMap.find(channelName);
+    if (remoteDescriptorsMapIter == remoteDescriptorsMap.end()) {
       continue;
     }
-    const ChannelAdvertisement& nopCurrentChannelAdvertisement =
-        nopChannelAdvertisementIter->second;
+
     const std::unordered_map<Device, std::string>& localDeviceDescriptors =
         channelContext.deviceDescriptors();
     const std::unordered_map<Device, std::string>& remoteDeviceDescriptors =
-        nopCurrentChannelAdvertisement.deviceDescriptors;
-
-    // Do not select channels which cannot connect anything.
-    if (localDeviceDescriptors.empty() || remoteDeviceDescriptors.empty()) {
-      continue;
-    }
+        remoteDescriptorsMapIter->second;
 
     // For now, only select a channel if it is supported by all pairs of
     // relevant devices. This will be lifted once we introduce per-device pair
     // channel selection.
-    bool selected = true;
+    bool connectsAllPairs = true;
+    std::vector<std::pair<Device, Device>> devicePairs;
     for (const auto& localDescIter : localDeviceDescriptors) {
+      const Device& localDevice = localDescIter.first;
       const std::string& localDeviceDescriptor = localDescIter.second;
       for (const auto& remoteDescIter : remoteDeviceDescriptors) {
+        const Device& remoteDevice = remoteDescIter.first;
         const std::string& remoteDeviceDescriptor = remoteDescIter.second;
         if (!channelContext.canCommunicateWithRemote(
                 localDeviceDescriptor, remoteDeviceDescriptor)) {
-          selected = false;
+          connectsAllPairs = false;
+          break;
         }
+
+        if (result.channelForDevicePair.count({localDevice, remoteDevice}) !=
+            0) {
+          // A channel with higher priority has already been selected for this
+          // device pair.
+          continue;
+        }
+
+        devicePairs.emplace_back(localDevice, remoteDevice);
       }
     }
 
-    if (selected) {
-      result.push_back({channelName, localDeviceDescriptors});
+    if (connectsAllPairs && !devicePairs.empty()) {
+      for (const auto& p : devicePairs) {
+        result.channelForDevicePair[p] = channelName;
+      }
+      result.descriptorsMap[channelName] = localDeviceDescriptors;
     }
   }
 
@@ -305,16 +314,14 @@ void PipeImpl::initFromLoop() {
           std::get<0>(transportContextIter.second);
       const transport::Context& transportContext =
           *(std::get<1>(transportContextIter.second));
-      TransportAdvertisement& nopTransportAdvertisement =
-          nopBrochure.transportAdvertisement[transportName];
-      nopTransportAdvertisement.domainDescriptor =
+      nopBrochure.transportDomainDescriptors[transportName] =
           transportContext.domainDescriptor();
     }
     for (const auto& channelContextIter : context_->getOrderedChannels()) {
       const std::string& channelName = std::get<0>(channelContextIter.second);
       const channel::Context& channelContext =
           *(std::get<1>(channelContextIter.second));
-      nopBrochure.channelAdvertisement[channelName].deviceDescriptors =
+      nopBrochure.channelDeviceDescriptors[channelName] =
           channelContext.deviceDescriptors();
     }
     TP_VLOG(3) << "Pipe " << id_ << " is writing nop object (brochure)";
@@ -483,12 +490,26 @@ void PipeImpl::readPayloadsAndReceiveTensorsOfMessage(ReadOpIter opIter) {
        tensorIdx++) {
     Message::Tensor& tensor = op.message.tensors[tensorIdx];
     ReadOperation::Tensor& tensorBeingAllocated = op.tensors[tensorIdx];
-    std::shared_ptr<channel::Channel> channel =
-        channels_.at(tensorBeingAllocated.channelName);
+
+    // FIXME: Until we have full support for XDTT, `selectChannels` ensures that
+    // a single channel is selected for a given device type. Moreover, no
+    // channel supports XDTT for now, so the device type of buffers on both ends
+    // is guaranteed to be the same. Therefore, we can pick a channel based
+    // solely on the source device's type, and we do that with this ugly hack:
+    std::string channelName;
+    for (const auto& iter : channelForDevicePair_) {
+      const std::pair<Device, Device>& p = iter.first;
+      if (p.first.type == tensorBeingAllocated.sourceDevice.type) {
+        channelName = iter.second;
+        break;
+      }
+    }
+    TP_DCHECK(channelName != "");
+    channel::Channel& channel = *channels_.at(channelName);
     TP_VLOG(3) << "Pipe " << id_ << " is receiving tensor #"
                << op.sequenceNumber << "." << tensorIdx;
 
-    channel->recv(
+    channel.recv(
         tensor.buffer,
         tensor.length,
         callbackWrapper_([opIter, tensorIdx](PipeImpl& impl) {
@@ -777,44 +798,34 @@ void PipeImpl::sendTensorsOfMessage(WriteOpIter opIter) {
   for (int tensorIdx = 0; tensorIdx < op.message.tensors.size(); ++tensorIdx) {
     const auto& tensor = op.message.tensors[tensorIdx];
 
-    bool foundAChannel = false;
-    for (const auto& channelContextIter : context_->getOrderedChannels()) {
-      const std::string& channelName = std::get<0>(channelContextIter.second);
-      auto channelIter = channels_.find(channelName);
-      if (channelIter == channels_.cend()) {
-        continue;
+    // FIXME: Until we have full support for XDTT, `selectChannels` ensures that
+    // a single channel is selected for a given device type.
+    std::string channelName;
+    for (const auto& iter : channelForDevicePair_) {
+      const std::pair<Device, Device>& p = iter.first;
+      if (p.first == tensor.buffer.device()) {
+        channelName = iter.second;
+        break;
       }
-
-      auto& channelContext = std::get<1>(channelContextIter.second);
-      // FIXME: Skip channel if it does not support current buffer type, as a
-      // temporary measure before we roll out proper channel selection for
-      // cross-device type transfers.
-      if (!channelContext->supportsDeviceType(tensor.buffer.deviceType())) {
-        continue;
-      }
-
-      auto& channel = *(channelIter->second);
-
-      TP_VLOG(3) << "Pipe " << id_ << " is sending tensor #"
-                 << op.sequenceNumber << "." << tensorIdx;
-
-      channel.send(
-          tensor.buffer,
-          tensor.length,
-          callbackWrapper_([opIter, tensorIdx](PipeImpl& impl) {
-            TP_VLOG(3) << "Pipe " << impl.id_ << " done sending tensor #"
-                       << opIter->sequenceNumber << "." << tensorIdx;
-            opIter->numTensorsBeingSent--;
-            impl.writeOps_.advanceOperation(opIter);
-          }));
-
-      op.tensors.push_back(
-          WriteOperation::Tensor{tensor.buffer.deviceType(), channelName});
-
-      foundAChannel = true;
-      break;
     }
-    TP_THROW_ASSERT_IF(!foundAChannel);
+    TP_THROW_ASSERT_IF(channelName == "") << "Could not find suitable channel";
+
+    channel::Channel& channel = *channels_[channelName];
+
+    TP_VLOG(3) << "Pipe " << id_ << " is sending tensor #" << op.sequenceNumber
+               << "." << tensorIdx;
+
+    channel.send(
+        tensor.buffer,
+        tensor.length,
+        callbackWrapper_([opIter, tensorIdx](PipeImpl& impl) {
+          TP_VLOG(3) << "Pipe " << impl.id_ << " done sending tensor #"
+                     << opIter->sequenceNumber << "." << tensorIdx;
+          opIter->numTensorsBeingSent--;
+          impl.writeOps_.advanceOperation(opIter);
+        }));
+
+    op.tensors.push_back(WriteOperation::Tensor{});
 
     ++op.numTensorsBeingSent;
   }
@@ -873,7 +884,7 @@ void PipeImpl::onReadWhileServerWaitingForBrochure(const Packet& nopPacketIn) {
 
   auto transport = selectTransport(
       context_->getOrderedTransports(),
-      nopBrochure.transportAdvertisement,
+      nopBrochure.transportDomainDescriptors,
       listener_->addresses());
 
   if (transport.name != transport_) {
@@ -885,13 +896,19 @@ void PipeImpl::onReadWhileServerWaitingForBrochure(const Packet& nopPacketIn) {
   nopBrochureAnswer.address = transport.address;
   nopBrochureAnswer.transportDomainDescriptor = transport.domainDescriptor;
 
-  const auto selectedChannels = selectChannels(
-      context_->getOrderedChannels(), nopBrochure.channelAdvertisement);
-  for (const auto& channel : selectedChannels) {
-    ChannelSelection& nopChannelSelection =
-        nopBrochureAnswer.channelSelection[channel.name];
-    nopChannelSelection.registrationIds = registerChannel(channel.name);
-    nopChannelSelection.deviceDescriptors = channel.deviceDescriptors;
+  SelectedChannels selectedChannels = selectChannels(
+      context_->getOrderedChannels(), nopBrochure.channelDeviceDescriptors);
+  channelForDevicePair_ = std::move(selectedChannels.channelForDevicePair);
+  nopBrochureAnswer.channelForDevicePair = channelForDevicePair_;
+
+  for (auto& descriptorsIter : selectedChannels.descriptorsMap) {
+    const std::string& channelName = descriptorsIter.first;
+    nopBrochureAnswer.channelRegistrationIds[channelName] =
+        registerChannel(channelName);
+    std::unordered_map<Device, std::string>& deviceDescriptors =
+        descriptorsIter.second;
+    nopBrochureAnswer.channelDeviceDescriptors[channelName] =
+        std::move(deviceDescriptors);
   }
 
   TP_VLOG(3) << "Pipe " << id_ << " is writing nop object (brochure answer)";
@@ -1003,29 +1020,43 @@ void PipeImpl::onReadWhileClientWaitingForBrochureAnswer(
     connection_ = std::move(connection);
   }
 
-  for (const auto& nopChannelSelectionIter :
-       nopBrochureAnswer.channelSelection) {
-    const std::string& channelName = nopChannelSelectionIter.first;
-    const ChannelSelection& nopChannelSelection =
-        nopChannelSelectionIter.second;
+  // Recompute the channel map based on this side's channels and priorities.
+  SelectedChannels selectedChannels = selectChannels(
+      context_->getOrderedChannels(),
+      nopBrochureAnswer.channelDeviceDescriptors);
+  channelForDevicePair_ = std::move(selectedChannels.channelForDevicePair);
 
+  // Verify that the locally and remotely computed channel maps are consistent.
+  TP_THROW_ASSERT_IF(
+      nopBrochureAnswer.channelForDevicePair.size() !=
+      channelForDevicePair_.size())
+      << "Inconsistent channel selection";
+  for (const auto& iter : channelForDevicePair_) {
+    Device localDevice;
+    Device remoteDevice;
+    std::tie(localDevice, remoteDevice) = iter.first;
+    const std::string& channelName = iter.second;
+
+    const auto& answerIter = nopBrochureAnswer.channelForDevicePair.find(
+        {remoteDevice, localDevice});
+
+    TP_THROW_ASSERT_IF(
+        answerIter == nopBrochureAnswer.channelForDevicePair.end())
+        << "Inconsistent channel selection";
+    TP_THROW_ASSERT_IF(answerIter->second != channelName)
+        << "Inconsistent channel selection";
+  }
+
+  for (const auto& channelDeviceDescriptorsIter :
+       selectedChannels.descriptorsMap) {
+    const std::string& channelName = channelDeviceDescriptorsIter.first;
     std::shared_ptr<channel::Context> channelContext =
         context_->getChannel(channelName);
 
-    for (const auto& localDescIter : channelContext->deviceDescriptors()) {
-      const std::string& localDeviceDescriptor = localDescIter.second;
-      for (const auto& remoteDescIter : nopChannelSelection.deviceDescriptors) {
-        const std::string& remoteDeviceDescriptor = remoteDescIter.second;
-        TP_DCHECK(channelContext->canCommunicateWithRemote(
-            localDeviceDescriptor, remoteDeviceDescriptor))
-            << "The two endpoints disagree on whether channel " << channelName
-            << " can be used to communicate";
-      }
-    }
-
+    const std::vector<uint64_t>& registrationIds =
+        nopBrochureAnswer.channelRegistrationIds.at(channelName);
     const size_t numConnectionsNeeded = channelContext->numConnectionsNeeded();
-    TP_DCHECK_EQ(
-        numConnectionsNeeded, nopChannelSelection.registrationIds.size());
+    TP_DCHECK_EQ(numConnectionsNeeded, registrationIds.size());
     std::vector<std::shared_ptr<transport::Connection>> connections(
         numConnectionsNeeded);
     for (size_t connId = 0; connId < numConnectionsNeeded; ++connId) {
@@ -1042,7 +1073,7 @@ void PipeImpl::onReadWhileClientWaitingForBrochureAnswer(
       nopPacketOut.Become(nopPacketOut.index_of<RequestedConnection>());
       RequestedConnection& nopRequestedConnection =
           *nopPacketOut.get<RequestedConnection>();
-      uint64_t token = nopChannelSelection.registrationIds[connId];
+      uint64_t token = registrationIds[connId];
       nopRequestedConnection.registrationId = token;
       TP_VLOG(3) << "Pipe " << id_
                  << " is writing nop object (requested connection)";
