@@ -240,7 +240,7 @@ void ChannelImpl::advanceSendOperation(
       opIter,
       /*from=*/SendOperation::READING_READY_TO_RECEIVE,
       /*to=*/SendOperation::FINISHED,
-      /*cond=*/error_ && op.readReadyToReceive,
+      /*cond=*/error_ && op.doneReadingReadyToReceive,
       /*actions=*/{&ChannelImpl::callSendCallback});
 
   // This doesn't strictly need to go after the previous op, but it doesn't make
@@ -250,7 +250,7 @@ void ChannelImpl::advanceSendOperation(
       opIter,
       /*from=*/SendOperation::READING_READY_TO_RECEIVE,
       /*to=*/SendOperation::WAITING_FOR_CUDA_EVENT,
-      /*cond=*/!error_ && opIter->readReadyToReceive &&
+      /*cond=*/!error_ && op.doneReadingReadyToReceive &&
           prevOpState >= SendOperation::SENDING_OVER_IB,
       /*actions=*/{&ChannelImpl::waitForSendCudaEvent});
 
@@ -258,7 +258,7 @@ void ChannelImpl::advanceSendOperation(
       opIter,
       /*from=*/SendOperation::WAITING_FOR_CUDA_EVENT,
       /*to=*/SendOperation::FINISHED,
-      /*cond=*/error_ && opIter->sendEventReady,
+      /*cond=*/error_ && op.doneWaitingForCudaEvent,
       /*actions=*/{&ChannelImpl::callSendCallback});
 
   // Needs to go after previous op to ensure predictable and consistent ordering
@@ -267,7 +267,7 @@ void ChannelImpl::advanceSendOperation(
       opIter,
       /*from=*/SendOperation::WAITING_FOR_CUDA_EVENT,
       /*to=*/SendOperation::SENDING_OVER_IB,
-      /*cond=*/!error_ && opIter->sendEventReady &&
+      /*cond=*/!error_ && op.doneWaitingForCudaEvent &&
           prevOpState >= SendOperation::SENDING_OVER_IB,
       /*actions=*/{&ChannelImpl::sendOverIb});
 
@@ -275,7 +275,7 @@ void ChannelImpl::advanceSendOperation(
       opIter,
       /*from=*/SendOperation::SENDING_OVER_IB,
       /*to=*/SendOperation::FINISHED,
-      /*cond=*/opIter->numChunksBeingSent == 0,
+      /*cond=*/op.numChunksBeingSent == 0,
       /*actions=*/{&ChannelImpl::callSendCallback});
 }
 
@@ -310,7 +310,7 @@ void ChannelImpl::readReadyToReceive(SendOpIter opIter) {
         TP_VLOG(6) << "Channel " << impl.id_
                    << " done reading ready-to-receive (# "
                    << opIter->sequenceNumber << ")";
-        opIter->readReadyToReceive = true;
+        opIter->doneReadingReadyToReceive = true;
         if (!impl.error_) {
           const auto& readyToReceive = nopHolderIn->getObject();
           opIter->remoteNicIdx = readyToReceive.destinationNicIdx;
@@ -331,18 +331,9 @@ void ChannelImpl::waitForSendCudaEvent(SendOpIter opIter) {
         TP_VLOG(6) << "Channel " << impl.id_
                    << " done waiting for CUDA event to send (# "
                    << opIter->sequenceNumber << ")";
-        impl.onSendEventReady(opIter);
+        opIter->doneWaitingForCudaEvent = true;
+        impl.sendOps_.advanceOperation(opIter);
       }));
-}
-
-void ChannelImpl::onSendEventReady(SendOpIter opIter) {
-  TP_DCHECK(context_->inLoop());
-
-  SendOperation& op = *opIter;
-
-  op.sendEventReady = true;
-
-  sendOps_.advanceOperation(opIter);
 }
 
 void ChannelImpl::sendOverIb(SendOpIter opIter) {
@@ -380,24 +371,15 @@ void ChannelImpl::sendOverIb(SendOpIter opIter) {
         qp, wr, callbackWrapper_([opIter, chunkIdx](ChannelImpl& impl) {
           TP_VLOG(6) << "Channel " << impl.id_ << " done sending chunk #"
                      << chunkIdx << " of tensor #" << opIter->sequenceNumber;
-          impl.onIbvSendDone(opIter);
+          opIter->numChunksBeingSent--;
+          impl.sendOps_.advanceOperation(opIter);
+
+          impl.numSendsInFlight_--;
+          impl.tryCleanup();
         }));
     op.numChunksBeingSent++;
     numSendsInFlight_++;
   }
-}
-
-void ChannelImpl::onIbvSendDone(SendOpIter opIter) {
-  TP_DCHECK(context_->inLoop());
-
-  SendOperation& op = *opIter;
-
-  op.numChunksBeingSent--;
-
-  sendOps_.advanceOperation(opIter);
-
-  numSendsInFlight_--;
-  tryCleanup();
 }
 
 void ChannelImpl::callSendCallback(SendOpIter opIter) {
@@ -470,15 +452,14 @@ void ChannelImpl::advanceRecvOperation(
       /*from=*/RecvOperation::READING_DESCRIPTOR,
       /*to=*/RecvOperation::WAITING_FOR_CUDA_EVENT,
       /*cond=*/!error_ && op.doneReadingDescriptor &&
-          prevOpState >=
-              RecvOperation::RECEIVING_OVER_IB_AND_WRITING_READY_TO_RECEIVE,
+          prevOpState >= RecvOperation::RECEIVING_OVER_IB,
       /*actions=*/{&ChannelImpl::waitForRecvCudaEvent});
 
   recvOps_.attemptTransition(
       opIter,
       /*from=*/RecvOperation::WAITING_FOR_CUDA_EVENT,
       /*to=*/RecvOperation::FINISHED,
-      /*cond=*/error_ && opIter->recvEventReady,
+      /*cond=*/error_ && op.doneWaitingForCudaEvent,
       /*actions=*/{&ChannelImpl::callRecvCallback});
 
   // Needs to go after previous op to ensure predictable and consistent ordering
@@ -487,17 +468,16 @@ void ChannelImpl::advanceRecvOperation(
   recvOps_.attemptTransition(
       opIter,
       /*from=*/RecvOperation::WAITING_FOR_CUDA_EVENT,
-      /*to=*/RecvOperation::RECEIVING_OVER_IB_AND_WRITING_READY_TO_RECEIVE,
-      /*cond=*/!error_ && opIter->recvEventReady &&
-          prevOpState >=
-              RecvOperation::RECEIVING_OVER_IB_AND_WRITING_READY_TO_RECEIVE,
+      /*to=*/RecvOperation::RECEIVING_OVER_IB,
+      /*cond=*/!error_ && op.doneWaitingForCudaEvent &&
+          prevOpState >= RecvOperation::RECEIVING_OVER_IB,
       /*actions=*/{&ChannelImpl::recvOverIbAndWriteReadyToRecive});
 
   recvOps_.attemptTransition(
       opIter,
-      /*from=*/RecvOperation::RECEIVING_OVER_IB_AND_WRITING_READY_TO_RECEIVE,
+      /*from=*/RecvOperation::RECEIVING_OVER_IB,
       /*to=*/RecvOperation::FINISHED,
-      /*cond=*/opIter->numChunksBeingReceived == 0,
+      /*cond=*/op.numChunksBeingReceived == 0,
       /*actions=*/{&ChannelImpl::callRecvCallback});
 }
 
@@ -534,18 +514,9 @@ void ChannelImpl::waitForRecvCudaEvent(RecvOpIter opIter) {
         TP_VLOG(6) << "Channel " << impl.id_
                    << " done waiting for CUDA event to recv (# "
                    << opIter->sequenceNumber << ")";
-        impl.onRecvEventReady(opIter);
+        opIter->doneWaitingForCudaEvent = true;
+        impl.recvOps_.advanceOperation(opIter);
       }));
-}
-
-void ChannelImpl::onRecvEventReady(RecvOpIter opIter) {
-  TP_DCHECK(context_->inLoop());
-
-  RecvOperation& op = *opIter;
-
-  op.recvEventReady = true;
-
-  recvOps_.advanceOperation(opIter);
 }
 
 void ChannelImpl::recvOverIbAndWriteReadyToRecive(RecvOpIter opIter) {
@@ -582,7 +553,11 @@ void ChannelImpl::recvOverIbAndWriteReadyToRecive(RecvOpIter opIter) {
         qp, wr, callbackWrapper_([opIter, chunkIdx](ChannelImpl& impl) {
           TP_VLOG(6) << "Channel " << impl.id_ << " done receiving chunk #"
                      << chunkIdx << " of tensor #" << opIter->sequenceNumber;
-          impl.onReceivedOverIb(opIter);
+          opIter->numChunksBeingReceived--;
+          impl.recvOps_.advanceOperation(opIter);
+
+          impl.numRecvsInFlight_--;
+          impl.tryCleanup();
         }));
     op.numChunksBeingReceived++;
     numRecvsInFlight_++;
@@ -601,19 +576,6 @@ void ChannelImpl::recvOverIbAndWriteReadyToRecive(RecvOpIter opIter) {
                    << " done writing ready-to-receive (#" << sequenceNumber
                    << ")";
       }));
-}
-
-void ChannelImpl::onReceivedOverIb(RecvOpIter opIter) {
-  TP_DCHECK(context_->inLoop());
-
-  RecvOperation& op = *opIter;
-
-  op.numChunksBeingReceived--;
-
-  recvOps_.advanceOperation(opIter);
-
-  numRecvsInFlight_--;
-  tryCleanup();
 }
 
 void ChannelImpl::callRecvCallback(RecvOpIter opIter) {

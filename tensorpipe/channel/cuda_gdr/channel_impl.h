@@ -104,7 +104,25 @@ struct SendOperation {
     FINISHED
   };
 
-  // Provide a constructor so we can create the CudaEvent in-place.
+  // Fields used by the state machine
+  uint64_t sequenceNumber{0};
+  State state{UNINITIALIZED};
+
+  // Progress flags
+  bool doneReadingReadyToReceive{false};
+  bool doneWaitingForCudaEvent{false};
+  uint64_t numChunksBeingSent{0};
+
+  // Arguments at creation
+  const CudaBuffer buffer;
+  const size_t length;
+  const size_t localNicIdx;
+  TSendCallback callback;
+
+  // Other stuff
+  CudaEvent event;
+  size_t remoteNicIdx;
+
   SendOperation(
       CudaBuffer buffer,
       size_t length,
@@ -113,22 +131,9 @@ struct SendOperation {
       size_t localNicIdx)
       : buffer(buffer),
         length(length),
+        localNicIdx(localNicIdx),
         callback(std::move(callback)),
-        event(localGpuIdx),
-        localNicIdx(localNicIdx) {}
-
-  size_t sequenceNumber;
-  State state{UNINITIALIZED};
-  CudaBuffer buffer;
-  size_t length;
-  TSendCallback callback;
-  CudaEvent event;
-  size_t localNicIdx;
-  ssize_t remoteNicIdx;
-
-  bool readReadyToReceive{false};
-  bool sendEventReady{false};
-  uint64_t numChunksBeingSent{0};
+        event(localGpuIdx) {}
 };
 
 struct RecvOperation {
@@ -136,11 +141,29 @@ struct RecvOperation {
     UNINITIALIZED,
     READING_DESCRIPTOR,
     WAITING_FOR_CUDA_EVENT,
-    RECEIVING_OVER_IB_AND_WRITING_READY_TO_RECEIVE,
+    RECEIVING_OVER_IB,
     FINISHED
   };
 
-  // Provide a constructor so we can create the CudaEvent in-place.
+  // Fields used by the state machine
+  uint64_t sequenceNumber{0};
+  State state{UNINITIALIZED};
+
+  // Progress flags
+  bool doneReadingDescriptor{false};
+  bool doneWaitingForCudaEvent{false};
+  uint64_t numChunksBeingReceived{0};
+
+  // Arguments at creation
+  const CudaBuffer buffer;
+  const size_t length;
+  const size_t localNicIdx;
+  TSendCallback callback;
+
+  // Other stuff
+  size_t remoteNicIdx;
+  CudaEvent event;
+
   RecvOperation(
       CudaBuffer buffer,
       size_t length,
@@ -149,22 +172,9 @@ struct RecvOperation {
       size_t localNicIdx)
       : buffer(buffer),
         length(length),
+        localNicIdx(localNicIdx),
         callback(std::move(callback)),
-        event(deviceIdx),
-        localNicIdx(localNicIdx) {}
-
-  size_t sequenceNumber;
-  State state{UNINITIALIZED};
-  CudaBuffer buffer;
-  size_t length;
-  TSendCallback callback;
-  CudaEvent event;
-  size_t localNicIdx;
-  size_t remoteNicIdx;
-
-  bool doneReadingDescriptor{false};
-  bool recvEventReady{false};
-  uint64_t numChunksBeingReceived{0};
+        event(deviceIdx) {}
 };
 
 // First "round" of handshake.
@@ -285,14 +295,6 @@ class ChannelImpl final
   void waitForRecvCudaEvent(RecvOpIter opIter);
   void recvOverIbAndWriteReadyToRecive(RecvOpIter opIter);
   void callRecvCallback(RecvOpIter opIter);
-
-  // Reactions (i.e., callbacks that contribute to complete a state transition).
-  // For send operations:
-  void onSendEventReady(SendOpIter opIter);
-  void onIbvSendDone(SendOpIter opIter);
-  // For recv operations:
-  void onRecvEventReady(RecvOpIter opIter);
-  void onReceivedOverIb(RecvOpIter opIter);
 };
 
 } // namespace cuda_gdr
