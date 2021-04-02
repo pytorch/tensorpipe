@@ -69,9 +69,8 @@ struct ReadOperation {
   };
   std::vector<Payload> payloads;
   struct Tensor {
-    DeviceType type;
+    Device sourceDevice;
     ssize_t length{-1};
-    std::string channelName;
   };
   std::vector<Tensor> tensors;
 
@@ -96,11 +95,8 @@ struct WriteOperation {
   // Buffers provided by the user.
   Message message;
 
-  // Tensor descriptors collected from the channels.
-  struct Tensor {
-    DeviceType type;
-    std::string channelName;
-  };
+  // This is currently empty, but will be used again for XDTT channel selection.
+  struct Tensor {};
   std::vector<Tensor> tensors;
 };
 
@@ -174,6 +170,8 @@ class PipeImpl final : public std::enable_shared_from_this<PipeImpl> {
   std::shared_ptr<transport::Connection> connection_;
 
   std::unordered_map<std::string, std::shared_ptr<channel::Channel>> channels_;
+  std::unordered_map<std::pair<Device, Device>, std::string>
+      channelForDevicePair_;
 
   // The server will set this up when it tell the client to switch to a
   // different connection or to open some channels.
