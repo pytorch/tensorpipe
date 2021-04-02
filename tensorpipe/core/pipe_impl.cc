@@ -23,12 +23,6 @@
 #include <tensorpipe/core/listener_impl.h>
 #include <tensorpipe/transport/connection.h>
 
-#include <tensorpipe/common/buffer.h>
-#include <tensorpipe/common/cpu_buffer.h>
-#if TENSORPIPE_SUPPORTS_CUDA
-#include <tensorpipe/common/cuda_buffer.h>
-#endif // TENSORPIPE_SUPPORTS_CUDA
-
 namespace tensorpipe {
 
 namespace {
@@ -63,25 +57,6 @@ void parseDescriptorOfMessage(ReadOperation& op, const Packet& nopPacketIn) {
     message.tensors.emplace_back();
     Message::Tensor& tensor = message.tensors.back();
     tensor.metadata = nopTensorDescriptor.metadata;
-    // FIXME: Remove once we fully transition to the new length API.
-    switch (nopTensorDescriptor.deviceType) {
-      case DeviceType::kCpu: {
-        CpuBuffer buffer;
-        buffer.length = static_cast<size_t>(tensorBeingAllocated.length);
-        tensor.buffer = buffer;
-        break;
-      }
-#if TENSORPIPE_SUPPORTS_CUDA
-      case DeviceType::kCuda: {
-        CudaBuffer buffer;
-        buffer.length = static_cast<size_t>(tensorBeingAllocated.length);
-        tensor.buffer = buffer;
-        break;
-      }
-#endif // TENSORPIPE_SUPPORTS_CUDA
-      default:
-        TP_THROW_ASSERT() << "Unexpected device type.";
-    };
     tensor.length = static_cast<size_t>(tensorBeingAllocated.length);
     op.tensors.push_back(std::move(tensorBeingAllocated));
   }
@@ -247,15 +222,6 @@ std::vector<SelectedChannel> selectChannels(
   }
 
   return result;
-}
-
-// FIXME: Remove once we fully move to the new length API.
-void sanitizeTensorLengths(Message& message) {
-  for (auto& tensor : message.tensors) {
-    if (tensor.length == static_cast<size_t>(-1)) {
-      tensor.length = tensor.buffer.length();
-    }
-  }
 }
 
 } // namespace
@@ -448,12 +414,6 @@ void PipeImpl::read(Message message, read_callback_fn fn) {
 void PipeImpl::readFromLoop(Message message, read_callback_fn fn) {
   TP_DCHECK(context_->inLoop());
 
-  // FIXME: Remove once we fully move to the new length API.
-  // NOTE: This is not strictly needed provided the Message was created by
-  // readDescriptor(), but as this method is part of the public Pipe API, we
-  // sanitize anyway.
-  sanitizeTensorLengths(message);
-
   // This is such a bad logical error on the user's side that it doesn't deserve
   // to pass through the channel for "expected errors" (i.e., the callback).
   // This check fails when there is no message for which we are expecting an
@@ -554,9 +514,6 @@ void PipeImpl::write(Message message, write_callback_fn fn) {
 
 void PipeImpl::writeFromLoop(Message message, write_callback_fn fn) {
   TP_DCHECK(context_->inLoop());
-
-  // FIXME: Remove once we fully move to the new length API.
-  sanitizeTensorLengths(message);
 
   WriteOpIter opIter = writeOps_.emplaceBack(nextMessageBeingWritten_++);
   WriteOperation& op = *opIter;

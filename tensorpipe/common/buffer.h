@@ -22,7 +22,6 @@ class Buffer {
   class AbstractBufferWrapper {
    public:
     virtual DeviceType deviceType() const = 0;
-    virtual size_t length() const = 0;
     virtual void copyConstructInto(void* ptr) const = 0;
     virtual void moveConstructInto(void* ptr) = 0;
     virtual ~AbstractBufferWrapper() = default;
@@ -41,10 +40,6 @@ class Buffer {
 
     DeviceType deviceType() const override {
       return buffer.deviceType();
-    }
-
-    size_t length() const override {
-      return buffer.length;
     }
 
     void copyConstructInto(void* ptr) const override {
@@ -119,10 +114,6 @@ class Buffer {
 
   DeviceType deviceType() const {
     return ptr()->deviceType();
-  }
-
-  size_t length() const {
-    return ptr()->length();
   }
 
  private:

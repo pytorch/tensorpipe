@@ -16,7 +16,6 @@ namespace tensorpipe {
 
 struct CudaBuffer {
   void* ptr{nullptr};
-  size_t length{0};
   cudaStream_t stream{cudaStreamDefault};
 
   DeviceType deviceType() const {
