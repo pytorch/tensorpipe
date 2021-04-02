@@ -8,15 +8,12 @@
 
 #pragma once
 
-#include <cstddef>
-
 #include <tensorpipe/common/device.h>
 
 namespace tensorpipe {
 
 struct CpuBuffer {
   void* ptr{nullptr};
-  size_t length{0};
 
   DeviceType deviceType() const {
     return DeviceType::kCpu;

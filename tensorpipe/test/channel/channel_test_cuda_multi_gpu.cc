@@ -50,7 +50,6 @@ class SendAcrossDevicesTest : public ClientServerChannelTestCase {
     channel->send(
         CudaBuffer{
             .ptr = ptr,
-            .length = 0,
             .stream = sendStream,
         },
         kSize,
@@ -97,7 +96,6 @@ class SendAcrossDevicesTest : public ClientServerChannelTestCase {
     channel->recv(
         CudaBuffer{
             .ptr = ptr,
-            .length = 0,
             .stream = recvStream,
         },
         kSize,
@@ -167,7 +165,6 @@ class SendReverseAcrossDevicesTest : public ClientServerChannelTestCase {
     channel->send(
         CudaBuffer{
             .ptr = ptr,
-            .length = 0,
             .stream = sendStream,
         },
         kSize,
@@ -214,7 +211,6 @@ class SendReverseAcrossDevicesTest : public ClientServerChannelTestCase {
     channel->recv(
         CudaBuffer{
             .ptr = ptr,
-            .length = 0,
             .stream = recvStream,
         },
         kSize,
@@ -284,7 +280,6 @@ class SendAcrossNonDefaultDevicesTest : public ClientServerChannelTestCase {
     channel->send(
         CudaBuffer{
             .ptr = ptr,
-            .length = 0,
             .stream = sendStream,
         },
         kSize,
@@ -327,7 +322,6 @@ class SendAcrossNonDefaultDevicesTest : public ClientServerChannelTestCase {
     channel->recv(
         CudaBuffer{
             .ptr = ptr,
-            .length = 0,
             .stream = recvStream,
         },
         kSize,

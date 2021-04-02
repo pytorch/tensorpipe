@@ -40,7 +40,6 @@ class ReceiverWaitsForStartEventTest : public ClientServerChannelTestCase {
     channel->send(
         CudaBuffer{
             .ptr = ptr,
-            .length = 0,
             .stream = sendStream,
         },
         kSize,
@@ -71,7 +70,6 @@ class ReceiverWaitsForStartEventTest : public ClientServerChannelTestCase {
     channel->recv(
         CudaBuffer{
             .ptr = ptr,
-            .length = 0,
             .stream = recvStream,
         },
         kSize,

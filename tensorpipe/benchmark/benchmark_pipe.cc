@@ -461,7 +461,6 @@ static void clientPingPongNonBlock(
       } else if (data.tensorType == TensorType::kCuda) {
         tensor.buffer = CudaBuffer{
             .ptr = data.expectedCudaTensor[tensorIdx].get(),
-            .length = data.tensorSize,
             .stream = data.cudaStream.get(),
         };
       } else {
