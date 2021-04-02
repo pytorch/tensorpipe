@@ -15,6 +15,10 @@ namespace tensorpipe {
 struct CpuBuffer {
   void* ptr{nullptr};
 
+  Device getDevice() const {
+    return Device{kCpuDeviceType, 0};
+  }
+
   DeviceType deviceType() const {
     return DeviceType::kCpu;
   }

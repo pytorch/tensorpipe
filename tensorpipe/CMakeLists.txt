@@ -95,6 +95,8 @@ if(TP_USE_CUDA)
   find_package(CUDA REQUIRED)
   target_link_libraries(tensorpipe PUBLIC ${CUDA_LIBRARIES})
   target_include_directories(tensorpipe PUBLIC ${CUDA_INCLUDE_DIRS})
+  target_sources(tensorpipe PRIVATE
+    common/cuda_buffer.cc)
   set(TP_PUBLIC_HEADERS ${TP_PUBLIC_HEADERS}
     common/cuda_buffer.h)
   set(TENSORPIPE_SUPPORTS_CUDA 1)

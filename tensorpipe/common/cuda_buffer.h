@@ -18,6 +18,8 @@ struct CudaBuffer {
   void* ptr{nullptr};
   cudaStream_t stream{cudaStreamDefault};
 
+  Device getDevice() const;
+
   DeviceType deviceType() const {
     return DeviceType::kCuda;
   }
