@@ -16,6 +16,7 @@
 #include <nop/structure.h>
 #include <nop/types/variant.h>
 
+#include <tensorpipe/common/buffer.h>
 #include <tensorpipe/common/device.h>
 
 namespace tensorpipe {
@@ -30,13 +31,29 @@ struct RequestedConnection {
   NOP_STRUCTURE(RequestedConnection, registrationId);
 };
 
+struct TransportAdvertisement {
+  std::string domainDescriptor;
+  NOP_STRUCTURE(TransportAdvertisement, domainDescriptor);
+};
+
 NOP_EXTERNAL_STRUCTURE(Device, type, index);
 
+struct ChannelAdvertisement {
+  std::unordered_map<Device, std::string> deviceDescriptors;
+  NOP_STRUCTURE(ChannelAdvertisement, deviceDescriptors);
+};
+
 struct Brochure {
-  std::unordered_map<std::string, std::string> transportDomainDescriptors;
-  std::unordered_map<std::string, std::unordered_map<Device, std::string>>
-      channelDeviceDescriptors;
-  NOP_STRUCTURE(Brochure, transportDomainDescriptors, channelDeviceDescriptors);
+  std::unordered_map<std::string, TransportAdvertisement>
+      transportAdvertisement;
+  std::unordered_map<std::string, ChannelAdvertisement> channelAdvertisement;
+  NOP_STRUCTURE(Brochure, transportAdvertisement, channelAdvertisement);
+};
+
+struct ChannelSelection {
+  std::vector<uint64_t> registrationIds;
+  std::unordered_map<Device, std::string> deviceDescriptors;
+  NOP_STRUCTURE(ChannelSelection, registrationIds, deviceDescriptors);
 };
 
 struct BrochureAnswer {
@@ -44,20 +61,14 @@ struct BrochureAnswer {
   std::string address;
   uint64_t transportRegistrationId;
   std::string transportDomainDescriptor;
-  std::unordered_map<std::string, std::vector<uint64_t>> channelRegistrationIds;
-  std::unordered_map<std::string, std::unordered_map<Device, std::string>>
-      channelDeviceDescriptors;
-  std::unordered_map<std::pair<Device, Device>, std::string>
-      channelForDevicePair;
+  std::unordered_map<std::string, ChannelSelection> channelSelection;
   NOP_STRUCTURE(
       BrochureAnswer,
       transport,
       address,
       transportRegistrationId,
       transportDomainDescriptor,
-      channelRegistrationIds,
-      channelDeviceDescriptors,
-      channelForDevicePair);
+      channelSelection);
 };
 
 struct MessageDescriptor {
@@ -81,8 +92,14 @@ struct MessageDescriptor {
     int64_t sizeInBytes;
     std::string metadata;
 
-    Device sourceDevice;
-    NOP_STRUCTURE(TensorDescriptor, sizeInBytes, metadata, sourceDevice);
+    DeviceType deviceType;
+    std::string channelName;
+    NOP_STRUCTURE(
+        TensorDescriptor,
+        sizeInBytes,
+        metadata,
+        deviceType,
+        channelName);
   };
 
   std::string metadata;

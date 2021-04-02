@@ -60,14 +60,4 @@ struct hash<::tensorpipe::Device> {
   }
 };
 
-template <>
-struct hash<std::pair<::tensorpipe::Device, ::tensorpipe::Device>> {
-  size_t operator()(const std::pair<::tensorpipe::Device, ::tensorpipe::Device>&
-                        p) const noexcept {
-    size_t h1 = std::hash<::tensorpipe::Device>{}(p.first);
-    size_t h2 = std::hash<::tensorpipe::Device>{}(p.second);
-    return h1 ^ (h2 << 1);
-  }
-};
-
 } // namespace std
