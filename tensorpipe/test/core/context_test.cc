@@ -91,6 +91,17 @@ constexpr int kNumTensors = 4;
 std::string kPayloadData = "I'm a payload";
 std::string kTensorData = "And I'm a tensor";
 
+Message::Tensor makeTensor() {
+  return {
+      .buffer =
+          CpuBuffer{
+              .ptr = reinterpret_cast<void*>(
+                  const_cast<char*>(kTensorData.data())),
+          },
+      .length = kTensorData.length(),
+  };
+}
+
 Message makeMessage(int numPayloads, int numTensors) {
   Message message;
   for (int i = 0; i < numPayloads; i++) {
@@ -101,12 +112,7 @@ Message makeMessage(int numPayloads, int numTensors) {
     message.payloads.push_back(std::move(payload));
   }
   for (int i = 0; i < numTensors; i++) {
-    Message::Tensor tensor{
-        .buffer = CpuBuffer{reinterpret_cast<void*>(
-            const_cast<char*>(kTensorData.data()))},
-        .length = kTensorData.length(),
-    };
-    message.tensors.push_back(std::move(tensor));
+    message.tensors.push_back(makeTensor());
   }
   return message;
 }
