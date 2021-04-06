@@ -58,6 +58,20 @@ void parseDescriptorOfMessage(ReadOperation& op, const Packet& nopPacketIn) {
     Message::Tensor& tensor = message.tensors.back();
     tensor.metadata = nopTensorDescriptor.metadata;
     tensor.length = static_cast<size_t>(tensorBeingAllocated.length);
+    switch (nopTensorDescriptor.deviceType) {
+      case DeviceType::kCpu: {
+        tensor.buffer = CpuBuffer{};
+        break;
+      }
+#if TENSORPIPE_SUPPORTS_CUDA
+      case DeviceType::kCuda: {
+        tensor.buffer = CudaBuffer{};
+        break;
+      }
+#endif // TENSORPIPE_SUPPORTS_CUDA
+      default:
+        TP_THROW_ASSERT() << "Unexpected device type.";
+    };
     op.tensors.push_back(std::move(tensorBeingAllocated));
   }
 }
