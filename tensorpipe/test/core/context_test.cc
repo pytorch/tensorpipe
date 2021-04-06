@@ -158,15 +158,7 @@ std::vector<std::string> genUrls() {
   return res;
 }
 
-} // namespace
-
-TEST(Context, ClientPingSerial) {
-  std::vector<std::shared_ptr<void>> buffers;
-  std::promise<std::shared_ptr<Pipe>> serverPipePromise;
-  std::promise<Message> writtenMessagePromise;
-  std::promise<Message> readDescriptorPromise;
-  std::promise<Message> readMessagePromise;
-
+std::shared_ptr<Context> makeContext() {
   auto context = std::make_shared<Context>();
 
   context->registerTransport(0, "uv", transport::uv::create());
@@ -177,6 +169,19 @@ TEST(Context, ClientPingSerial) {
 #if TENSORPIPE_HAS_CMA_CHANNEL
   context->registerChannel(1, "cma", channel::cma::create());
 #endif // TENSORPIPE_HAS_CMA_CHANNEL
+  return context;
+}
+
+} // namespace
+
+TEST(Context, ClientPingSerial) {
+  std::vector<std::shared_ptr<void>> buffers;
+  std::promise<std::shared_ptr<Pipe>> serverPipePromise;
+  std::promise<Message> writtenMessagePromise;
+  std::promise<Message> readDescriptorPromise;
+  std::promise<Message> readMessagePromise;
+
+  auto context = makeContext();
 
   auto listener = context->listen(genUrls());
 
@@ -242,16 +247,7 @@ TEST(Context, ClientPingInline) {
   std::promise<void> writeCompletedProm;
   std::promise<void> readCompletedProm;
 
-  auto context = std::make_shared<Context>();
-
-  context->registerTransport(0, "uv", transport::uv::create());
-#if TENSORPIPE_HAS_SHM_TRANSPORT
-  context->registerTransport(1, "shm", transport::shm::create());
-#endif // TENSORPIPE_HAS_SHM_TRANSPORT
-  context->registerChannel(0, "basic", channel::basic::create());
-#if TENSORPIPE_HAS_CMA_CHANNEL
-  context->registerChannel(1, "cma", channel::cma::create());
-#endif // TENSORPIPE_HAS_CMA_CHANNEL
+  auto context = makeContext();
 
   auto listener = context->listen(genUrls());
 
@@ -313,16 +309,7 @@ TEST(Context, ServerPingPongTwice) {
   std::promise<void> pingCompletedProm;
   std::promise<void> pongCompletedProm;
 
-  auto context = std::make_shared<Context>();
-
-  context->registerTransport(0, "uv", transport::uv::create());
-#if TENSORPIPE_HAS_SHM_TRANSPORT
-  context->registerTransport(1, "shm", transport::shm::create());
-#endif // TENSORPIPE_HAS_SHM_TRANSPORT
-  context->registerChannel(0, "basic", channel::basic::create());
-#if TENSORPIPE_HAS_CMA_CHANNEL
-  context->registerChannel(1, "cma", channel::cma::create());
-#endif // TENSORPIPE_HAS_CMA_CHANNEL
+  auto context = makeContext();
 
   auto listener = context->listen(genUrls());
 
@@ -454,16 +441,7 @@ TEST(Context, MixedTensorMessage) {
   std::promise<void> readCompletedProm;
   int n = 2;
 
-  auto context = std::make_shared<Context>();
-
-  context->registerTransport(0, "uv", transport::uv::create());
-#if TENSORPIPE_HAS_SHM_TRANSPORT
-  context->registerTransport(1, "shm", transport::shm::create());
-#endif // TENSORPIPE_HAS_SHM_TRANSPORT
-  context->registerChannel(0, "basic", channel::basic::create());
-#if TENSORPIPE_HAS_CMA_CHANNEL
-  context->registerChannel(1, "cma", channel::cma::create());
-#endif // TENSORPIPE_HAS_CMA_CHANNEL
+  auto context = makeContext();
 
   auto listener = context->listen(genUrls());
 
