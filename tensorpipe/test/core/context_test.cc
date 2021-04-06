@@ -16,6 +16,10 @@
 
 #include <gtest/gtest.h>
 
+#if TENSORPIPE_SUPPORTS_CUDA
+#include <tensorpipe/common/cuda.h>
+#endif // TENSORPIPE_SUPPORTS_CUDA
+
 #include <tensorpipe/test/peer_group.h>
 
 using namespace tensorpipe;
@@ -58,6 +62,16 @@ namespace {
   return ::testing::AssertionSuccess();
 }
 
+#if TENSORPIPE_SUPPORTS_CUDA
+std::vector<uint8_t> unwrapCudaBuffer(CudaBuffer b, size_t length) {
+  std::vector<uint8_t> result(length);
+  TP_CUDA_CHECK(cudaStreamSynchronize(b.stream));
+  TP_CUDA_CHECK(cudaMemcpy(result.data(), b.ptr, length, cudaMemcpyDefault));
+
+  return result;
+}
+#endif // TENSORPIPE_SUPPORTS_CUDA
+
 ::testing::AssertionResult messagesAreEqual(
     const Message& m1,
     const Message& m2) {
@@ -88,6 +102,15 @@ namespace {
           m1.tensors[idx].length,
           m2.tensors[idx].buffer.unwrap<CpuBuffer>().ptr,
           m2.tensors[idx].length));
+#if TENSORPIPE_SUPPORTS_CUDA
+    } else if (deviceType == kCudaDeviceType) {
+      std::vector<uint8_t> buffer1 = unwrapCudaBuffer(
+          m1.tensors[idx].buffer.unwrap<CudaBuffer>(), m1.tensors[idx].length);
+      std::vector<uint8_t> buffer2 = unwrapCudaBuffer(
+          m2.tensors[idx].buffer.unwrap<CudaBuffer>(), m2.tensors[idx].length);
+      EXPECT_TRUE(buffersAreEqual(
+          buffer1.data(), buffer1.size(), buffer2.data(), buffer2.size()));
+#endif // TENSORPIPE_SUPPORTS_CUDA
     } else {
       ADD_FAILURE() << "Unexpected device type: " << deviceType;
     }
@@ -95,12 +118,54 @@ namespace {
   return ::testing::AssertionSuccess();
 }
 
+#if TENSORPIPE_SUPPORTS_CUDA
+struct CudaPointerDeleter {
+  void operator()(void* ptr) {
+    TP_CUDA_CHECK(cudaFree(ptr));
+  }
+};
+
+std::unique_ptr<void, CudaPointerDeleter> makeCudaPointer(size_t length) {
+  void* cudaPtr;
+  TP_CUDA_CHECK(cudaMalloc(&cudaPtr, length));
+  return std::unique_ptr<void, CudaPointerDeleter>(cudaPtr);
+}
+#endif // TENSORPIPE_SUPPORTS_CUDA
+
+// Having 4 payloads per message is arbitrary.
 constexpr int kNumPayloads = 4;
+// Having 4 tensors per message ensures there are 2 CPU tensors and 2 CUDA
+// tensors.
 constexpr int kNumTensors = 4;
 std::string kPayloadData = "I'm a payload";
 std::string kTensorData = "And I'm a tensor";
+#if TENSORPIPE_SUPPORTS_CUDA
+const int kCudaTensorLength = 32;
+const uint8_t kCudaTensorFillValue = 0x42;
+#endif // TENSORPIPE_SUPPORTS_CUDA
 
-Message::Tensor makeTensor() {
+Message::Tensor makeTensor(int index) {
+#if TENSORPIPE_SUPPORTS_CUDA
+  static std::unique_ptr<void, CudaPointerDeleter> kCudaTensorData = []() {
+    auto cudaPtr = makeCudaPointer(kCudaTensorLength);
+    TP_CUDA_CHECK(
+        cudaMemset(cudaPtr.get(), kCudaTensorFillValue, kCudaTensorLength));
+    return cudaPtr;
+  }();
+
+  if (index % 2 == 1) {
+    return {
+        .buffer =
+            CudaBuffer{
+                .ptr = kCudaTensorData.get(),
+                .stream = cudaStreamDefault,
+            },
+        // FIXME: Use non-blocking stream.
+        .length = kCudaTensorLength,
+    };
+  }
+#endif // TENSORPIPE_SUPPORTS_CUDA
+
   return {
       .buffer =
           CpuBuffer{
@@ -121,7 +186,7 @@ Message makeMessage(int numPayloads, int numTensors) {
     message.payloads.push_back(std::move(payload));
   }
   for (int i = 0; i < numTensors; i++) {
-    message.tensors.push_back(makeTensor());
+    message.tensors.push_back(makeTensor(i));
   }
   return message;
 }
@@ -136,10 +201,23 @@ void allocateMessage(
     buffers.push_back(std::move(payloadData));
   }
   for (auto& tensor : message.tensors) {
-    if (tensor.buffer.device().type == kCpuDeviceType) {
+    // FIXME: Until the Pipe provides the `sourceDevice` directly to
+    // `readDescriptor()`, we need to rely on `Buffer::deviceType()` rather than
+    // `Buffer::device().type` since at this stage the buffer is not allocated,
+    // hence `Buffer::device()` would call `cuPointerGetAttribute()` on
+    // `nullptr`.
+    if (tensor.buffer.deviceType() == DeviceType::kCpu) {
       auto tensorData = std::make_unique<uint8_t[]>(tensor.length);
       tensor.buffer.unwrap<CpuBuffer>().ptr = tensorData.get();
       buffers.push_back(std::move(tensorData));
+#if TENSORPIPE_SUPPORTS_CUDA
+    } else if (tensor.buffer.deviceType() == DeviceType::kCuda) {
+      auto tensorData = makeCudaPointer(tensor.length);
+      tensor.buffer.unwrap<CudaBuffer>().ptr = tensorData.get();
+      // FIXME: Use non-blocking streams.
+      tensor.buffer.unwrap<CudaBuffer>().stream = cudaStreamDefault;
+      buffers.push_back(std::move(tensorData));
+#endif // TENSORPIPE_SUPPORTS_CUDA
     } else {
       ADD_FAILURE() << "Unrecognized device type: "
                     << tensor.buffer.device().type;
@@ -178,6 +256,15 @@ std::shared_ptr<Context> makeContext() {
 #if TENSORPIPE_HAS_CMA_CHANNEL
   context->registerChannel(1, "cma", channel::cma::create());
 #endif // TENSORPIPE_HAS_CMA_CHANNEL
+#if TENSORPIPE_SUPPORTS_CUDA
+  context->registerChannel(
+      10, "cuda_basic", channel::cuda_basic::create(channel::basic::create()));
+#if TENSORPIPE_HAS_CUDA_IPC_CHANNEL
+  context->registerChannel(11, "cuda_ipc", channel::cuda_ipc::create());
+#endif // TENSORPIPE_HAS_CUDA_IPC_CHANNEL
+  context->registerChannel(12, "cuda_xth", channel::cuda_xth::create());
+#endif // TENSORPIPE_SUPPORTS_CUDA
+
   return context;
 }
 
