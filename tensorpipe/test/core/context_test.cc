@@ -251,39 +251,41 @@ TEST(Context, ClientPingInline) {
 
   auto listener = context->listen(genUrls());
 
-  std::shared_ptr<Pipe> serverPipe;
-  listener->accept([&serverPipe, &readCompletedProm, &buffers](
-                       const Error& error, std::shared_ptr<Pipe> pipe) {
+  auto clientPipe = context->connect(listener->url("uv"));
+
+  std::promise<std::shared_ptr<Pipe>> serverPipePromise;
+  listener->accept([&](const Error& error, std::shared_ptr<Pipe> pipe) {
+    if (error) {
+      serverPipePromise.set_exception(
+          std::make_exception_ptr(std::runtime_error(error.what())));
+    } else {
+      serverPipePromise.set_value(std::move(pipe));
+    }
+  });
+  std::shared_ptr<Pipe> serverPipe = serverPipePromise.get_future().get();
+
+  serverPipe->readDescriptor([&serverPipe, &readCompletedProm, &buffers](
+                                 const Error& error, Message message) {
     if (error) {
       ADD_FAILURE() << error.what();
       readCompletedProm.set_value();
       return;
     }
-    serverPipe = std::move(pipe);
-    serverPipe->readDescriptor([&serverPipe, &readCompletedProm, &buffers](
-                                   const Error& error, Message message) {
-      if (error) {
-        ADD_FAILURE() << error.what();
-        readCompletedProm.set_value();
-        return;
-      }
-      allocateMessage(message, buffers);
-      serverPipe->read(
-          std::move(message),
-          [&readCompletedProm](const Error& error, Message message) mutable {
-            if (error) {
-              ADD_FAILURE() << error.what();
-              readCompletedProm.set_value();
-              return;
-            }
-            EXPECT_TRUE(messagesAreEqual(
-                message, makeMessage(kNumPayloads, kNumTensors)));
+    allocateMessage(message, buffers);
+    serverPipe->read(
+        std::move(message),
+        [&readCompletedProm](const Error& error, Message message) mutable {
+          if (error) {
+            ADD_FAILURE() << error.what();
             readCompletedProm.set_value();
-          });
-    });
+            return;
+          }
+          EXPECT_TRUE(messagesAreEqual(
+              message, makeMessage(kNumPayloads, kNumTensors)));
+          readCompletedProm.set_value();
+        });
   });
 
-  auto clientPipe = context->connect(listener->url("uv"));
   clientPipe->write(
       makeMessage(kNumPayloads, kNumTensors),
       [&](const Error& error, Message /* unused */) {
@@ -313,64 +315,62 @@ TEST(Context, ServerPingPongTwice) {
 
   auto listener = context->listen(genUrls());
 
-  std::shared_ptr<Pipe> serverPipe;
-  int numPingsGoneThrough = 0;
-  listener->accept([&serverPipe,
-                    &pingCompletedProm,
-                    &buffers,
-                    &numPingsGoneThrough](
-                       const Error& error, std::shared_ptr<Pipe> pipe) {
+  auto clientPipe = context->connect(listener->url("uv"));
+
+  std::promise<std::shared_ptr<Pipe>> serverPipePromise;
+  listener->accept([&](const Error& error, std::shared_ptr<Pipe> pipe) {
     if (error) {
-      ADD_FAILURE() << error.what();
-      pingCompletedProm.set_value();
-      return;
+      serverPipePromise.set_exception(
+          std::make_exception_ptr(std::runtime_error(error.what())));
+    } else {
+      serverPipePromise.set_value(std::move(pipe));
     }
-    serverPipe = std::move(pipe);
-    for (int i = 0; i < 2; i++) {
-      serverPipe->write(
-          makeMessage(kNumPayloads, kNumTensors),
-          [&serverPipe, &pingCompletedProm, &buffers, &numPingsGoneThrough, i](
-              const Error& error, Message /* unused */) {
+  });
+  std::shared_ptr<Pipe> serverPipe = serverPipePromise.get_future().get();
+
+  int numPingsGoneThrough = 0;
+  for (int i = 0; i < 2; i++) {
+    serverPipe->write(
+        makeMessage(kNumPayloads, kNumTensors),
+        [&serverPipe, &pingCompletedProm, &buffers, &numPingsGoneThrough, i](
+            const Error& error, Message /* unused */) {
+          if (error) {
+            ADD_FAILURE() << error.what();
+            pingCompletedProm.set_value();
+            return;
+          }
+          serverPipe->readDescriptor([&serverPipe,
+                                      &pingCompletedProm,
+                                      &buffers,
+                                      &numPingsGoneThrough,
+                                      i](const Error& error, Message message) {
             if (error) {
               ADD_FAILURE() << error.what();
               pingCompletedProm.set_value();
               return;
             }
-            serverPipe->readDescriptor(
-                [&serverPipe,
-                 &pingCompletedProm,
-                 &buffers,
-                 &numPingsGoneThrough,
-                 i](const Error& error, Message message) {
+            allocateMessage(message, buffers);
+            serverPipe->read(
+                std::move(message),
+                [&pingCompletedProm, &numPingsGoneThrough, i](
+                    const Error& error, Message message) {
                   if (error) {
                     ADD_FAILURE() << error.what();
                     pingCompletedProm.set_value();
                     return;
                   }
-                  allocateMessage(message, buffers);
-                  serverPipe->read(
-                      std::move(message),
-                      [&pingCompletedProm, &numPingsGoneThrough, i](
-                          const Error& error, Message message) {
-                        if (error) {
-                          ADD_FAILURE() << error.what();
-                          pingCompletedProm.set_value();
-                          return;
-                        }
-                        EXPECT_TRUE(messagesAreEqual(
-                            message, makeMessage(kNumPayloads, kNumTensors)));
-                        EXPECT_EQ(numPingsGoneThrough, i);
-                        numPingsGoneThrough++;
-                        if (numPingsGoneThrough == 2) {
-                          pingCompletedProm.set_value();
-                        }
-                      });
+                  EXPECT_TRUE(messagesAreEqual(
+                      message, makeMessage(kNumPayloads, kNumTensors)));
+                  EXPECT_EQ(numPingsGoneThrough, i);
+                  numPingsGoneThrough++;
+                  if (numPingsGoneThrough == 2) {
+                    pingCompletedProm.set_value();
+                  }
                 });
           });
-    }
-  });
+        });
+  }
 
-  auto clientPipe = context->connect(listener->url("uv"));
   int numPongsGoneThrough = 0;
   for (int i = 0; i < 2; i++) {
     clientPipe->readDescriptor(
@@ -445,30 +445,36 @@ TEST(Context, MixedTensorMessage) {
 
   auto listener = context->listen(genUrls());
 
-  std::shared_ptr<Pipe> serverPipe;
+  auto clientPipe = context->connect(listener->url("uv"));
+
+  std::promise<std::shared_ptr<Pipe>> serverPipePromise;
+  listener->accept([&](const Error& error, std::shared_ptr<Pipe> pipe) {
+    if (error) {
+      serverPipePromise.set_exception(
+          std::make_exception_ptr(std::runtime_error(error.what())));
+    } else {
+      serverPipePromise.set_value(std::move(pipe));
+    }
+  });
+  std::shared_ptr<Pipe> serverPipe = serverPipePromise.get_future().get();
+
   std::atomic<int> readNum(n);
-  listener->accept([&serverPipe, &readCompletedProm, &buffers, &readNum](
-                       const Error& error, std::shared_ptr<Pipe> pipe) {
+  pipeRead(serverPipe, buffers, [&](const Error& error, Message message) {
     ASSERT_FALSE(error);
-    serverPipe = std::move(pipe);
-    pipeRead(serverPipe, buffers, [&](const Error& error, Message message) {
-      ASSERT_FALSE(error);
-      EXPECT_TRUE(
-          messagesAreEqual(message, makeMessage(kNumPayloads, kNumTensors)));
-      if (--readNum == 0) {
-        readCompletedProm.set_value();
-      }
-    });
-    pipeRead(serverPipe, buffers, [&](const Error& error, Message message) {
-      ASSERT_FALSE(error);
-      EXPECT_TRUE(messagesAreEqual(message, makeMessage(0, 0)));
-      if (--readNum == 0) {
-        readCompletedProm.set_value();
-      }
-    });
+    EXPECT_TRUE(
+        messagesAreEqual(message, makeMessage(kNumPayloads, kNumTensors)));
+    if (--readNum == 0) {
+      readCompletedProm.set_value();
+    }
+  });
+  pipeRead(serverPipe, buffers, [&](const Error& error, Message message) {
+    ASSERT_FALSE(error);
+    EXPECT_TRUE(messagesAreEqual(message, makeMessage(0, 0)));
+    if (--readNum == 0) {
+      readCompletedProm.set_value();
+    }
   });
 
-  auto clientPipe = context->connect(listener->url("uv"));
   std::atomic<int> writeNum(n);
   clientPipe->write(
       makeMessage(kNumPayloads, kNumTensors),
