@@ -79,11 +79,18 @@ namespace {
         << " tensors but second has " << m2.tensors.size();
   }
   for (size_t idx = 0; idx < m1.tensors.size(); idx++) {
-    EXPECT_TRUE(buffersAreEqual(
-        m1.tensors[idx].buffer.unwrap<CpuBuffer>().ptr,
-        m1.tensors[idx].length,
-        m2.tensors[idx].buffer.unwrap<CpuBuffer>().ptr,
-        m2.tensors[idx].length));
+    EXPECT_EQ(m1.tensors[idx].buffer.device(), m2.tensors[idx].buffer.device());
+    const std::string& deviceType = m1.tensors[idx].buffer.device().type;
+
+    if (deviceType == kCpuDeviceType) {
+      EXPECT_TRUE(buffersAreEqual(
+          m1.tensors[idx].buffer.unwrap<CpuBuffer>().ptr,
+          m1.tensors[idx].length,
+          m2.tensors[idx].buffer.unwrap<CpuBuffer>().ptr,
+          m2.tensors[idx].length));
+    } else {
+      ADD_FAILURE() << "Unexpected device type: " << deviceType;
+    }
   }
   return ::testing::AssertionSuccess();
 }
