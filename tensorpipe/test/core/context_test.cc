@@ -111,6 +111,27 @@ Message makeMessage(int numPayloads, int numTensors) {
   return message;
 }
 
+void allocateMessage(
+    Message& message,
+    std::vector<std::shared_ptr<void>>& buffers) {
+  for (auto& payload : message.payloads) {
+    // FIXME: Changing this to a make_shared causes havoc.
+    auto payloadData = std::make_unique<uint8_t[]>(payload.length);
+    payload.data = payloadData.get();
+    buffers.push_back(std::move(payloadData));
+  }
+  for (auto& tensor : message.tensors) {
+    if (tensor.buffer.device().type == kCpuDeviceType) {
+      auto tensorData = std::make_unique<uint8_t[]>(tensor.length);
+      tensor.buffer.unwrap<CpuBuffer>().ptr = tensorData.get();
+      buffers.push_back(std::move(tensorData));
+    } else {
+      ADD_FAILURE() << "Unrecognized device type: "
+                    << tensor.buffer.device().type;
+    }
+  }
+}
+
 std::string createUniqueShmAddr() {
   const ::testing::TestInfo* const testInfo =
       ::testing::UnitTest::GetInstance()->current_test_info();
@@ -134,7 +155,7 @@ std::vector<std::string> genUrls() {
 } // namespace
 
 TEST(Context, ClientPingSerial) {
-  std::vector<std::unique_ptr<uint8_t[]>> buffers;
+  std::vector<std::shared_ptr<void>> buffers;
   std::promise<std::shared_ptr<Pipe>> serverPipePromise;
   std::promise<Message> writtenMessagePromise;
   std::promise<Message> readDescriptorPromise;
@@ -186,17 +207,7 @@ TEST(Context, ClientPingSerial) {
   });
 
   Message message(readDescriptorPromise.get_future().get());
-  for (auto& payload : message.payloads) {
-    auto payloadData = std::make_unique<uint8_t[]>(payload.length);
-    payload.data = payloadData.get();
-    buffers.push_back(std::move(payloadData));
-  }
-  for (auto& tensor : message.tensors) {
-    auto tensorData = std::make_unique<uint8_t[]>(tensor.length);
-    tensor.buffer.unwrap<CpuBuffer>().ptr = tensorData.get();
-    buffers.push_back(std::move(tensorData));
-  }
-
+  allocateMessage(message, buffers);
   serverPipe->read(
       std::move(message), [&](const Error& error, Message message) {
         if (error) {
@@ -221,7 +232,7 @@ TEST(Context, ClientPingSerial) {
 }
 
 TEST(Context, ClientPingInline) {
-  std::vector<std::unique_ptr<uint8_t[]>> buffers;
+  std::vector<std::shared_ptr<void>> buffers;
   std::promise<void> writeCompletedProm;
   std::promise<void> readCompletedProm;
 
@@ -254,16 +265,7 @@ TEST(Context, ClientPingInline) {
         readCompletedProm.set_value();
         return;
       }
-      for (auto& payload : message.payloads) {
-        auto payloadData = std::make_unique<uint8_t[]>(payload.length);
-        payload.data = payloadData.get();
-        buffers.push_back(std::move(payloadData));
-      }
-      for (auto& tensor : message.tensors) {
-        auto tensorData = std::make_unique<uint8_t[]>(tensor.length);
-        tensor.buffer.unwrap<CpuBuffer>().ptr = tensorData.get();
-        buffers.push_back(std::move(tensorData));
-      }
+      allocateMessage(message, buffers);
       serverPipe->read(
           std::move(message),
           [&readCompletedProm](const Error& error, Message message) mutable {
@@ -301,7 +303,7 @@ TEST(Context, ClientPingInline) {
 }
 
 TEST(Context, ServerPingPongTwice) {
-  std::vector<std::unique_ptr<uint8_t[]>> buffers;
+  std::vector<std::shared_ptr<void>> buffers;
   std::promise<void> pingCompletedProm;
   std::promise<void> pongCompletedProm;
 
@@ -341,45 +343,36 @@ TEST(Context, ServerPingPongTwice) {
               pingCompletedProm.set_value();
               return;
             }
-            serverPipe->readDescriptor([&serverPipe,
-                                        &pingCompletedProm,
-                                        &buffers,
-                                        &numPingsGoneThrough,
-                                        i](const Error& error,
-                                           Message message) {
-              if (error) {
-                ADD_FAILURE() << error.what();
-                pingCompletedProm.set_value();
-                return;
-              }
-              for (auto& payload : message.payloads) {
-                auto payloadData = std::make_unique<uint8_t[]>(payload.length);
-                payload.data = payloadData.get();
-                buffers.push_back(std::move(payloadData));
-              }
-              for (auto& tensor : message.tensors) {
-                auto tensorData = std::make_unique<uint8_t[]>(tensor.length);
-                tensor.buffer.unwrap<CpuBuffer>().ptr = tensorData.get();
-                buffers.push_back(std::move(tensorData));
-              }
-              serverPipe->read(
-                  std::move(message),
-                  [&pingCompletedProm, &numPingsGoneThrough, i](
-                      const Error& error, Message message) {
-                    if (error) {
-                      ADD_FAILURE() << error.what();
-                      pingCompletedProm.set_value();
-                      return;
-                    }
-                    EXPECT_TRUE(messagesAreEqual(
-                        message, makeMessage(kNumPayloads, kNumTensors)));
-                    EXPECT_EQ(numPingsGoneThrough, i);
-                    numPingsGoneThrough++;
-                    if (numPingsGoneThrough == 2) {
-                      pingCompletedProm.set_value();
-                    }
-                  });
-            });
+            serverPipe->readDescriptor(
+                [&serverPipe,
+                 &pingCompletedProm,
+                 &buffers,
+                 &numPingsGoneThrough,
+                 i](const Error& error, Message message) {
+                  if (error) {
+                    ADD_FAILURE() << error.what();
+                    pingCompletedProm.set_value();
+                    return;
+                  }
+                  allocateMessage(message, buffers);
+                  serverPipe->read(
+                      std::move(message),
+                      [&pingCompletedProm, &numPingsGoneThrough, i](
+                          const Error& error, Message message) {
+                        if (error) {
+                          ADD_FAILURE() << error.what();
+                          pingCompletedProm.set_value();
+                          return;
+                        }
+                        EXPECT_TRUE(messagesAreEqual(
+                            message, makeMessage(kNumPayloads, kNumTensors)));
+                        EXPECT_EQ(numPingsGoneThrough, i);
+                        numPingsGoneThrough++;
+                        if (numPingsGoneThrough == 2) {
+                          pingCompletedProm.set_value();
+                        }
+                      });
+                });
           });
     }
   });
@@ -395,16 +388,7 @@ TEST(Context, ServerPingPongTwice) {
             pongCompletedProm.set_value();
             return;
           }
-          for (auto& payload : message.payloads) {
-            auto payloadData = std::make_unique<uint8_t[]>(payload.length);
-            payload.data = payloadData.get();
-            buffers.push_back(std::move(payloadData));
-          }
-          for (auto& tensor : message.tensors) {
-            auto tensorData = std::make_unique<uint8_t[]>(tensor.length);
-            tensor.buffer.unwrap<CpuBuffer>().ptr = tensorData.get();
-            buffers.push_back(std::move(tensorData));
-          }
+          allocateMessage(message, buffers);
           clientPipe->read(
               std::move(message),
               [&clientPipe, &pongCompletedProm, &numPongsGoneThrough, i](
@@ -444,21 +428,12 @@ TEST(Context, ServerPingPongTwice) {
 
 static void pipeRead(
     std::shared_ptr<Pipe>& pipe,
-    std::vector<std::unique_ptr<uint8_t[]>>& buffers,
+    std::vector<std::shared_ptr<void>>& buffers,
     std::function<void(const Error&, Message)> fn) {
   pipe->readDescriptor([&pipe, &buffers, fn{std::move(fn)}](
                            const Error& error, Message message) mutable {
     ASSERT_FALSE(error);
-    for (auto& payload : message.payloads) {
-      auto payloadData = std::make_unique<uint8_t[]>(payload.length);
-      payload.data = payloadData.get();
-      buffers.push_back(std::move(payloadData));
-    }
-    for (auto& tensor : message.tensors) {
-      auto tensorData = std::make_unique<uint8_t[]>(tensor.length);
-      tensor.buffer.unwrap<CpuBuffer>().ptr = tensorData.get();
-      buffers.push_back(std::move(tensorData));
-    }
+    allocateMessage(message, buffers);
     pipe->read(
         std::move(message),
         [fn{std::move(fn)}](const Error& error, Message message) mutable {
@@ -468,7 +443,7 @@ static void pipeRead(
 }
 
 TEST(Context, MixedTensorMessage) {
-  std::vector<std::unique_ptr<uint8_t[]>> buffers;
+  std::vector<std::shared_ptr<void>> buffers;
   std::promise<void> writeCompletedProm;
   std::promise<void> readCompletedProm;
   int n = 2;
