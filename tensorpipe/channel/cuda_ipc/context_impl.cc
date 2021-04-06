@@ -20,6 +20,8 @@
 #include <utility>
 #include <vector>
 
+#include <unistd.h>
+
 #include <nop/serializer.h>
 #include <nop/structure.h>
 
@@ -105,6 +107,7 @@ int globalIdxForDevice(
 
 struct DeviceDescriptor {
   std::string bootId;
+  int64_t pid;
   std::string deviceUuid;
   NOP_STRUCTURE(DeviceDescriptor, bootId, deviceUuid);
 };
@@ -220,6 +223,7 @@ std::shared_ptr<ContextImpl> ContextImpl::create() {
   }
 
   const std::string bootId = generateBootId();
+  const pid_t pid = ::getpid();
 
   std::unordered_map<Device, std::string> deviceDescriptors;
   for (const auto& device : getCudaDevices(cudaLib)) {
@@ -246,6 +250,7 @@ std::shared_ptr<ContextImpl> ContextImpl::create() {
     NopHolder<DeviceDescriptor> nopHolder;
     DeviceDescriptor& deviceDescriptor = nopHolder.getObject();
     deviceDescriptor.bootId = bootId;
+    deviceDescriptor.pid = static_cast<int64_t>(pid);
     deviceDescriptor.deviceUuid = getUuidOfDevice(cudaLib, device.index);
 
     deviceDescriptors[device] = saveDescriptor(nopHolder);
@@ -309,6 +314,12 @@ bool ContextImpl::canCommunicateWithRemote(
       deserializeDeviceDescriptor(remoteDeviceDescriptor);
 
   if (nopLocalDeviceDescriptor.bootId != nopRemoteDeviceDescriptor.bootId) {
+    return false;
+  }
+
+  // Disable CudaIpc when both endpoints are in the same process, as a CUDA IPC
+  // handle cannot be opened in the same process in which it was created.
+  if (nopLocalDeviceDescriptor.pid == nopRemoteDeviceDescriptor.pid) {
     return false;
   }
 
