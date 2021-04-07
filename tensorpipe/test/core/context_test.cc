@@ -196,7 +196,8 @@ void allocateMessage(
     std::vector<std::shared_ptr<void>>& buffers) {
   for (auto& payload : message.payloads) {
     // FIXME: Changing this to a make_shared causes havoc.
-    auto payloadData = std::make_unique<uint8_t[]>(payload.length);
+    auto payloadData = std::unique_ptr<uint8_t, std::default_delete<uint8_t[]>>(
+        new uint8_t[payload.length]);
     payload.data = payloadData.get();
     buffers.push_back(std::move(payloadData));
   }
@@ -207,7 +208,9 @@ void allocateMessage(
     // hence `Buffer::device()` would call `cuPointerGetAttribute()` on
     // `nullptr`.
     if (tensor.buffer.deviceType() == DeviceType::kCpu) {
-      auto tensorData = std::make_unique<uint8_t[]>(tensor.length);
+      auto tensorData =
+          std::unique_ptr<uint8_t, std::default_delete<uint8_t[]>>(
+              new uint8_t[tensor.length]);
       tensor.buffer.unwrap<CpuBuffer>().ptr = tensorData.get();
       buffers.push_back(std::move(tensorData));
 #if TENSORPIPE_SUPPORTS_CUDA
