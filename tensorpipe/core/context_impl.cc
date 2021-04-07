@@ -11,6 +11,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include <atomic>
 #include <memory>
 #include <string>
 #include <tuple>
@@ -33,7 +34,7 @@ namespace tensorpipe {
 
 namespace {
 
-uint64_t contextCouter{0};
+std::atomic<uint64_t> contextCouter{0};
 
 std::string createContextId() {
   // Should we use argv[0] instead of the PID? It may be more semantically
