@@ -257,3 +257,37 @@ class SendTensorsBothWaysTest : public ClientServerChannelTestCase {
 };
 
 CHANNEL_TEST(ChannelTestSuite, SendTensorsBothWays);
+
+// Call send and recv with a length of 0 but a non-null pointer.
+class EmptyTensorTest : public ClientServerChannelTestCase {
+  void server(std::shared_ptr<Channel> channel) override {
+    // Allocate a non-empty vector so that its .data() pointer is non-null.
+    std::vector<uint8_t> data(1);
+    std::unique_ptr<DataWrapper> wrappedData = helper_->makeDataWrapper(data);
+    Buffer buffer = wrappedData->buffer();
+
+    // Perform send and wait for completion.
+    std::future<Error> sendFuture = sendWithFuture(channel, buffer, 0);
+    Error sendError = sendFuture.get();
+    EXPECT_FALSE(sendError) << sendError.what();
+
+    this->peers_->done(PeerGroup::kServer);
+    this->peers_->join(PeerGroup::kServer);
+  }
+
+  void client(std::shared_ptr<Channel> channel) override {
+    // Allocate a non-empty vector so that its .data() pointer is non-null.
+    std::unique_ptr<DataWrapper> wrappedData = helper_->makeDataWrapper(1);
+    Buffer buffer = wrappedData->buffer();
+
+    // Perform recv and wait for completion.
+    std::future<Error> recvFuture = recvWithFuture(channel, buffer, 0);
+    Error recvError = recvFuture.get();
+    EXPECT_FALSE(recvError) << recvError.what();
+
+    this->peers_->done(PeerGroup::kClient);
+    this->peers_->join(PeerGroup::kClient);
+  }
+};
+
+CHANNEL_TEST(ChannelTestSuite, EmptyTensor);

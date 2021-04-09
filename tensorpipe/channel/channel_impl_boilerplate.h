@@ -186,7 +186,7 @@ void ChannelImplBoilerplate<TCtx, TChan>::sendFromLoop(
                << sequenceNumber << ")";
   };
 
-  if (error_) {
+  if (error_ || length == 0) {
     callback(error_);
     return;
   }
@@ -228,7 +228,7 @@ void ChannelImplBoilerplate<TCtx, TChan>::recvFromLoop(
                << sequenceNumber << ")";
   };
 
-  if (error_) {
+  if (error_ || length == 0) {
     callback(error_);
     return;
   }
