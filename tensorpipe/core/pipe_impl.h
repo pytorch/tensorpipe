@@ -61,7 +61,7 @@ struct ReadOperation {
 
   // Callbacks.
   Pipe::read_descriptor_callback_fn readDescriptorCallback;
-  Pipe::read_callback_fn readCallback;
+  Pipe::read_callback_deprecated_fn readCallback;
 
   struct Tensor {
     DeviceType type;
@@ -86,7 +86,7 @@ struct WriteOperation {
   uint64_t numTensorsBeingSent{0};
 
   // Callbacks.
-  Pipe::write_callback_fn writeCallback;
+  Pipe::write_callback_deprecated_fn writeCallback;
 
   // Buffers provided by the user.
   Message message;
@@ -119,11 +119,15 @@ class PipeImpl final : public std::enable_shared_from_this<PipeImpl> {
   void init();
 
   using read_descriptor_callback_fn = Pipe::read_descriptor_callback_fn;
+  using read_callback_deprecated_fn = Pipe::read_callback_deprecated_fn;
   using read_callback_fn = Pipe::read_callback_fn;
+  using write_callback_deprecated_fn = Pipe::write_callback_deprecated_fn;
   using write_callback_fn = Pipe::write_callback_fn;
 
   void readDescriptor(read_descriptor_callback_fn fn);
+  void read(Allocation allocation, read_callback_deprecated_fn fn);
   void read(Allocation allocation, read_callback_fn fn);
+  void write(Message message, write_callback_deprecated_fn fn);
   void write(Message message, write_callback_fn fn);
 
   const std::string& getRemoteName();
@@ -135,9 +139,9 @@ class PipeImpl final : public std::enable_shared_from_this<PipeImpl> {
 
   void readDescriptorFromLoop(read_descriptor_callback_fn fn);
 
-  void readFromLoop(Allocation allocation, read_callback_fn fn);
+  void readFromLoop(Allocation allocation, read_callback_deprecated_fn fn);
 
-  void writeFromLoop(Message message, write_callback_fn fn);
+  void writeFromLoop(Message message, write_callback_deprecated_fn fn);
 
   void closeFromLoop();
 
