@@ -13,6 +13,7 @@
 #include <vector>
 
 #include <tensorpipe/common/buffer.h>
+#include <tensorpipe/common/optional.h>
 
 namespace tensorpipe {
 
@@ -44,6 +45,11 @@ class Message final {
     size_t length{0};
 
     Device sourceDevice;
+
+    // Users may optionally specify the target device, on which the receiver
+    // should allocate memory for this tensor. If left unset, the receiver will
+    // choose one at their convenience.
+    optional<Device> targetDevice;
 
     // Users may include arbitrary metadata in the following field.
     // This may contain allocation hints for the receiver, for example.

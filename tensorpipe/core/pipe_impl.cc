@@ -56,6 +56,9 @@ void parseDescriptorOfMessage(ReadOperation& op, const Packet& nopPacketIn) {
     tensor.metadata = nopTensorDescriptor.metadata;
     tensor.length = static_cast<size_t>(nopTensorDescriptor.sizeInBytes);
     tensor.sourceDevice = nopTensorDescriptor.sourceDevice;
+    if (!nopTensorDescriptor.targetDevice.empty()) {
+      tensor.targetDevice = nopTensorDescriptor.targetDevice.get();
+    }
     if (tensor.sourceDevice.type == kCpuDeviceType) {
       tensor.buffer = CpuBuffer{};
 #if TENSORPIPE_SUPPORTS_CUDA
@@ -69,7 +72,8 @@ void parseDescriptorOfMessage(ReadOperation& op, const Packet& nopPacketIn) {
 }
 
 // Raise an error if the number of payloads and tensors in the allocation do not
-// match the ones that are expected by the ReadOperation.
+// match the ones that are expected by the ReadOperation. Also checks that
+// tensors are allocated on the correct devices.
 void checkAllocationCompatibility(
     const Descriptor& descriptor,
     const Allocation& allocation) {
@@ -78,6 +82,14 @@ void checkAllocationCompatibility(
 
   size_t numTensors = allocation.tensors.size();
   TP_THROW_ASSERT_IF(numTensors != descriptor.tensors.size());
+  for (size_t tensorIdx = 0; tensorIdx < numTensors; tensorIdx++) {
+    const Allocation::Tensor& tensor = allocation.tensors[tensorIdx];
+    const Descriptor::Tensor& tensorDescriptor = descriptor.tensors[tensorIdx];
+    if (tensorDescriptor.targetDevice.has_value()) {
+      TP_THROW_ASSERT_IF(
+          !(tensor.buffer.device() == tensorDescriptor.targetDevice.value()));
+    }
+  }
 }
 
 // Produce a nop object containing a message descriptor using the information
@@ -113,6 +125,9 @@ std::shared_ptr<NopHolder<Packet>> makeDescriptorForMessage(
     nopTensorDescriptor.metadata = tensor.metadata;
     nopTensorDescriptor.channelName = otherTensor.channelName;
     nopTensorDescriptor.sourceDevice = tensor.buffer.device();
+    if (tensor.targetDevice.has_value()) {
+      nopTensorDescriptor.targetDevice = tensor.targetDevice.value();
+    }
     nopTensorDescriptor.sizeInBytes = tensor.length;
   }
 
