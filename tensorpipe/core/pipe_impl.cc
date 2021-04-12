@@ -398,7 +398,7 @@ void PipeImpl::readDescriptorFromLoop(read_descriptor_callback_fn fn) {
   readOps_.advanceOperation(opIter);
 }
 
-void PipeImpl::read(Allocation allocation, read_callback_fn fn) {
+void PipeImpl::read(Allocation allocation, read_callback_deprecated_fn fn) {
   context_->deferToLoop([impl{this->shared_from_this()},
                          allocation{std::move(allocation)},
                          fn{std::move(fn)}]() mutable {
@@ -406,7 +406,15 @@ void PipeImpl::read(Allocation allocation, read_callback_fn fn) {
   });
 }
 
-void PipeImpl::readFromLoop(Allocation allocation, read_callback_fn fn) {
+void PipeImpl::read(Allocation allocation, read_callback_fn fn) {
+  auto wrappedFn = [fn{std::move(fn)}](
+                       const Error& error, Message /* unused */) { fn(error); };
+  read(std::move(allocation), std::move(wrappedFn));
+}
+
+void PipeImpl::readFromLoop(
+    Allocation allocation,
+    read_callback_deprecated_fn fn) {
   TP_DCHECK(context_->inLoop());
 
   // This is such a bad logical error on the user's side that it doesn't deserve
@@ -499,7 +507,7 @@ void PipeImpl::readPayloadsAndReceiveTensorsOfMessage(ReadOpIter opIter) {
   }
 }
 
-void PipeImpl::write(Message message, write_callback_fn fn) {
+void PipeImpl::write(Message message, write_callback_deprecated_fn fn) {
   context_->deferToLoop([impl{this->shared_from_this()},
                          message{std::move(message)},
                          fn{std::move(fn)}]() mutable {
@@ -507,7 +515,13 @@ void PipeImpl::write(Message message, write_callback_fn fn) {
   });
 }
 
-void PipeImpl::writeFromLoop(Message message, write_callback_fn fn) {
+void PipeImpl::write(Message message, write_callback_fn fn) {
+  auto wrappedFn = [fn{std::move(fn)}](
+                       const Error& error, Message /* unused */) { fn(error); };
+  write(std::move(message), std::move(wrappedFn));
+}
+
+void PipeImpl::writeFromLoop(Message message, write_callback_deprecated_fn fn) {
   TP_DCHECK(context_->inLoop());
 
   WriteOpIter opIter = writeOps_.emplaceBack(nextMessageBeingWritten_++);
