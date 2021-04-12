@@ -27,37 +27,34 @@ namespace tensorpipe {
 
 namespace {
 
-// Copy the payload and tensors sizes, the tensor descriptors, etc. from the
-// message descriptor that is contained in the nop object to the ReadOperation.
+// Copy the payload and tensors sizes, the metadata, etc. from the message
+// descriptor that is contained in the nop object to the ReadOperation.
 void parseDescriptorOfMessage(ReadOperation& op, const Packet& nopPacketIn) {
-  Message& message = op.message;
+  Descriptor& descriptor = op.descriptor;
 
   TP_DCHECK_EQ(nopPacketIn.index(), nopPacketIn.index_of<MessageDescriptor>());
   const MessageDescriptor& nopMessageDescriptor =
       *nopPacketIn.get<MessageDescriptor>();
 
-  message.metadata = nopMessageDescriptor.metadata;
+  descriptor.metadata = nopMessageDescriptor.metadata;
   for (const auto& nopPayloadDescriptor :
        nopMessageDescriptor.payloadDescriptors) {
-    Message::Payload payload;
-    ReadOperation::Payload payloadBeingAllocated;
+    descriptor.payloads.emplace_back();
+    Descriptor::Payload& payload = descriptor.payloads.back();
     payload.length = nopPayloadDescriptor.sizeInBytes;
-    payloadBeingAllocated.length = payload.length;
     payload.metadata = nopPayloadDescriptor.metadata;
-    message.payloads.push_back(std::move(payload));
-    op.payloads.push_back(std::move(payloadBeingAllocated));
   }
 
   for (const auto& nopTensorDescriptor :
        nopMessageDescriptor.tensorDescriptors) {
-    ReadOperation::Tensor tensorBeingAllocated;
-    tensorBeingAllocated.length = nopTensorDescriptor.sizeInBytes;
+    op.tensors.emplace_back();
+    ReadOperation::Tensor& tensorBeingAllocated = op.tensors.back();
     tensorBeingAllocated.channelName = nopTensorDescriptor.channelName;
 
-    message.tensors.emplace_back();
-    Message::Tensor& tensor = message.tensors.back();
+    descriptor.tensors.emplace_back();
+    Descriptor::Tensor& tensor = descriptor.tensors.back();
     tensor.metadata = nopTensorDescriptor.metadata;
-    tensor.length = static_cast<size_t>(tensorBeingAllocated.length);
+    tensor.length = static_cast<size_t>(nopTensorDescriptor.sizeInBytes);
     switch (nopTensorDescriptor.deviceType) {
       case DeviceType::kCpu: {
         tensor.buffer = CpuBuffer{};
@@ -72,32 +69,19 @@ void parseDescriptorOfMessage(ReadOperation& op, const Packet& nopPacketIn) {
       default:
         TP_THROW_ASSERT() << "Unexpected device type.";
     };
-    op.tensors.push_back(std::move(tensorBeingAllocated));
   }
 }
 
-// Raise an error if the number or sizes of the payloads and the tensors in
-// the message do not match the ones that are expected by the ReadOperation.
+// Raise an error if the number of payloads and tensors in the allocation do not
+// match the ones that are expected by the ReadOperation.
 void checkAllocationCompatibility(
-    const ReadOperation& op,
-    const Message& message) {
-  size_t numPayloads = message.payloads.size();
-  TP_THROW_ASSERT_IF(numPayloads != op.payloads.size());
-  for (size_t payloadIdx = 0; payloadIdx < numPayloads; payloadIdx++) {
-    const Message::Payload& payload = message.payloads[payloadIdx];
-    const ReadOperation::Payload& payloadBeingAllocated =
-        op.payloads[payloadIdx];
-    TP_DCHECK_GE(payloadBeingAllocated.length, 0);
-    TP_THROW_ASSERT_IF(payload.length != payloadBeingAllocated.length);
-  }
-  size_t numTensors = message.tensors.size();
-  TP_THROW_ASSERT_IF(numTensors != op.tensors.size());
-  for (size_t tensorIdx = 0; tensorIdx < numTensors; tensorIdx++) {
-    const Message::Tensor& tensor = message.tensors[tensorIdx];
-    const ReadOperation::Tensor& tensorBeingAllocated = op.tensors[tensorIdx];
-    TP_DCHECK_GE(tensorBeingAllocated.length, 0);
-    TP_THROW_ASSERT_IF(tensor.length != tensorBeingAllocated.length);
-  }
+    const Descriptor& descriptor,
+    const Allocation& allocation) {
+  size_t numPayloads = allocation.payloads.size();
+  TP_THROW_ASSERT_IF(numPayloads != descriptor.payloads.size());
+
+  size_t numTensors = allocation.tensors.size();
+  TP_THROW_ASSERT_IF(numTensors != descriptor.tensors.size());
 }
 
 // Produce a nop object containing a message descriptor using the information
@@ -400,11 +384,11 @@ void PipeImpl::readDescriptorFromLoop(read_descriptor_callback_fn fn) {
              << op.sequenceNumber << ")";
 
   fn = [this, sequenceNumber{op.sequenceNumber}, fn{std::move(fn)}](
-           const Error& error, Message message) {
+           const Error& error, Descriptor descriptor) {
     TP_DCHECK_EQ(sequenceNumber, nextReadDescriptorCallbackToCall_++);
     TP_VLOG(1) << "Pipe " << id_ << " is calling a readDescriptor callback (#"
                << sequenceNumber << ")";
-    fn(error, std::move(message));
+    fn(error, std::move(descriptor));
     TP_VLOG(1) << "Pipe " << id_ << " done calling a readDescriptor callback (#"
                << sequenceNumber << ")";
   };
@@ -414,15 +398,15 @@ void PipeImpl::readDescriptorFromLoop(read_descriptor_callback_fn fn) {
   readOps_.advanceOperation(opIter);
 }
 
-void PipeImpl::read(Message message, read_callback_fn fn) {
+void PipeImpl::read(Allocation allocation, read_callback_fn fn) {
   context_->deferToLoop([impl{this->shared_from_this()},
-                         message{std::move(message)},
+                         allocation{std::move(allocation)},
                          fn{std::move(fn)}]() mutable {
-    impl->readFromLoop(std::move(message), std::move(fn));
+    impl->readFromLoop(std::move(allocation), std::move(fn));
   });
 }
 
-void PipeImpl::readFromLoop(Message message, read_callback_fn fn) {
+void PipeImpl::readFromLoop(Allocation allocation, read_callback_fn fn) {
   TP_DCHECK(context_->inLoop());
 
   // This is such a bad logical error on the user's side that it doesn't deserve
@@ -434,7 +418,7 @@ void PipeImpl::readFromLoop(Message message, read_callback_fn fn) {
   ReadOperation& op = *opIter;
   nextMessageGettingAllocation_.reset();
 
-  checkAllocationCompatibility(op, message);
+  checkAllocationCompatibility(op.descriptor, allocation);
 
   fn = [this, sequenceNumber{op.sequenceNumber}, fn{std::move(fn)}](
            const Error& error, Message message) {
@@ -446,14 +430,14 @@ void PipeImpl::readFromLoop(Message message, read_callback_fn fn) {
                << sequenceNumber << ")";
   };
 
-  op.message = std::move(message);
+  op.allocation = std::move(allocation);
   op.readCallback = std::move(fn);
   op.doneGettingAllocation = true;
 
   TP_VLOG(1) << "Pipe " << id_ << " received a read request (#"
              << op.sequenceNumber << ", containing "
-             << op.message.payloads.size() << " payloads and "
-             << op.message.tensors.size() << " tensors)";
+             << op.allocation.payloads.size() << " payloads and "
+             << op.allocation.tensors.size() << " tensors)";
 
   readOps_.advanceOperation(opIter);
 }
@@ -469,14 +453,15 @@ void PipeImpl::readPayloadsAndReceiveTensorsOfMessage(ReadOpIter opIter) {
 
   TP_DCHECK_EQ(connectionState_, AWAITING_PAYLOADS);
   TP_DCHECK_EQ(messageBeingReadFromConnection_, op.sequenceNumber);
-  for (size_t payloadIdx = 0; payloadIdx < op.message.payloads.size();
+  for (size_t payloadIdx = 0; payloadIdx < op.allocation.payloads.size();
        payloadIdx++) {
-    Message::Payload& payload = op.message.payloads[payloadIdx];
+    Allocation::Payload& payload = op.allocation.payloads[payloadIdx];
+    Descriptor::Payload& payloadDescriptor = op.descriptor.payloads[payloadIdx];
     TP_VLOG(3) << "Pipe " << id_ << " is reading payload #" << op.sequenceNumber
                << "." << payloadIdx;
     connection_->read(
         payload.data,
-        payload.length,
+        payloadDescriptor.length,
         callbackWrapper_(
             [opIter, payloadIdx](
                 PipeImpl& impl, const void* /* unused */, size_t /* unused */) {
@@ -490,9 +475,11 @@ void PipeImpl::readPayloadsAndReceiveTensorsOfMessage(ReadOpIter opIter) {
   connectionState_ = AWAITING_DESCRIPTOR;
   ++messageBeingReadFromConnection_;
 
-  for (size_t tensorIdx = 0; tensorIdx < op.message.tensors.size();
+  for (size_t tensorIdx = 0; tensorIdx < op.allocation.tensors.size();
        tensorIdx++) {
-    Message::Tensor& tensor = op.message.tensors[tensorIdx];
+    Allocation::Tensor& tensor = op.allocation.tensors[tensorIdx];
+    const Descriptor::Tensor& tensorDescriptor =
+        op.descriptor.tensors[tensorIdx];
     ReadOperation::Tensor& tensorBeingAllocated = op.tensors[tensorIdx];
     std::shared_ptr<channel::Channel> channel =
         channels_.at(tensorBeingAllocated.channelName);
@@ -501,7 +488,7 @@ void PipeImpl::readPayloadsAndReceiveTensorsOfMessage(ReadOpIter opIter) {
 
     channel->recv(
         tensor.buffer,
-        tensor.length,
+        tensorDescriptor.length,
         callbackWrapper_([opIter, tensorIdx](PipeImpl& impl) {
           TP_VLOG(3) << "Pipe " << impl.id_ << " done receiving tensor #"
                      << opIter->sequenceNumber << "." << tensorIdx;
@@ -555,7 +542,7 @@ void PipeImpl::callReadDescriptorCallback(ReadOpIter opIter) {
 
   ReadOperation& op = *opIter;
 
-  op.readDescriptorCallback(error_, std::move(op.message));
+  op.readDescriptorCallback(error_, op.descriptor);
   // Reset callback to release the resources it was holding.
   op.readDescriptorCallback = nullptr;
 }
@@ -565,7 +552,24 @@ void PipeImpl::callReadCallback(ReadOpIter opIter) {
 
   ReadOperation& op = *opIter;
 
-  op.readCallback(error_, std::move(op.message));
+  // FIXME: This is only needed to maintain backwards compatibility until we get
+  // rid of the `Message` parameter in the `read()`/`write()` callbacks.
+  Message message;
+  message.metadata = op.descriptor.metadata;
+  message.payloads.resize(op.descriptor.payloads.size());
+  for (int i = 0; i < op.descriptor.payloads.size(); ++i) {
+    message.payloads[i].metadata = op.descriptor.payloads[i].metadata;
+    message.payloads[i].length = op.descriptor.payloads[i].length;
+    message.payloads[i].data = op.allocation.payloads[i].data;
+  }
+  message.tensors.resize(op.descriptor.tensors.size());
+  for (int i = 0; i < op.descriptor.tensors.size(); ++i) {
+    message.tensors[i].metadata = op.descriptor.tensors[i].metadata;
+    message.tensors[i].length = op.descriptor.tensors[i].length;
+    message.tensors[i].buffer = op.allocation.tensors[i].buffer;
+  }
+
+  op.readCallback(error_, std::move(message));
   // Reset callback to release the resources it was holding.
   op.readCallback = nullptr;
 }
