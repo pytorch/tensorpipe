@@ -181,47 +181,44 @@ class IncomingMessage {
 };
 
 std::shared_ptr<IncomingMessage> prepareToAllocate(
-    const tensorpipe::Message& tpMessage) {
+    const tensorpipe::Descriptor& tpDescriptor) {
   std::vector<std::shared_ptr<IncomingPayload>> pyPayloads;
-  pyPayloads.reserve(tpMessage.payloads.size());
-  for (const auto& tpPayload : tpMessage.payloads) {
-    TP_DCHECK(tpPayload.data == nullptr);
+  pyPayloads.reserve(tpDescriptor.payloads.size());
+  for (const auto& tpPayload : tpDescriptor.payloads) {
     pyPayloads.push_back(std::make_shared<IncomingPayload>(
         tpPayload.length, tpPayload.metadata));
   }
   std::vector<std::shared_ptr<IncomingTensor>> pyTensors;
-  pyTensors.reserve(tpMessage.tensors.size());
-  for (const auto& tpTensor : tpMessage.tensors) {
-    TP_DCHECK(tpTensor.buffer.unwrap<tensorpipe::CpuBuffer>().ptr == nullptr);
+  pyTensors.reserve(tpDescriptor.tensors.size());
+  for (const auto& tpTensor : tpDescriptor.tensors) {
     pyTensors.push_back(
         std::make_shared<IncomingTensor>(tpTensor.length, tpTensor.metadata));
   }
   auto pyMessage = std::make_shared<IncomingMessage>(
-      tpMessage.metadata, std::move(pyPayloads), std::move(pyTensors));
+      tpDescriptor.metadata, std::move(pyPayloads), std::move(pyTensors));
   return pyMessage;
 }
 
-tensorpipe::Message prepareToRead(std::shared_ptr<IncomingMessage> pyMessage) {
-  tensorpipe::Message tpMessage;
-  tpMessage.payloads.reserve(pyMessage->payloads.size());
+tensorpipe::Allocation prepareToRead(
+    std::shared_ptr<IncomingMessage> pyMessage) {
+  tensorpipe::Allocation tpAllocation;
+  tpAllocation.payloads.reserve(pyMessage->payloads.size());
   for (const auto& pyPayload : pyMessage->payloads) {
     TP_THROW_ASSERT_IF(!pyPayload->buffer.has_value()) << "No buffer";
-    tensorpipe::Message::Payload tpPayload{
+    tensorpipe::Allocation::Payload tpPayload{
         .data = pyPayload->buffer.value().ptr(),
-        .length = pyPayload->buffer.value().length(),
     };
-    tpMessage.payloads.push_back(std::move(tpPayload));
+    tpAllocation.payloads.push_back(std::move(tpPayload));
   }
-  tpMessage.tensors.reserve(pyMessage->tensors.size());
+  tpAllocation.tensors.reserve(pyMessage->tensors.size());
   for (const auto& pyTensor : pyMessage->tensors) {
     TP_THROW_ASSERT_IF(!pyTensor->buffer.has_value()) << "No buffer";
-    tensorpipe::Message::Tensor tpTensor{
+    tensorpipe::Allocation::Tensor tpTensor{
         .buffer = tensorpipe::CpuBuffer{.ptr = pyTensor->buffer.value().ptr()},
-        .length = pyTensor->buffer.value().length(),
     };
-    tpMessage.tensors.push_back(std::move(tpTensor));
+    tpAllocation.tensors.push_back(std::move(tpTensor));
   }
-  return tpMessage;
+  return tpAllocation;
 }
 
 template <typename T>
@@ -340,14 +337,14 @@ PYBIND11_MODULE(pytensorpipe, module) {
       [](std::shared_ptr<tensorpipe::Pipe> pipe, py::object callback) {
         pipe->readDescriptor([callback{std::move(callback)}](
                                  const tensorpipe::Error& error,
-                                 tensorpipe::Message message) mutable {
+                                 tensorpipe::Descriptor descriptor) mutable {
           if (error) {
             TP_LOG_ERROR() << error.what();
             return;
           }
           py::gil_scoped_acquire acquire;
           try {
-            callback(prepareToAllocate(std::move(message)));
+            callback(prepareToAllocate(std::move(descriptor)));
           } catch (const py::error_already_set& err) {
             TP_LOG_ERROR() << "Callback raised exception: " << err.what();
           }
@@ -364,12 +361,12 @@ PYBIND11_MODULE(pytensorpipe, module) {
       [](std::shared_ptr<tensorpipe::Pipe> pipe,
          std::shared_ptr<IncomingMessage> pyMessage,
          py::object callback) {
-        tensorpipe::Message tpMessage = prepareToRead(std::move(pyMessage));
+        tensorpipe::Allocation tpAllocation =
+            prepareToRead(std::move(pyMessage));
         pipe->read(
-            std::move(tpMessage),
+            std::move(tpAllocation),
             [callback{std::move(callback)}](
-                const tensorpipe::Error& error,
-                tensorpipe::Message tpMessage) mutable {
+                const tensorpipe::Error& error) mutable {
               if (error) {
                 TP_LOG_ERROR() << error.what();
                 return;
@@ -397,8 +394,7 @@ PYBIND11_MODULE(pytensorpipe, module) {
         pipe->write(
             std::move(tpMessage),
             [callback{std::move(callback)}](
-                const tensorpipe::Error& error,
-                tensorpipe::Message tpMessage) mutable {
+                const tensorpipe::Error& error) mutable {
               if (error) {
                 TP_LOG_ERROR() << error.what();
                 return;
