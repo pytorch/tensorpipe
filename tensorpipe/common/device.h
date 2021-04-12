@@ -26,6 +26,13 @@ struct Device {
   std::string type;
   int index;
 
+  // This pointless constructor is needed to work around a bug in GCC 5.5 (and
+  // possibly other versions). It appears to be needed in the nop types that
+  // are used inside nop::Optional.
+  Device() {}
+
+  Device(std::string type, int index) : type(std::move(type)), index(index) {}
+
   // FIXME: This method will disappear once XDTT channel selection is
   // implemented.
   DeviceType deviceType() const {
