@@ -49,8 +49,16 @@ void Pipe::readDescriptor(read_descriptor_callback_fn fn) {
   impl_->readDescriptor(std::move(fn));
 }
 
+void Pipe::read(Allocation allocation, read_callback_deprecated_fn fn) {
+  impl_->read(std::move(allocation), std::move(fn));
+}
+
 void Pipe::read(Allocation allocation, read_callback_fn fn) {
   impl_->read(std::move(allocation), std::move(fn));
+}
+
+void Pipe::write(Message message, write_callback_deprecated_fn fn) {
+  impl_->write(std::move(message), std::move(fn));
 }
 
 void Pipe::write(Message message, write_callback_fn fn) {

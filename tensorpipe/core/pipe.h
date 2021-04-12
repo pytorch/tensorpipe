@@ -64,12 +64,18 @@ class Pipe final {
 
   void readDescriptor(read_descriptor_callback_fn fn);
 
-  using read_callback_fn = std::function<void(const Error&, Message)>;
+  using read_callback_deprecated_fn =
+      std::function<void(const Error&, Message)>;
+  using read_callback_fn = std::function<void(const Error&)>;
 
+  void read(Allocation allocation, read_callback_deprecated_fn fn);
   void read(Allocation allocation, read_callback_fn fn);
 
-  using write_callback_fn = std::function<void(const Error&, Message)>;
+  using write_callback_deprecated_fn =
+      std::function<void(const Error&, Message)>;
+  using write_callback_fn = std::function<void(const Error&)>;
 
+  void write(Message message, write_callback_deprecated_fn fn);
   void write(Message message, write_callback_fn fn);
 
   // Retrieve the user-defined name that was given to the constructor of the
