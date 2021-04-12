@@ -55,19 +55,15 @@ void parseDescriptorOfMessage(ReadOperation& op, const Packet& nopPacketIn) {
     Descriptor::Tensor& tensor = descriptor.tensors.back();
     tensor.metadata = nopTensorDescriptor.metadata;
     tensor.length = static_cast<size_t>(nopTensorDescriptor.sizeInBytes);
-    switch (nopTensorDescriptor.deviceType) {
-      case DeviceType::kCpu: {
-        tensor.buffer = CpuBuffer{};
-        break;
-      }
+    tensor.sourceDevice = nopTensorDescriptor.sourceDevice;
+    if (tensor.sourceDevice.type == kCpuDeviceType) {
+      tensor.buffer = CpuBuffer{};
 #if TENSORPIPE_SUPPORTS_CUDA
-      case DeviceType::kCuda: {
-        tensor.buffer = CudaBuffer{};
-        break;
-      }
+    } else if (tensor.sourceDevice.type == kCudaDeviceType) {
+      tensor.buffer = CudaBuffer{};
 #endif // TENSORPIPE_SUPPORTS_CUDA
-      default:
-        TP_THROW_ASSERT() << "Unexpected device type.";
+    } else {
+      TP_THROW_ASSERT() << "Unexpected device type.";
     };
   }
 }
@@ -116,7 +112,7 @@ std::shared_ptr<NopHolder<Packet>> makeDescriptorForMessage(
         nopMessageDescriptor.tensorDescriptors.back();
     nopTensorDescriptor.metadata = tensor.metadata;
     nopTensorDescriptor.channelName = otherTensor.channelName;
-    nopTensorDescriptor.deviceType = tensor.buffer.deviceType();
+    nopTensorDescriptor.sourceDevice = tensor.buffer.device();
     nopTensorDescriptor.sizeInBytes = tensor.length;
   }
 
@@ -580,6 +576,7 @@ void PipeImpl::callReadCallback(ReadOpIter opIter) {
   for (int i = 0; i < op.descriptor.tensors.size(); ++i) {
     message.tensors[i].metadata = op.descriptor.tensors[i].metadata;
     message.tensors[i].length = op.descriptor.tensors[i].length;
+    message.tensors[i].sourceDevice = op.descriptor.tensors[i].sourceDevice;
     message.tensors[i].buffer = op.allocation.tensors[i].buffer;
   }
 
@@ -834,8 +831,7 @@ void PipeImpl::sendTensorsOfMessage(WriteOpIter opIter) {
             impl.writeOps_.advanceOperation(opIter);
           }));
 
-      op.tensors.push_back(
-          WriteOperation::Tensor{tensor.buffer.deviceType(), channelName});
+      op.tensors.push_back(WriteOperation::Tensor{channelName});
 
       foundAChannel = true;
       break;
