@@ -14,6 +14,7 @@
 
 #include <nop/serializer.h>
 #include <nop/structure.h>
+#include <nop/types/optional.h>
 #include <nop/types/variant.h>
 
 #include <tensorpipe/common/buffer.h>
@@ -92,13 +93,13 @@ struct MessageDescriptor {
     int64_t sizeInBytes;
     std::string metadata;
 
-    DeviceType deviceType;
+    Device sourceDevice;
     std::string channelName;
     NOP_STRUCTURE(
         TensorDescriptor,
         sizeInBytes,
         metadata,
-        deviceType,
+        sourceDevice,
         channelName);
   };
 

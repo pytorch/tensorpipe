@@ -64,7 +64,6 @@ struct ReadOperation {
   Pipe::read_callback_deprecated_fn readCallback;
 
   struct Tensor {
-    DeviceType type;
     std::string channelName;
   };
   std::vector<Tensor> tensors;
@@ -93,7 +92,6 @@ struct WriteOperation {
 
   // Tensor descriptors collected from the channels.
   struct Tensor {
-    DeviceType type;
     std::string channelName;
   };
   std::vector<Tensor> tensors;

@@ -211,12 +211,7 @@ Allocation allocateForDescriptor(
     buffers.push_back(std::move(payloadData));
   }
   for (const auto& tensor : descriptor.tensors) {
-    // FIXME: Until the Pipe provides the `sourceDevice` directly to
-    // `readDescriptor()`, we need to rely on `Buffer::deviceType()` rather than
-    // `Buffer::device().type` since at this stage the buffer is not allocated,
-    // hence `Buffer::device()` would call `cuPointerGetAttribute()` on
-    // `nullptr`.
-    if (tensor.buffer.deviceType() == DeviceType::kCpu) {
+    if (tensor.sourceDevice.type == kCpuDeviceType) {
       auto tensorData =
           std::unique_ptr<uint8_t, std::default_delete<uint8_t[]>>(
               new uint8_t[tensor.length]);
@@ -225,7 +220,7 @@ Allocation allocateForDescriptor(
       });
       buffers.push_back(std::move(tensorData));
 #if TENSORPIPE_SUPPORTS_CUDA
-    } else if (tensor.buffer.deviceType() == DeviceType::kCuda) {
+    } else if (tensor.sourceDevice.type == kCudaDeviceType) {
       auto tensorData = makeCudaPointer(tensor.length);
       allocation.tensors.push_back({
           .buffer =
@@ -238,8 +233,7 @@ Allocation allocateForDescriptor(
       buffers.push_back(std::move(tensorData));
 #endif // TENSORPIPE_SUPPORTS_CUDA
     } else {
-      ADD_FAILURE() << "Unrecognized device type: "
-                    << tensor.buffer.device().type;
+      ADD_FAILURE() << "Unrecognized device type: " << tensor.sourceDevice.type;
     }
   }
 
