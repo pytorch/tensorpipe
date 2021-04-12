@@ -72,42 +72,50 @@ std::vector<uint8_t> unwrapCudaBuffer(CudaBuffer b, size_t length) {
 }
 #endif // TENSORPIPE_SUPPORTS_CUDA
 
-::testing::AssertionResult messagesAreEqual(
-    const Message& m1,
-    const Message& m2) {
-  if (m1.payloads.size() != m2.payloads.size()) {
+::testing::AssertionResult descriptorAndAllocationMatchMessage(
+    const Descriptor& descriptor,
+    const Allocation& allocation,
+    const Message& message) {
+  EXPECT_EQ(descriptor.payloads.size(), allocation.payloads.size());
+  if (descriptor.payloads.size() != message.payloads.size()) {
     return ::testing::AssertionFailure()
-        << "first message has " << m1.payloads.size()
-        << " payloads but second has " << m2.payloads.size();
+        << "descriptor has " << descriptor.payloads.size()
+        << " payloads but message has " << message.payloads.size();
   }
-  for (size_t idx = 0; idx < m1.payloads.size(); idx++) {
+  for (size_t idx = 0; idx < descriptor.payloads.size(); idx++) {
     EXPECT_TRUE(buffersAreEqual(
-        m1.payloads[idx].data,
-        m1.payloads[idx].length,
-        m2.payloads[idx].data,
-        m2.payloads[idx].length));
+        allocation.payloads[idx].data,
+        descriptor.payloads[idx].length,
+        message.payloads[idx].data,
+        message.payloads[idx].length));
   }
-  if (m1.tensors.size() != m2.tensors.size()) {
+  EXPECT_EQ(descriptor.tensors.size(), allocation.tensors.size());
+  if (descriptor.tensors.size() != message.tensors.size()) {
     return ::testing::AssertionFailure()
-        << "first message has " << m1.tensors.size()
-        << " tensors but second has " << m2.tensors.size();
+        << "descriptor has " << descriptor.tensors.size()
+        << " tensors but message has " << message.tensors.size();
   }
-  for (size_t idx = 0; idx < m1.tensors.size(); idx++) {
-    EXPECT_EQ(m1.tensors[idx].buffer.device(), m2.tensors[idx].buffer.device());
-    const std::string& deviceType = m1.tensors[idx].buffer.device().type;
+  for (size_t idx = 0; idx < descriptor.tensors.size(); idx++) {
+    EXPECT_EQ(
+        allocation.tensors[idx].buffer.device(),
+        message.tensors[idx].buffer.device());
+    const std::string& deviceType =
+        allocation.tensors[idx].buffer.device().type;
 
     if (deviceType == kCpuDeviceType) {
       EXPECT_TRUE(buffersAreEqual(
-          m1.tensors[idx].buffer.unwrap<CpuBuffer>().ptr,
-          m1.tensors[idx].length,
-          m2.tensors[idx].buffer.unwrap<CpuBuffer>().ptr,
-          m2.tensors[idx].length));
+          allocation.tensors[idx].buffer.unwrap<CpuBuffer>().ptr,
+          descriptor.tensors[idx].length,
+          message.tensors[idx].buffer.unwrap<CpuBuffer>().ptr,
+          message.tensors[idx].length));
 #if TENSORPIPE_SUPPORTS_CUDA
     } else if (deviceType == kCudaDeviceType) {
       std::vector<uint8_t> buffer1 = unwrapCudaBuffer(
-          m1.tensors[idx].buffer.unwrap<CudaBuffer>(), m1.tensors[idx].length);
+          allocation.tensors[idx].buffer.unwrap<CudaBuffer>(),
+          descriptor.tensors[idx].length);
       std::vector<uint8_t> buffer2 = unwrapCudaBuffer(
-          m2.tensors[idx].buffer.unwrap<CudaBuffer>(), m2.tensors[idx].length);
+          message.tensors[idx].buffer.unwrap<CudaBuffer>(),
+          message.tensors[idx].length);
       EXPECT_TRUE(buffersAreEqual(
           buffer1.data(), buffer1.size(), buffer2.data(), buffer2.size()));
 #endif // TENSORPIPE_SUPPORTS_CUDA
@@ -191,17 +199,18 @@ Message makeMessage(int numPayloads, int numTensors) {
   return message;
 }
 
-void allocateMessage(
-    Message& message,
+Allocation allocateForDescriptor(
+    const Descriptor& descriptor,
     std::vector<std::shared_ptr<void>>& buffers) {
-  for (auto& payload : message.payloads) {
+  Allocation allocation;
+  for (const auto& payload : descriptor.payloads) {
     // FIXME: Changing this to a make_shared causes havoc.
     auto payloadData = std::unique_ptr<uint8_t, std::default_delete<uint8_t[]>>(
         new uint8_t[payload.length]);
-    payload.data = payloadData.get();
+    allocation.payloads.push_back({.data = payloadData.get()});
     buffers.push_back(std::move(payloadData));
   }
-  for (auto& tensor : message.tensors) {
+  for (const auto& tensor : descriptor.tensors) {
     // FIXME: Until the Pipe provides the `sourceDevice` directly to
     // `readDescriptor()`, we need to rely on `Buffer::deviceType()` rather than
     // `Buffer::device().type` since at this stage the buffer is not allocated,
@@ -211,14 +220,21 @@ void allocateMessage(
       auto tensorData =
           std::unique_ptr<uint8_t, std::default_delete<uint8_t[]>>(
               new uint8_t[tensor.length]);
-      tensor.buffer.unwrap<CpuBuffer>().ptr = tensorData.get();
+      allocation.tensors.push_back({
+          .buffer = CpuBuffer{.ptr = tensorData.get()},
+      });
       buffers.push_back(std::move(tensorData));
 #if TENSORPIPE_SUPPORTS_CUDA
     } else if (tensor.buffer.deviceType() == DeviceType::kCuda) {
       auto tensorData = makeCudaPointer(tensor.length);
-      tensor.buffer.unwrap<CudaBuffer>().ptr = tensorData.get();
-      // FIXME: Use non-blocking streams.
-      tensor.buffer.unwrap<CudaBuffer>().stream = cudaStreamDefault;
+      allocation.tensors.push_back({
+          .buffer =
+              CudaBuffer{
+                  .ptr = tensorData.get(),
+                  // FIXME: Use non-blocking streams.
+                  .stream = cudaStreamDefault,
+              },
+      });
       buffers.push_back(std::move(tensorData));
 #endif // TENSORPIPE_SUPPORTS_CUDA
     } else {
@@ -226,6 +242,32 @@ void allocateMessage(
                     << tensor.buffer.device().type;
     }
   }
+
+  return allocation;
+}
+
+Message messageFromAllocation(
+    const Descriptor& descriptor,
+    const Allocation& allocation) {
+  Message message;
+  message.metadata = descriptor.metadata;
+  for (int payloadIdx = 0; payloadIdx < descriptor.payloads.size();
+       ++payloadIdx) {
+    message.payloads.emplace_back();
+    Message::Payload& payload = message.payloads.back();
+    payload.metadata = descriptor.payloads[payloadIdx].metadata;
+    payload.length = descriptor.payloads[payloadIdx].length;
+    payload.data = allocation.payloads[payloadIdx].data;
+  }
+  for (int tensorIdx = 0; tensorIdx < descriptor.tensors.size(); ++tensorIdx) {
+    message.tensors.emplace_back();
+    Message::Tensor& tensor = message.tensors.back();
+    tensor.metadata = descriptor.tensors[tensorIdx].metadata;
+    tensor.length = descriptor.tensors[tensorIdx].length;
+    tensor.buffer = allocation.tensors[tensorIdx].buffer;
+  }
+
+  return message;
 }
 
 std::string createUniqueShmAddr() {
@@ -279,8 +321,8 @@ TEST(Context, ClientPingSerial) {
       [&]() {
         std::vector<std::shared_ptr<void>> buffers;
         std::promise<std::shared_ptr<Pipe>> serverPipePromise;
-        std::promise<Message> readDescriptorPromise;
-        std::promise<Message> readMessagePromise;
+        std::promise<Descriptor> readDescriptorPromise;
+        std::promise<void> readMessagePromise;
 
         auto context = makeContext();
 
@@ -298,30 +340,29 @@ TEST(Context, ClientPingSerial) {
         std::shared_ptr<Pipe> serverPipe = serverPipePromise.get_future().get();
 
         serverPipe->readDescriptor(
-            [&readDescriptorPromise](const Error& error, Message message) {
+            [&readDescriptorPromise](
+                const Error& error, Descriptor descriptor) {
               if (error) {
                 readDescriptorPromise.set_exception(
                     std::make_exception_ptr(std::runtime_error(error.what())));
               } else {
-                readDescriptorPromise.set_value(std::move(message));
+                readDescriptorPromise.set_value(std::move(descriptor));
               }
             });
 
-        Message message(readDescriptorPromise.get_future().get());
-        allocateMessage(message, buffers);
-        serverPipe->read(
-            std::move(message),
-            [&readMessagePromise](const Error& error, Message message) {
-              if (error) {
-                readMessagePromise.set_exception(
-                    std::make_exception_ptr(std::runtime_error(error.what())));
-              } else {
-                readMessagePromise.set_value(std::move(message));
-              }
-            });
-        EXPECT_TRUE(messagesAreEqual(
-            readMessagePromise.get_future().get(),
-            makeMessage(kNumPayloads, kNumTensors)));
+        Descriptor descriptor = readDescriptorPromise.get_future().get();
+        Allocation allocation = allocateForDescriptor(descriptor, buffers);
+        serverPipe->read(allocation, [&readMessagePromise](const Error& error) {
+          if (error) {
+            readMessagePromise.set_exception(
+                std::make_exception_ptr(std::runtime_error(error.what())));
+          } else {
+            readMessagePromise.set_value();
+          }
+        });
+        readMessagePromise.get_future().get();
+        EXPECT_TRUE(descriptorAndAllocationMatchMessage(
+            descriptor, allocation, makeMessage(kNumPayloads, kNumTensors)));
 
         pg.done(PeerGroup::kServer);
         pg.join(PeerGroup::kServer);
@@ -329,7 +370,7 @@ TEST(Context, ClientPingSerial) {
         context->join();
       },
       [&]() {
-        std::promise<Message> writtenMessagePromise;
+        std::promise<void> writtenMessagePromise;
 
         auto context = makeContext();
 
@@ -338,17 +379,15 @@ TEST(Context, ClientPingSerial) {
 
         clientPipe->write(
             makeMessage(kNumPayloads, kNumTensors),
-            [&writtenMessagePromise](const Error& error, Message message) {
+            [&writtenMessagePromise](const Error& error) {
               if (error) {
                 writtenMessagePromise.set_exception(
                     std::make_exception_ptr(std::runtime_error(error.what())));
               } else {
-                writtenMessagePromise.set_value(std::move(message));
+                writtenMessagePromise.set_value();
               }
             });
-        EXPECT_TRUE(messagesAreEqual(
-            writtenMessagePromise.get_future().get(),
-            makeMessage(kNumPayloads, kNumTensors)));
+        writtenMessagePromise.get_future().get();
 
         pg.done(PeerGroup::kClient);
         pg.join(PeerGroup::kClient);
@@ -381,25 +420,30 @@ TEST(Context, ClientPingInline) {
         std::shared_ptr<Pipe> serverPipe = serverPipePromise.get_future().get();
 
         serverPipe->readDescriptor([&serverPipe, &readCompletedProm, &buffers](
-                                       const Error& error, Message message) {
+                                       const Error& error,
+                                       Descriptor descriptor) {
           if (error) {
             ADD_FAILURE() << error.what();
             readCompletedProm.set_value();
             return;
           }
-          allocateMessage(message, buffers);
+
+          Allocation allocation = allocateForDescriptor(descriptor, buffers);
           serverPipe->read(
-              std::move(message),
-              [&readCompletedProm](
-                  const Error& error, Message message) mutable {
+              allocation,
+              [&readCompletedProm,
+               descriptor{std::move(descriptor)},
+               allocation](const Error& error) {
                 if (error) {
-                  ADD_FAILURE() << error.what();
+                  readCompletedProm.set_exception(std::make_exception_ptr(
+                      std::runtime_error(error.what())));
+                } else {
+                  EXPECT_TRUE(descriptorAndAllocationMatchMessage(
+                      descriptor,
+                      allocation,
+                      makeMessage(kNumPayloads, kNumTensors)));
                   readCompletedProm.set_value();
-                  return;
                 }
-                EXPECT_TRUE(messagesAreEqual(
-                    message, makeMessage(kNumPayloads, kNumTensors)));
-                readCompletedProm.set_value();
               });
         });
         readCompletedProm.get_future().get();
@@ -419,13 +463,13 @@ TEST(Context, ClientPingInline) {
 
         clientPipe->write(
             makeMessage(kNumPayloads, kNumTensors),
-            [&writeCompletedProm](const Error& error, Message /* unused */) {
+            [&writeCompletedProm](const Error& error) {
               if (error) {
-                ADD_FAILURE() << error.what();
+                writeCompletedProm.set_exception(
+                    std::make_exception_ptr(std::runtime_error(error.what())));
+              } else {
                 writeCompletedProm.set_value();
-                return;
               }
-              writeCompletedProm.set_value();
             });
         writeCompletedProm.get_future().get();
 
@@ -467,42 +511,48 @@ TEST(Context, ServerPingPongTwice) {
                &pingCompletedProm,
                &buffers,
                &numPingsGoneThrough,
-               i](const Error& error, Message /* unused */) {
+               i](const Error& error) {
                 if (error) {
                   ADD_FAILURE() << error.what();
                   pingCompletedProm.set_value();
                   return;
                 }
-                serverPipe->readDescriptor([&serverPipe,
-                                            &pingCompletedProm,
-                                            &buffers,
-                                            &numPingsGoneThrough,
-                                            i](const Error& error,
-                                               Message message) {
-                  if (error) {
-                    ADD_FAILURE() << error.what();
-                    pingCompletedProm.set_value();
-                    return;
-                  }
-                  allocateMessage(message, buffers);
-                  serverPipe->read(
-                      std::move(message),
-                      [&pingCompletedProm, &numPingsGoneThrough, i](
-                          const Error& error, Message message) {
-                        if (error) {
-                          ADD_FAILURE() << error.what();
-                          pingCompletedProm.set_value();
-                          return;
-                        }
-                        EXPECT_TRUE(messagesAreEqual(
-                            message, makeMessage(kNumPayloads, kNumTensors)));
-                        EXPECT_EQ(numPingsGoneThrough, i);
-                        numPingsGoneThrough++;
-                        if (numPingsGoneThrough == 2) {
-                          pingCompletedProm.set_value();
-                        }
-                      });
-                });
+                serverPipe->readDescriptor(
+                    [&serverPipe,
+                     &pingCompletedProm,
+                     &buffers,
+                     &numPingsGoneThrough,
+                     i](const Error& error, Descriptor descriptor) {
+                      if (error) {
+                        ADD_FAILURE() << error.what();
+                        pingCompletedProm.set_value();
+                        return;
+                      }
+                      Allocation allocation =
+                          allocateForDescriptor(descriptor, buffers);
+                      serverPipe->read(
+                          allocation,
+                          [&pingCompletedProm,
+                           &numPingsGoneThrough,
+                           descriptor{std::move(descriptor)},
+                           allocation,
+                           i](const Error& error) {
+                            if (error) {
+                              ADD_FAILURE() << error.what();
+                              pingCompletedProm.set_value();
+                              return;
+                            }
+                            EXPECT_TRUE(descriptorAndAllocationMatchMessage(
+                                descriptor,
+                                allocation,
+                                makeMessage(kNumPayloads, kNumTensors)));
+                            EXPECT_EQ(numPingsGoneThrough, i);
+                            numPingsGoneThrough++;
+                            if (numPingsGoneThrough == 2) {
+                              pingCompletedProm.set_value();
+                            }
+                          });
+                    });
               });
         }
         pingCompletedProm.get_future().get();
@@ -527,26 +577,35 @@ TEST(Context, ServerPingPongTwice) {
                                       &pongCompletedProm,
                                       &buffers,
                                       &numPongsGoneThrough,
-                                      i](const Error& error, Message message) {
+                                      i](const Error& error,
+                                         Descriptor descriptor) {
             if (error) {
               ADD_FAILURE() << error.what();
               pongCompletedProm.set_value();
               return;
             }
-            allocateMessage(message, buffers);
+            Allocation allocation = allocateForDescriptor(descriptor, buffers);
             clientPipe->read(
-                std::move(message),
-                [&clientPipe, &pongCompletedProm, &numPongsGoneThrough, i](
-                    const Error& error, Message message) mutable {
+                allocation,
+                [&clientPipe,
+                 &pongCompletedProm,
+                 &numPongsGoneThrough,
+                 descriptor{std::move(descriptor)},
+                 allocation,
+                 i](const Error& error) {
                   if (error) {
                     ADD_FAILURE() << error.what();
                     pongCompletedProm.set_value();
                     return;
                   }
+
+                  // Copy received message to send it back.
+                  Message message =
+                      messageFromAllocation(descriptor, allocation);
                   clientPipe->write(
                       std::move(message),
                       [&pongCompletedProm, &numPongsGoneThrough, i](
-                          const Error& error, Message /* unused */) {
+                          const Error& error) {
                         if (error) {
                           ADD_FAILURE() << error.what();
                           pongCompletedProm.set_value();
@@ -573,15 +632,16 @@ TEST(Context, ServerPingPongTwice) {
 static void pipeRead(
     std::shared_ptr<Pipe>& pipe,
     std::vector<std::shared_ptr<void>>& buffers,
-    std::function<void(const Error&, Message)> fn) {
+    std::function<void(const Error&, Descriptor, Allocation)> fn) {
   pipe->readDescriptor([&pipe, &buffers, fn{std::move(fn)}](
-                           const Error& error, Message message) mutable {
+                           const Error& error, Descriptor descriptor) mutable {
     ASSERT_FALSE(error);
-    allocateMessage(message, buffers);
+    Allocation allocation = allocateForDescriptor(descriptor, buffers);
     pipe->read(
-        std::move(message),
-        [fn{std::move(fn)}](const Error& error, Message message) mutable {
-          fn(error, std::move(message));
+        allocation,
+        [fn{std::move(fn)}, descriptor{std::move(descriptor)}, allocation](
+            const Error& error) mutable {
+          fn(error, std::move(descriptor), std::move(allocation));
         });
   });
 }
@@ -616,10 +676,14 @@ TEST(Context, MixedTensorMessage) {
             serverPipe,
             buffers,
             [&readNum, &readCompletedProm](
-                const Error& error, Message message) {
+                const Error& error,
+                Descriptor descriptor,
+                Allocation allocation) {
               ASSERT_FALSE(error);
-              EXPECT_TRUE(messagesAreEqual(
-                  message, makeMessage(kNumPayloads, kNumTensors)));
+              EXPECT_TRUE(descriptorAndAllocationMatchMessage(
+                  descriptor,
+                  allocation,
+                  makeMessage(kNumPayloads, kNumTensors)));
               if (--readNum == 0) {
                 readCompletedProm.set_value();
               }
@@ -628,9 +692,12 @@ TEST(Context, MixedTensorMessage) {
             serverPipe,
             buffers,
             [&readNum, &readCompletedProm](
-                const Error& error, Message message) {
+                const Error& error,
+                Descriptor descriptor,
+                Allocation allocation) {
               ASSERT_FALSE(error);
-              EXPECT_TRUE(messagesAreEqual(message, makeMessage(0, 0)));
+              EXPECT_TRUE(descriptorAndAllocationMatchMessage(
+                  descriptor, allocation, makeMessage(0, 0)));
               if (--readNum == 0) {
                 readCompletedProm.set_value();
               }
@@ -653,8 +720,7 @@ TEST(Context, MixedTensorMessage) {
         std::atomic<int> writeNum(kNumMessages);
         clientPipe->write(
             makeMessage(kNumPayloads, kNumTensors),
-            [&writeNum, &writeCompletedProm](
-                const Error& error, Message /* unused */) {
+            [&writeNum, &writeCompletedProm](const Error& error) {
               ASSERT_FALSE(error) << error.what();
               if (--writeNum == 0) {
                 writeCompletedProm.set_value();
@@ -662,8 +728,7 @@ TEST(Context, MixedTensorMessage) {
             });
         clientPipe->write(
             makeMessage(0, 0),
-            [&writeNum, &writeCompletedProm](
-                const Error& error, Message /* unused */) {
+            [&writeNum, &writeCompletedProm](const Error& error) {
               ASSERT_FALSE(error) << error.what();
               if (--writeNum == 0) {
                 writeCompletedProm.set_value();
