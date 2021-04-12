@@ -198,121 +198,145 @@ static void serverPongPingNonBlock(
   doneProm.set_value();
   return;
 #endif // USE_NCCL
-  pipe->readDescriptor([pipe,
-                        &numWarmUps,
-                        &numRoundTrips,
-                        &doneProm,
-                        &data,
-                        &measurements](const Error& error, Message&& message) {
-    TP_THROW_ASSERT_IF(error) << error.what();
-    TP_DCHECK_EQ(message.metadata, data.expectedMetadata);
-    if (data.payloadSize > 0) {
-      TP_DCHECK_EQ(message.payloads.size(), data.numPayloads);
-      for (size_t payloadIdx = 0; payloadIdx < data.numPayloads; payloadIdx++) {
-        TP_DCHECK_EQ(
-            message.payloads[payloadIdx].metadata,
-            data.expectedPayloadMetadata[payloadIdx]);
-        TP_DCHECK_EQ(message.payloads[payloadIdx].length, data.payloadSize);
-        message.payloads[payloadIdx].data =
-            data.temporaryPayload[payloadIdx].get();
-      }
-    } else {
-      TP_DCHECK_EQ(message.payloads.size(), 0);
-    }
-    if (data.tensorSize > 0) {
-      TP_DCHECK_EQ(message.tensors.size(), data.numTensors);
-      for (size_t tensorIdx = 0; tensorIdx < data.numTensors; tensorIdx++) {
-        TP_DCHECK_EQ(
-            message.tensors[tensorIdx].metadata,
-            data.expectedTensorMetadata[tensorIdx]);
-        TP_DCHECK_EQ(message.tensors[tensorIdx].length, data.tensorSize);
-        if (data.tensorType == TensorType::kCpu) {
-          message.tensors[tensorIdx].buffer.unwrap<CpuBuffer>().ptr =
-              data.temporaryCpuTensor[tensorIdx].get();
-        } else if (data.tensorType == TensorType::kCuda) {
-          message.tensors[tensorIdx].buffer.unwrap<CudaBuffer>().ptr =
-              data.temporaryCudaTensor[tensorIdx].get();
-          message.tensors[tensorIdx].buffer.unwrap<CudaBuffer>().stream =
-              data.cudaStream.get();
+  pipe->readDescriptor(
+      [pipe, &numWarmUps, &numRoundTrips, &doneProm, &data, &measurements](
+          const Error& error, Descriptor descriptor) {
+        TP_THROW_ASSERT_IF(error) << error.what();
+        Allocation allocation;
+        TP_DCHECK_EQ(descriptor.metadata, data.expectedMetadata);
+        if (data.payloadSize > 0) {
+          TP_DCHECK_EQ(descriptor.payloads.size(), data.numPayloads);
+          allocation.payloads.resize(data.numPayloads);
+          for (size_t payloadIdx = 0; payloadIdx < data.numPayloads;
+               payloadIdx++) {
+            TP_DCHECK_EQ(
+                descriptor.payloads[payloadIdx].metadata,
+                data.expectedPayloadMetadata[payloadIdx]);
+            TP_DCHECK_EQ(
+                descriptor.payloads[payloadIdx].length, data.payloadSize);
+            allocation.payloads[payloadIdx].data =
+                data.temporaryPayload[payloadIdx].get();
+          }
         } else {
-          TP_THROW_ASSERT() << "Unknown tensor type";
+          TP_DCHECK_EQ(descriptor.payloads.size(), 0);
         }
-      }
-    } else {
-      TP_DCHECK_EQ(message.tensors.size(), 0);
-    }
-    pipe->read(
-        std::move(message),
-        [pipe, &numWarmUps, &numRoundTrips, &doneProm, &data, &measurements](
-            const Error& error, Message&& message) {
-          TP_THROW_ASSERT_IF(error) << error.what();
-          if (data.payloadSize > 0) {
-            TP_DCHECK_EQ(message.payloads.size(), data.numPayloads);
-            for (size_t payloadIdx = 0; payloadIdx < data.numPayloads;
-                 payloadIdx++) {
-              TP_DCHECK_EQ(
-                  message.payloads[payloadIdx].length, data.payloadSize);
-              TP_DCHECK_EQ(
-                  memcmp(
-                      message.payloads[payloadIdx].data,
-                      data.expectedPayload[payloadIdx].get(),
-                      message.payloads[payloadIdx].length),
-                  0);
+        if (data.tensorSize > 0) {
+          TP_DCHECK_EQ(descriptor.tensors.size(), data.numTensors);
+          allocation.tensors.resize(data.numTensors);
+          for (size_t tensorIdx = 0; tensorIdx < data.numTensors; tensorIdx++) {
+            TP_DCHECK_EQ(
+                descriptor.tensors[tensorIdx].metadata,
+                data.expectedTensorMetadata[tensorIdx]);
+            TP_DCHECK_EQ(descriptor.tensors[tensorIdx].length, data.tensorSize);
+            if (data.tensorType == TensorType::kCpu) {
+              allocation.tensors[tensorIdx].buffer = CpuBuffer{
+                  .ptr = data.temporaryCpuTensor[tensorIdx].get(),
+              };
+            } else if (data.tensorType == TensorType::kCuda) {
+              allocation.tensors[tensorIdx].buffer = CudaBuffer{
+                  .ptr = data.temporaryCudaTensor[tensorIdx].get(),
+                  .stream = data.cudaStream.get(),
+              };
+            } else {
+              TP_THROW_ASSERT() << "Unknown tensor type";
             }
-          } else {
-            TP_DCHECK_EQ(message.payloads.size(), 0);
           }
-          if (data.tensorSize > 0) {
-            TP_DCHECK_EQ(message.tensors.size(), data.numTensors);
-            for (size_t tensorIdx = 0; tensorIdx < data.numTensors;
-                 tensorIdx++) {
-              TP_DCHECK_EQ(message.tensors[tensorIdx].length, data.tensorSize);
-              if (data.tensorType == TensorType::kCpu) {
-                TP_DCHECK_EQ(
-                    memcmp(
-                        message.tensors[tensorIdx]
-                            .buffer.unwrap<CpuBuffer>()
-                            .ptr,
-                        data.expectedCpuTensor[tensorIdx].get(),
-                        message.tensors[tensorIdx].length),
-                    0);
-              } else if (data.tensorType == TensorType::kCuda) {
-                // No (easy) way to do a memcmp with CUDA, I believe...
+        } else {
+          TP_DCHECK_EQ(descriptor.tensors.size(), 0);
+        }
+
+        pipe->read(
+            allocation,
+            [pipe,
+             &numWarmUps,
+             &numRoundTrips,
+             &doneProm,
+             &data,
+             &measurements,
+             descriptor{std::move(descriptor)},
+             allocation](const Error& error) {
+              TP_THROW_ASSERT_IF(error) << error.what();
+
+              Message message;
+              if (data.payloadSize > 0) {
+                TP_DCHECK_EQ(allocation.payloads.size(), data.numPayloads);
+                message.payloads.resize(data.numPayloads);
+                for (size_t payloadIdx = 0; payloadIdx < data.numPayloads;
+                     payloadIdx++) {
+                  TP_DCHECK_EQ(
+                      descriptor.payloads[payloadIdx].length, data.payloadSize);
+                  TP_DCHECK_EQ(
+                      memcmp(
+                          allocation.payloads[payloadIdx].data,
+                          data.expectedPayload[payloadIdx].get(),
+                          descriptor.payloads[payloadIdx].length),
+                      0);
+                  message.payloads[payloadIdx] = {
+                      .length = descriptor.payloads[payloadIdx].length,
+                      .data = data.expectedPayload[payloadIdx].get(),
+                  };
+                }
               } else {
-                TP_THROW_ASSERT() << "Unknown tensor type";
+                TP_DCHECK_EQ(allocation.payloads.size(), 0);
               }
-            }
-          } else {
-            TP_DCHECK_EQ(message.tensors.size(), 0);
-          }
-          pipe->write(
-              std::move(message),
-              [pipe,
-               &numWarmUps,
-               &numRoundTrips,
-               &doneProm,
-               &data,
-               &measurements](const Error& error, Message&& message) {
-                TP_THROW_ASSERT_IF(error) << error.what();
-                if (numWarmUps > 0) {
-                  numWarmUps -= 1;
-                } else {
-                  numRoundTrips -= 1;
+              if (data.tensorSize > 0) {
+                TP_DCHECK_EQ(allocation.tensors.size(), data.numTensors);
+                message.tensors.resize(data.numTensors);
+                for (size_t tensorIdx = 0; tensorIdx < data.numTensors;
+                     tensorIdx++) {
+                  TP_DCHECK_EQ(
+                      descriptor.tensors[tensorIdx].length, data.tensorSize);
+                  if (data.tensorType == TensorType::kCpu) {
+                    TP_DCHECK_EQ(
+                        memcmp(
+                            allocation.tensors[tensorIdx]
+                                .buffer.unwrap<CpuBuffer>()
+                                .ptr,
+                            data.expectedCpuTensor[tensorIdx].get(),
+                            descriptor.tensors[tensorIdx].length),
+                        0);
+                  } else if (data.tensorType == TensorType::kCuda) {
+                    // No (easy) way to do a memcmp with CUDA, I believe...
+                  } else {
+                    TP_THROW_ASSERT() << "Unknown tensor type";
+                  }
+                  message.tensors[tensorIdx] = {
+                      .buffer = allocation.tensors[tensorIdx].buffer,
+                      .length = descriptor.tensors[tensorIdx].length,
+                  };
                 }
-                if (numRoundTrips > 0) {
-                  serverPongPingNonBlock(
-                      pipe,
-                      numWarmUps,
-                      numRoundTrips,
-                      doneProm,
-                      data,
-                      measurements);
-                } else {
-                  doneProm.set_value();
-                }
-              });
-        });
-  });
+              } else {
+                TP_DCHECK_EQ(allocation.tensors.size(), 0);
+              }
+
+              pipe->write(
+                  std::move(message),
+                  [pipe,
+                   &numWarmUps,
+                   &numRoundTrips,
+                   &doneProm,
+                   &data,
+                   &measurements](const Error& error) {
+                    TP_THROW_ASSERT_IF(error) << error.what();
+                    if (numWarmUps > 0) {
+                      numWarmUps -= 1;
+                    } else {
+                      numRoundTrips -= 1;
+                    }
+                    if (numRoundTrips > 0) {
+                      serverPongPingNonBlock(
+                          pipe,
+                          numWarmUps,
+                          numRoundTrips,
+                          doneProm,
+                          data,
+                          measurements);
+                    } else {
+                      doneProm.set_value();
+                    }
+                  });
+            });
+      });
 }
 
 // Start with receiving ping
@@ -374,9 +398,10 @@ static void runServer(const Options& options) {
 
 #if USE_NCCL
   std::promise<ncclUniqueId> uniqueIdProm;
-  pipe->readDescriptor([&](const Error& error, Message message) {
+  pipe->readDescriptor([&](const Error& error, Descriptor descriptor) {
+    TP_THROW_ASSERT_IF(error) << error.what();
     uniqueIdProm.set_value(
-        *reinterpret_cast<const ncclUniqueId*>(message.metadata.c_str()));
+        *reinterpret_cast<const ncclUniqueId*>(descriptor.metadata.c_str()));
   });
   ncclUniqueId uniqueId = uniqueIdProm.get_future().get();
 
@@ -474,7 +499,7 @@ static void clientPingPongNonBlock(
   pipe->write(
       std::move(message),
       [pipe, &numWarmUps, &numRoundTrips, &doneProm, &data, &measurements](
-          const Error& error, Message&& message) {
+          const Error& error) {
         TP_THROW_ASSERT_IF(error) << error.what();
         pipe->readDescriptor([pipe,
                               &numWarmUps,
@@ -482,55 +507,63 @@ static void clientPingPongNonBlock(
                               &doneProm,
                               &data,
                               &measurements](
-                                 const Error& error, Message&& message) {
+                                 const Error& error, Descriptor descriptor) {
           TP_THROW_ASSERT_IF(error) << error.what();
-          TP_DCHECK_EQ(message.metadata, data.expectedMetadata);
+
+          Allocation allocation;
+          TP_DCHECK_EQ(descriptor.metadata, data.expectedMetadata);
           if (data.payloadSize > 0) {
-            TP_DCHECK_EQ(message.payloads.size(), data.numPayloads);
+            TP_DCHECK_EQ(descriptor.payloads.size(), data.numPayloads);
+            allocation.payloads.resize(data.numPayloads);
             for (size_t payloadIdx = 0; payloadIdx < data.numPayloads;
                  payloadIdx++) {
               TP_DCHECK_EQ(
-                  message.payloads[payloadIdx].metadata,
+                  descriptor.payloads[payloadIdx].metadata,
                   data.expectedPayloadMetadata[payloadIdx]);
               TP_DCHECK_EQ(
-                  message.payloads[payloadIdx].length, data.payloadSize);
-              message.payloads[payloadIdx].data =
+                  descriptor.payloads[payloadIdx].length, data.payloadSize);
+              allocation.payloads[payloadIdx].data =
                   data.temporaryPayload[payloadIdx].get();
             }
           } else {
-            TP_DCHECK_EQ(message.payloads.size(), 0);
+            TP_DCHECK_EQ(descriptor.payloads.size(), 0);
           }
           if (data.tensorSize > 0) {
-            TP_DCHECK_EQ(message.tensors.size(), data.numTensors);
+            TP_DCHECK_EQ(descriptor.tensors.size(), data.numTensors);
+            allocation.tensors.resize(data.numTensors);
             for (size_t tensorIdx = 0; tensorIdx < data.numTensors;
                  tensorIdx++) {
               TP_DCHECK_EQ(
-                  message.tensors[tensorIdx].metadata,
+                  descriptor.tensors[tensorIdx].metadata,
                   data.expectedTensorMetadata[tensorIdx]);
-              TP_DCHECK_EQ(message.tensors[tensorIdx].length, data.tensorSize);
+              TP_DCHECK_EQ(
+                  descriptor.tensors[tensorIdx].length, data.tensorSize);
               if (data.tensorType == TensorType::kCpu) {
-                message.tensors[tensorIdx].buffer.unwrap<CpuBuffer>().ptr =
-                    data.temporaryCpuTensor[tensorIdx].get();
+                allocation.tensors[tensorIdx].buffer = CpuBuffer{
+                    .ptr = data.temporaryCpuTensor[tensorIdx].get(),
+                };
               } else if (data.tensorType == TensorType::kCuda) {
-                message.tensors[tensorIdx].buffer.unwrap<CudaBuffer>().ptr =
-                    data.temporaryCudaTensor[tensorIdx].get();
-                message.tensors[tensorIdx].buffer.unwrap<CudaBuffer>().stream =
-                    data.cudaStream.get();
+                allocation.tensors[tensorIdx].buffer = CudaBuffer{
+                    .ptr = data.temporaryCudaTensor[tensorIdx].get(),
+                    .stream = data.cudaStream.get(),
+                };
               } else {
                 TP_THROW_ASSERT() << "Unknown tensor type";
               }
             }
           } else {
-            TP_DCHECK_EQ(message.tensors.size(), 0);
+            TP_DCHECK_EQ(descriptor.tensors.size(), 0);
           }
           pipe->read(
-              std::move(message),
+              allocation,
               [pipe,
                &numWarmUps,
                &numRoundTrips,
                &doneProm,
                &data,
-               &measurements](const Error& error, Message&& message) {
+               &measurements,
+               descriptor{std::move(descriptor)},
+               allocation](const Error& error) {
                 if (numWarmUps == 0) {
                   measurements.cpu.markStop();
                   if ((numRoundTrips - 1) % data.cudaSyncPeriod == 0) {
@@ -540,31 +573,31 @@ static void clientPingPongNonBlock(
                 }
                 TP_THROW_ASSERT_IF(error) << error.what();
                 if (data.payloadSize > 0) {
-                  TP_DCHECK_EQ(message.payloads.size(), data.numPayloads);
+                  TP_DCHECK_EQ(allocation.payloads.size(), data.numPayloads);
                   for (size_t payloadIdx = 0; payloadIdx < data.numPayloads;
                        payloadIdx++) {
                     TP_DCHECK_EQ(
                         memcmp(
-                            message.payloads[payloadIdx].data,
+                            allocation.payloads[payloadIdx].data,
                             data.expectedPayload[payloadIdx].get(),
-                            message.payloads[payloadIdx].length),
+                            descriptor.payloads[payloadIdx].length),
                         0);
                   }
                 } else {
-                  TP_DCHECK_EQ(message.payloads.size(), 0);
+                  TP_DCHECK_EQ(allocation.payloads.size(), 0);
                 }
                 if (data.tensorSize > 0) {
-                  TP_DCHECK_EQ(message.tensors.size(), data.numTensors);
+                  TP_DCHECK_EQ(allocation.tensors.size(), data.numTensors);
                   for (size_t tensorIdx = 0; tensorIdx < data.numTensors;
                        tensorIdx++) {
                     if (data.tensorType == TensorType::kCpu) {
                       TP_DCHECK_EQ(
                           memcmp(
-                              message.tensors[tensorIdx]
+                              allocation.tensors[tensorIdx]
                                   .buffer.unwrap<CpuBuffer>()
                                   .ptr,
                               data.expectedCpuTensor[tensorIdx].get(),
-                              message.tensors[tensorIdx].length),
+                              descriptor.tensors[tensorIdx].length),
                           0);
                     } else if (data.tensorType == TensorType::kCuda) {
                       // No (easy) way to do a memcmp with CUDA, I
@@ -574,7 +607,7 @@ static void clientPingPongNonBlock(
                     }
                   }
                 } else {
-                  TP_DCHECK_EQ(message.tensors.size(), 0);
+                  TP_DCHECK_EQ(allocation.tensors.size(), 0);
                 }
                 if (numWarmUps > 0) {
                   numWarmUps -= 1;
@@ -658,9 +691,10 @@ static void runClient(const Options& options) {
       reinterpret_cast<char*>(&uniqueId),
       reinterpret_cast<char*>(&uniqueId) + sizeof(ncclUniqueId));
   std::promise<void> promise;
-  pipe->write(
-      std::move(message),
-      [&](const Error& error, Message /* unused */) { promise.set_value(); });
+  pipe->write(std::move(message), [&](const Error& error) {
+    TP_THROW_ASSERT_IF(error) << error.what();
+    promise.set_value();
+  });
   promise.get_future().get();
 
   data.ncclComm = createNcclComm(/*rank=*/1, /*worldSize=*/2, uniqueId);
