@@ -25,16 +25,6 @@ namespace tensorpipe {
 //
 class Message final {
  public:
-  Message() = default;
-
-  // Messages are movable.
-  Message(Message&&) = default;
-  Message& operator=(Message&&) = default;
-
-  // But they are not copyable.
-  Message(const Message&) = delete;
-  Message& operator=(const Message&) = delete;
-
   std::string metadata;
 
   struct Payload {
