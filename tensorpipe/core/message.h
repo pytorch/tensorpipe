@@ -52,4 +52,8 @@ class Message final {
   std::vector<Tensor> tensors;
 };
 
+// FIXME: Remove once we introduce the proper Descriptor/Allocation structs.
+using Descriptor = Message;
+using Allocation = Message;
+
 } // namespace tensorpipe

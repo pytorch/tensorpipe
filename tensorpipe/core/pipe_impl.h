@@ -63,20 +63,15 @@ struct ReadOperation {
   Pipe::read_descriptor_callback_fn readDescriptorCallback;
   Pipe::read_callback_fn readCallback;
 
-  // Metadata found in the descriptor read from the connection.
-  struct Payload {
-    ssize_t length{-1};
-  };
-  std::vector<Payload> payloads;
   struct Tensor {
     DeviceType type;
-    ssize_t length{-1};
     std::string channelName;
   };
   std::vector<Tensor> tensors;
 
+  Descriptor descriptor;
   // Buffers allocated by the user.
-  Message message;
+  Allocation allocation;
 };
 
 struct WriteOperation {
@@ -128,7 +123,7 @@ class PipeImpl final : public std::enable_shared_from_this<PipeImpl> {
   using write_callback_fn = Pipe::write_callback_fn;
 
   void readDescriptor(read_descriptor_callback_fn fn);
-  void read(Message message, read_callback_fn fn);
+  void read(Allocation allocation, read_callback_fn fn);
   void write(Message message, write_callback_fn fn);
 
   const std::string& getRemoteName();
@@ -140,7 +135,7 @@ class PipeImpl final : public std::enable_shared_from_this<PipeImpl> {
 
   void readDescriptorFromLoop(read_descriptor_callback_fn fn);
 
-  void readFromLoop(Message message, read_callback_fn fn);
+  void readFromLoop(Allocation allocation, read_callback_fn fn);
 
   void writeFromLoop(Message message, write_callback_fn fn);
 
