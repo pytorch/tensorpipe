@@ -60,13 +60,13 @@ class Pipe final {
   //
 
   using read_descriptor_callback_fn =
-      std::function<void(const Error&, Message)>;
+      std::function<void(const Error&, Descriptor)>;
 
   void readDescriptor(read_descriptor_callback_fn fn);
 
   using read_callback_fn = std::function<void(const Error&, Message)>;
 
-  void read(Message message, read_callback_fn fn);
+  void read(Allocation allocation, read_callback_fn fn);
 
   using write_callback_fn = std::function<void(const Error&, Message)>;
 
