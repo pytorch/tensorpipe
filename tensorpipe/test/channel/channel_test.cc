@@ -291,3 +291,46 @@ class EmptyTensorTest : public ClientServerChannelTestCase {
 };
 
 CHANNEL_TEST(ChannelTestSuite, EmptyTensor);
+
+// Call send and recv with a length of 0, between sends and recvs with
+// positive length.
+class EmptyAndNonEmptyTensorsTest : public ClientServerChannelTestCase {
+  void server(std::shared_ptr<Channel> channel) override {
+    std::vector<uint8_t> data(1);
+    std::unique_ptr<DataWrapper> wrappedData = helper_->makeDataWrapper(data);
+    Buffer buffer = wrappedData->buffer();
+
+    std::vector<std::future<Error>> sendFutures;
+    sendFutures.push_back(sendWithFuture(channel, buffer, 1));
+    sendFutures.push_back(sendWithFuture(channel, buffer, 0));
+    sendFutures.push_back(sendWithFuture(channel, buffer, 1));
+
+    for (auto& f : sendFutures) {
+      Error sendError = f.get();
+      EXPECT_FALSE(sendError) << sendError.what();
+    }
+
+    this->peers_->done(PeerGroup::kServer);
+    this->peers_->join(PeerGroup::kServer);
+  }
+
+  void client(std::shared_ptr<Channel> channel) override {
+    std::unique_ptr<DataWrapper> wrappedData = helper_->makeDataWrapper(1);
+    Buffer buffer = wrappedData->buffer();
+
+    std::vector<std::future<Error>> sendFutures;
+    sendFutures.push_back(recvWithFuture(channel, buffer, 1));
+    sendFutures.push_back(recvWithFuture(channel, buffer, 0));
+    sendFutures.push_back(recvWithFuture(channel, buffer, 1));
+
+    for (auto& f : sendFutures) {
+      Error sendError = f.get();
+      EXPECT_FALSE(sendError) << sendError.what();
+    }
+
+    this->peers_->done(PeerGroup::kClient);
+    this->peers_->join(PeerGroup::kClient);
+  }
+};
+
+CHANNEL_TEST(ChannelTestSuite, EmptyAndNonEmptyTensors);
