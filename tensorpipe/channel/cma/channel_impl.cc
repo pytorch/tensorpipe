@@ -55,12 +55,13 @@ void ChannelImpl::initImplFromLoop() {
 void ChannelImpl::sendImplFromLoop(
     uint64_t sequenceNumber,
     Buffer buffer,
-    size_t /* length */,
+    size_t length,
     TSendCallback callback) {
   SendOpIter opIter = sendOps_.emplaceBack(sequenceNumber);
   SendOperation& op = *opIter;
   op.callback = std::move(callback);
   op.ptr = buffer.unwrap<CpuBuffer>().ptr;
+  op.length = length;
 
   sendOps_.advanceOperation(opIter);
 }
@@ -76,7 +77,7 @@ void ChannelImpl::advanceSendOperation(
       opIter,
       /*from=*/SendOperation::UNINITIALIZED,
       /*to=*/SendOperation::FINISHED,
-      /*cond=*/error_,
+      /*cond=*/error_ || op.length == 0,
       /*actions=*/{&ChannelImpl::callSendCallback});
 
   // Needs to go after previous op to ensure predictable and consistent ordering
@@ -170,7 +171,7 @@ void ChannelImpl::advanceRecvOperation(
       opIter,
       /*from=*/RecvOperation::UNINITIALIZED,
       /*to=*/RecvOperation::FINISHED,
-      /*cond=*/error_,
+      /*cond=*/error_ || op.length == 0,
       /*actions=*/{&ChannelImpl::callRecvCallback});
 
   // Needs to go after previous op to ensure predictable and consistent ordering

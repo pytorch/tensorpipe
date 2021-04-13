@@ -40,10 +40,12 @@ struct Descriptor {
 SendOperation::SendOperation(
     int deviceIdx,
     void* ptr,
+    size_t length,
     cudaStream_t stream,
     TSendCallback callback)
     : deviceIdx(deviceIdx),
       ptr(ptr),
+      length(length),
       stream(stream),
       callback(std::move(callback)),
       startEv(deviceIdx) {
@@ -94,7 +96,7 @@ void ChannelImpl::initImplFromLoop() {
 void ChannelImpl::sendImplFromLoop(
     uint64_t sequenceNumber,
     Buffer buffer,
-    size_t /* length */,
+    size_t length,
     TSendCallback callback) {
   int deviceIdx = cudaDeviceForPointer(
       context_->getCudaLib(), buffer.unwrap<CudaBuffer>().ptr);
@@ -102,6 +104,7 @@ void ChannelImpl::sendImplFromLoop(
       sequenceNumber,
       deviceIdx,
       buffer.unwrap<CudaBuffer>().ptr,
+      length,
       buffer.unwrap<CudaBuffer>().stream,
       std::move(callback));
 
@@ -119,7 +122,7 @@ void ChannelImpl::advanceSendOperation(
       opIter,
       /*from=*/SendOperation::UNINITIALIZED,
       /*to=*/SendOperation::FINISHED,
-      /*cond=*/error_,
+      /*cond=*/error_ || op.length == 0,
       /*actions=*/{&ChannelImpl::callSendCallback});
 
   // Needs to go after previous op to ensure predictable and consistent ordering
@@ -219,7 +222,7 @@ void ChannelImpl::advanceRecvOperation(
       opIter,
       /*from=*/RecvOperation::UNINITIALIZED,
       /*to=*/RecvOperation::FINISHED,
-      /*cond=*/error_,
+      /*cond=*/error_ || op.length == 0,
       /*actions=*/{&ChannelImpl::callRecvCallback});
 
   // Needs to go after previous op to ensure predictable and consistent ordering

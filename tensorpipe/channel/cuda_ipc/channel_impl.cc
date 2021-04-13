@@ -109,6 +109,11 @@ void ChannelImpl::sendImplFromLoop(
     Buffer buffer,
     size_t length,
     TSendCallback callback) {
+  if (length == 0) {
+    callback(error_);
+    return;
+  }
+
   int deviceIdx = cudaDeviceForPointer(
       context_->getCudaLib(), buffer.unwrap<CudaBuffer>().ptr);
   const size_t numChunks = ceilOfRatio(length, kSlotSize);
@@ -316,6 +321,11 @@ void ChannelImpl::recvImplFromLoop(
     Buffer buffer,
     size_t length,
     TRecvCallback callback) {
+  if (length == 0) {
+    callback(error_);
+    return;
+  }
+
   int deviceIdx = cudaDeviceForPointer(
       context_->getCudaLib(), buffer.unwrap<CudaBuffer>().ptr);
   const size_t numChunks = ceilOfRatio(length, kSlotSize);

@@ -33,6 +33,7 @@ struct SendOperation {
 
   // Arguments at creation
   void* ptr;
+  size_t length;
   TSendCallback callback;
 };
 

@@ -179,7 +179,7 @@ void ChannelImpl::advanceSendOperation(
       opIter,
       /*from=*/SendOperation::UNINITIALIZED,
       /*to=*/SendOperation::FINISHED,
-      /*cond=*/error_,
+      /*cond=*/error_ || op.length == 0,
       /*actions=*/{&ChannelImpl::callSendCallback});
 
   // Needs to go after previous op to ensure predictable and consistent ordering
@@ -260,7 +260,7 @@ void ChannelImpl::advanceRecvOperation(
       opIter,
       /*from=*/RecvOperation::UNINITIALIZED,
       /*to=*/RecvOperation::FINISHED,
-      /*cond=*/error_,
+      /*cond=*/error_ || op.length == 0,
       /*actions=*/{&ChannelImpl::callRecvCallback});
 
   // Needs to go after previous op to ensure predictable and consistent ordering

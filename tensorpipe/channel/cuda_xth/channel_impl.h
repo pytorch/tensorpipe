@@ -36,6 +36,7 @@ struct SendOperation {
   // Arguments at creation
   int deviceIdx;
   void* ptr;
+  size_t length;
   cudaStream_t stream;
   TSendCallback callback;
 
@@ -45,6 +46,7 @@ struct SendOperation {
   SendOperation(
       int deviceIdx,
       void* ptr,
+      size_t length,
       cudaStream_t stream,
       TSendCallback callback);
 };
