@@ -95,6 +95,8 @@ struct MessageDescriptor {
 
     Device sourceDevice;
     nop::Optional<Device> targetDevice;
+    // FIXME: Once we get rid of channelName, we can merge Descriptor and
+    // MessageDescriptor.
     std::string channelName;
     NOP_STRUCTURE(
         TensorDescriptor,
