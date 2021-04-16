@@ -23,8 +23,6 @@
 #include <tensorpipe/common/ibv.h>
 #include <tensorpipe/common/optional.h>
 #include <tensorpipe/transport/ibv/constants.h>
-#include <tensorpipe/util/ringbuffer/consumer.h>
-#include <tensorpipe/util/ringbuffer/producer.h>
 
 namespace tensorpipe {
 namespace transport {

@@ -29,12 +29,6 @@ namespace tensorpipe {
 namespace transport {
 namespace ibv {
 
-namespace {
-
-constexpr auto kBufferSize = 2 * 1024 * 1024;
-
-} // namespace
-
 class ContextImpl;
 class ListenerImpl;
 
@@ -44,6 +38,17 @@ class ConnectionImpl final : public ConnectionImplBoilerplate<
                                  ConnectionImpl>,
                              public EpollLoop::EventHandler,
                              public IbvEventHandler {
+  constexpr static size_t kBufferSize = 2 * 1024 * 1024;
+
+  constexpr static int kNumOutboxRingbufferRoles = 3;
+  using OutboxIbvAcker = util::ringbuffer::Role<kNumOutboxRingbufferRoles, 0>;
+  using OutboxIbvWriter = util::ringbuffer::Role<kNumOutboxRingbufferRoles, 1>;
+  using OutboxProducer = util::ringbuffer::Role<kNumOutboxRingbufferRoles, 2>;
+
+  constexpr static int kNumInboxRingbufferRoles = 2;
+  using InboxConsumer = util::ringbuffer::Role<kNumInboxRingbufferRoles, 0>;
+  using InboxIbvRecver = util::ringbuffer::Role<kNumInboxRingbufferRoles, 1>;
+
   enum State {
     INITIALIZING = 1,
     SEND_ADDR,
@@ -110,34 +115,26 @@ class ConnectionImpl final : public ConnectionImplBoilerplate<
 
   // Inbox.
   // Initialize header during construction because it isn't assignable.
-  util::ringbuffer::RingBufferHeader inboxHeader_{kBufferSize};
+  util::ringbuffer::RingBufferHeader<kNumInboxRingbufferRoles> inboxHeader_{
+      kBufferSize};
   // Use mmapped memory so it's page-aligned (and, one day, to use huge pages).
   MmappedPtr inboxBuf_;
-  util::ringbuffer::RingBuffer inboxRb_;
+  util::ringbuffer::RingBuffer<kNumInboxRingbufferRoles> inboxRb_;
   IbvMemoryRegion inboxMr_;
 
   // Outbox.
   // Initialize header during construction because it isn't assignable.
-  util::ringbuffer::RingBufferHeader outboxHeader_{kBufferSize};
+  util::ringbuffer::RingBufferHeader<kNumOutboxRingbufferRoles> outboxHeader_{
+      kBufferSize};
   // Use mmapped memory so it's page-aligned (and, one day, to use huge pages).
   MmappedPtr outboxBuf_;
-  util::ringbuffer::RingBuffer outboxRb_;
+  util::ringbuffer::RingBuffer<kNumOutboxRingbufferRoles> outboxRb_;
   IbvMemoryRegion outboxMr_;
 
   // Peer inbox key, pointer and head.
   uint32_t peerInboxKey_{0};
   uint64_t peerInboxPtr_{0};
   uint64_t peerInboxHead_{0};
-
-  // The ringbuffer API is synchronous (it expects data to be consumed/produced
-  // immediately "inline" when the buffer is accessed) but InfiniBand is
-  // asynchronous, thus we need to abuse the ringbuffer API a bit. When new data
-  // is appended to the outbox, we must access it, to send it over IB, but we
-  // must first skip over the data that we have already started sending which is
-  // still in flight (we can only "commit" that data, by increasing the tail,
-  // once the remote acknowledges it, or else it could be overwritten). We keep
-  // track of how much data to skip with this field.
-  uint32_t numBytesInFlight_{0};
 
   // The connection performs two types of send requests: writing to the remote
   // inbox, or acknowledging a write into its own inbox. These send operations

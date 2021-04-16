@@ -20,26 +20,29 @@ namespace util {
 namespace ringbuffer {
 
 ///
-/// Consumer of data for a RingBuffer.
+/// Role of a RingBuffer.
 ///
-/// Provides methods to read data from a ringbuffer.
+/// Provides methods to read and write data into a ringbuffer.
 ///
-class Consumer {
+template <int NumRoles, int RoleIdx>
+class Role {
  public:
-  Consumer() = delete;
+  static_assert(0 <= RoleIdx && RoleIdx < NumRoles, "");
 
-  explicit Consumer(RingBuffer& rb)
+  Role() = delete;
+
+  explicit Role(RingBuffer<NumRoles>& rb)
       : header_{rb.getHeader()}, data_{rb.getData()} {
     TP_THROW_IF_NULLPTR(data_);
   }
 
-  Consumer(const Consumer&) = delete;
-  Consumer(Consumer&&) = delete;
+  Role(const Role&) = delete;
+  Role(Role&&) = delete;
 
-  Consumer& operator=(const Consumer&) = delete;
-  Consumer& operator=(Consumer&&) = delete;
+  Role& operator=(const Role&) = delete;
+  Role& operator=(Role&&) = delete;
 
-  ~Consumer() noexcept {
+  ~Role() noexcept {
     TP_THROW_ASSERT_IF(inTx());
   }
 
@@ -50,7 +53,7 @@ class Consumer {
   //
   // Transaction based API.
   //
-  // Only one reader can have an active transaction at any time.
+  // Only one instance of a role can have an active transaction at any time.
   // *InTx* operations that fail do not cancel transaction.
   //
   bool inTx() const noexcept {
@@ -61,7 +64,7 @@ class Consumer {
     if (unlikely(inTx())) {
       return -EBUSY;
     }
-    if (header_.beginReadTransaction()) {
+    if (header_.template beginTransaction<RoleIdx>()) {
       return -EAGAIN;
     }
     inTx_ = true;
@@ -73,10 +76,10 @@ class Consumer {
     if (unlikely(!inTx())) {
       return -EINVAL;
     }
-    header_.incTail(txSize_);
+    header_.template incMarker<RoleIdx>(txSize_);
     txSize_ = 0;
     inTx_ = false;
-    header_.endReadTransaction();
+    header_.template endTransaction<RoleIdx>();
     return 0;
   }
 
@@ -85,15 +88,13 @@ class Consumer {
       return -EINVAL;
     }
     txSize_ = 0;
-    // <inReadTx_> flags that we are in a transaction,
-    // so enforce no stores pass it.
     inTx_ = false;
-    header_.endReadTransaction();
+    header_.template endTransaction<RoleIdx>();
     return 0;
   }
 
   struct Buffer {
-    const uint8_t* ptr{nullptr};
+    uint8_t* ptr{nullptr};
     size_t len{0};
   };
 
@@ -115,8 +116,10 @@ class Consumer {
       return {0, result};
     }
 
-    const uint64_t head = header_.readHead();
-    const uint64_t tail = header_.readTail();
+    const uint64_t tail = header_.template readMarker<RoleIdx>();
+    const uint64_t head =
+        header_.template readMarker<(RoleIdx + 1) % NumRoles>() +
+        (RoleIdx + 1 == NumRoles ? header_.kDataPoolByteSize : 0);
     TP_DCHECK_LE(head - tail, header_.kDataPoolByteSize);
 
     const size_t avail = head - tail - txSize_;
@@ -150,6 +153,16 @@ class Consumer {
     }
   }
 
+  // Increment our marker without doing anything, i.e., "skip" over the data.
+  [[nodiscard]] ssize_t incMarkerInTx(size_t size) {
+    // We could implement this from scratch but we'd rather re-use the logic
+    // from accessContiguous as it's easy to get it wrong.
+    ssize_t ret;
+    std::array<Buffer, 2> buffers;
+    std::tie(ret, buffers) = accessContiguousInTx</*allowPartial=*/false>(size);
+    return ret;
+  }
+
   // Copy data from the ringbuffer into the provided buffer, up to the given
   // size (only copy less data if AllowPartial is set to true).
   template <bool AllowPartial>
@@ -173,6 +186,40 @@ class Consumer {
       std::memcpy(
           reinterpret_cast<uint8_t*>(buffer) + buffers[0].len,
           buffers[1].ptr,
+          buffers[1].len);
+      return buffers[0].len + buffers[1].len;
+    } else {
+      TP_THROW_ASSERT() << "Bad number of buffers: " << numBuffers;
+      // Dummy return to make the compiler happy.
+      return -EINVAL;
+    }
+  }
+
+  // Copy data from the provided buffer into the ringbuffer, up to the given
+  // size (only copy less data if AllowPartial is set to true).
+  template <bool AllowPartial>
+  [[nodiscard]] ssize_t writeInTx(
+      const void* buffer,
+      const size_t size) noexcept {
+    ssize_t numBuffers;
+    std::array<Buffer, 2> buffers;
+    std::tie(numBuffers, buffers) = accessContiguousInTx<AllowPartial>(size);
+
+    if (unlikely(numBuffers < 0)) {
+      return numBuffers;
+    }
+
+    if (unlikely(numBuffers == 0)) {
+      // Nothing to do.
+      return 0;
+    } else if (likely(numBuffers == 1)) {
+      std::memcpy(buffers[0].ptr, buffer, buffers[0].len);
+      return buffers[0].len;
+    } else if (likely(numBuffers == 2)) {
+      std::memcpy(buffers[0].ptr, buffer, buffers[0].len);
+      std::memcpy(
+          buffers[1].ptr,
+          reinterpret_cast<const uint8_t*>(buffer) + buffers[0].len,
           buffers[1].len);
       return buffers[0].len + buffers[1].len;
     } else {
@@ -208,9 +255,31 @@ class Consumer {
     return size;
   }
 
+  // Copy data from the provided buffer into the ringbuffer, exactly the given
+  // size. Take care of opening and closing the transaction.
+  [[nodiscard]] ssize_t write(const void* buffer, size_t size) noexcept {
+    auto ret = startTx();
+    if (0 > ret) {
+      return ret;
+    }
+
+    ret = writeInTx</*AllowPartial=*/false>(buffer, size);
+    if (0 > ret) {
+      auto r = cancelTx();
+      TP_DCHECK_EQ(r, 0);
+      return ret;
+    }
+    TP_DCHECK_EQ(ret, size);
+
+    ret = commitTx();
+    TP_DCHECK_EQ(ret, 0);
+
+    return size;
+  }
+
  private:
-  RingBufferHeader& header_;
-  const uint8_t* const data_;
+  RingBufferHeader<NumRoles>& header_;
+  uint8_t* const data_;
   unsigned txSize_ = 0;
   bool inTx_{false};
 };

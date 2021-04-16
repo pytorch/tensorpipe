@@ -22,8 +22,7 @@
 #include <tensorpipe/transport/shm/context_impl.h>
 #include <tensorpipe/transport/shm/reactor.h>
 #include <tensorpipe/transport/shm/sockaddr.h>
-#include <tensorpipe/util/ringbuffer/consumer.h>
-#include <tensorpipe/util/ringbuffer/producer.h>
+#include <tensorpipe/util/ringbuffer/role.h>
 #include <tensorpipe/util/ringbuffer/shm.h>
 
 namespace tensorpipe {
@@ -80,7 +79,7 @@ void ConnectionImpl::initImplFromLoop() {
 
   // Create ringbuffer for inbox.
   std::tie(error, inboxHeaderSegment_, inboxDataSegment_, inboxRb_) =
-      util::ringbuffer::shm::create(kBufferSize);
+      util::ringbuffer::shm::create<kNumRingbufferRoles>(kBufferSize);
   TP_THROW_ASSERT_IF(error)
       << "Couldn't allocate ringbuffer for connection inbox: " << error.what();
 
@@ -231,7 +230,7 @@ void ConnectionImpl::handleEventInFromLoop() {
 
     // Load ringbuffer for outbox.
     std::tie(err, outboxHeaderSegment_, outboxDataSegment_, outboxRb_) =
-        util::ringbuffer::shm::load(
+        util::ringbuffer::shm::load<kNumRingbufferRoles>(
             std::move(outboxHeaderFd), std::move(outboxDataFd));
     TP_THROW_ASSERT_IF(err)
         << "Couldn't access ringbuffer of connection outbox: " << err.what();
@@ -302,7 +301,7 @@ void ConnectionImpl::processReadOperationsFromLoop() {
     return;
   }
   // Serve read operations
-  util::ringbuffer::Consumer inboxConsumer(inboxRb_);
+  Consumer inboxConsumer(inboxRb_);
   while (!readOperations_.empty()) {
     RingbufferReadOperation& readOperation = readOperations_.front();
     if (readOperation.handleRead(inboxConsumer) > 0) {
@@ -323,7 +322,7 @@ void ConnectionImpl::processWriteOperationsFromLoop() {
     return;
   }
 
-  util::ringbuffer::Producer outboxProducer(outboxRb_);
+  Producer outboxProducer(outboxRb_);
   while (!writeOperations_.empty()) {
     RingbufferWriteOperation& writeOperation = writeOperations_.front();
     if (writeOperation.handleWrite(outboxProducer) > 0) {

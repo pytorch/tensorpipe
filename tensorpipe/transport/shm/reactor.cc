@@ -17,7 +17,7 @@ namespace shm {
 
 namespace {
 
-void writeToken(util::ringbuffer::Producer& producer, Reactor::TToken token) {
+void writeToken(Reactor::Producer& producer, Reactor::TToken token) {
   for (;;) {
     auto rv = producer.write(&token, sizeof(token));
     if (rv == -EAGAIN) {
@@ -25,7 +25,7 @@ void writeToken(util::ringbuffer::Producer& producer, Reactor::TToken token) {
       std::this_thread::yield();
       continue;
     }
-    if (rv == -ENOSPC) {
+    if (rv == -ENODATA) {
       // The ringbuffer is full. Retrying should typically work, but might lead
       // to a deadlock if, for example, a reactor thread is trying to write a
       // token to its own ringbuffer, as then it would be stuck here and never
@@ -45,7 +45,7 @@ void writeToken(util::ringbuffer::Producer& producer, Reactor::TToken token) {
 Reactor::Reactor() {
   Error error;
   std::tie(error, headerSegment_, dataSegment_, rb_) =
-      util::ringbuffer::shm::create(kSize);
+      util::ringbuffer::shm::create<kNumRingbufferRoles>(kSize);
   TP_THROW_ASSERT_IF(error)
       << "Couldn't allocate ringbuffer for reactor: " << error.what();
 
@@ -109,7 +109,7 @@ std::tuple<int, int> Reactor::fds() const {
 }
 
 bool Reactor::pollOnce() {
-  util::ringbuffer::Consumer reactorConsumer(rb_);
+  Consumer reactorConsumer(rb_);
   uint32_t token;
   auto ret = reactorConsumer.read(&token, sizeof(token));
   if (ret == -ENODATA) {
@@ -143,13 +143,14 @@ Reactor::Trigger::Trigger(Fd headerFd, Fd dataFd) {
   // of file descriptors. Release them to avoid double close.
   Error error;
   std::tie(error, headerSegment_, dataSegment_, rb_) =
-      util::ringbuffer::shm::load(std::move(headerFd), std::move(dataFd));
+      util::ringbuffer::shm::load<kNumRingbufferRoles>(
+          std::move(headerFd), std::move(dataFd));
   TP_THROW_ASSERT_IF(error)
       << "Couldn't access ringbuffer of remote reactor: " << error.what();
 }
 
 void Reactor::Trigger::run(TToken token) {
-  util::ringbuffer::Producer producer(rb_);
+  Producer producer(rb_);
   writeToken(producer, token);
 }
 
