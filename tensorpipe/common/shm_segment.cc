@@ -13,6 +13,7 @@
 #include <sched.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
+#include <sys/syscall.h>
 #include <sys/types.h>
 #include <unistd.h>
 
@@ -26,10 +27,55 @@ namespace tensorpipe {
 
 namespace {
 
+// Our goal is to obtain a file descriptor that is backed by a region of memory.
+// (We need an fd so we can pass it over a UNIX domain socket). We support two
+// ways of doing so:
+// - The memfd_create syscall, which does exactly what we need. Unfortunately
+//   it was added in a recent-ish kernel and an even more recent glibc version.
+// - As a fallback for older systems, we open a file in the /dev/shm directory,
+//   which we expect to be a mountpoint of tmpfs type. We open it with O_TMPFILE
+//   so it remains unnamed, which won't appear in the directory and can't thus
+//   be opened by other processes and will be automatically cleaned up when we
+//   exit. This method has some issues, as it depends on the availability of
+//   /dev/shm and is capped to the size of that mountpoint (rather than the
+//   total memory of the system), which are especially problematic in Docker.
+// FIXME O_TMPFILE is also not that old, and some users have reported issues due
+// to it. We could add a third method as a further fallback.
+
+// Name to give to the memfds. This is just displayed when inspecting the file
+// descriptor in /proc/self/fd to aid debugging, and doesn't have to be unique.
+constexpr const char* kMemfdName = "tensorpipe_shm";
+
+std::tuple<Error, Fd> createMemfd() {
+  // We don't want to use the ::memfd_create function directly as it's harder to
+  // detect its availability (we'd need to perform a feature check in CMake and
+  // inject the result as a preprocessor flag) and because it would cause us to
+  // link against glibc 2.27. PyTorch aims to support the manylinux2014 platform
+  // (one of the standard platforms defined by Python for PyPI/pip), which has
+  // glibc 2.17. Thus instead we issue the syscall directly, skipping the glibc
+  // wrapper.
+#ifdef SYS_memfd_create
+  // We want to pass the MFD_CLOEXEC flag, but we can't rely on glibc exposing
+  // it, thus we hardcode its value, which is equal to 1.
+  int fd = static_cast<int>(::syscall(
+      SYS_memfd_create,
+      static_cast<const char*>(kMemfdName),
+      static_cast<unsigned int>(1)));
+  if (fd < 0) {
+    return std::make_tuple(
+        TP_CREATE_ERROR(SystemError, "memfd_create", errno), Fd());
+  }
+  return std::make_tuple(Error::kSuccess, Fd(fd));
+#else // SYS_memfd_create
+  return std::make_tuple(
+      TP_CREATE_ERROR(SystemError, "memfd_create", ENOSYS), Fd());
+#endif // SYS_memfd_create
+}
+
 // Default base path for all segments created.
 constexpr const char* kBasePath = "/dev/shm";
 
-std::tuple<Error, Fd> createShmFd() {
+std::tuple<Error, Fd> openTmpfileInDevShm() {
   int flags = O_TMPFILE | O_EXCL | O_RDWR | O_CLOEXEC;
   int fd = ::open(kBasePath, flags, 0);
   if (fd < 0) {
@@ -37,6 +83,17 @@ std::tuple<Error, Fd> createShmFd() {
   }
 
   return std::make_tuple(Error::kSuccess, Fd(fd));
+}
+
+std::tuple<Error, Fd> createShmFd() {
+  Error error;
+  Fd fd;
+  std::tie(error, fd) = createMemfd();
+  if (error && error.isOfType<SystemError>() &&
+      error.castToType<SystemError>()->errorCode() == ENOSYS) {
+    std::tie(error, fd) = openTmpfileInDevShm();
+  }
+  return std::make_tuple(std::move(error), std::move(fd));
 }
 
 /// Choose a reasonable page size for a given size.
