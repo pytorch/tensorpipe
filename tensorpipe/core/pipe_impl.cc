@@ -59,15 +59,6 @@ void parseDescriptorOfMessage(ReadOperation& op, const Packet& nopPacketIn) {
     if (!nopTensorDescriptor.targetDevice.empty()) {
       tensor.targetDevice = nopTensorDescriptor.targetDevice.get();
     }
-    if (tensor.sourceDevice.type == kCpuDeviceType) {
-      tensor.buffer = CpuBuffer{};
-#if TENSORPIPE_SUPPORTS_CUDA
-    } else if (tensor.sourceDevice.type == kCudaDeviceType) {
-      tensor.buffer = CudaBuffer{};
-#endif // TENSORPIPE_SUPPORTS_CUDA
-    } else {
-      TP_THROW_ASSERT() << "Unexpected device type.";
-    };
   }
 }
 
@@ -591,7 +582,6 @@ void PipeImpl::callReadCallback(ReadOpIter opIter) {
   for (int i = 0; i < op.descriptor.tensors.size(); ++i) {
     message.tensors[i].metadata = op.descriptor.tensors[i].metadata;
     message.tensors[i].length = op.descriptor.tensors[i].length;
-    message.tensors[i].sourceDevice = op.descriptor.tensors[i].sourceDevice;
     message.tensors[i].buffer = op.allocation.tensors[i].buffer;
   }
 
