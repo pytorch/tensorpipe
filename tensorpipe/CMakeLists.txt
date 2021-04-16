@@ -178,13 +178,13 @@ tp_conditional_backend(
 if(TP_ENABLE_SHM)
   target_sources(tensorpipe PRIVATE
     common/epoll_loop.cc
+    common/shm_segment.cc
     transport/shm/connection_impl.cc
     transport/shm/context_impl.cc
     transport/shm/factory.cc
     transport/shm/listener_impl.cc
     transport/shm/reactor.cc
-    transport/shm/sockaddr.cc
-    util/shm/segment.cc)
+    transport/shm/sockaddr.cc)
   set(TP_PUBLIC_HEADERS ${TP_PUBLIC_HEADERS}
     transport/shm/factory.h)
   set(TENSORPIPE_HAS_SHM_TRANSPORT 1)

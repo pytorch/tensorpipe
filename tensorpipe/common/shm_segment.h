@@ -27,28 +27,26 @@
 //
 
 namespace tensorpipe {
-namespace util {
-namespace shm {
 
-/// PageType to suggest to Operative System.
-/// The final page type depends on system configuration
-/// and availability of pages of requested size.
-/// HugeTLB pages often need to be reserved at boot time and
-/// may none left by the time Segment that request one is cerated.
-enum class PageType { Default, HugeTLB_2MB, HugeTLB_1GB };
-
-class Segment {
-  Segment(Fd fd, MmappedPtr ptr);
+class ShmSegment {
+  ShmSegment(Fd fd, MmappedPtr ptr);
 
  public:
-  Segment() = default;
+  /// PageType to suggest to Operative System.
+  /// The final page type depends on system configuration
+  /// and availability of pages of requested size.
+  /// HugeTLB pages often need to be reserved at boot time and
+  /// may none left by the time Segment that request one is cerated.
+  enum class PageType { Default, HugeTLB_2MB, HugeTLB_1GB };
 
-  static std::tuple<Error, Segment> alloc(
+  ShmSegment() = default;
+
+  static std::tuple<Error, ShmSegment> alloc(
       size_t byteSize,
       bool permWrite,
       optional<PageType> pageType);
 
-  static std::tuple<Error, Segment> access(
+  static std::tuple<Error, ShmSegment> access(
       Fd fd,
       bool permWrite,
       optional<PageType> pageType);
@@ -62,7 +60,7 @@ class Segment {
       typename T,
       typename... Args,
       std::enable_if_t<!std::is_array<T>::value, int> = 0>
-  static std::tuple<Error, Segment, T*> create(
+  static std::tuple<Error, ShmSegment, T*> create(
       bool permWrite,
       optional<PageType> pageType,
       Args&&... args) {
@@ -73,10 +71,10 @@ class Segment {
 
     const auto byteSize = sizeof(T);
     Error error;
-    Segment segment;
-    std::tie(error, segment) = Segment::alloc(byteSize, permWrite, pageType);
+    ShmSegment segment;
+    std::tie(error, segment) = ShmSegment::alloc(byteSize, permWrite, pageType);
     if (error) {
-      return std::make_tuple(std::move(error), Segment(), nullptr);
+      return std::make_tuple(std::move(error), ShmSegment(), nullptr);
     }
     TP_DCHECK_EQ(segment.getSize(), byteSize);
 
@@ -95,7 +93,7 @@ class Segment {
       typename T,
       std::enable_if_t<std::is_array<T>::value, int> = 0,
       typename TScalar = typename std::remove_all_extents<T>::type>
-  static std::tuple<Error, Segment, TScalar*> create(
+  static std::tuple<Error, ShmSegment, TScalar*> create(
       size_t numElements,
       bool permWrite,
       optional<PageType> pageType) {
@@ -109,10 +107,10 @@ class Segment {
 
     size_t byteSize = sizeof(TScalar) * numElements;
     Error error;
-    Segment segment;
-    std::tie(error, segment) = Segment::alloc(byteSize, permWrite, pageType);
+    ShmSegment segment;
+    std::tie(error, segment) = ShmSegment::alloc(byteSize, permWrite, pageType);
     if (error) {
-      return std::make_tuple(std::move(error), Segment(), nullptr);
+      return std::make_tuple(std::move(error), ShmSegment(), nullptr);
     }
     TP_DCHECK_EQ(segment.getSize(), byteSize);
 
@@ -128,7 +126,7 @@ class Segment {
   /// Load an existing shared memory region that already holds an object of type
   /// T, where T is NOT an array type.
   template <typename T, std::enable_if_t<!std::is_array<T>::value, int> = 0>
-  static std::tuple<Error, Segment, T*> load(
+  static std::tuple<Error, ShmSegment, T*> load(
       Fd fd,
       bool permWrite,
       optional<PageType> pageType) {
@@ -138,11 +136,11 @@ class Segment {
         "are trivially copyable (i.e. no pointers and no heap allocation");
 
     Error error;
-    Segment segment;
+    ShmSegment segment;
     std::tie(error, segment) =
-        Segment::access(std::move(fd), permWrite, pageType);
+        ShmSegment::access(std::move(fd), permWrite, pageType);
     if (error) {
-      return std::make_tuple(std::move(error), Segment(), nullptr);
+      return std::make_tuple(std::move(error), ShmSegment(), nullptr);
     }
     const size_t size = segment.getSize();
     // XXX: Do some checking other than the size that we are loading
@@ -163,7 +161,7 @@ class Segment {
       typename T,
       std::enable_if_t<std::is_array<T>::value, int> = 0,
       typename TScalar = typename std::remove_all_extents<T>::type>
-  static std::tuple<Error, Segment, TScalar*> load(
+  static std::tuple<Error, ShmSegment, TScalar*> load(
       Fd fd,
       bool permWrite,
       optional<PageType> pageType) {
@@ -176,11 +174,11 @@ class Segment {
         "are trivially copyable (i.e. no pointers and no heap allocation");
 
     Error error;
-    Segment segment;
+    ShmSegment segment;
     std::tie(error, segment) =
-        Segment::access(std::move(fd), permWrite, pageType);
+        ShmSegment::access(std::move(fd), permWrite, pageType);
     if (error) {
-      return std::make_tuple(std::move(error), Segment(), nullptr);
+      return std::make_tuple(std::move(error), ShmSegment(), nullptr);
     }
     auto ptr = static_cast<TScalar*>(segment.getPtr());
 
@@ -211,6 +209,4 @@ class Segment {
   MmappedPtr ptr_;
 };
 
-} // namespace shm
-} // namespace util
 } // namespace tensorpipe

@@ -28,23 +28,23 @@ add_executable(tensorpipe_test
 if(TP_ENABLE_SHM)
   target_sources(tensorpipe_test PRIVATE
     common/epoll_loop_test.cc
+    common/ringbuffer_test.cc
+    common/shm_ringbuffer_test.cc
+    common/shm_segment_test.cc
     transport/shm/reactor_test.cc
     transport/shm/connection_test.cc
     transport/shm/sockaddr_test.cc
     transport/shm/shm_test.cc
-    util/ringbuffer/shm_ringbuffer_test.cc
-    util/ringbuffer/ringbuffer_test.cc
-    util/shm/segment_test.cc
     )
 endif()
 
 if(TP_ENABLE_IBV)
   target_sources(tensorpipe_test PRIVATE
     common/epoll_loop_test.cc
+    common/ringbuffer_test.cc
     transport/ibv/connection_test.cc
     transport/ibv/ibv_test.cc
     transport/ibv/sockaddr_test.cc
-    util/ringbuffer/ringbuffer_test.cc
     )
 endif()
 

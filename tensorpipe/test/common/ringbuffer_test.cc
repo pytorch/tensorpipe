@@ -8,12 +8,12 @@
 
 #include <array>
 
-#include <tensorpipe/util/ringbuffer/ringbuffer.h>
-#include <tensorpipe/util/ringbuffer/role.h>
+#include <tensorpipe/common/ringbuffer.h>
+#include <tensorpipe/common/ringbuffer_role.h>
 
 #include <gtest/gtest.h>
 
-using namespace tensorpipe::util::ringbuffer;
+using namespace tensorpipe;
 
 struct TestData {
   uint16_t a;
@@ -28,8 +28,8 @@ struct TestData {
 constexpr static int kNumRingbufferRoles = 2;
 constexpr static int kConsumerRoleIdx = 0;
 constexpr static int kProducerRoleIdx = 1;
-using Consumer = Role<kNumRingbufferRoles, kConsumerRoleIdx>;
-using Producer = Role<kNumRingbufferRoles, kProducerRoleIdx>;
+using Consumer = RingBufferRole<kNumRingbufferRoles, kConsumerRoleIdx>;
+using Producer = RingBufferRole<kNumRingbufferRoles, kProducerRoleIdx>;
 
 // Holds and owns the memory for the ringbuffer's header and data.
 class RingBufferStorage {

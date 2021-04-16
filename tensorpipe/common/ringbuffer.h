@@ -41,8 +41,6 @@
 ///
 
 namespace tensorpipe {
-namespace util {
-namespace ringbuffer {
 
 ///
 /// RingBufferHeader contains the head, tail and other control information
@@ -176,6 +174,4 @@ class RingBuffer final {
   uint8_t* data_ = nullptr;
 };
 
-} // namespace ringbuffer
-} // namespace util
 } // namespace tensorpipe

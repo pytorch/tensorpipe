@@ -6,8 +6,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <tensorpipe/common/shm_segment.h>
 #include <tensorpipe/common/socket.h>
-#include <tensorpipe/util/shm/segment.h>
 
 #include <sys/eventfd.h>
 #include <sys/socket.h>
@@ -17,10 +17,9 @@
 #include <gtest/gtest.h>
 
 using namespace tensorpipe;
-using namespace tensorpipe::util::shm;
 
 // Same process produces and consumes share memory through different mappings.
-TEST(Segment, SameProducerConsumer_Scalar) {
+TEST(ShmSegment, SameProducerConsumer_Scalar) {
   // Set affinity of producer to CPU zero so that consumer only has to read from
   // that one CPU's buffer.
   cpu_set_t cpuset;
@@ -33,10 +32,10 @@ TEST(Segment, SameProducerConsumer_Scalar) {
   {
     // Producer part.
     Error error;
-    Segment segment;
+    ShmSegment segment;
     int* myIntPtr;
     std::tie(error, segment, myIntPtr) =
-        Segment::create<int>(true, PageType::Default);
+        ShmSegment::create<int>(true, ShmSegment::PageType::Default);
     ASSERT_FALSE(error) << error.what();
     int& myInt = *myIntPtr;
     myInt = 1000;
@@ -50,17 +49,17 @@ TEST(Segment, SameProducerConsumer_Scalar) {
     // Consumer part.
     // Map file again (to a different address) and consume it.
     Error error;
-    Segment segment;
+    ShmSegment segment;
     int* myIntPtr;
-    std::tie(error, segment, myIntPtr) =
-        Segment::load<int>(std::move(fd), true, PageType::Default);
+    std::tie(error, segment, myIntPtr) = ShmSegment::load<int>(
+        std::move(fd), true, ShmSegment::PageType::Default);
     ASSERT_FALSE(error) << error.what();
     EXPECT_EQ(segment.getSize(), sizeof(int));
     EXPECT_EQ(*myIntPtr, 1000);
   }
 };
 
-TEST(SegmentManager, SingleProducer_SingleConsumer_Array) {
+TEST(ShmSegment, SingleProducer_SingleConsumer_Array) {
   size_t numFloats = 330000;
 
   int sockFds[2];
@@ -88,10 +87,10 @@ TEST(SegmentManager, SingleProducer_SingleConsumer_Array) {
       // use huge pages in creation and not in loading. This should only affects
       // TLB overhead.
       Error error;
-      Segment segment;
+      ShmSegment segment;
       float* myFloats;
-      std::tie(error, segment, myFloats) =
-          Segment::create<float[]>(numFloats, true, PageType::HugeTLB_2MB);
+      std::tie(error, segment, myFloats) = ShmSegment::create<float[]>(
+          numFloats, true, ShmSegment::PageType::HugeTLB_2MB);
       ASSERT_FALSE(error) << error.what();
 
       for (int i = 0; i < numFloats; ++i) {
@@ -124,10 +123,10 @@ TEST(SegmentManager, SingleProducer_SingleConsumer_Array) {
     }
   }
   Error error;
-  Segment segment;
+  ShmSegment segment;
   float* myFloats;
-  std::tie(error, segment, myFloats) =
-      Segment::load<float[]>(std::move(segmentFd), false, PageType::Default);
+  std::tie(error, segment, myFloats) = ShmSegment::load<float[]>(
+      std::move(segmentFd), false, ShmSegment::PageType::Default);
   ASSERT_FALSE(error) << error.what();
   EXPECT_EQ(numFloats * sizeof(float), segment.getSize());
   for (int i = 0; i < numFloats; ++i) {

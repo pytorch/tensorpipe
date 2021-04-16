@@ -21,8 +21,8 @@
 #include <tensorpipe/common/callback.h>
 #include <tensorpipe/common/fd.h>
 #include <tensorpipe/common/optional.h>
-#include <tensorpipe/util/ringbuffer/role.h>
-#include <tensorpipe/util/shm/segment.h>
+#include <tensorpipe/common/ringbuffer_role.h>
+#include <tensorpipe/common/shm_segment.h>
 
 namespace tensorpipe {
 namespace transport {
@@ -45,8 +45,8 @@ class Reactor final : public BusyPollingLoop {
  public:
   using TFunction = std::function<void()>;
   using TToken = uint32_t;
-  using Consumer = util::ringbuffer::Role<kNumRingbufferRoles, 0>;
-  using Producer = util::ringbuffer::Role<kNumRingbufferRoles, 1>;
+  using Consumer = RingBufferRole<kNumRingbufferRoles, 0>;
+  using Producer = RingBufferRole<kNumRingbufferRoles, 1>;
 
   Reactor();
 
@@ -72,9 +72,9 @@ class Reactor final : public BusyPollingLoop {
   bool readyToClose() override;
 
  private:
-  util::shm::Segment headerSegment_;
-  util::shm::Segment dataSegment_;
-  util::ringbuffer::RingBuffer<kNumRingbufferRoles> rb_;
+  ShmSegment headerSegment_;
+  ShmSegment dataSegment_;
+  RingBuffer<kNumRingbufferRoles> rb_;
 
   std::mutex mutex_;
   std::atomic<bool> closed_{false};
@@ -101,9 +101,9 @@ class Reactor final : public BusyPollingLoop {
     void run(TToken token);
 
    private:
-    util::shm::Segment headerSegment_;
-    util::shm::Segment dataSegment_;
-    util::ringbuffer::RingBuffer<kNumRingbufferRoles> rb_;
+    ShmSegment headerSegment_;
+    ShmSegment dataSegment_;
+    RingBuffer<kNumRingbufferRoles> rb_;
   };
 };
 

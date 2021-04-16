@@ -18,12 +18,12 @@
 #include <tensorpipe/common/ibv.h>
 #include <tensorpipe/common/memory.h>
 #include <tensorpipe/common/nop.h>
+#include <tensorpipe/common/ringbuffer.h>
 #include <tensorpipe/common/ringbuffer_read_write_ops.h>
 #include <tensorpipe/common/socket.h>
 #include <tensorpipe/transport/connection_impl_boilerplate.h>
 #include <tensorpipe/transport/ibv/reactor.h>
 #include <tensorpipe/transport/ibv/sockaddr.h>
-#include <tensorpipe/util/ringbuffer/ringbuffer.h>
 
 namespace tensorpipe {
 namespace transport {
@@ -41,13 +41,13 @@ class ConnectionImpl final : public ConnectionImplBoilerplate<
   constexpr static size_t kBufferSize = 2 * 1024 * 1024;
 
   constexpr static int kNumOutboxRingbufferRoles = 3;
-  using OutboxIbvAcker = util::ringbuffer::Role<kNumOutboxRingbufferRoles, 0>;
-  using OutboxIbvWriter = util::ringbuffer::Role<kNumOutboxRingbufferRoles, 1>;
-  using OutboxProducer = util::ringbuffer::Role<kNumOutboxRingbufferRoles, 2>;
+  using OutboxIbvAcker = RingBufferRole<kNumOutboxRingbufferRoles, 0>;
+  using OutboxIbvWriter = RingBufferRole<kNumOutboxRingbufferRoles, 1>;
+  using OutboxProducer = RingBufferRole<kNumOutboxRingbufferRoles, 2>;
 
   constexpr static int kNumInboxRingbufferRoles = 2;
-  using InboxConsumer = util::ringbuffer::Role<kNumInboxRingbufferRoles, 0>;
-  using InboxIbvRecver = util::ringbuffer::Role<kNumInboxRingbufferRoles, 1>;
+  using InboxConsumer = RingBufferRole<kNumInboxRingbufferRoles, 0>;
+  using InboxIbvRecver = RingBufferRole<kNumInboxRingbufferRoles, 1>;
 
   enum State {
     INITIALIZING = 1,
@@ -115,20 +115,18 @@ class ConnectionImpl final : public ConnectionImplBoilerplate<
 
   // Inbox.
   // Initialize header during construction because it isn't assignable.
-  util::ringbuffer::RingBufferHeader<kNumInboxRingbufferRoles> inboxHeader_{
-      kBufferSize};
+  RingBufferHeader<kNumInboxRingbufferRoles> inboxHeader_{kBufferSize};
   // Use mmapped memory so it's page-aligned (and, one day, to use huge pages).
   MmappedPtr inboxBuf_;
-  util::ringbuffer::RingBuffer<kNumInboxRingbufferRoles> inboxRb_;
+  RingBuffer<kNumInboxRingbufferRoles> inboxRb_;
   IbvMemoryRegion inboxMr_;
 
   // Outbox.
   // Initialize header during construction because it isn't assignable.
-  util::ringbuffer::RingBufferHeader<kNumOutboxRingbufferRoles> outboxHeader_{
-      kBufferSize};
+  RingBufferHeader<kNumOutboxRingbufferRoles> outboxHeader_{kBufferSize};
   // Use mmapped memory so it's page-aligned (and, one day, to use huge pages).
   MmappedPtr outboxBuf_;
-  util::ringbuffer::RingBuffer<kNumOutboxRingbufferRoles> outboxRb_;
+  RingBuffer<kNumOutboxRingbufferRoles> outboxRb_;
   IbvMemoryRegion outboxMr_;
 
   // Peer inbox key, pointer and head.

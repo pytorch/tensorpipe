@@ -8,8 +8,8 @@
 
 #pragma once
 
+#include <tensorpipe/benchmark/registry.h>
 #include <tensorpipe/transport/context.h>
-#include <tensorpipe/util/registry/registry.h>
 
 TP_DECLARE_SHARED_REGISTRY(
     TensorpipeTransportRegistry,

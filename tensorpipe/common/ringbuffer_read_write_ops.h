@@ -17,7 +17,7 @@
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/error.h>
 #include <tensorpipe/common/nop.h>
-#include <tensorpipe/util/ringbuffer/role.h>
+#include <tensorpipe/common/ringbuffer_role.h>
 
 namespace tensorpipe {
 
@@ -49,7 +49,7 @@ class RingbufferReadOperation {
 
   // Processes a pending read.
   template <int NumRoles, int RoleIdx>
-  inline size_t handleRead(util::ringbuffer::Role<NumRoles, RoleIdx>& inbox);
+  inline size_t handleRead(RingBufferRole<NumRoles, RoleIdx>& inbox);
 
   bool completed() const {
     return (mode_ == READ_PAYLOAD && bytesRead_ == len_);
@@ -71,8 +71,7 @@ class RingbufferReadOperation {
   const bool ptrProvided_;
 
   template <int NumRoles, int RoleIdx>
-  inline ssize_t readNopObject(
-      util::ringbuffer::Role<NumRoles, RoleIdx>& inbox);
+  inline ssize_t readNopObject(RingBufferRole<NumRoles, RoleIdx>& inbox);
 };
 
 // Writes happen only if the user supplied a memory pointer, the
@@ -101,7 +100,7 @@ class RingbufferWriteOperation {
       write_callback_fn fn);
 
   template <int NumRoles, int RoleIdx>
-  inline size_t handleWrite(util::ringbuffer::Role<NumRoles, RoleIdx>& outbox);
+  inline size_t handleWrite(RingBufferRole<NumRoles, RoleIdx>& outbox);
 
   bool completed() const {
     return (mode_ == WRITE_PAYLOAD && bytesWritten_ == len_);
@@ -118,8 +117,7 @@ class RingbufferWriteOperation {
   write_callback_fn fn_;
 
   template <int NumRoles, int RoleIdx>
-  inline ssize_t writeNopObject(
-      util::ringbuffer::Role<NumRoles, RoleIdx>& outbox);
+  inline ssize_t writeNopObject(RingBufferRole<NumRoles, RoleIdx>& outbox);
 };
 
 RingbufferReadOperation::RingbufferReadOperation(
@@ -138,7 +136,7 @@ RingbufferReadOperation::RingbufferReadOperation(
 
 template <int NumRoles, int RoleIdx>
 size_t RingbufferReadOperation::handleRead(
-    util::ringbuffer::Role<NumRoles, RoleIdx>& inbox) {
+    RingBufferRole<NumRoles, RoleIdx>& inbox) {
   ssize_t ret;
   size_t bytesReadNow = 0;
 
@@ -196,12 +194,11 @@ size_t RingbufferReadOperation::handleRead(
 
 template <int NumRoles, int RoleIdx>
 ssize_t RingbufferReadOperation::readNopObject(
-    util::ringbuffer::Role<NumRoles, RoleIdx>& inbox) {
+    RingBufferRole<NumRoles, RoleIdx>& inbox) {
   TP_THROW_ASSERT_IF(len_ > inbox.getSize());
 
   ssize_t numBuffers;
-  std::array<typename util::ringbuffer::Role<NumRoles, RoleIdx>::Buffer, 2>
-      buffers;
+  std::array<typename RingBufferRole<NumRoles, RoleIdx>::Buffer, 2> buffers;
   std::tie(numBuffers, buffers) =
       inbox.template accessContiguousInTx</*AllowPartial=*/false>(len_);
   if (unlikely(numBuffers < 0)) {
@@ -237,7 +234,7 @@ RingbufferWriteOperation::RingbufferWriteOperation(
 
 template <int NumRoles, int RoleIdx>
 size_t RingbufferWriteOperation::handleWrite(
-    util::ringbuffer::Role<NumRoles, RoleIdx>& outbox) {
+    RingBufferRole<NumRoles, RoleIdx>& outbox) {
   ssize_t ret;
   size_t bytesWrittenNow = 0;
 
@@ -287,12 +284,11 @@ size_t RingbufferWriteOperation::handleWrite(
 
 template <int NumRoles, int RoleIdx>
 ssize_t RingbufferWriteOperation::writeNopObject(
-    util::ringbuffer::Role<NumRoles, RoleIdx>& outbox) {
+    RingBufferRole<NumRoles, RoleIdx>& outbox) {
   TP_THROW_ASSERT_IF(len_ > outbox.getSize());
 
   ssize_t numBuffers;
-  std::array<typename util::ringbuffer::Role<NumRoles, RoleIdx>::Buffer, 2>
-      buffers;
+  std::array<typename RingBufferRole<NumRoles, RoleIdx>::Buffer, 2> buffers;
   std::tie(numBuffers, buffers) =
       outbox.template accessContiguousInTx</*AllowPartial=*/false>(len_);
   if (unlikely(numBuffers < 0)) {
