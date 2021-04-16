@@ -16,29 +16,16 @@ namespace tensorpipe {
 
 /// Creates ringbuffer on shared memory.
 ///
-/// RingBuffer's data can have any <util::shm::PageType>
-/// (e.g. 4KB or a HugeTLB Page of 2MB or 1GB). If  <data_page_type> is not
-/// provided, then choose the largest page that would result in
-/// close to full occupancy.
-///
-/// If <persistent>, the shared memory will not be unlinked
-/// when RingBuffer is destroyed.
-///
-/// <min_rb_byte_size> is the minimum size of the data section
-/// of a RingBuffer (or each CPU's RingBuffer).
+/// <minRbByteSize> is the minimum size of the data section of the RingBuffer.
 ///
 template <int NumRoles>
 std::tuple<Error, ShmSegment, ShmSegment, RingBuffer<NumRoles>>
-createShmRingBuffer(
-    size_t minRbByteSize,
-    optional<ShmSegment::PageType> dataPageType = nullopt,
-    bool permWrite = true) {
+createShmRingBuffer(size_t minRbByteSize) {
   Error error;
   ShmSegment headerSegment;
   RingBufferHeader<NumRoles>* header;
   std::tie(error, headerSegment, header) =
-      ShmSegment::create<RingBufferHeader<NumRoles>>(
-          permWrite, ShmSegment::PageType::Default, minRbByteSize);
+      ShmSegment::create<RingBufferHeader<NumRoles>>(minRbByteSize);
   if (error) {
     return std::make_tuple(
         std::move(error), ShmSegment(), ShmSegment(), RingBuffer<NumRoles>());
@@ -46,8 +33,8 @@ createShmRingBuffer(
 
   ShmSegment dataSegment;
   uint8_t* data;
-  std::tie(error, dataSegment, data) = ShmSegment::create<uint8_t[]>(
-      header->kDataPoolByteSize, permWrite, dataPageType);
+  std::tie(error, dataSegment, data) =
+      ShmSegment::create<uint8_t[]>(header->kDataPoolByteSize);
   if (error) {
     return std::make_tuple(
         std::move(error), ShmSegment(), ShmSegment(), RingBuffer<NumRoles>());
@@ -64,17 +51,12 @@ createShmRingBuffer(
 
 template <int NumRoles>
 std::tuple<Error, ShmSegment, ShmSegment, RingBuffer<NumRoles>>
-loadShmRingBuffer(
-    Fd headerFd,
-    Fd dataFd,
-    optional<ShmSegment::PageType> dataPageType = nullopt,
-    bool permWrite = true) {
+loadShmRingBuffer(Fd headerFd, Fd dataFd) {
   Error error;
   ShmSegment headerSegment;
   RingBufferHeader<NumRoles>* header;
   std::tie(error, headerSegment, header) =
-      ShmSegment::load<RingBufferHeader<NumRoles>>(
-          std::move(headerFd), permWrite, ShmSegment::PageType::Default);
+      ShmSegment::load<RingBufferHeader<NumRoles>>(std::move(headerFd));
   if (error) {
     return std::make_tuple(
         std::move(error), ShmSegment(), ShmSegment(), RingBuffer<NumRoles>());
@@ -87,7 +69,7 @@ loadShmRingBuffer(
   ShmSegment dataSegment;
   uint8_t* data;
   std::tie(error, dataSegment, data) =
-      ShmSegment::load<uint8_t[]>(std::move(dataFd), permWrite, dataPageType);
+      ShmSegment::load<uint8_t[]>(std::move(dataFd));
   if (error) {
     return std::make_tuple(
         std::move(error), ShmSegment(), ShmSegment(), RingBuffer<NumRoles>());

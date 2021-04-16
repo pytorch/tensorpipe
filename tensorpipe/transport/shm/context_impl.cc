@@ -50,8 +50,7 @@ std::shared_ptr<ContextImpl> ContextImpl::create() {
   // allocating such regions, hence let's allocate one here to see if it works.
   Error error;
   ShmSegment segment;
-  std::tie(error, segment) =
-      ShmSegment::alloc(1024 * 1024, /*permWrite=*/true, /*pageType=*/nullopt);
+  std::tie(error, segment) = ShmSegment::alloc(1024 * 1024);
   if (error) {
     TP_VLOG(8) << "Couldn't allocate shared memory segment: " << error.what();
     return nullptr;

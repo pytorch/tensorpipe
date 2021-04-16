@@ -34,8 +34,7 @@ TEST(ShmSegment, SameProducerConsumer_Scalar) {
     Error error;
     ShmSegment segment;
     int* myIntPtr;
-    std::tie(error, segment, myIntPtr) =
-        ShmSegment::create<int>(true, ShmSegment::PageType::Default);
+    std::tie(error, segment, myIntPtr) = ShmSegment::create<int>();
     ASSERT_FALSE(error) << error.what();
     int& myInt = *myIntPtr;
     myInt = 1000;
@@ -51,8 +50,7 @@ TEST(ShmSegment, SameProducerConsumer_Scalar) {
     Error error;
     ShmSegment segment;
     int* myIntPtr;
-    std::tie(error, segment, myIntPtr) = ShmSegment::load<int>(
-        std::move(fd), true, ShmSegment::PageType::Default);
+    std::tie(error, segment, myIntPtr) = ShmSegment::load<int>(std::move(fd));
     ASSERT_FALSE(error) << error.what();
     EXPECT_EQ(segment.getSize(), sizeof(int));
     EXPECT_EQ(*myIntPtr, 1000);
@@ -89,8 +87,8 @@ TEST(ShmSegment, SingleProducer_SingleConsumer_Array) {
       Error error;
       ShmSegment segment;
       float* myFloats;
-      std::tie(error, segment, myFloats) = ShmSegment::create<float[]>(
-          numFloats, true, ShmSegment::PageType::HugeTLB_2MB);
+      std::tie(error, segment, myFloats) =
+          ShmSegment::create<float[]>(numFloats);
       ASSERT_FALSE(error) << error.what();
 
       for (int i = 0; i < numFloats; ++i) {
@@ -125,8 +123,8 @@ TEST(ShmSegment, SingleProducer_SingleConsumer_Array) {
   Error error;
   ShmSegment segment;
   float* myFloats;
-  std::tie(error, segment, myFloats) = ShmSegment::load<float[]>(
-      std::move(segmentFd), false, ShmSegment::PageType::Default);
+  std::tie(error, segment, myFloats) =
+      ShmSegment::load<float[]>(std::move(segmentFd));
   ASSERT_FALSE(error) << error.what();
   EXPECT_EQ(numFloats * sizeof(float), segment.getSize());
   for (int i = 0; i < numFloats; ++i) {
