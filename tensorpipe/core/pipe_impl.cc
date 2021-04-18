@@ -446,13 +446,12 @@ void PipeImpl::readFromLoop(Allocation allocation, read_callback_fn fn) {
   readOps_.advanceOperation(opIter);
 }
 
-void PipeImpl::readPayloadsAndReceiveTensorsOfMessage(ReadOpIter opIter) {
+void PipeImpl::readPayloadsOfMessage(ReadOpIter opIter) {
   TP_DCHECK(context_->inLoop());
 
   ReadOperation& op = *opIter;
 
-  TP_VLOG(2) << "Pipe " << id_
-             << " is reading payloads and receiving tensors of message #"
+  TP_VLOG(2) << "Pipe " << id_ << " is reading payloads of message #"
              << op.sequenceNumber;
 
   TP_DCHECK_EQ(connectionState_, AWAITING_PAYLOADS);
@@ -478,6 +477,15 @@ void PipeImpl::readPayloadsAndReceiveTensorsOfMessage(ReadOpIter opIter) {
   }
   connectionState_ = AWAITING_DESCRIPTOR;
   ++messageBeingReadFromConnection_;
+}
+
+void PipeImpl::receiveTensorsOfMessage(ReadOpIter opIter) {
+  TP_DCHECK(context_->inLoop());
+
+  ReadOperation& op = *opIter;
+
+  TP_VLOG(2) << "Pipe " << id_ << " is receiving tensors of message #"
+             << op.sequenceNumber;
 
   for (size_t tensorIdx = 0; tensorIdx < op.allocation.tensors.size();
        tensorIdx++) {
@@ -543,6 +551,9 @@ void PipeImpl::writeFromLoop(Message message, write_callback_fn fn) {
     TP_VLOG(1) << "Pipe " << id_ << " done calling a write callback (#"
                << sequenceNumber << ")";
   };
+
+  size_t numTensors = message.tensors.size();
+  op.tensors.resize(numTensors);
 
   op.message = std::move(message);
   op.writeCallback = std::move(fn);
@@ -692,7 +703,8 @@ void PipeImpl::advanceReadOperation(
       /*from=*/ReadOperation::ASKING_FOR_ALLOCATION_FIRST_IN_LINE,
       /*to=*/ReadOperation::READING_PAYLOADS_AND_RECEIVING_TENSORS,
       /*cond=*/!error_ && op.doneGettingAllocation,
-      /*actions=*/{&PipeImpl::readPayloadsAndReceiveTensorsOfMessage});
+      /*actions=*/
+      {&PipeImpl::readPayloadsOfMessage, &PipeImpl::receiveTensorsOfMessage});
 
   // Needs to go after previous op to ensure ordering of callback invocations.
   readOps_.attemptTransition(
@@ -729,8 +741,9 @@ void PipeImpl::advanceWriteOperation(
       /*cond=*/!error_ && state_ == ESTABLISHED &&
           prevOpState >= WriteOperation::WRITING_PAYLOADS_AND_SENDING_TENSORS,
       /*actions=*/
-      {&PipeImpl::sendTensorsOfMessage,
-       &PipeImpl::writeDescriptorAndPayloadsOfMessage});
+      {&PipeImpl::writeDescriptorOfMessage,
+       &PipeImpl::writePayloadsOfMessage,
+       &PipeImpl::sendTensorsOfMessage});
 
   // Needs to go after previous op to ensure ordering of callback invocations.
   writeOps_.attemptTransition(
@@ -746,9 +759,6 @@ void PipeImpl::readDescriptorOfMessage(ReadOpIter opIter) {
   TP_DCHECK(context_->inLoop());
 
   ReadOperation& op = *opIter;
-
-  TP_VLOG(2) << "Pipe " << id_ << " is reading descriptor of message #"
-             << op.sequenceNumber;
 
   TP_DCHECK_EQ(connectionState_, AWAITING_DESCRIPTOR);
   TP_DCHECK_EQ(messageBeingReadFromConnection_, op.sequenceNumber);
@@ -816,20 +826,14 @@ void PipeImpl::sendTensorsOfMessage(WriteOpIter opIter) {
           impl.writeOps_.advanceOperation(opIter);
         }));
 
-    op.tensors.push_back(WriteOperation::Tensor{});
-
     ++op.numTensorsBeingSent;
   }
 }
 
-void PipeImpl::writeDescriptorAndPayloadsOfMessage(WriteOpIter opIter) {
+void PipeImpl::writeDescriptorOfMessage(WriteOpIter opIter) {
   TP_DCHECK(context_->inLoop());
 
   WriteOperation& op = *opIter;
-
-  TP_VLOG(2) << "Pipe " << id_
-             << " is writing descriptor and payloads of message #"
-             << op.sequenceNumber;
 
   std::shared_ptr<NopHolder<Packet>> holder = makeDescriptorForMessage(op);
 
@@ -843,6 +847,15 @@ void PipeImpl::writeDescriptorAndPayloadsOfMessage(WriteOpIter opIter) {
                        << " done writing nop object (message descriptor #"
                        << sequenceNumber << ")";
           }));
+}
+
+void PipeImpl::writePayloadsOfMessage(WriteOpIter opIter) {
+  TP_DCHECK(context_->inLoop());
+
+  WriteOperation& op = *opIter;
+
+  TP_VLOG(2) << "Pipe " << id_ << " is writing payloads of message #"
+             << op.sequenceNumber;
 
   for (size_t payloadIdx = 0; payloadIdx < op.message.payloads.size();
        payloadIdx++) {

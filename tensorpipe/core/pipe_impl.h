@@ -261,11 +261,13 @@ class PipeImpl final : public std::enable_shared_from_this<PipeImpl> {
   void readDescriptorOfMessage(ReadOpIter opIter);
   void callReadDescriptorCallback(ReadOpIter opIter);
   void expectReadCall(ReadOpIter opIter);
-  void readPayloadsAndReceiveTensorsOfMessage(ReadOpIter opIter);
+  void readPayloadsOfMessage(ReadOpIter opIter);
+  void receiveTensorsOfMessage(ReadOpIter opIter);
   void callReadCallback(ReadOpIter opIter);
   // For write operations:
+  void writeDescriptorOfMessage(WriteOpIter opIter);
+  void writePayloadsOfMessage(WriteOpIter opIter);
   void sendTensorsOfMessage(WriteOpIter opIter);
-  void writeDescriptorAndPayloadsOfMessage(WriteOpIter opIter);
   void callWriteCallback(WriteOpIter opIter);
 
   //
