@@ -18,10 +18,6 @@ struct CpuBuffer {
   Device getDevice() const {
     return Device{kCpuDeviceType, 0};
   }
-
-  DeviceType deviceType() const {
-    return DeviceType::kCpu;
-  }
 };
 
 } // namespace tensorpipe

@@ -21,7 +21,6 @@ namespace tensorpipe {
 class Buffer {
   class AbstractBufferWrapper {
    public:
-    virtual DeviceType deviceType() const = 0;
     virtual Device device() const = 0;
     virtual void copyConstructInto(void* ptr) const = 0;
     virtual void moveConstructInto(void* ptr) = 0;
@@ -38,10 +37,6 @@ class Buffer {
     TBuffer buffer;
 
     explicit BufferWrapper(TBuffer buffer) : buffer(std::move(buffer)) {}
-
-    DeviceType deviceType() const override {
-      return buffer.deviceType();
-    }
 
     Device device() const override {
       return buffer.getDevice();
@@ -115,10 +110,6 @@ class Buffer {
       throw std::runtime_error("Invalid unwrapping of tensorpipe::Buffer");
     }
     return wrapperPtr->buffer;
-  }
-
-  DeviceType deviceType() const {
-    return ptr()->deviceType();
   }
 
   Device device() const {

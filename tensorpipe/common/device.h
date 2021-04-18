@@ -14,11 +14,6 @@
 
 namespace tensorpipe {
 
-enum class DeviceType {
-  kCpu,
-  kCuda,
-};
-
 const std::string kCpuDeviceType{"cpu"};
 const std::string kCudaDeviceType{"cuda"};
 
@@ -32,18 +27,6 @@ struct Device {
   Device() {}
 
   Device(std::string type, int index) : type(std::move(type)), index(index) {}
-
-  // FIXME: This method will disappear once XDTT channel selection is
-  // implemented.
-  DeviceType deviceType() const {
-    if (type == "cpu") {
-      return DeviceType::kCpu;
-    } else if (type == "cuda") {
-      return DeviceType::kCuda;
-    } else {
-      throw std::runtime_error("Invalid device type " + type);
-    }
-  }
 
   std::string toString() const {
     std::stringstream ss;
