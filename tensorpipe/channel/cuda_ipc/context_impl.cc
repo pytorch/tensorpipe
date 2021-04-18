@@ -109,7 +109,7 @@ struct DeviceDescriptor {
   std::string bootId;
   int64_t pid;
   std::string deviceUuid;
-  NOP_STRUCTURE(DeviceDescriptor, bootId, deviceUuid);
+  NOP_STRUCTURE(DeviceDescriptor, bootId, pid, deviceUuid);
 };
 
 DeviceDescriptor deserializeDeviceDescriptor(
