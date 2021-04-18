@@ -652,10 +652,6 @@ size_t ContextImpl::numConnectionsNeeded() const {
   return 2;
 }
 
-bool ContextImpl::supportsDeviceType(DeviceType type) const {
-  return (DeviceType::kCuda == type);
-}
-
 } // namespace cuda_gdr
 } // namespace channel
 } // namespace tensorpipe

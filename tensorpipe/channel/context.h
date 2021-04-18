@@ -100,11 +100,6 @@ class Context {
 
   virtual ~Context() = default;
 
-  // FIXME: This is a private, temporary, API. It will be removed once
-  // TensorPipe supports cross-device type transfers.
-  // DO NOT USE IT.
-  virtual bool supportsDeviceType(DeviceType type) const = 0;
-
  private:
   std::string name_;
 };
