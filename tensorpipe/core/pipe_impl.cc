@@ -400,7 +400,7 @@ void PipeImpl::readDescriptorFromLoop(read_descriptor_callback_fn fn) {
   readOps_.advanceOperation(opIter);
 }
 
-void PipeImpl::read(Allocation allocation, read_callback_deprecated_fn fn) {
+void PipeImpl::read(Allocation allocation, read_callback_fn fn) {
   context_->deferToLoop([impl{this->shared_from_this()},
                          allocation{std::move(allocation)},
                          fn{std::move(fn)}]() mutable {
@@ -408,15 +408,7 @@ void PipeImpl::read(Allocation allocation, read_callback_deprecated_fn fn) {
   });
 }
 
-void PipeImpl::read(Allocation allocation, read_callback_fn fn) {
-  auto wrappedFn = [fn{std::move(fn)}](
-                       const Error& error, Message /* unused */) { fn(error); };
-  read(std::move(allocation), std::move(wrappedFn));
-}
-
-void PipeImpl::readFromLoop(
-    Allocation allocation,
-    read_callback_deprecated_fn fn) {
+void PipeImpl::readFromLoop(Allocation allocation, read_callback_fn fn) {
   TP_DCHECK(context_->inLoop());
 
   // This is such a bad logical error on the user's side that it doesn't deserve
@@ -431,11 +423,11 @@ void PipeImpl::readFromLoop(
   checkAllocationCompatibility(op.descriptor, allocation);
 
   fn = [this, sequenceNumber{op.sequenceNumber}, fn{std::move(fn)}](
-           const Error& error, Message message) {
+           const Error& error) {
     TP_DCHECK_EQ(sequenceNumber, nextReadCallbackToCall_++);
     TP_VLOG(1) << "Pipe " << id_ << " is calling a read callback (#"
                << sequenceNumber << ")";
-    fn(error, std::move(message));
+    fn(error);
     TP_VLOG(1) << "Pipe " << id_ << " done calling a read callback (#"
                << sequenceNumber << ")";
   };
@@ -509,7 +501,7 @@ void PipeImpl::readPayloadsAndReceiveTensorsOfMessage(ReadOpIter opIter) {
   }
 }
 
-void PipeImpl::write(Message message, write_callback_deprecated_fn fn) {
+void PipeImpl::write(Message message, write_callback_fn fn) {
   context_->deferToLoop([impl{this->shared_from_this()},
                          message{std::move(message)},
                          fn{std::move(fn)}]() mutable {
@@ -517,13 +509,7 @@ void PipeImpl::write(Message message, write_callback_deprecated_fn fn) {
   });
 }
 
-void PipeImpl::write(Message message, write_callback_fn fn) {
-  auto wrappedFn = [fn{std::move(fn)}](
-                       const Error& error, Message /* unused */) { fn(error); };
-  write(std::move(message), std::move(wrappedFn));
-}
-
-void PipeImpl::writeFromLoop(Message message, write_callback_deprecated_fn fn) {
+void PipeImpl::writeFromLoop(Message message, write_callback_fn fn) {
   TP_DCHECK(context_->inLoop());
 
   WriteOpIter opIter = writeOps_.emplaceBack(nextMessageBeingWritten_++);
@@ -534,11 +520,11 @@ void PipeImpl::writeFromLoop(Message message, write_callback_deprecated_fn fn) {
              << " payloads and " << message.tensors.size() << " tensors)";
 
   fn = [this, sequenceNumber{op.sequenceNumber}, fn{std::move(fn)}](
-           const Error& error, Message message) {
+           const Error& error) {
     TP_DCHECK_EQ(sequenceNumber, nextWriteCallbackToCall_++);
     TP_VLOG(1) << "Pipe " << id_ << " is calling a write callback (#"
                << sequenceNumber << ")";
-    fn(error, std::move(message));
+    fn(error);
     TP_VLOG(1) << "Pipe " << id_ << " done calling a write callback (#"
                << sequenceNumber << ")";
   };
@@ -568,24 +554,7 @@ void PipeImpl::callReadCallback(ReadOpIter opIter) {
 
   ReadOperation& op = *opIter;
 
-  // FIXME: This is only needed to maintain backwards compatibility until we get
-  // rid of the `Message` parameter in the `read()`/`write()` callbacks.
-  Message message;
-  message.metadata = op.descriptor.metadata;
-  message.payloads.resize(op.descriptor.payloads.size());
-  for (int i = 0; i < op.descriptor.payloads.size(); ++i) {
-    message.payloads[i].metadata = op.descriptor.payloads[i].metadata;
-    message.payloads[i].length = op.descriptor.payloads[i].length;
-    message.payloads[i].data = op.allocation.payloads[i].data;
-  }
-  message.tensors.resize(op.descriptor.tensors.size());
-  for (int i = 0; i < op.descriptor.tensors.size(); ++i) {
-    message.tensors[i].metadata = op.descriptor.tensors[i].metadata;
-    message.tensors[i].length = op.descriptor.tensors[i].length;
-    message.tensors[i].buffer = op.allocation.tensors[i].buffer;
-  }
-
-  op.readCallback(error_, std::move(message));
+  op.readCallback(error_);
   // Reset callback to release the resources it was holding.
   op.readCallback = nullptr;
 }
@@ -595,7 +564,7 @@ void PipeImpl::callWriteCallback(WriteOpIter opIter) {
 
   WriteOperation& op = *opIter;
 
-  op.writeCallback(error_, std::move(op.message));
+  op.writeCallback(error_);
   // Reset callback to release the resources it was holding.
   op.writeCallback = nullptr;
 }
