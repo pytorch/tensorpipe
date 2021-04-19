@@ -27,52 +27,21 @@ namespace tensorpipe {
 
 namespace {
 
-// Copy the payload and tensors sizes, the metadata, etc. from the message
-// descriptor that is contained in the nop object to the ReadOperation.
-void parseDescriptorOfMessage(
-    ReadOperation& op,
-    const MessageDescriptor& nopMessageDescriptor) {
-  Descriptor& descriptor = op.descriptor;
-
-  descriptor.metadata = nopMessageDescriptor.metadata;
-  for (const auto& nopPayloadDescriptor :
-       nopMessageDescriptor.payloadDescriptors) {
-    descriptor.payloads.emplace_back();
-    Descriptor::Payload& payload = descriptor.payloads.back();
-    payload.length = nopPayloadDescriptor.sizeInBytes;
-    payload.metadata = nopPayloadDescriptor.metadata;
-  }
-
-  for (const auto& nopTensorDescriptor :
-       nopMessageDescriptor.tensorDescriptors) {
-    descriptor.tensors.emplace_back();
-    Descriptor::Tensor& tensor = descriptor.tensors.back();
-    tensor.metadata = nopTensorDescriptor.metadata;
-    tensor.length = static_cast<size_t>(nopTensorDescriptor.sizeInBytes);
-    tensor.sourceDevice = nopTensorDescriptor.sourceDevice;
-    if (nopTensorDescriptor.targetDevice.empty()) {
-      op.hasMissingTargetDevices = true;
-    } else {
-      tensor.targetDevice = nopTensorDescriptor.targetDevice.get();
-    }
-  }
-}
-
 void parseDescriptorReplyOfMessage(
     WriteOperation& op,
-    MessageDescriptorReply nopMessageDescriptorReply) {
+    DescriptorReply nopDescriptorReply) {
   const int numTensors = op.message.tensors.size();
-  TP_DCHECK_EQ(numTensors, nopMessageDescriptorReply.targetDevices.size());
+  TP_DCHECK_EQ(numTensors, nopDescriptorReply.targetDevices.size());
   size_t targetDeviceIdx = 0;
   for (size_t tensorIdx = 0; tensorIdx < numTensors; ++tensorIdx) {
     const Message::Tensor& tensor = op.message.tensors[tensorIdx];
     WriteOperation::Tensor& tensorBeingSent = op.tensors[tensorIdx];
     if (!tensor.targetDevice.has_value()) {
       tensorBeingSent.targetDevice =
-          std::move(nopMessageDescriptorReply.targetDevices[targetDeviceIdx++]);
+          std::move(nopDescriptorReply.targetDevices[targetDeviceIdx++]);
     }
   }
-  TP_DCHECK_EQ(targetDeviceIdx, nopMessageDescriptorReply.targetDevices.size());
+  TP_DCHECK_EQ(targetDeviceIdx, nopDescriptorReply.targetDevices.size());
 }
 
 // Raise an error if the number of payloads and tensors in the allocation do not
@@ -99,50 +68,48 @@ void checkAllocationCompatibility(
 // Produce a nop object containing a message descriptor using the information
 // contained in the WriteOperation: number and sizes of payloads and tensors,
 // tensor descriptors, ...
-std::shared_ptr<NopHolder<MessageDescriptor>> makeDescriptorForMessage(
+std::shared_ptr<NopHolder<Descriptor>> makeDescriptorForMessage(
     const WriteOperation& op) {
-  auto nopHolderOut = std::make_shared<NopHolder<MessageDescriptor>>();
-  MessageDescriptor& nopMessageDescriptor = nopHolderOut->getObject();
+  auto nopHolderOut = std::make_shared<NopHolder<Descriptor>>();
+  Descriptor& nopDescriptor = nopHolderOut->getObject();
 
-  nopMessageDescriptor.metadata = op.message.metadata;
+  nopDescriptor.metadata = op.message.metadata;
 
   for (int payloadIdx = 0; payloadIdx < op.message.payloads.size();
        ++payloadIdx) {
     const Message::Payload& payload = op.message.payloads[payloadIdx];
-    nopMessageDescriptor.payloadDescriptors.emplace_back();
-    MessageDescriptor::PayloadDescriptor& nopPayloadDescriptor =
-        nopMessageDescriptor.payloadDescriptors.back();
-    nopPayloadDescriptor.sizeInBytes = payload.length;
+    nopDescriptor.payloads.emplace_back();
+    Descriptor::Payload& nopPayloadDescriptor = nopDescriptor.payloads.back();
+    nopPayloadDescriptor.length = payload.length;
     nopPayloadDescriptor.metadata = payload.metadata;
   }
 
   TP_DCHECK_EQ(op.message.tensors.size(), op.tensors.size());
   for (int tensorIdx = 0; tensorIdx < op.tensors.size(); ++tensorIdx) {
     const Message::Tensor& tensor = op.message.tensors[tensorIdx];
-    nopMessageDescriptor.tensorDescriptors.emplace_back();
-    MessageDescriptor::TensorDescriptor& nopTensorDescriptor =
-        nopMessageDescriptor.tensorDescriptors.back();
+    nopDescriptor.tensors.emplace_back();
+    Descriptor::Tensor& nopTensorDescriptor = nopDescriptor.tensors.back();
     nopTensorDescriptor.metadata = tensor.metadata;
     nopTensorDescriptor.sourceDevice = tensor.buffer.device();
     if (tensor.targetDevice.has_value()) {
       nopTensorDescriptor.targetDevice = tensor.targetDevice.value();
     }
-    nopTensorDescriptor.sizeInBytes = tensor.length;
+    nopTensorDescriptor.length = tensor.length;
   }
 
   return nopHolderOut;
 }
 
-std::shared_ptr<NopHolder<MessageDescriptorReply>> makeDescriptorReplyForMessage(
+std::shared_ptr<NopHolder<DescriptorReply>> makeDescriptorReplyForMessage(
     const ReadOperation& op) {
-  auto nopHolderOut = std::make_shared<NopHolder<MessageDescriptorReply>>();
-  MessageDescriptorReply& nopMessageDescriptorReply = nopHolderOut->getObject();
+  auto nopHolderOut = std::make_shared<NopHolder<DescriptorReply>>();
+  DescriptorReply& nopDescriptorReply = nopHolderOut->getObject();
 
   for (size_t tensorIdx = 0; tensorIdx < op.descriptor.tensors.size();
        ++tensorIdx) {
     if (!op.descriptor.tensors[tensorIdx].targetDevice.has_value()) {
       const Allocation::Tensor& tensor = op.allocation.tensors[tensorIdx];
-      nopMessageDescriptorReply.targetDevices.push_back(tensor.buffer.device());
+      nopDescriptorReply.targetDevices.push_back(tensor.buffer.device());
     }
   }
 
@@ -557,7 +524,7 @@ void PipeImpl::writeDescriptorReplyOfMessage(ReadOpIter opIter) {
 
   TP_DCHECK(op.hasMissingTargetDevices);
 
-  std::shared_ptr<NopHolder<MessageDescriptorReply>> holder =
+  std::shared_ptr<NopHolder<DescriptorReply>> holder =
       makeDescriptorReplyForMessage(op);
 
   TP_VLOG(3) << "Pipe " << id_
@@ -881,7 +848,7 @@ void PipeImpl::readDescriptorOfMessage(ReadOpIter opIter) {
 
   TP_DCHECK_EQ(connectionState_, AWAITING_DESCRIPTOR);
   TP_DCHECK_EQ(messageBeingReadFromConnection_, op.sequenceNumber);
-  auto nopHolderIn = std::make_shared<NopHolder<MessageDescriptor>>();
+  auto nopHolderIn = std::make_shared<NopHolder<Descriptor>>();
   TP_VLOG(3) << "Pipe " << id_ << " is reading nop object (message descriptor #"
              << op.sequenceNumber << ")";
   descriptorConnection_->read(
@@ -891,7 +858,12 @@ void PipeImpl::readDescriptorOfMessage(ReadOpIter opIter) {
                    << opIter->sequenceNumber << ")";
         opIter->doneReadingDescriptor = true;
         if (!impl.error_) {
-          parseDescriptorOfMessage(*opIter, nopHolderIn->getObject());
+          opIter->descriptor = std::move(nopHolderIn->getObject());
+          for (const auto& tensor : opIter->descriptor.tensors) {
+            if (!tensor.targetDevice.has_value()) {
+              opIter->hasMissingTargetDevices = true;
+            }
+          }
         }
         impl.readOps_.advanceOperation(opIter);
       }));
@@ -955,8 +927,7 @@ void PipeImpl::writeDescriptorOfMessage(WriteOpIter opIter) {
 
   WriteOperation& op = *opIter;
 
-  std::shared_ptr<NopHolder<MessageDescriptor>> holder =
-      makeDescriptorForMessage(op);
+  std::shared_ptr<NopHolder<Descriptor>> holder = makeDescriptorForMessage(op);
 
   TP_VLOG(3) << "Pipe " << id_ << " is writing nop object (message descriptor #"
              << op.sequenceNumber << ")";
@@ -1003,7 +974,7 @@ void PipeImpl::readDescriptorReplyOfMessage(WriteOpIter opIter) {
 
   TP_DCHECK(op.hasMissingTargetDevices);
 
-  auto nopHolderIn = std::make_shared<NopHolder<MessageDescriptorReply>>();
+  auto nopHolderIn = std::make_shared<NopHolder<DescriptorReply>>();
   TP_VLOG(3) << "Pipe " << id_
              << " is reading nop object (message descriptor reply #"
              << op.sequenceNumber << ")";

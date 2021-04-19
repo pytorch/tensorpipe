@@ -14,6 +14,7 @@
 #include <nop/utility/buffer_writer.h>
 
 #include <tensorpipe/common/defs.h>
+#include <tensorpipe/common/optional.h>
 
 namespace tensorpipe {
 
@@ -240,3 +241,65 @@ class NopHolder : public AbstractNopHolder {
 };
 
 } // namespace tensorpipe
+
+namespace nop {
+
+// The `nop::Encoding` specialization for `tensorpipe::optional` was inspired
+// by that of `nop::Optional`, available here:
+// https://github.com/google/libnop/blob/master/include/nop/base/optional.h
+template <typename T>
+struct Encoding<tensorpipe::optional<T>> : EncodingIO<tensorpipe::optional<T>> {
+  using Type = tensorpipe::optional<T>;
+
+  // NOLINTNEXTLINE(readability-identifier-naming)
+  static constexpr EncodingByte Prefix(const Type& value) {
+    return value ? Encoding<T>::Prefix(value.value()) : EncodingByte::Nil;
+  }
+
+  // NOLINTNEXTLINE(readability-identifier-naming)
+  static constexpr std::size_t Size(const Type& value) {
+    return value ? Encoding<T>::Size(value.value())
+                 : BaseEncodingSize(EncodingByte::Nil);
+  }
+
+  // NOLINTNEXTLINE(readability-identifier-naming)
+  static constexpr bool Match(EncodingByte prefix) {
+    return prefix == EncodingByte::Nil || Encoding<T>::Match(prefix);
+  }
+
+  template <typename Writer>
+  // NOLINTNEXTLINE(readability-identifier-naming)
+  static constexpr Status<void> WritePayload(
+      EncodingByte prefix,
+      const Type& value,
+      Writer* writer) {
+    if (value) {
+      return Encoding<T>::WritePayload(prefix, value.value(), writer);
+    } else {
+      return {};
+    }
+  }
+
+  template <typename Reader>
+  // NOLINTNEXTLINE(readability-identifier-naming)
+  static constexpr Status<void> ReadPayload(
+      EncodingByte prefix,
+      Type* value,
+      Reader* reader) {
+    if (prefix == EncodingByte::Nil) {
+      value->reset();
+    } else {
+      T temp;
+      auto status = Encoding<T>::ReadPayload(prefix, &temp, reader);
+      if (!status) {
+        return status;
+      }
+
+      *value = std::move(temp);
+    }
+
+    return {};
+  }
+};
+
+} // namespace nop

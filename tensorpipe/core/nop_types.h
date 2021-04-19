@@ -18,6 +18,8 @@
 #include <nop/types/variant.h>
 
 #include <tensorpipe/common/device.h>
+#include <tensorpipe/common/optional.h>
+#include <tensorpipe/core/message.h>
 
 namespace tensorpipe {
 
@@ -61,50 +63,18 @@ struct BrochureAnswer {
       channelForDevicePair);
 };
 
-struct MessageDescriptor {
-  struct PayloadDescriptor {
-    // This pointless constructor is needed to work around a bug in GCC 5.5 (and
-    // possibly other versions). It appears to be needed in the nop types that
-    // are used inside std::vectors.
-    PayloadDescriptor() {}
+NOP_EXTERNAL_STRUCTURE(Descriptor::Payload, length, metadata);
+NOP_EXTERNAL_STRUCTURE(
+    Descriptor::Tensor,
+    length,
+    sourceDevice,
+    targetDevice,
+    metadata);
+NOP_EXTERNAL_STRUCTURE(Descriptor, metadata, payloads, tensors);
 
-    int64_t sizeInBytes;
-    std::string metadata;
-    NOP_STRUCTURE(PayloadDescriptor, sizeInBytes, metadata);
-  };
-
-  struct TensorDescriptor {
-    // This pointless constructor is needed to work around a bug in GCC 5.5 (and
-    // possibly other versions). It appears to be needed in the nop types that
-    // are used inside std::vectors.
-    TensorDescriptor() {}
-
-    int64_t sizeInBytes;
-    std::string metadata;
-
-    Device sourceDevice;
-    nop::Optional<Device> targetDevice;
-    NOP_STRUCTURE(
-        TensorDescriptor,
-        sizeInBytes,
-        metadata,
-        sourceDevice,
-        targetDevice);
-  };
-
-  std::string metadata;
-  std::vector<PayloadDescriptor> payloadDescriptors;
-  std::vector<TensorDescriptor> tensorDescriptors;
-  NOP_STRUCTURE(
-      MessageDescriptor,
-      metadata,
-      payloadDescriptors,
-      tensorDescriptors);
-};
-
-struct MessageDescriptorReply {
+struct DescriptorReply {
   std::vector<Device> targetDevices;
-  NOP_STRUCTURE(MessageDescriptorReply, targetDevices);
+  NOP_STRUCTURE(DescriptorReply, targetDevices);
 };
 
 using Packet = nop::Variant<SpontaneousConnection, RequestedConnection>;
