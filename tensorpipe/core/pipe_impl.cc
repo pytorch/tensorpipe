@@ -1007,20 +1007,7 @@ void PipeImpl::onReadWhileClientWaitingForBrochureAnswer(
     std::shared_ptr<transport::Connection> connection =
         transportContext->connect(address);
     connection->setId(id_ + ".tr_" + transport);
-    auto nopHolderOut = std::make_shared<NopHolder<Packet>>();
-    Packet& nopPacketOut = nopHolderOut->getObject();
-    nopPacketOut.Become(nopPacketOut.index_of<RequestedConnection>());
-    RequestedConnection& nopRequestedConnection =
-        *nopPacketOut.get<RequestedConnection>();
-    uint64_t token = nopBrochureAnswer.transportRegistrationId;
-    nopRequestedConnection.registrationId = token;
-    TP_VLOG(3) << "Pipe " << id_
-               << " is writing nop object (requested connection)";
-    connection->write(
-        *nopHolderOut, callbackWrapper_([nopHolderOut](PipeImpl& impl) {
-          TP_VLOG(3) << "Pipe " << impl.id_
-                     << " done writing nop object (requested connection)";
-        }));
+    initConnection(*connection, nopBrochureAnswer.transportRegistrationId);
 
     transport_ = transport;
     descriptorConnection_ = std::move(connection);
@@ -1073,21 +1060,7 @@ void PipeImpl::onReadWhileClientWaitingForBrochureAnswer(
           transportContext->connect(address);
       connection->setId(
           id_ + ".ch_" + channelName + "_" + std::to_string(connId));
-
-      auto nopHolderOut = std::make_shared<NopHolder<Packet>>();
-      Packet& nopPacketOut = nopHolderOut->getObject();
-      nopPacketOut.Become(nopPacketOut.index_of<RequestedConnection>());
-      RequestedConnection& nopRequestedConnection =
-          *nopPacketOut.get<RequestedConnection>();
-      uint64_t token = registrationIds[connId];
-      nopRequestedConnection.registrationId = token;
-      TP_VLOG(3) << "Pipe " << id_
-                 << " is writing nop object (requested connection)";
-      connection->write(
-          *nopHolderOut, callbackWrapper_([nopHolderOut](PipeImpl& impl) {
-            TP_VLOG(3) << "Pipe " << impl.id_
-                       << " done writing nop object (requested connection)";
-          }));
+      initConnection(*connection, registrationIds[connId]);
       connections[connId] = std::move(connection);
     }
 
@@ -1100,6 +1073,24 @@ void PipeImpl::onReadWhileClientWaitingForBrochureAnswer(
   state_ = ESTABLISHED;
   readOps_.advanceAllOperations();
   writeOps_.advanceAllOperations();
+}
+
+void PipeImpl::initConnection(
+    transport::Connection& connection,
+    uint64_t token) {
+  auto nopHolderOut = std::make_shared<NopHolder<Packet>>();
+  Packet& nopPacketOut = nopHolderOut->getObject();
+  nopPacketOut.Become(nopPacketOut.index_of<RequestedConnection>());
+  RequestedConnection& nopRequestedConnection =
+      *nopPacketOut.get<RequestedConnection>();
+  nopRequestedConnection.registrationId = token;
+  TP_VLOG(3) << "Pipe " << id_
+             << " is writing nop object (requested connection)";
+  connection.write(
+      *nopHolderOut, callbackWrapper_([nopHolderOut](PipeImpl& impl) {
+        TP_VLOG(3) << "Pipe " << impl.id_
+                   << " done writing nop object (requested connection)";
+      }));
 }
 
 void PipeImpl::onAcceptWhileServerWaitingForConnection(
