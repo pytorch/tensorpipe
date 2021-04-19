@@ -52,10 +52,29 @@ void parseDescriptorOfMessage(ReadOperation& op, const Packet& nopPacketIn) {
     tensor.metadata = nopTensorDescriptor.metadata;
     tensor.length = static_cast<size_t>(nopTensorDescriptor.sizeInBytes);
     tensor.sourceDevice = nopTensorDescriptor.sourceDevice;
-    if (!nopTensorDescriptor.targetDevice.empty()) {
+    if (nopTensorDescriptor.targetDevice.empty()) {
+      op.hasMissingTargetDevices = true;
+    } else {
       tensor.targetDevice = nopTensorDescriptor.targetDevice.get();
     }
   }
+}
+
+void parseDescriptorReplyOfMessage(
+    WriteOperation& op,
+    const MessageDescriptorReply& nopMessageDescriptorReply) {
+  const int numTensors = op.message.tensors.size();
+  TP_DCHECK_EQ(numTensors, nopMessageDescriptorReply.targetDevices.size());
+  size_t targetDeviceIdx = 0;
+  for (size_t tensorIdx = 0; tensorIdx < numTensors; ++tensorIdx) {
+    const Message::Tensor& tensor = op.message.tensors[tensorIdx];
+    WriteOperation::Tensor& tensorBeingSent = op.tensors[tensorIdx];
+    if (!tensor.targetDevice.has_value()) {
+      tensorBeingSent.targetDevice =
+          nopMessageDescriptorReply.targetDevices[targetDeviceIdx++];
+    }
+  }
+  TP_DCHECK_EQ(targetDeviceIdx, nopMessageDescriptorReply.targetDevices.size());
 }
 
 // Raise an error if the number of payloads and tensors in the allocation do not
@@ -114,6 +133,22 @@ std::shared_ptr<NopHolder<Packet>> makeDescriptorForMessage(
       nopTensorDescriptor.targetDevice = tensor.targetDevice.value();
     }
     nopTensorDescriptor.sizeInBytes = tensor.length;
+  }
+
+  return nopHolderOut;
+}
+
+std::shared_ptr<NopHolder<MessageDescriptorReply>> makeDescriptorReplyForMessage(
+    const ReadOperation& op) {
+  auto nopHolderOut = std::make_shared<NopHolder<MessageDescriptorReply>>();
+  MessageDescriptorReply& nopMessageDescriptorReply = nopHolderOut->getObject();
+
+  for (size_t tensorIdx = 0; tensorIdx < op.descriptor.tensors.size();
+       ++tensorIdx) {
+    if (!op.descriptor.tensors[tensorIdx].targetDevice.has_value()) {
+      const Allocation::Tensor& tensor = op.allocation.tensors[tensorIdx];
+      nopMessageDescriptorReply.targetDevices.push_back(tensor.buffer.device());
+    }
   }
 
   return nopHolderOut;
@@ -488,26 +523,23 @@ void PipeImpl::receiveTensorsOfMessage(ReadOpIter opIter) {
   TP_VLOG(2) << "Pipe " << id_ << " is receiving tensors of message #"
              << op.sequenceNumber;
 
-  for (size_t tensorIdx = 0; tensorIdx < op.allocation.tensors.size();
-       tensorIdx++) {
+  TP_DCHECK_EQ(op.descriptor.tensors.size(), op.allocation.tensors.size());
+  for (size_t tensorIdx = 0; tensorIdx < op.descriptor.tensors.size();
+       ++tensorIdx) {
     Allocation::Tensor& tensor = op.allocation.tensors[tensorIdx];
     const Descriptor::Tensor& tensorDescriptor =
         op.descriptor.tensors[tensorIdx];
 
-    // FIXME: Until we have full support for XDTT, `selectChannels` ensures that
-    // a single channel is selected for a given device type. Moreover, no
-    // channel supports XDTT for now, so the device type of buffers on both ends
-    // is guaranteed to be the same. Therefore, we can pick a channel based
-    // solely on the source device's type, and we do that with this ugly hack:
-    std::string channelName;
-    for (const auto& iter : channelForDevicePair_) {
-      const std::pair<Device, Device>& p = iter.first;
-      if (p.first.type == tensorDescriptor.sourceDevice.type) {
-        channelName = iter.second;
-        break;
-      }
-    }
-    TP_DCHECK(channelName != "");
+    const Device& localDevice = tensor.buffer.device();
+    const Device& remoteDevice = tensorDescriptor.sourceDevice;
+    const auto& channelIter =
+        channelForDevicePair_.find({localDevice, remoteDevice});
+    TP_THROW_ASSERT_IF(channelIter == channelForDevicePair_.end())
+        << "Could not find suitable channel for sending from local device "
+        << localDevice.toString() << " to remote device "
+        << remoteDevice.toString();
+
+    const std::string& channelName = channelIter->second;
     channel::Channel& channel = *channels_.at(channelName);
     TP_VLOG(3) << "Pipe " << id_ << " is receiving tensor #"
                << op.sequenceNumber << "." << tensorIdx;
@@ -523,6 +555,29 @@ void PipeImpl::receiveTensorsOfMessage(ReadOpIter opIter) {
         }));
     ++op.numTensorsBeingReceived;
   }
+}
+
+void PipeImpl::writeDescriptorReplyOfMessage(ReadOpIter opIter) {
+  TP_DCHECK(context_->inLoop());
+
+  ReadOperation& op = *opIter;
+
+  TP_DCHECK(op.hasMissingTargetDevices);
+
+  std::shared_ptr<NopHolder<MessageDescriptorReply>> holder =
+      makeDescriptorReplyForMessage(op);
+
+  TP_VLOG(3) << "Pipe " << id_
+             << " is writing nop object (message descriptor reply #"
+             << op.sequenceNumber << ")";
+  descriptorReplyConnection_->write(
+      *holder,
+      callbackWrapper_(
+          [sequenceNumber{op.sequenceNumber}, holder](PipeImpl& impl) {
+            TP_VLOG(3) << "Pipe " << impl.id_
+                       << " done writing nop object (message descriptor reply #"
+                       << sequenceNumber << ")";
+          }));
 }
 
 void PipeImpl::write(Message message, write_callback_fn fn) {
@@ -555,6 +610,16 @@ void PipeImpl::writeFromLoop(Message message, write_callback_fn fn) {
 
   size_t numTensors = message.tensors.size();
   op.tensors.resize(numTensors);
+  for (size_t tensorIdx = 0; tensorIdx < numTensors; ++tensorIdx) {
+    const Message::Tensor& tensor = message.tensors[tensorIdx];
+    WriteOperation::Tensor& tensorBeingSent = op.tensors[tensorIdx];
+    tensorBeingSent.sourceDevice = tensor.buffer.device();
+    if (tensor.targetDevice.has_value()) {
+      tensorBeingSent.targetDevice = *tensor.targetDevice;
+    } else {
+      op.hasMissingTargetDevices = true;
+    }
+  }
 
   op.message = std::move(message);
   op.writeCallback = std::move(fn);
@@ -705,13 +770,29 @@ void PipeImpl::advanceReadOperation(
 
   // No need to order this with the previous operation, since all it needs is
   // to come after this own op's descriptor read.
+  // This transition shortcuts writing the descriptor reply when all target
+  // devices were provided by the sender.
   readOps_.attemptTransition(
       opIter,
       /*from=*/ReadOperation::ASKING_FOR_ALLOCATION_FIRST_IN_LINE,
       /*to=*/ReadOperation::READING_PAYLOADS_AND_RECEIVING_TENSORS,
-      /*cond=*/!error_ && op.doneGettingAllocation,
+      /*cond=*/!error_ && op.doneGettingAllocation &&
+          !op.hasMissingTargetDevices,
       /*actions=*/
       {&PipeImpl::readPayloadsOfMessage, &PipeImpl::receiveTensorsOfMessage});
+
+  // No need to order this with the previous operation, since all it needs is
+  // to come after this own op's descriptor read.
+  readOps_.attemptTransition(
+      opIter,
+      /*from=*/ReadOperation::ASKING_FOR_ALLOCATION_FIRST_IN_LINE,
+      /*to=*/ReadOperation::READING_PAYLOADS_AND_RECEIVING_TENSORS,
+      /*cond=*/!error_ && op.doneGettingAllocation &&
+          op.hasMissingTargetDevices,
+      /*actions=*/
+      {&PipeImpl::readPayloadsOfMessage,
+       &PipeImpl::writeDescriptorReplyOfMessage,
+       &PipeImpl::receiveTensorsOfMessage});
 
   // Needs to go after previous op to ensure ordering of callback invocations.
   readOps_.attemptTransition(
@@ -740,17 +821,55 @@ void PipeImpl::advanceWriteOperation(
       /*actions=*/{&PipeImpl::callWriteCallback});
 
   // Needs to go after previous op to ensure predictable and consistent ordering
-  // of write calls on the connection and send calls on channels.
+  // of write calls on the connection and send calls on the channels.
+  // This transition shortcuts reading the target devices when they were all
+  // provided by the user.
   writeOps_.attemptTransition(
       opIter,
       /*from=*/WriteOperation::UNINITIALIZED,
       /*to=*/WriteOperation::WRITING_PAYLOADS_AND_SENDING_TENSORS,
       /*cond=*/!error_ && state_ == ESTABLISHED &&
+          !op.hasMissingTargetDevices &&
           prevOpState >= WriteOperation::WRITING_PAYLOADS_AND_SENDING_TENSORS,
       /*actions=*/
       {&PipeImpl::writeDescriptorOfMessage,
        &PipeImpl::writePayloadsOfMessage,
        &PipeImpl::sendTensorsOfMessage});
+
+  // Needs to go after previous op to ensure predictable and consistent ordering
+  // of write calls on the descriptor connection and read calls on the
+  // descriptor reply connection.
+  writeOps_.attemptTransition(
+      opIter,
+      /*from=*/WriteOperation::UNINITIALIZED,
+      /*to=*/WriteOperation::WRITING_PAYLOADS_AND_READING_TARGET_DEVICES,
+      /*cond=*/!error_ && state_ == ESTABLISHED && op.hasMissingTargetDevices &&
+          prevOpState >=
+              WriteOperation::WRITING_PAYLOADS_AND_READING_TARGET_DEVICES,
+      /*actions=*/
+      {&PipeImpl::writeDescriptorOfMessage,
+       &PipeImpl::writePayloadsOfMessage,
+       &PipeImpl::readDescriptorReplyOfMessage});
+
+  // Needs to go after previous op to ensure ordering of callback invocations.
+  writeOps_.attemptTransition(
+      opIter,
+      /*from=*/WriteOperation::WRITING_PAYLOADS_AND_READING_TARGET_DEVICES,
+      /*to=*/WriteOperation::FINISHED,
+      /*cond=*/error_ && op.numPayloadsBeingWritten == 0 &&
+          op.doneReadingDescriptorReply &&
+          prevOpState >= WriteOperation::FINISHED,
+      /*actions=*/{&PipeImpl::callWriteCallback});
+
+  // Needs to go after previous op to ensure predictable and consistent ordering
+  // of send calls on channels.
+  writeOps_.attemptTransition(
+      opIter,
+      /*from=*/WriteOperation::WRITING_PAYLOADS_AND_READING_TARGET_DEVICES,
+      /*to=*/WriteOperation::WRITING_PAYLOADS_AND_SENDING_TENSORS,
+      /*cond=*/!error_ && op.doneReadingDescriptorReply &&
+          prevOpState >= WriteOperation::WRITING_PAYLOADS_AND_SENDING_TENSORS,
+      /*actions=*/{&PipeImpl::sendTensorsOfMessage});
 
   // Needs to go after previous op to ensure ordering of callback invocations.
   writeOps_.attemptTransition(
@@ -803,20 +922,21 @@ void PipeImpl::sendTensorsOfMessage(WriteOpIter opIter) {
   TP_VLOG(2) << "Pipe " << id_ << " is sending tensors of message #"
              << op.sequenceNumber;
 
-  for (int tensorIdx = 0; tensorIdx < op.message.tensors.size(); ++tensorIdx) {
+  TP_DCHECK_EQ(op.message.tensors.size(), op.tensors.size());
+  for (size_t tensorIdx = 0; tensorIdx < op.message.tensors.size();
+       ++tensorIdx) {
     const auto& tensor = op.message.tensors[tensorIdx];
 
-    // FIXME: Until we have full support for XDTT, `selectChannels` ensures that
-    // a single channel is selected for a given device type.
-    std::string channelName;
-    for (const auto& iter : channelForDevicePair_) {
-      const std::pair<Device, Device>& p = iter.first;
-      if (p.first == tensor.buffer.device()) {
-        channelName = iter.second;
-        break;
-      }
-    }
-    TP_THROW_ASSERT_IF(channelName == "") << "Could not find suitable channel";
+    const Device& localDevice = op.tensors[tensorIdx].sourceDevice;
+    TP_DCHECK(op.tensors[tensorIdx].targetDevice.has_value());
+    const Device& remoteDevice = *op.tensors[tensorIdx].targetDevice;
+    const auto& channelIter =
+        channelForDevicePair_.find({localDevice, remoteDevice});
+    TP_THROW_ASSERT_IF(channelIter == channelForDevicePair_.end())
+        << "Could not find suitable channel for sending from local device "
+        << localDevice.toString() << " to remote device "
+        << remoteDevice.toString();
+    const std::string& channelName = channelIter->second;
 
     channel::Channel& channel = *channels_[channelName];
 
@@ -880,6 +1000,30 @@ void PipeImpl::writePayloadsOfMessage(WriteOpIter opIter) {
         }));
     ++op.numPayloadsBeingWritten;
   }
+}
+
+void PipeImpl::readDescriptorReplyOfMessage(WriteOpIter opIter) {
+  TP_DCHECK(context_->inLoop());
+
+  WriteOperation& op = *opIter;
+
+  TP_DCHECK(op.hasMissingTargetDevices);
+
+  auto nopHolderIn = std::make_shared<NopHolder<MessageDescriptorReply>>();
+  TP_VLOG(3) << "Pipe " << id_
+             << " is reading nop object (message descriptor reply #"
+             << op.sequenceNumber << ")";
+  descriptorReplyConnection_->read(
+      *nopHolderIn, callbackWrapper_([opIter, nopHolderIn](PipeImpl& impl) {
+        TP_VLOG(3) << "Pipe " << impl.id_
+                   << " done reading nop object (message descriptor reply #"
+                   << opIter->sequenceNumber << ")";
+        opIter->doneReadingDescriptorReply = true;
+        if (!impl.error_) {
+          parseDescriptorReplyOfMessage(*opIter, nopHolderIn->getObject());
+        }
+        impl.writeOps_.advanceOperation(opIter);
+      }));
 }
 
 void PipeImpl::onReadWhileServerWaitingForBrochure(const Packet& nopPacketIn) {
