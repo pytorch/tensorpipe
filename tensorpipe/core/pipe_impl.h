@@ -157,8 +157,9 @@ class PipeImpl final : public std::enable_shared_from_this<PipeImpl> {
   std::string remoteName_;
 
   std::string transport_;
-  enum ConnectionId { DESCRIPTOR };
+  enum ConnectionId { DESCRIPTOR, DESCRIPTOR_REPLY };
   std::shared_ptr<transport::Connection> descriptorConnection_;
+  std::shared_ptr<transport::Connection> descriptorReplyConnection_;
 
   std::unordered_map<std::string, std::shared_ptr<channel::Channel>> channels_;
   std::unordered_map<std::pair<Device, Device>, std::string>
