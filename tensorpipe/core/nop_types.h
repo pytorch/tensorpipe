@@ -43,7 +43,7 @@ struct Brochure {
 struct BrochureAnswer {
   std::string transport;
   std::string address;
-  uint64_t transportRegistrationId;
+  std::unordered_map<uint64_t, uint64_t> transportRegistrationIds;
   std::string transportDomainDescriptor;
   std::unordered_map<std::string, std::vector<uint64_t>> channelRegistrationIds;
   std::unordered_map<std::string, std::unordered_map<Device, std::string>>
@@ -54,7 +54,7 @@ struct BrochureAnswer {
       BrochureAnswer,
       transport,
       address,
-      transportRegistrationId,
+      transportRegistrationIds,
       transportDomainDescriptor,
       channelRegistrationIds,
       channelDeviceDescriptors,
