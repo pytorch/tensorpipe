@@ -63,11 +63,6 @@ struct ReadOperation {
   Pipe::read_descriptor_callback_fn readDescriptorCallback;
   Pipe::read_callback_fn readCallback;
 
-  struct Tensor {
-    std::string channelName;
-  };
-  std::vector<Tensor> tensors;
-
   Descriptor descriptor;
   // Buffers allocated by the user.
   Allocation allocation;
@@ -90,10 +85,8 @@ struct WriteOperation {
   // Buffers provided by the user.
   Message message;
 
-  // Tensor descriptors collected from the channels.
-  struct Tensor {
-    std::string channelName;
-  };
+  // This is currently empty, but will be used again for XDTT channel selection.
+  struct Tensor {};
   std::vector<Tensor> tensors;
 };
 
@@ -167,6 +160,8 @@ class PipeImpl final : public std::enable_shared_from_this<PipeImpl> {
   std::shared_ptr<transport::Connection> connection_;
 
   std::unordered_map<std::string, std::shared_ptr<channel::Channel>> channels_;
+  std::unordered_map<std::pair<Device, Device>, std::string>
+      channelForDevicePair_;
 
   // The server will set this up when it tell the client to switch to a
   // different connection or to open some channels.
