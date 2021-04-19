@@ -72,10 +72,6 @@ size_t ContextImpl::numConnectionsNeeded() const {
   return 2;
 }
 
-bool ContextImpl::supportsDeviceType(DeviceType type) const {
-  return (DeviceType::kCpu == type);
-}
-
 void ContextImpl::handleErrorImpl() {
   requests_.push(nullopt);
 }

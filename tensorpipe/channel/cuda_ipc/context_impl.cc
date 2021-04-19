@@ -301,10 +301,6 @@ size_t ContextImpl::numConnectionsNeeded() const {
   return 2;
 }
 
-bool ContextImpl::supportsDeviceType(DeviceType type) const {
-  return (DeviceType::kCuda == type);
-}
-
 bool ContextImpl::canCommunicateWithRemote(
     const std::string& localDeviceDescriptor,
     const std::string& remoteDeviceDescriptor) const {

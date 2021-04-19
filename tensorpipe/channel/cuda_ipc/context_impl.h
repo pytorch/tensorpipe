@@ -46,8 +46,6 @@ class ContextImpl final
 
   size_t numConnectionsNeeded() const override;
 
-  bool supportsDeviceType(DeviceType type) const override;
-
   bool canCommunicateWithRemote(
       const std::string& localDeviceDescriptor,
       const std::string& remoteDeviceDescriptor) const override;

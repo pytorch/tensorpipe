@@ -32,9 +32,9 @@ std::shared_ptr<ContextImpl> ContextImpl::create(
     return nullptr;
   }
 
-  if (!cpuContext->supportsDeviceType(DeviceType::kCpu)) {
-    TP_VLOG(5) << "CUDA basic channel is not viable because the provided CPU"
-                  "channel does not support CPU buffers";
+  if (cpuContext->deviceDescriptors().count(Device{kCpuDeviceType, 0}) == 0) {
+    TP_THROW_ASSERT() << "CUDA basic channel needs a CPU channel";
+
     return nullptr;
   }
 
@@ -79,10 +79,6 @@ std::shared_ptr<Channel> ContextImpl::createChannel(
 
 size_t ContextImpl::numConnectionsNeeded() const {
   return 1 + cpuContext_->numConnectionsNeeded();
-}
-
-bool ContextImpl::supportsDeviceType(DeviceType type) const {
-  return (DeviceType::kCuda == type);
 }
 
 const CudaLib& ContextImpl::getCudaLib() {

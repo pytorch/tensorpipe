@@ -39,8 +39,6 @@ class ContextImpl final
 
   size_t numConnectionsNeeded() const override;
 
-  bool supportsDeviceType(DeviceType type) const override;
-
   // Implement the DeferredExecutor interface.
   bool inLoop() const override;
   void deferToLoop(std::function<void()> fn) override;

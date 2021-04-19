@@ -34,8 +34,6 @@ class ContextImpl final
 
   size_t numConnectionsNeeded() const override;
 
-  bool supportsDeviceType(DeviceType type) const override;
-
   const CudaLib& getCudaLib();
 
   // Implement the DeferredExecutor interface.
