@@ -736,3 +736,125 @@ TEST(Context, MixedTensorMessage) {
         context->join();
       });
 }
+
+TEST(Context, SendFromBoth) {
+  ForkedThreadPeerGroup pg;
+  pg.spawn(
+      [&]() {
+        std::vector<std::shared_ptr<void>> buffers;
+        std::promise<std::shared_ptr<Pipe>> serverPipePromise;
+        std::promise<void> writtenMessagePromise;
+        std::promise<Descriptor> readDescriptorPromise;
+        std::promise<void> readMessagePromise;
+
+        auto context = makeContext();
+
+        auto listener = context->listen(genUrls());
+        pg.send(PeerGroup::kClient, listener->url("uv"));
+
+        listener->accept([&](const Error& error, std::shared_ptr<Pipe> pipe) {
+          if (error) {
+            serverPipePromise.set_exception(
+                std::make_exception_ptr(std::runtime_error(error.what())));
+          } else {
+            serverPipePromise.set_value(std::move(pipe));
+          }
+        });
+        std::shared_ptr<Pipe> serverPipe = serverPipePromise.get_future().get();
+
+        serverPipe->write(
+            makeMessage(kNumPayloads, kNumTensors),
+            [&writtenMessagePromise](const Error& error) {
+              if (error) {
+                writtenMessagePromise.set_exception(
+                    std::make_exception_ptr(std::runtime_error(error.what())));
+              } else {
+                writtenMessagePromise.set_value();
+              }
+            });
+
+        serverPipe->readDescriptor(
+            [&readDescriptorPromise](
+                const Error& error, Descriptor descriptor) {
+              if (error) {
+                readDescriptorPromise.set_exception(
+                    std::make_exception_ptr(std::runtime_error(error.what())));
+              } else {
+                readDescriptorPromise.set_value(std::move(descriptor));
+              }
+            });
+
+        Descriptor descriptor = readDescriptorPromise.get_future().get();
+        Allocation allocation = allocateForDescriptor(descriptor, buffers);
+        serverPipe->read(allocation, [&readMessagePromise](const Error& error) {
+          if (error) {
+            readMessagePromise.set_exception(
+                std::make_exception_ptr(std::runtime_error(error.what())));
+          } else {
+            readMessagePromise.set_value();
+          }
+        });
+        writtenMessagePromise.get_future().get();
+        readMessagePromise.get_future().get();
+        EXPECT_TRUE(descriptorAndAllocationMatchMessage(
+            descriptor, allocation, makeMessage(kNumPayloads, kNumTensors)));
+
+        pg.done(PeerGroup::kServer);
+        pg.join(PeerGroup::kServer);
+
+        context->join();
+      },
+      [&]() {
+        std::vector<std::shared_ptr<void>> buffers;
+        std::promise<void> writtenMessagePromise;
+        std::promise<Descriptor> readDescriptorPromise;
+        std::promise<void> readMessagePromise;
+
+        auto context = makeContext();
+
+        auto url = pg.recv(PeerGroup::kClient);
+        auto clientPipe = context->connect(url);
+
+        clientPipe->write(
+            makeMessage(kNumPayloads, kNumTensors),
+            [&writtenMessagePromise](const Error& error) {
+              if (error) {
+                writtenMessagePromise.set_exception(
+                    std::make_exception_ptr(std::runtime_error(error.what())));
+              } else {
+                writtenMessagePromise.set_value();
+              }
+            });
+
+        clientPipe->readDescriptor(
+            [&readDescriptorPromise](
+                const Error& error, Descriptor descriptor) {
+              if (error) {
+                readDescriptorPromise.set_exception(
+                    std::make_exception_ptr(std::runtime_error(error.what())));
+              } else {
+                readDescriptorPromise.set_value(std::move(descriptor));
+              }
+            });
+
+        Descriptor descriptor = readDescriptorPromise.get_future().get();
+        Allocation allocation = allocateForDescriptor(descriptor, buffers);
+        clientPipe->read(allocation, [&readMessagePromise](const Error& error) {
+          if (error) {
+            readMessagePromise.set_exception(
+                std::make_exception_ptr(std::runtime_error(error.what())));
+          } else {
+            readMessagePromise.set_value();
+          }
+        });
+        writtenMessagePromise.get_future().get();
+        readMessagePromise.get_future().get();
+        EXPECT_TRUE(descriptorAndAllocationMatchMessage(
+            descriptor, allocation, makeMessage(kNumPayloads, kNumTensors)));
+
+        pg.done(PeerGroup::kClient);
+        pg.join(PeerGroup::kClient);
+
+        context->join();
+      });
+}
