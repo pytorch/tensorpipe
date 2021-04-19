@@ -621,10 +621,11 @@ void PipeImpl::handleError() {
     channelIter.second->close();
   }
 
-  if (registrationId_.has_value()) {
-    listener_->unregisterConnectionRequest(registrationId_.value());
-    registrationId_.reset();
+  for (const auto& tokenIter : registrationIds_) {
+    listener_->unregisterConnectionRequest(tokenIter.second);
   }
+  registrationIds_.clear();
+
   for (const auto& iter : channelRegistrationIds_) {
     for (const auto& token : iter.second) {
       listener_->unregisterConnectionRequest(token);
@@ -895,7 +896,8 @@ void PipeImpl::onReadWhileServerWaitingForBrochure(const Packet& nopPacketIn) {
 
   if (transport.name != transport_) {
     transport_ = transport.name;
-    nopBrochureAnswer.transportRegistrationId = registerTransport();
+    nopBrochureAnswer.transportRegistrationIds[ConnectionId::DESCRIPTOR] =
+        registerTransport(ConnectionId::DESCRIPTOR);
   }
 
   nopBrochureAnswer.transport = transport.name;
@@ -933,21 +935,22 @@ void PipeImpl::onReadWhileServerWaitingForBrochure(const Packet& nopPacketIn) {
   }
 }
 
-uint64_t PipeImpl::registerTransport() {
-  TP_DCHECK(!registrationId_.has_value());
+uint64_t PipeImpl::registerTransport(ConnectionId connId) {
+  TP_DCHECK(registrationIds_.count(connId) == 0);
   TP_VLOG(3) << "Pipe " << id_ << " is requesting connection (as replacement)";
   uint64_t token = listener_->registerConnectionRequest(
-      callbackWrapper_([](PipeImpl& impl,
-                          std::string transport,
-                          std::shared_ptr<transport::Connection> connection) {
+      callbackWrapper_([connId](
+                           PipeImpl& impl,
+                           std::string transport,
+                           std::shared_ptr<transport::Connection> connection) {
         TP_VLOG(3) << "Pipe " << impl.id_
                    << " done requesting connection (as replacement)";
         if (!impl.error_) {
           impl.onAcceptWhileServerWaitingForConnection(
-              std::move(transport), std::move(connection));
+              connId, std::move(transport), std::move(connection));
         }
       }));
-  registrationId_.emplace(token);
+  registrationIds_[connId] = token;
 
   return token;
 }
@@ -1007,7 +1010,13 @@ void PipeImpl::onReadWhileClientWaitingForBrochureAnswer(
     std::shared_ptr<transport::Connection> connection =
         transportContext->connect(address);
     connection->setId(id_ + ".tr_" + transport);
-    initConnection(*connection, nopBrochureAnswer.transportRegistrationId);
+    const auto& transportRegistrationIter =
+        nopBrochureAnswer.transportRegistrationIds.find(
+            ConnectionId::DESCRIPTOR);
+    TP_DCHECK(
+        transportRegistrationIter !=
+        nopBrochureAnswer.transportRegistrationIds.end());
+    initConnection(*connection, transportRegistrationIter->second);
 
     transport_ = transport;
     descriptorConnection_ = std::move(connection);
@@ -1094,17 +1103,27 @@ void PipeImpl::initConnection(
 }
 
 void PipeImpl::onAcceptWhileServerWaitingForConnection(
+    ConnectionId connId,
     std::string receivedTransport,
     std::shared_ptr<transport::Connection> receivedConnection) {
   TP_DCHECK(context_->inLoop());
   TP_DCHECK_EQ(state_, SERVER_WAITING_FOR_CONNECTIONS);
-  TP_DCHECK(registrationId_.has_value());
-  listener_->unregisterConnectionRequest(registrationId_.value());
-  registrationId_.reset();
-  receivedConnection->setId(id_ + ".tr_" + receivedTransport);
+  const auto& registrationIdIter = registrationIds_.find(connId);
+  TP_DCHECK(registrationIdIter != registrationIds_.end());
+  size_t token = registrationIdIter->second;
+  listener_->unregisterConnectionRequest(token);
+  registrationIds_.erase(registrationIdIter);
   TP_DCHECK_EQ(transport_, receivedTransport);
-  descriptorConnection_.reset();
-  descriptorConnection_ = std::move(receivedConnection);
+
+  switch (connId) {
+    case ConnectionId::DESCRIPTOR:
+      receivedConnection->setId(
+          id_ + ".tr_" + receivedTransport + "_descriptor");
+      descriptorConnection_ = std::move(receivedConnection);
+      break;
+    default:
+      TP_THROW_ASSERT() << "Unrecognized connection identifier";
+  }
 
   if (!pendingRegistrations()) {
     state_ = ESTABLISHED;
@@ -1161,7 +1180,7 @@ void PipeImpl::onAcceptWhileServerWaitingForChannel(
 }
 
 bool PipeImpl::pendingRegistrations() {
-  if (registrationId_.has_value()) {
+  if (!registrationIds_.empty()) {
     return true;
   }
 
