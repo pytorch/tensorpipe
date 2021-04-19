@@ -157,6 +157,7 @@ class PipeImpl final : public std::enable_shared_from_this<PipeImpl> {
   std::string remoteName_;
 
   std::string transport_;
+  enum ConnectionId { DESCRIPTOR };
   std::shared_ptr<transport::Connection> descriptorConnection_;
 
   std::unordered_map<std::string, std::shared_ptr<channel::Channel>> channels_;
@@ -165,7 +166,7 @@ class PipeImpl final : public std::enable_shared_from_this<PipeImpl> {
 
   // The server will set this up when it tell the client to switch to a
   // different connection or to open some channels.
-  optional<uint64_t> registrationId_;
+  std::unordered_map<uint64_t, uint64_t> registrationIds_;
 
   std::unordered_map<std::string, std::vector<uint64_t>>
       channelRegistrationIds_;
@@ -240,6 +241,7 @@ class PipeImpl final : public std::enable_shared_from_this<PipeImpl> {
   // On the server side:
   void onReadWhileServerWaitingForBrochure(const Packet& nopPacketIn);
   void onAcceptWhileServerWaitingForConnection(
+      ConnectionId connId,
       std::string receivedTransport,
       std::shared_ptr<transport::Connection> receivedConnection);
   void onAcceptWhileServerWaitingForChannel(
@@ -275,7 +277,7 @@ class PipeImpl final : public std::enable_shared_from_this<PipeImpl> {
   //
 
   void initConnection(transport::Connection& connection, uint64_t token);
-  uint64_t registerTransport();
+  uint64_t registerTransport(ConnectionId connId);
   std::vector<uint64_t>& registerChannel(const std::string& channelName);
 
   bool pendingRegistrations();
