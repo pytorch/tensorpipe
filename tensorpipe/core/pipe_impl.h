@@ -274,6 +274,7 @@ class PipeImpl final : public std::enable_shared_from_this<PipeImpl> {
   // Everything else
   //
 
+  void initConnection(transport::Connection& connection, uint64_t token);
   uint64_t registerTransport();
   std::vector<uint64_t>& registerChannel(const std::string& channelName);
 
