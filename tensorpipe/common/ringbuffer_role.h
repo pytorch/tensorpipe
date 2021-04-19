@@ -13,11 +13,9 @@
 #include <tuple>
 #include <utility>
 
-#include <tensorpipe/util/ringbuffer/ringbuffer.h>
+#include <tensorpipe/common/ringbuffer.h>
 
 namespace tensorpipe {
-namespace util {
-namespace ringbuffer {
 
 ///
 /// Role of a RingBuffer.
@@ -25,24 +23,24 @@ namespace ringbuffer {
 /// Provides methods to read and write data into a ringbuffer.
 ///
 template <int NumRoles, int RoleIdx>
-class Role {
+class RingBufferRole {
  public:
   static_assert(0 <= RoleIdx && RoleIdx < NumRoles, "");
 
-  Role() = delete;
+  RingBufferRole() = delete;
 
-  explicit Role(RingBuffer<NumRoles>& rb)
+  explicit RingBufferRole(RingBuffer<NumRoles>& rb)
       : header_{rb.getHeader()}, data_{rb.getData()} {
     TP_THROW_IF_NULLPTR(data_);
   }
 
-  Role(const Role&) = delete;
-  Role(Role&&) = delete;
+  RingBufferRole(const RingBufferRole&) = delete;
+  RingBufferRole(RingBufferRole&&) = delete;
 
-  Role& operator=(const Role&) = delete;
-  Role& operator=(Role&&) = delete;
+  RingBufferRole& operator=(const RingBufferRole&) = delete;
+  RingBufferRole& operator=(RingBufferRole&&) = delete;
 
-  ~Role() noexcept {
+  ~RingBufferRole() noexcept {
     TP_THROW_ASSERT_IF(inTx());
   }
 
@@ -284,6 +282,4 @@ class Role {
   bool inTx_{false};
 };
 
-} // namespace ringbuffer
-} // namespace util
 } // namespace tensorpipe

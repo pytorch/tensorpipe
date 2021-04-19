@@ -9,13 +9,10 @@
 #pragma once
 
 #include <tensorpipe/common/fd.h>
-#include <tensorpipe/util/ringbuffer/ringbuffer.h>
-#include <tensorpipe/util/shm/segment.h>
+#include <tensorpipe/common/ringbuffer.h>
+#include <tensorpipe/common/shm_segment.h>
 
 namespace tensorpipe {
-namespace util {
-namespace ringbuffer {
-namespace shm {
 
 /// Creates ringbuffer on shared memory.
 ///
@@ -31,35 +28,29 @@ namespace shm {
 /// of a RingBuffer (or each CPU's RingBuffer).
 ///
 template <int NumRoles>
-std::tuple<Error, util::shm::Segment, util::shm::Segment, RingBuffer<NumRoles>>
-create(
+std::tuple<Error, ShmSegment, ShmSegment, RingBuffer<NumRoles>>
+createShmRingBuffer(
     size_t minRbByteSize,
-    optional<util::shm::PageType> dataPageType = nullopt,
+    optional<ShmSegment::PageType> dataPageType = nullopt,
     bool permWrite = true) {
   Error error;
-  util::shm::Segment headerSegment;
+  ShmSegment headerSegment;
   RingBufferHeader<NumRoles>* header;
   std::tie(error, headerSegment, header) =
-      util::shm::Segment::create<RingBufferHeader<NumRoles>>(
-          permWrite, util::shm::PageType::Default, minRbByteSize);
+      ShmSegment::create<RingBufferHeader<NumRoles>>(
+          permWrite, ShmSegment::PageType::Default, minRbByteSize);
   if (error) {
     return std::make_tuple(
-        std::move(error),
-        util::shm::Segment(),
-        util::shm::Segment(),
-        RingBuffer<NumRoles>());
+        std::move(error), ShmSegment(), ShmSegment(), RingBuffer<NumRoles>());
   }
 
-  util::shm::Segment dataSegment;
+  ShmSegment dataSegment;
   uint8_t* data;
-  std::tie(error, dataSegment, data) = util::shm::Segment::create<uint8_t[]>(
+  std::tie(error, dataSegment, data) = ShmSegment::create<uint8_t[]>(
       header->kDataPoolByteSize, permWrite, dataPageType);
   if (error) {
     return std::make_tuple(
-        std::move(error),
-        util::shm::Segment(),
-        util::shm::Segment(),
-        RingBuffer<NumRoles>());
+        std::move(error), ShmSegment(), ShmSegment(), RingBuffer<NumRoles>());
   }
 
   // Note: cannot use implicit construction from initializer list on GCC 5.5:
@@ -72,40 +63,34 @@ create(
 }
 
 template <int NumRoles>
-std::tuple<Error, util::shm::Segment, util::shm::Segment, RingBuffer<NumRoles>>
-load(
+std::tuple<Error, ShmSegment, ShmSegment, RingBuffer<NumRoles>>
+loadShmRingBuffer(
     Fd headerFd,
     Fd dataFd,
-    optional<util::shm::PageType> dataPageType = nullopt,
+    optional<ShmSegment::PageType> dataPageType = nullopt,
     bool permWrite = true) {
   Error error;
-  util::shm::Segment headerSegment;
+  ShmSegment headerSegment;
   RingBufferHeader<NumRoles>* header;
   std::tie(error, headerSegment, header) =
-      util::shm::Segment::load<RingBufferHeader<NumRoles>>(
-          std::move(headerFd), permWrite, util::shm::PageType::Default);
+      ShmSegment::load<RingBufferHeader<NumRoles>>(
+          std::move(headerFd), permWrite, ShmSegment::PageType::Default);
   if (error) {
     return std::make_tuple(
-        std::move(error),
-        util::shm::Segment(),
-        util::shm::Segment(),
-        RingBuffer<NumRoles>());
+        std::move(error), ShmSegment(), ShmSegment(), RingBuffer<NumRoles>());
   }
   constexpr auto kHeaderSize = sizeof(RingBufferHeader<NumRoles>);
   if (unlikely(kHeaderSize != headerSegment.getSize())) {
     TP_THROW_SYSTEM(EPERM) << "Header segment of unexpected size";
   }
 
-  util::shm::Segment dataSegment;
+  ShmSegment dataSegment;
   uint8_t* data;
-  std::tie(error, dataSegment, data) = util::shm::Segment::load<uint8_t[]>(
-      std::move(dataFd), permWrite, dataPageType);
+  std::tie(error, dataSegment, data) =
+      ShmSegment::load<uint8_t[]>(std::move(dataFd), permWrite, dataPageType);
   if (error) {
     return std::make_tuple(
-        std::move(error),
-        util::shm::Segment(),
-        util::shm::Segment(),
-        RingBuffer<NumRoles>());
+        std::move(error), ShmSegment(), ShmSegment(), RingBuffer<NumRoles>());
   }
   if (unlikely(header->kDataPoolByteSize != dataSegment.getSize())) {
     TP_THROW_SYSTEM(EPERM) << "Data segment of unexpected size";
@@ -118,7 +103,4 @@ load(
       RingBuffer<NumRoles>(header, data));
 }
 
-} // namespace shm
-} // namespace ringbuffer
-} // namespace util
 } // namespace tensorpipe

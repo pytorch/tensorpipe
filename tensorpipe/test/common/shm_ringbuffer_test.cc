@@ -6,11 +6,11 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+#include <tensorpipe/common/ringbuffer.h>
+#include <tensorpipe/common/ringbuffer_role.h>
+#include <tensorpipe/common/shm_ringbuffer.h>
+#include <tensorpipe/common/shm_segment.h>
 #include <tensorpipe/common/socket.h>
-#include <tensorpipe/util/ringbuffer/ringbuffer.h>
-#include <tensorpipe/util/ringbuffer/role.h>
-#include <tensorpipe/util/ringbuffer/shm.h>
-#include <tensorpipe/util/shm/segment.h>
 
 #include <sys/eventfd.h>
 #include <sys/socket.h>
@@ -21,12 +21,10 @@
 #include <gtest/gtest.h>
 
 using namespace tensorpipe;
-using namespace tensorpipe::util::ringbuffer;
-using namespace tensorpipe::util::shm;
 
 constexpr static int kNumRingbufferRoles = 2;
-using Consumer = Role<kNumRingbufferRoles, 0>;
-using Producer = Role<kNumRingbufferRoles, 1>;
+using Consumer = RingBufferRole<kNumRingbufferRoles, 0>;
+using Producer = RingBufferRole<kNumRingbufferRoles, 1>;
 
 // Same process produces and consumes share memory through different mappings.
 TEST(ShmRingBuffer, SameProducerConsumer) {
@@ -37,11 +35,11 @@ TEST(ShmRingBuffer, SameProducerConsumer) {
     // Buffer large enough to fit all data and persistent
     // (needs to be unlinked up manually).
     Error error;
-    Segment headerSegment;
-    Segment dataSegment;
+    ShmSegment headerSegment;
+    ShmSegment dataSegment;
     RingBuffer<kNumRingbufferRoles> rb;
     std::tie(error, headerSegment, dataSegment, rb) =
-        shm::create<kNumRingbufferRoles>(256 * 1024);
+        createShmRingBuffer<kNumRingbufferRoles>(256 * 1024);
     Producer prod{rb};
 
     // Producer loop. It all fits in buffer.
@@ -62,11 +60,12 @@ TEST(ShmRingBuffer, SameProducerConsumer) {
     // Consumer part.
     // Map file again (to a different address) and consume it.
     Error error;
-    Segment headerSegment;
-    Segment dataSegment;
+    ShmSegment headerSegment;
+    ShmSegment dataSegment;
     RingBuffer<kNumRingbufferRoles> rb;
     std::tie(error, headerSegment, dataSegment, rb) =
-        shm::load<kNumRingbufferRoles>(std::move(headerFd), std::move(dataFd));
+        loadShmRingBuffer<kNumRingbufferRoles>(
+            std::move(headerFd), std::move(dataFd));
     Consumer cons{rb};
 
     int i = 0;
@@ -104,11 +103,11 @@ TEST(ShmRingBuffer, SingleProducer_SingleConsumer) {
     // Make a scope so segments are destroyed even on exit(0).
     {
       Error error;
-      Segment headerSegment;
-      Segment dataSegment;
+      ShmSegment headerSegment;
+      ShmSegment dataSegment;
       RingBuffer<kNumRingbufferRoles> rb;
       std::tie(error, headerSegment, dataSegment, rb) =
-          shm::create<kNumRingbufferRoles>(1024);
+          createShmRingBuffer<kNumRingbufferRoles>(1024);
       Producer prod{rb};
 
       {
@@ -155,11 +154,12 @@ TEST(ShmRingBuffer, SingleProducer_SingleConsumer) {
     }
   }
   Error error;
-  Segment headerSegment;
-  Segment dataSegment;
+  ShmSegment headerSegment;
+  ShmSegment dataSegment;
   RingBuffer<kNumRingbufferRoles> rb;
   std::tie(error, headerSegment, dataSegment, rb) =
-      shm::load<kNumRingbufferRoles>(std::move(headerFd), std::move(dataFd));
+      loadShmRingBuffer<kNumRingbufferRoles>(
+          std::move(headerFd), std::move(dataFd));
   Consumer cons{rb};
 
   int i = 0;

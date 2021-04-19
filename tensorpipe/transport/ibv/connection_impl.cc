@@ -20,13 +20,13 @@
 #include <tensorpipe/common/ibv.h>
 #include <tensorpipe/common/memory.h>
 #include <tensorpipe/common/ringbuffer_read_write_ops.h>
+#include <tensorpipe/common/ringbuffer_role.h>
 #include <tensorpipe/common/socket.h>
 #include <tensorpipe/transport/error.h>
 #include <tensorpipe/transport/ibv/context_impl.h>
 #include <tensorpipe/transport/ibv/error.h>
 #include <tensorpipe/transport/ibv/reactor.h>
 #include <tensorpipe/transport/ibv/sockaddr.h>
-#include <tensorpipe/util/ringbuffer/role.h>
 
 namespace tensorpipe {
 namespace transport {
@@ -113,8 +113,8 @@ void ConnectionImpl::initImplFromLoop() {
       kBufferSize, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1);
   TP_THROW_ASSERT_IF(error)
       << "Couldn't allocate ringbuffer for connection inbox: " << error.what();
-  inboxRb_ = util::ringbuffer::RingBuffer<kNumInboxRingbufferRoles>(
-      &inboxHeader_, inboxBuf_.ptr());
+  inboxRb_ =
+      RingBuffer<kNumInboxRingbufferRoles>(&inboxHeader_, inboxBuf_.ptr());
   inboxMr_ = createIbvMemoryRegion(
       context_->getReactor().getIbvLib(),
       context_->getReactor().getIbvPd(),
@@ -127,8 +127,8 @@ void ConnectionImpl::initImplFromLoop() {
       kBufferSize, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1);
   TP_THROW_ASSERT_IF(error)
       << "Couldn't allocate ringbuffer for connection outbox: " << error.what();
-  outboxRb_ = util::ringbuffer::RingBuffer<kNumOutboxRingbufferRoles>(
-      &outboxHeader_, outboxBuf_.ptr());
+  outboxRb_ =
+      RingBuffer<kNumOutboxRingbufferRoles>(&outboxHeader_, outboxBuf_.ptr());
   outboxMr_ = createIbvMemoryRegion(
       context_->getReactor().getIbvLib(),
       context_->getReactor().getIbvPd(),

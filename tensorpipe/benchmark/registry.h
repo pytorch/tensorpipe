@@ -28,8 +28,6 @@
 #include <vector>
 
 namespace tensorpipe {
-namespace util {
-namespace registry {
 
 /**
  * @brief A template class that allows one to register classes by keys.
@@ -132,22 +130,18 @@ class Registerer {
 // Using the construct on first use idiom to avoid static order initialization
 // issue. Refer to this link for reference:
 // https://isocpp.org/wiki/faq/ctors#static-init-order-on-first-use
-#define TP_DEFINE_TYPED_REGISTRY(RegistryName, ObjectType, PtrType, ...)    \
-  tensorpipe::util::registry::Registry<PtrType<ObjectType>, ##__VA_ARGS__>& \
-  RegistryName() {                                                          \
-    static tensorpipe::util::registry::                                     \
-        Registry<PtrType<ObjectType>, ##__VA_ARGS__>* registry =            \
-            new tensorpipe::util::registry::                                \
-                Registry<PtrType<ObjectType>, ##__VA_ARGS__>();             \
-    return *registry;                                                       \
+#define TP_DEFINE_TYPED_REGISTRY(RegistryName, ObjectType, PtrType, ...)     \
+  tensorpipe::Registry<PtrType<ObjectType>, ##__VA_ARGS__>& RegistryName() { \
+    static tensorpipe::Registry<PtrType<ObjectType>, ##__VA_ARGS__>*         \
+        registry =                                                           \
+            new tensorpipe::Registry<PtrType<ObjectType>, ##__VA_ARGS__>();  \
+    return *registry;                                                        \
   }
 
 #define TP_DECLARE_TYPED_REGISTRY(RegistryName, ObjectType, PtrType, ...)   \
-  tensorpipe::util::registry::Registry<PtrType<ObjectType>, ##__VA_ARGS__>& \
-  RegistryName();                                                           \
-  typedef tensorpipe::util::registry::                                      \
-      Registerer<PtrType<ObjectType>, ##__VA_ARGS__>                        \
-          Registerer##RegistryName
+  tensorpipe::Registry<PtrType<ObjectType>, ##__VA_ARGS__>& RegistryName(); \
+  typedef tensorpipe::Registerer<PtrType<ObjectType>, ##__VA_ARGS__>        \
+      Registerer##RegistryName
 
 #define TP_DEFINE_SHARED_REGISTRY(RegistryName, ObjectType, ...) \
   TP_DEFINE_TYPED_REGISTRY(                                      \
@@ -164,6 +158,4 @@ class Registerer {
 #define TP_REGISTER_CREATOR(RegistryName, key, ...) \
   TP_REGISTER_TYPED_CREATOR(RegistryName, #key, __VA_ARGS__)
 
-} // namespace registry
-} // namespace util
 } // namespace tensorpipe

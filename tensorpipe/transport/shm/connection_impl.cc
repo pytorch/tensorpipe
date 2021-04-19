@@ -18,12 +18,12 @@
 #include <tensorpipe/common/epoll_loop.h>
 #include <tensorpipe/common/error_macros.h>
 #include <tensorpipe/common/ringbuffer_read_write_ops.h>
+#include <tensorpipe/common/ringbuffer_role.h>
+#include <tensorpipe/common/shm_ringbuffer.h>
 #include <tensorpipe/transport/error.h>
 #include <tensorpipe/transport/shm/context_impl.h>
 #include <tensorpipe/transport/shm/reactor.h>
 #include <tensorpipe/transport/shm/sockaddr.h>
-#include <tensorpipe/util/ringbuffer/role.h>
-#include <tensorpipe/util/ringbuffer/shm.h>
 
 namespace tensorpipe {
 namespace transport {
@@ -79,7 +79,7 @@ void ConnectionImpl::initImplFromLoop() {
 
   // Create ringbuffer for inbox.
   std::tie(error, inboxHeaderSegment_, inboxDataSegment_, inboxRb_) =
-      util::ringbuffer::shm::create<kNumRingbufferRoles>(kBufferSize);
+      createShmRingBuffer<kNumRingbufferRoles>(kBufferSize);
   TP_THROW_ASSERT_IF(error)
       << "Couldn't allocate ringbuffer for connection inbox: " << error.what();
 
@@ -230,7 +230,7 @@ void ConnectionImpl::handleEventInFromLoop() {
 
     // Load ringbuffer for outbox.
     std::tie(err, outboxHeaderSegment_, outboxDataSegment_, outboxRb_) =
-        util::ringbuffer::shm::load<kNumRingbufferRoles>(
+        loadShmRingBuffer<kNumRingbufferRoles>(
             std::move(outboxHeaderFd), std::move(outboxDataFd));
     TP_THROW_ASSERT_IF(err)
         << "Couldn't access ringbuffer of connection outbox: " << err.what();

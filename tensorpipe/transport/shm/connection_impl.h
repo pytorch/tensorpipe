@@ -15,13 +15,13 @@
 #include <tensorpipe/common/epoll_loop.h>
 #include <tensorpipe/common/nop.h>
 #include <tensorpipe/common/optional.h>
+#include <tensorpipe/common/ringbuffer.h>
 #include <tensorpipe/common/ringbuffer_read_write_ops.h>
+#include <tensorpipe/common/shm_segment.h>
 #include <tensorpipe/common/socket.h>
 #include <tensorpipe/transport/connection_impl_boilerplate.h>
 #include <tensorpipe/transport/shm/reactor.h>
 #include <tensorpipe/transport/shm/sockaddr.h>
-#include <tensorpipe/util/ringbuffer/ringbuffer.h>
-#include <tensorpipe/util/shm/segment.h>
 
 namespace tensorpipe {
 namespace transport {
@@ -38,8 +38,8 @@ class ConnectionImpl final : public ConnectionImplBoilerplate<
   constexpr static size_t kBufferSize = 2 * 1024 * 1024;
 
   constexpr static int kNumRingbufferRoles = 2;
-  using Consumer = util::ringbuffer::Role<kNumRingbufferRoles, 0>;
-  using Producer = util::ringbuffer::Role<kNumRingbufferRoles, 1>;
+  using Consumer = RingBufferRole<kNumRingbufferRoles, 0>;
+  using Producer = RingBufferRole<kNumRingbufferRoles, 1>;
 
   enum State {
     INITIALIZING = 1,
@@ -99,15 +99,15 @@ class ConnectionImpl final : public ConnectionImplBoilerplate<
   optional<Sockaddr> sockaddr_;
 
   // Inbox.
-  util::shm::Segment inboxHeaderSegment_;
-  util::shm::Segment inboxDataSegment_;
-  util::ringbuffer::RingBuffer<kNumRingbufferRoles> inboxRb_;
+  ShmSegment inboxHeaderSegment_;
+  ShmSegment inboxDataSegment_;
+  RingBuffer<kNumRingbufferRoles> inboxRb_;
   optional<Reactor::TToken> inboxReactorToken_;
 
   // Outbox.
-  util::shm::Segment outboxHeaderSegment_;
-  util::shm::Segment outboxDataSegment_;
-  util::ringbuffer::RingBuffer<kNumRingbufferRoles> outboxRb_;
+  ShmSegment outboxHeaderSegment_;
+  ShmSegment outboxDataSegment_;
+  RingBuffer<kNumRingbufferRoles> outboxRb_;
   optional<Reactor::TToken> outboxReactorToken_;
 
   // Peer trigger/tokens.

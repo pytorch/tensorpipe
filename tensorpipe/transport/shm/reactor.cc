@@ -8,8 +8,8 @@
 
 #include <tensorpipe/transport/shm/reactor.h>
 
+#include <tensorpipe/common/shm_ringbuffer.h>
 #include <tensorpipe/common/system.h>
-#include <tensorpipe/util/ringbuffer/shm.h>
 
 namespace tensorpipe {
 namespace transport {
@@ -45,7 +45,7 @@ void writeToken(Reactor::Producer& producer, Reactor::TToken token) {
 Reactor::Reactor() {
   Error error;
   std::tie(error, headerSegment_, dataSegment_, rb_) =
-      util::ringbuffer::shm::create<kNumRingbufferRoles>(kSize);
+      createShmRingBuffer<kNumRingbufferRoles>(kSize);
   TP_THROW_ASSERT_IF(error)
       << "Couldn't allocate ringbuffer for reactor: " << error.what();
 
@@ -143,7 +143,7 @@ Reactor::Trigger::Trigger(Fd headerFd, Fd dataFd) {
   // of file descriptors. Release them to avoid double close.
   Error error;
   std::tie(error, headerSegment_, dataSegment_, rb_) =
-      util::ringbuffer::shm::load<kNumRingbufferRoles>(
+      loadShmRingBuffer<kNumRingbufferRoles>(
           std::move(headerFd), std::move(dataFd));
   TP_THROW_ASSERT_IF(error)
       << "Couldn't access ringbuffer of remote reactor: " << error.what();
