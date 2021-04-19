@@ -63,30 +63,43 @@ struct ReadOperation {
   Pipe::read_descriptor_callback_fn readDescriptorCallback;
   Pipe::read_callback_fn readCallback;
 
+  // Arguments at creation
+  bool hasMissingTargetDevices{false};
+
   Descriptor descriptor;
   // Buffers allocated by the user.
   Allocation allocation;
 };
 
 struct WriteOperation {
-  enum State { UNINITIALIZED, WRITING_PAYLOADS_AND_SENDING_TENSORS, FINISHED };
+  enum State {
+    UNINITIALIZED,
+    WRITING_PAYLOADS_AND_READING_TARGET_DEVICES,
+    WRITING_PAYLOADS_AND_SENDING_TENSORS,
+    FINISHED
+  };
 
   // Fields used by the state machine
   uint64_t sequenceNumber{0};
   State state{UNINITIALIZED};
 
   // Progress flags
+  bool doneReadingDescriptorReply{false};
   uint64_t numPayloadsBeingWritten{0};
   uint64_t numTensorsBeingSent{0};
 
   // Callbacks.
   Pipe::write_callback_fn writeCallback;
 
-  // Buffers provided by the user.
+  // Arguments at creation
+  bool hasMissingTargetDevices{false};
+
   Message message;
 
-  // This is currently empty, but will be used again for XDTT channel selection.
-  struct Tensor {};
+  struct Tensor {
+    Device sourceDevice;
+    optional<Device> targetDevice;
+  };
   std::vector<Tensor> tensors;
 };
 
@@ -266,10 +279,12 @@ class PipeImpl final : public std::enable_shared_from_this<PipeImpl> {
   void expectReadCall(ReadOpIter opIter);
   void readPayloadsOfMessage(ReadOpIter opIter);
   void receiveTensorsOfMessage(ReadOpIter opIter);
+  void writeDescriptorReplyOfMessage(ReadOpIter opIter);
   void callReadCallback(ReadOpIter opIter);
   // For write operations:
   void writeDescriptorOfMessage(WriteOpIter opIter);
   void writePayloadsOfMessage(WriteOpIter opIter);
+  void readDescriptorReplyOfMessage(WriteOpIter opIter);
   void sendTensorsOfMessage(WriteOpIter opIter);
   void callWriteCallback(WriteOpIter opIter);
 

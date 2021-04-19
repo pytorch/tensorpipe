@@ -102,6 +102,11 @@ struct MessageDescriptor {
       tensorDescriptors);
 };
 
+struct MessageDescriptorReply {
+  std::vector<Device> targetDevices;
+  NOP_STRUCTURE(MessageDescriptorReply, targetDevices);
+};
+
 using Packet = nop::Variant<
     SpontaneousConnection,
     RequestedConnection,
