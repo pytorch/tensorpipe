@@ -22,9 +22,6 @@
 // A C++17 version of shared memory segments handler inspired on boost
 // interprocess.
 //
-// Handles lifetime through shared_ptr custom deleters and allows folders inside
-// /dev/shm (Linux only).
-//
 
 namespace tensorpipe {
 
@@ -32,24 +29,11 @@ class ShmSegment {
   ShmSegment(Fd fd, MmappedPtr ptr);
 
  public:
-  /// PageType to suggest to Operative System.
-  /// The final page type depends on system configuration
-  /// and availability of pages of requested size.
-  /// HugeTLB pages often need to be reserved at boot time and
-  /// may none left by the time Segment that request one is cerated.
-  enum class PageType { Default, HugeTLB_2MB, HugeTLB_1GB };
-
   ShmSegment() = default;
 
-  static std::tuple<Error, ShmSegment> alloc(
-      size_t byteSize,
-      bool permWrite,
-      optional<PageType> pageType);
+  static std::tuple<Error, ShmSegment> alloc(size_t byteSize);
 
-  static std::tuple<Error, ShmSegment> access(
-      Fd fd,
-      bool permWrite,
-      optional<PageType> pageType);
+  static std::tuple<Error, ShmSegment> access(Fd fd);
 
   /// Allocate shared memory to contain an object of type T and construct it.
   ///
@@ -60,10 +44,7 @@ class ShmSegment {
       typename T,
       typename... Args,
       std::enable_if_t<!std::is_array<T>::value, int> = 0>
-  static std::tuple<Error, ShmSegment, T*> create(
-      bool permWrite,
-      optional<PageType> pageType,
-      Args&&... args) {
+  static std::tuple<Error, ShmSegment, T*> create(Args&&... args) {
     static_assert(
         std::is_trivially_copyable<T>::value,
         "Shared memory segments are restricted to only store objects that "
@@ -72,7 +53,7 @@ class ShmSegment {
     const auto byteSize = sizeof(T);
     Error error;
     ShmSegment segment;
-    std::tie(error, segment) = ShmSegment::alloc(byteSize, permWrite, pageType);
+    std::tie(error, segment) = ShmSegment::alloc(byteSize);
     if (error) {
       return std::make_tuple(std::move(error), ShmSegment(), nullptr);
     }
@@ -93,10 +74,7 @@ class ShmSegment {
       typename T,
       std::enable_if_t<std::is_array<T>::value, int> = 0,
       typename TScalar = typename std::remove_all_extents<T>::type>
-  static std::tuple<Error, ShmSegment, TScalar*> create(
-      size_t numElements,
-      bool permWrite,
-      optional<PageType> pageType) {
+  static std::tuple<Error, ShmSegment, TScalar*> create(size_t numElements) {
     static_assert(
         std::is_same<TScalar[], T>::value,
         "Only one-dimensional unbounded arrays are supported");
@@ -108,7 +86,7 @@ class ShmSegment {
     size_t byteSize = sizeof(TScalar) * numElements;
     Error error;
     ShmSegment segment;
-    std::tie(error, segment) = ShmSegment::alloc(byteSize, permWrite, pageType);
+    std::tie(error, segment) = ShmSegment::alloc(byteSize);
     if (error) {
       return std::make_tuple(std::move(error), ShmSegment(), nullptr);
     }
@@ -126,10 +104,7 @@ class ShmSegment {
   /// Load an existing shared memory region that already holds an object of type
   /// T, where T is NOT an array type.
   template <typename T, std::enable_if_t<!std::is_array<T>::value, int> = 0>
-  static std::tuple<Error, ShmSegment, T*> load(
-      Fd fd,
-      bool permWrite,
-      optional<PageType> pageType) {
+  static std::tuple<Error, ShmSegment, T*> load(Fd fd) {
     static_assert(
         std::is_trivially_copyable<T>::value,
         "Shared memory segments are restricted to only store objects that "
@@ -137,8 +112,7 @@ class ShmSegment {
 
     Error error;
     ShmSegment segment;
-    std::tie(error, segment) =
-        ShmSegment::access(std::move(fd), permWrite, pageType);
+    std::tie(error, segment) = ShmSegment::access(std::move(fd));
     if (error) {
       return std::make_tuple(std::move(error), ShmSegment(), nullptr);
     }
@@ -161,10 +135,7 @@ class ShmSegment {
       typename T,
       std::enable_if_t<std::is_array<T>::value, int> = 0,
       typename TScalar = typename std::remove_all_extents<T>::type>
-  static std::tuple<Error, ShmSegment, TScalar*> load(
-      Fd fd,
-      bool permWrite,
-      optional<PageType> pageType) {
+  static std::tuple<Error, ShmSegment, TScalar*> load(Fd fd) {
     static_assert(
         std::is_same<TScalar[], T>::value,
         "Only one-dimensional unbounded arrays are supported");
@@ -175,8 +146,7 @@ class ShmSegment {
 
     Error error;
     ShmSegment segment;
-    std::tie(error, segment) =
-        ShmSegment::access(std::move(fd), permWrite, pageType);
+    std::tie(error, segment) = ShmSegment::access(std::move(fd));
     if (error) {
       return std::make_tuple(std::move(error), ShmSegment(), nullptr);
     }
