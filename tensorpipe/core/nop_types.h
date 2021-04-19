@@ -107,11 +107,6 @@ struct MessageDescriptorReply {
   NOP_STRUCTURE(MessageDescriptorReply, targetDevices);
 };
 
-using Packet = nop::Variant<
-    SpontaneousConnection,
-    RequestedConnection,
-    Brochure,
-    BrochureAnswer,
-    MessageDescriptor>;
+using Packet = nop::Variant<SpontaneousConnection, RequestedConnection>;
 
 } // namespace tensorpipe

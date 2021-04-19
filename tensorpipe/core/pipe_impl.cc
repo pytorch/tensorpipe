@@ -29,12 +29,10 @@ namespace {
 
 // Copy the payload and tensors sizes, the metadata, etc. from the message
 // descriptor that is contained in the nop object to the ReadOperation.
-void parseDescriptorOfMessage(ReadOperation& op, const Packet& nopPacketIn) {
+void parseDescriptorOfMessage(
+    ReadOperation& op,
+    const MessageDescriptor& nopMessageDescriptor) {
   Descriptor& descriptor = op.descriptor;
-
-  TP_DCHECK_EQ(nopPacketIn.index(), nopPacketIn.index_of<MessageDescriptor>());
-  const MessageDescriptor& nopMessageDescriptor =
-      *nopPacketIn.get<MessageDescriptor>();
 
   descriptor.metadata = nopMessageDescriptor.metadata;
   for (const auto& nopPayloadDescriptor :
@@ -62,7 +60,7 @@ void parseDescriptorOfMessage(ReadOperation& op, const Packet& nopPacketIn) {
 
 void parseDescriptorReplyOfMessage(
     WriteOperation& op,
-    const MessageDescriptorReply& nopMessageDescriptorReply) {
+    MessageDescriptorReply nopMessageDescriptorReply) {
   const int numTensors = op.message.tensors.size();
   TP_DCHECK_EQ(numTensors, nopMessageDescriptorReply.targetDevices.size());
   size_t targetDeviceIdx = 0;
@@ -71,7 +69,7 @@ void parseDescriptorReplyOfMessage(
     WriteOperation::Tensor& tensorBeingSent = op.tensors[tensorIdx];
     if (!tensor.targetDevice.has_value()) {
       tensorBeingSent.targetDevice =
-          nopMessageDescriptorReply.targetDevices[targetDeviceIdx++];
+          std::move(nopMessageDescriptorReply.targetDevices[targetDeviceIdx++]);
     }
   }
   TP_DCHECK_EQ(targetDeviceIdx, nopMessageDescriptorReply.targetDevices.size());
@@ -101,13 +99,10 @@ void checkAllocationCompatibility(
 // Produce a nop object containing a message descriptor using the information
 // contained in the WriteOperation: number and sizes of payloads and tensors,
 // tensor descriptors, ...
-std::shared_ptr<NopHolder<Packet>> makeDescriptorForMessage(
+std::shared_ptr<NopHolder<MessageDescriptor>> makeDescriptorForMessage(
     const WriteOperation& op) {
-  auto nopHolderOut = std::make_shared<NopHolder<Packet>>();
-  Packet& nopPacketOut = nopHolderOut->getObject();
-  nopPacketOut.Become(nopPacketOut.index_of<MessageDescriptor>());
-  MessageDescriptor& nopMessageDescriptor =
-      *nopPacketOut.get<MessageDescriptor>();
+  auto nopHolderOut = std::make_shared<NopHolder<MessageDescriptor>>();
+  MessageDescriptor& nopMessageDescriptor = nopHolderOut->getObject();
 
   nopMessageDescriptor.metadata = op.message.metadata;
 
@@ -336,10 +331,8 @@ void PipeImpl::initFromLoop() {
                      << " done writing nop object (spontaneous connection)";
         }));
 
-    auto nopHolderOut2 = std::make_shared<NopHolder<Packet>>();
-    Packet& nopPacketOut2 = nopHolderOut2->getObject();
-    nopPacketOut2.Become(nopPacketOut2.index_of<Brochure>());
-    Brochure& nopBrochure = *nopPacketOut2.get<Brochure>();
+    auto nopHolderOut2 = std::make_shared<NopHolder<Brochure>>();
+    Brochure& nopBrochure = nopHolderOut2->getObject();
     for (const auto& transportContextIter : context_->getOrderedTransports()) {
       const std::string& transportName =
           std::get<0>(transportContextIter.second);
@@ -362,7 +355,7 @@ void PipeImpl::initFromLoop() {
                      << " done writing nop object (brochure)";
         }));
     state_ = CLIENT_WAITING_FOR_BROCHURE_ANSWER;
-    auto nopHolderIn = std::make_shared<NopHolder<Packet>>();
+    auto nopHolderIn = std::make_shared<NopHolder<BrochureAnswer>>();
     TP_VLOG(3) << "Pipe " << id_ << " is reading nop object (brochure answer)";
     descriptorConnection_->read(
         *nopHolderIn, callbackWrapper_([nopHolderIn](PipeImpl& impl) {
@@ -375,7 +368,7 @@ void PipeImpl::initFromLoop() {
         }));
   }
   if (state_ == SERVER_WAITING_FOR_BROCHURE) {
-    auto nopHolderIn = std::make_shared<NopHolder<Packet>>();
+    auto nopHolderIn = std::make_shared<NopHolder<Brochure>>();
     TP_VLOG(3) << "Pipe " << id_ << " is reading nop object (brochure)";
     descriptorConnection_->read(
         *nopHolderIn, callbackWrapper_([nopHolderIn](PipeImpl& impl) {
@@ -888,7 +881,7 @@ void PipeImpl::readDescriptorOfMessage(ReadOpIter opIter) {
 
   TP_DCHECK_EQ(connectionState_, AWAITING_DESCRIPTOR);
   TP_DCHECK_EQ(messageBeingReadFromConnection_, op.sequenceNumber);
-  auto nopHolderIn = std::make_shared<NopHolder<Packet>>();
+  auto nopHolderIn = std::make_shared<NopHolder<MessageDescriptor>>();
   TP_VLOG(3) << "Pipe " << id_ << " is reading nop object (message descriptor #"
              << op.sequenceNumber << ")";
   descriptorConnection_->read(
@@ -962,7 +955,8 @@ void PipeImpl::writeDescriptorOfMessage(WriteOpIter opIter) {
 
   WriteOperation& op = *opIter;
 
-  std::shared_ptr<NopHolder<Packet>> holder = makeDescriptorForMessage(op);
+  std::shared_ptr<NopHolder<MessageDescriptor>> holder =
+      makeDescriptorForMessage(op);
 
   TP_VLOG(3) << "Pipe " << id_ << " is writing nop object (message descriptor #"
              << op.sequenceNumber << ")";
@@ -1020,22 +1014,20 @@ void PipeImpl::readDescriptorReplyOfMessage(WriteOpIter opIter) {
                    << opIter->sequenceNumber << ")";
         opIter->doneReadingDescriptorReply = true;
         if (!impl.error_) {
-          parseDescriptorReplyOfMessage(*opIter, nopHolderIn->getObject());
+          parseDescriptorReplyOfMessage(
+              *opIter, std::move(nopHolderIn->getObject()));
         }
         impl.writeOps_.advanceOperation(opIter);
       }));
 }
 
-void PipeImpl::onReadWhileServerWaitingForBrochure(const Packet& nopPacketIn) {
+void PipeImpl::onReadWhileServerWaitingForBrochure(
+    const Brochure& nopBrochure) {
   TP_DCHECK(context_->inLoop());
   TP_DCHECK_EQ(state_, SERVER_WAITING_FOR_BROCHURE);
-  TP_DCHECK_EQ(nopPacketIn.index(), nopPacketIn.index_of<Brochure>());
-  const Brochure& nopBrochure = *nopPacketIn.get<Brochure>();
 
-  auto nopHolderOut = std::make_shared<NopHolder<Packet>>();
-  Packet& nopPacketOut = nopHolderOut->getObject();
-  nopPacketOut.Become(nopPacketOut.index_of<BrochureAnswer>());
-  BrochureAnswer& nopBrochureAnswer = *nopPacketOut.get<BrochureAnswer>();
+  auto nopHolderOut = std::make_shared<NopHolder<BrochureAnswer>>();
+  BrochureAnswer& nopBrochureAnswer = nopHolderOut->getObject();
 
   auto transport = selectTransport(
       context_->getOrderedTransports(),
@@ -1140,12 +1132,10 @@ std::vector<uint64_t>& PipeImpl::registerChannel(
 }
 
 void PipeImpl::onReadWhileClientWaitingForBrochureAnswer(
-    const Packet& nopPacketIn) {
+    const BrochureAnswer& nopBrochureAnswer) {
   TP_DCHECK(context_->inLoop());
   TP_DCHECK_EQ(state_, CLIENT_WAITING_FOR_BROCHURE_ANSWER);
-  TP_DCHECK_EQ(nopPacketIn.index(), nopPacketIn.index_of<BrochureAnswer>());
 
-  const BrochureAnswer& nopBrochureAnswer = *nopPacketIn.get<BrochureAnswer>();
   const std::string& transport = nopBrochureAnswer.transport;
   std::string address = nopBrochureAnswer.address;
   std::shared_ptr<transport::Context> transportContext =

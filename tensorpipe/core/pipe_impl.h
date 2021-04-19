@@ -251,9 +251,10 @@ class PipeImpl final : public std::enable_shared_from_this<PipeImpl> {
 
   // Transitions for the pipe's initial handshake.
   // On the client side:
-  void onReadWhileClientWaitingForBrochureAnswer(const Packet& nopPacketIn);
+  void onReadWhileClientWaitingForBrochureAnswer(
+      const BrochureAnswer& nopBrochureAnswer);
   // On the server side:
-  void onReadWhileServerWaitingForBrochure(const Packet& nopPacketIn);
+  void onReadWhileServerWaitingForBrochure(const Brochure& nopBrochure);
   void onAcceptWhileServerWaitingForConnection(
       ConnectionId connId,
       std::string receivedTransport,
