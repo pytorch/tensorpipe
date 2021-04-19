@@ -245,8 +245,9 @@ PipeImpl::PipeImpl(
       remoteName_(std::move(remoteName)) {
   std::string address;
   std::tie(transport_, address) = splitSchemeOfURL(url);
-  connection_ = context_->getTransport(transport_)->connect(std::move(address));
-  connection_->setId(id_ + ".tr_" + transport_);
+  descriptorConnection_ =
+      context_->getTransport(transport_)->connect(std::move(address));
+  descriptorConnection_->setId(id_ + ".tr_" + transport_);
 }
 
 PipeImpl::PipeImpl(
@@ -262,8 +263,8 @@ PipeImpl::PipeImpl(
       id_(std::move(id)),
       remoteName_(std::move(remoteName)),
       transport_(std::move(transport)),
-      connection_(std::move(connection)) {
-  connection_->setId(id_ + ".tr_" + transport_);
+      descriptorConnection_(std::move(connection)) {
+  descriptorConnection_->setId(id_ + ".tr_" + transport_);
 }
 
 void PipeImpl::init() {
@@ -294,7 +295,7 @@ void PipeImpl::initFromLoop() {
     nopSpontaneousConnection.contextName = context_->getName();
     TP_VLOG(3) << "Pipe " << id_
                << " is writing nop object (spontaneous connection)";
-    connection_->write(
+    descriptorConnection_->write(
         *nopHolderOut, callbackWrapper_([nopHolderOut](PipeImpl& impl) {
           TP_VLOG(3) << "Pipe " << impl.id_
                      << " done writing nop object (spontaneous connection)";
@@ -320,7 +321,7 @@ void PipeImpl::initFromLoop() {
           channelContext.deviceDescriptors();
     }
     TP_VLOG(3) << "Pipe " << id_ << " is writing nop object (brochure)";
-    connection_->write(
+    descriptorConnection_->write(
         *nopHolderOut2, callbackWrapper_([nopHolderOut2](PipeImpl& impl) {
           TP_VLOG(3) << "Pipe " << impl.id_
                      << " done writing nop object (brochure)";
@@ -328,7 +329,7 @@ void PipeImpl::initFromLoop() {
     state_ = CLIENT_WAITING_FOR_BROCHURE_ANSWER;
     auto nopHolderIn = std::make_shared<NopHolder<Packet>>();
     TP_VLOG(3) << "Pipe " << id_ << " is reading nop object (brochure answer)";
-    connection_->read(
+    descriptorConnection_->read(
         *nopHolderIn, callbackWrapper_([nopHolderIn](PipeImpl& impl) {
           TP_VLOG(3) << "Pipe " << impl.id_
                      << " done reading nop object (brochure answer)";
@@ -341,7 +342,7 @@ void PipeImpl::initFromLoop() {
   if (state_ == SERVER_WAITING_FOR_BROCHURE) {
     auto nopHolderIn = std::make_shared<NopHolder<Packet>>();
     TP_VLOG(3) << "Pipe " << id_ << " is reading nop object (brochure)";
-    connection_->read(
+    descriptorConnection_->read(
         *nopHolderIn, callbackWrapper_([nopHolderIn](PipeImpl& impl) {
           TP_VLOG(3) << "Pipe " << impl.id_
                      << " done reading nop object (brochure)";
@@ -462,7 +463,7 @@ void PipeImpl::readPayloadsOfMessage(ReadOpIter opIter) {
     Descriptor::Payload& payloadDescriptor = op.descriptor.payloads[payloadIdx];
     TP_VLOG(3) << "Pipe " << id_ << " is reading payload #" << op.sequenceNumber
                << "." << payloadIdx;
-    connection_->read(
+    descriptorConnection_->read(
         payload.data,
         payloadDescriptor.length,
         callbackWrapper_(
@@ -614,7 +615,8 @@ void PipeImpl::handleError() {
   TP_DCHECK(context_->inLoop());
   TP_VLOG(2) << "Pipe " << id_ << " is handling error " << error_.what();
 
-  connection_->close();
+  descriptorConnection_->close();
+
   for (auto& channelIter : channels_) {
     channelIter.second->close();
   }
@@ -765,7 +767,7 @@ void PipeImpl::readDescriptorOfMessage(ReadOpIter opIter) {
   auto nopHolderIn = std::make_shared<NopHolder<Packet>>();
   TP_VLOG(3) << "Pipe " << id_ << " is reading nop object (message descriptor #"
              << op.sequenceNumber << ")";
-  connection_->read(
+  descriptorConnection_->read(
       *nopHolderIn, callbackWrapper_([opIter, nopHolderIn](PipeImpl& impl) {
         TP_VLOG(3) << "Pipe " << impl.id_
                    << " done reading nop object (message descriptor #"
@@ -839,7 +841,7 @@ void PipeImpl::writeDescriptorOfMessage(WriteOpIter opIter) {
 
   TP_VLOG(3) << "Pipe " << id_ << " is writing nop object (message descriptor #"
              << op.sequenceNumber << ")";
-  connection_->write(
+  descriptorConnection_->write(
       *holder,
       callbackWrapper_(
           [sequenceNumber{op.sequenceNumber}, holder](PipeImpl& impl) {
@@ -862,7 +864,7 @@ void PipeImpl::writePayloadsOfMessage(WriteOpIter opIter) {
     Message::Payload& payload = op.message.payloads[payloadIdx];
     TP_VLOG(3) << "Pipe " << id_ << " is writing payload #" << op.sequenceNumber
                << "." << payloadIdx;
-    connection_->write(
+    descriptorConnection_->write(
         payload.data,
         payload.length,
         callbackWrapper_([opIter, payloadIdx](PipeImpl& impl) {
@@ -916,7 +918,7 @@ void PipeImpl::onReadWhileServerWaitingForBrochure(const Packet& nopPacketIn) {
   }
 
   TP_VLOG(3) << "Pipe " << id_ << " is writing nop object (brochure answer)";
-  connection_->write(
+  descriptorConnection_->write(
       *nopHolderOut, callbackWrapper_([nopHolderOut](PipeImpl& impl) {
         TP_VLOG(3) << "Pipe " << impl.id_
                    << " done writing nop object (brochure answer)";
@@ -1021,7 +1023,7 @@ void PipeImpl::onReadWhileClientWaitingForBrochureAnswer(
         }));
 
     transport_ = transport;
-    connection_ = std::move(connection);
+    descriptorConnection_ = std::move(connection);
   }
 
   // Recompute the channel map based on this side's channels and priorities.
@@ -1110,8 +1112,8 @@ void PipeImpl::onAcceptWhileServerWaitingForConnection(
   registrationId_.reset();
   receivedConnection->setId(id_ + ".tr_" + receivedTransport);
   TP_DCHECK_EQ(transport_, receivedTransport);
-  connection_.reset();
-  connection_ = std::move(receivedConnection);
+  descriptorConnection_.reset();
+  descriptorConnection_ = std::move(receivedConnection);
 
   if (!pendingRegistrations()) {
     state_ = ESTABLISHED;
