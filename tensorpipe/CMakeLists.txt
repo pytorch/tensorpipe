@@ -184,7 +184,6 @@ if(TP_ENABLE_SHM)
     transport/shm/listener_impl.cc
     transport/shm/reactor.cc
     transport/shm/sockaddr.cc
-    util/ringbuffer/shm.cc
     util/shm/segment.cc)
   set(TP_PUBLIC_HEADERS ${TP_PUBLIC_HEADERS}
     transport/shm/factory.h)

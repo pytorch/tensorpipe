@@ -17,8 +17,7 @@
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/error.h>
 #include <tensorpipe/common/nop.h>
-#include <tensorpipe/util/ringbuffer/consumer.h>
-#include <tensorpipe/util/ringbuffer/producer.h>
+#include <tensorpipe/util/ringbuffer/role.h>
 
 namespace tensorpipe {
 
@@ -49,7 +48,8 @@ class RingbufferReadOperation {
       read_callback_fn fn);
 
   // Processes a pending read.
-  inline size_t handleRead(util::ringbuffer::Consumer& inbox);
+  template <int NumRoles, int RoleIdx>
+  inline size_t handleRead(util::ringbuffer::Role<NumRoles, RoleIdx>& inbox);
 
   bool completed() const {
     return (mode_ == READ_PAYLOAD && bytesRead_ == len_);
@@ -70,7 +70,9 @@ class RingbufferReadOperation {
   // case we must check that the length matches the header we see on the wire.
   const bool ptrProvided_;
 
-  inline ssize_t readNopObject(util::ringbuffer::Consumer& inbox);
+  template <int NumRoles, int RoleIdx>
+  inline ssize_t readNopObject(
+      util::ringbuffer::Role<NumRoles, RoleIdx>& inbox);
 };
 
 // Writes happen only if the user supplied a memory pointer, the
@@ -98,7 +100,8 @@ class RingbufferWriteOperation {
       const AbstractNopHolder* nopObject,
       write_callback_fn fn);
 
-  inline size_t handleWrite(util::ringbuffer::Producer& outbox);
+  template <int NumRoles, int RoleIdx>
+  inline size_t handleWrite(util::ringbuffer::Role<NumRoles, RoleIdx>& outbox);
 
   bool completed() const {
     return (mode_ == WRITE_PAYLOAD && bytesWritten_ == len_);
@@ -114,7 +117,9 @@ class RingbufferWriteOperation {
   size_t bytesWritten_{0};
   write_callback_fn fn_;
 
-  inline ssize_t writeNopObject(util::ringbuffer::Producer& outbox);
+  template <int NumRoles, int RoleIdx>
+  inline ssize_t writeNopObject(
+      util::ringbuffer::Role<NumRoles, RoleIdx>& outbox);
 };
 
 RingbufferReadOperation::RingbufferReadOperation(
@@ -131,7 +136,9 @@ RingbufferReadOperation::RingbufferReadOperation(
     read_callback_fn fn)
     : nopObject_(nopObject), fn_(std::move(fn)), ptrProvided_(false) {}
 
-size_t RingbufferReadOperation::handleRead(util::ringbuffer::Consumer& inbox) {
+template <int NumRoles, int RoleIdx>
+size_t RingbufferReadOperation::handleRead(
+    util::ringbuffer::Role<NumRoles, RoleIdx>& inbox) {
   ssize_t ret;
   size_t bytesReadNow = 0;
 
@@ -143,7 +150,8 @@ size_t RingbufferReadOperation::handleRead(util::ringbuffer::Consumer& inbox) {
 
   if (mode_ == READ_LENGTH) {
     uint32_t length;
-    ret = inbox.readInTx</*AllowPartial=*/false>(&length, sizeof(length));
+    ret = inbox.template readInTx</*AllowPartial=*/false>(
+        &length, sizeof(length));
     if (likely(ret >= 0)) {
       mode_ = READ_PAYLOAD;
       bytesReadNow += ret;
@@ -165,7 +173,7 @@ size_t RingbufferReadOperation::handleRead(util::ringbuffer::Consumer& inbox) {
     if (nopObject_ != nullptr) {
       ret = readNopObject(inbox);
     } else {
-      ret = inbox.readInTx</*AllowPartial=*/true>(
+      ret = inbox.template readInTx</*AllowPartial=*/true>(
           reinterpret_cast<uint8_t*>(ptr_) + bytesRead_, len_ - bytesRead_);
     }
     if (likely(ret >= 0)) {
@@ -186,14 +194,16 @@ size_t RingbufferReadOperation::handleRead(util::ringbuffer::Consumer& inbox) {
   return bytesReadNow;
 }
 
+template <int NumRoles, int RoleIdx>
 ssize_t RingbufferReadOperation::readNopObject(
-    util::ringbuffer::Consumer& inbox) {
+    util::ringbuffer::Role<NumRoles, RoleIdx>& inbox) {
   TP_THROW_ASSERT_IF(len_ > inbox.getSize());
 
   ssize_t numBuffers;
-  std::array<util::ringbuffer::Consumer::Buffer, 2> buffers;
+  std::array<typename util::ringbuffer::Role<NumRoles, RoleIdx>::Buffer, 2>
+      buffers;
   std::tie(numBuffers, buffers) =
-      inbox.accessContiguousInTx</*AllowPartial=*/false>(len_);
+      inbox.template accessContiguousInTx</*AllowPartial=*/false>(len_);
   if (unlikely(numBuffers < 0)) {
     return numBuffers;
   }
@@ -225,8 +235,9 @@ RingbufferWriteOperation::RingbufferWriteOperation(
     write_callback_fn fn)
     : nopObject_(nopObject), len_(nopObject_->getSize()), fn_(std::move(fn)) {}
 
+template <int NumRoles, int RoleIdx>
 size_t RingbufferWriteOperation::handleWrite(
-    util::ringbuffer::Producer& outbox) {
+    util::ringbuffer::Role<NumRoles, RoleIdx>& outbox) {
   ssize_t ret;
   size_t bytesWrittenNow = 0;
 
@@ -238,11 +249,12 @@ size_t RingbufferWriteOperation::handleWrite(
 
   if (mode_ == WRITE_LENGTH) {
     uint32_t length = len_;
-    ret = outbox.writeInTx</*AllowPartial=*/false>(&length, sizeof(length));
+    ret = outbox.template writeInTx</*AllowPartial=*/false>(
+        &length, sizeof(length));
     if (likely(ret >= 0)) {
       mode_ = WRITE_PAYLOAD;
       bytesWrittenNow += ret;
-    } else if (unlikely(ret != -ENOSPC)) {
+    } else if (unlikely(ret != -ENODATA)) {
       TP_THROW_SYSTEM(-ret);
     }
   }
@@ -251,14 +263,14 @@ size_t RingbufferWriteOperation::handleWrite(
     if (nopObject_ != nullptr) {
       ret = writeNopObject(outbox);
     } else {
-      ret = outbox.writeInTx</*AllowPartial=*/true>(
+      ret = outbox.template writeInTx</*AllowPartial=*/true>(
           reinterpret_cast<const uint8_t*>(ptr_) + bytesWritten_,
           len_ - bytesWritten_);
     }
     if (likely(ret >= 0)) {
       bytesWritten_ += ret;
       bytesWrittenNow += ret;
-    } else if (unlikely(ret != -ENOSPC)) {
+    } else if (unlikely(ret != -ENODATA)) {
       TP_THROW_SYSTEM(-ret);
     }
   }
@@ -273,14 +285,16 @@ size_t RingbufferWriteOperation::handleWrite(
   return bytesWrittenNow;
 }
 
+template <int NumRoles, int RoleIdx>
 ssize_t RingbufferWriteOperation::writeNopObject(
-    util::ringbuffer::Producer& outbox) {
+    util::ringbuffer::Role<NumRoles, RoleIdx>& outbox) {
   TP_THROW_ASSERT_IF(len_ > outbox.getSize());
 
   ssize_t numBuffers;
-  std::array<util::ringbuffer::Producer::Buffer, 2> buffers;
+  std::array<typename util::ringbuffer::Role<NumRoles, RoleIdx>::Buffer, 2>
+      buffers;
   std::tie(numBuffers, buffers) =
-      outbox.accessContiguousInTx</*AllowPartial=*/false>(len_);
+      outbox.template accessContiguousInTx</*AllowPartial=*/false>(len_);
   if (unlikely(numBuffers < 0)) {
     return numBuffers;
   }
@@ -289,7 +303,7 @@ ssize_t RingbufferWriteOperation::writeNopObject(
       buffers[0].ptr, buffers[0].len, buffers[1].ptr, buffers[1].len);
   nop::Status<void> status = nopObject_->write(writer);
   if (status.error() == nop::ErrorStatus::WriteLimitReached) {
-    return -ENOSPC;
+    return -ENODATA;
   } else if (status.has_error()) {
     return -EINVAL;
   }

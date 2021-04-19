@@ -21,8 +21,7 @@
 #include <tensorpipe/common/callback.h>
 #include <tensorpipe/common/fd.h>
 #include <tensorpipe/common/optional.h>
-#include <tensorpipe/util/ringbuffer/consumer.h>
-#include <tensorpipe/util/ringbuffer/producer.h>
+#include <tensorpipe/util/ringbuffer/role.h>
 #include <tensorpipe/util/shm/segment.h>
 
 namespace tensorpipe {
@@ -41,9 +40,13 @@ class Reactor final : public BusyPollingLoop {
   // This allows for buffering 1M triggers (at 4 bytes a piece).
   static constexpr auto kSize = 4 * 1024 * 1024;
 
+  static constexpr int kNumRingbufferRoles = 2;
+
  public:
   using TFunction = std::function<void()>;
   using TToken = uint32_t;
+  using Consumer = util::ringbuffer::Role<kNumRingbufferRoles, 0>;
+  using Producer = util::ringbuffer::Role<kNumRingbufferRoles, 1>;
 
   Reactor();
 
@@ -71,7 +74,7 @@ class Reactor final : public BusyPollingLoop {
  private:
   util::shm::Segment headerSegment_;
   util::shm::Segment dataSegment_;
-  util::ringbuffer::RingBuffer rb_;
+  util::ringbuffer::RingBuffer<kNumRingbufferRoles> rb_;
 
   std::mutex mutex_;
   std::atomic<bool> closed_{false};
@@ -100,7 +103,7 @@ class Reactor final : public BusyPollingLoop {
    private:
     util::shm::Segment headerSegment_;
     util::shm::Segment dataSegment_;
-    util::ringbuffer::RingBuffer rb_;
+    util::ringbuffer::RingBuffer<kNumRingbufferRoles> rb_;
   };
 };
 

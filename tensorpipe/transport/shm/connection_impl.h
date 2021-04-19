@@ -27,12 +27,6 @@ namespace tensorpipe {
 namespace transport {
 namespace shm {
 
-namespace {
-
-constexpr auto kBufferSize = 2 * 1024 * 1024;
-
-} // namespace
-
 class ContextImpl;
 class ListenerImpl;
 
@@ -41,6 +35,12 @@ class ConnectionImpl final : public ConnectionImplBoilerplate<
                                  ListenerImpl,
                                  ConnectionImpl>,
                              public EpollLoop::EventHandler {
+  constexpr static size_t kBufferSize = 2 * 1024 * 1024;
+
+  constexpr static int kNumRingbufferRoles = 2;
+  using Consumer = util::ringbuffer::Role<kNumRingbufferRoles, 0>;
+  using Producer = util::ringbuffer::Role<kNumRingbufferRoles, 1>;
+
   enum State {
     INITIALIZING = 1,
     SEND_FDS,
@@ -101,13 +101,13 @@ class ConnectionImpl final : public ConnectionImplBoilerplate<
   // Inbox.
   util::shm::Segment inboxHeaderSegment_;
   util::shm::Segment inboxDataSegment_;
-  util::ringbuffer::RingBuffer inboxRb_;
+  util::ringbuffer::RingBuffer<kNumRingbufferRoles> inboxRb_;
   optional<Reactor::TToken> inboxReactorToken_;
 
   // Outbox.
   util::shm::Segment outboxHeaderSegment_;
   util::shm::Segment outboxDataSegment_;
-  util::ringbuffer::RingBuffer outboxRb_;
+  util::ringbuffer::RingBuffer<kNumRingbufferRoles> outboxRb_;
   optional<Reactor::TToken> outboxReactorToken_;
 
   // Peer trigger/tokens.

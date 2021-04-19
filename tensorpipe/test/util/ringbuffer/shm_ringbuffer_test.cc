@@ -7,9 +7,8 @@
  */
 
 #include <tensorpipe/common/socket.h>
-#include <tensorpipe/util/ringbuffer/consumer.h>
-#include <tensorpipe/util/ringbuffer/producer.h>
 #include <tensorpipe/util/ringbuffer/ringbuffer.h>
+#include <tensorpipe/util/ringbuffer/role.h>
 #include <tensorpipe/util/ringbuffer/shm.h>
 #include <tensorpipe/util/shm/segment.h>
 
@@ -25,6 +24,10 @@ using namespace tensorpipe;
 using namespace tensorpipe::util::ringbuffer;
 using namespace tensorpipe::util::shm;
 
+constexpr static int kNumRingbufferRoles = 2;
+using Consumer = Role<kNumRingbufferRoles, 0>;
+using Producer = Role<kNumRingbufferRoles, 1>;
+
 // Same process produces and consumes share memory through different mappings.
 TEST(ShmRingBuffer, SameProducerConsumer) {
   Fd headerFd;
@@ -36,9 +39,9 @@ TEST(ShmRingBuffer, SameProducerConsumer) {
     Error error;
     Segment headerSegment;
     Segment dataSegment;
-    RingBuffer rb;
-    std::tie(error, headerSegment, dataSegment, rb) = shm::create(256 * 1024);
-    ASSERT_FALSE(error) << error.what();
+    RingBuffer<kNumRingbufferRoles> rb;
+    std::tie(error, headerSegment, dataSegment, rb) =
+        shm::create<kNumRingbufferRoles>(256 * 1024);
     Producer prod{rb};
 
     // Producer loop. It all fits in buffer.
@@ -61,10 +64,9 @@ TEST(ShmRingBuffer, SameProducerConsumer) {
     Error error;
     Segment headerSegment;
     Segment dataSegment;
-    RingBuffer rb;
+    RingBuffer<kNumRingbufferRoles> rb;
     std::tie(error, headerSegment, dataSegment, rb) =
-        shm::load(std::move(headerFd), std::move(dataFd));
-    ASSERT_FALSE(error) << error.what();
+        shm::load<kNumRingbufferRoles>(std::move(headerFd), std::move(dataFd));
     Consumer cons{rb};
 
     int i = 0;
@@ -104,9 +106,9 @@ TEST(ShmRingBuffer, SingleProducer_SingleConsumer) {
       Error error;
       Segment headerSegment;
       Segment dataSegment;
-      RingBuffer rb;
-      std::tie(error, headerSegment, dataSegment, rb) = shm::create(1024);
-      ASSERT_FALSE(error) << error.what();
+      RingBuffer<kNumRingbufferRoles> rb;
+      std::tie(error, headerSegment, dataSegment, rb) =
+          shm::create<kNumRingbufferRoles>(1024);
       Producer prod{rb};
 
       {
@@ -120,7 +122,7 @@ TEST(ShmRingBuffer, SingleProducer_SingleConsumer) {
       int i = 0;
       while (i < 2000) {
         ssize_t ret = prod.write(&i, sizeof(i));
-        if (ret == -ENOSPC) {
+        if (ret == -ENODATA) {
           std::this_thread::yield();
           continue;
         }
@@ -155,10 +157,9 @@ TEST(ShmRingBuffer, SingleProducer_SingleConsumer) {
   Error error;
   Segment headerSegment;
   Segment dataSegment;
-  RingBuffer rb;
+  RingBuffer<kNumRingbufferRoles> rb;
   std::tie(error, headerSegment, dataSegment, rb) =
-      shm::load(std::move(headerFd), std::move(dataFd));
-  ASSERT_FALSE(error) << error.what();
+      shm::load<kNumRingbufferRoles>(std::move(headerFd), std::move(dataFd));
   Consumer cons{rb};
 
   int i = 0;

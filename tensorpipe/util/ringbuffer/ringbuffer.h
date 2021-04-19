@@ -52,8 +52,10 @@ namespace ringbuffer {
 /// size is the smallest power of 2 larger than kMinByteSize_. Enforcing the
 /// size to be a power of two avoids costly division/modulo operations.
 ///
+template <int NumRoles>
 class RingBufferHeader {
  public:
+  static_assert(NumRoles > 0, "");
   const uint64_t kDataPoolByteSize;
   const uint64_t kDataModMask;
 
@@ -74,6 +76,10 @@ class RingBufferHeader {
     TP_DCHECK_LE(kDataPoolByteSize, std::numeric_limits<int>::max())
         << "Logic piggy-backs read/write size on ints, to be safe forbid"
            " buffer to ever be larger than what an int can hold";
+    for (int roleIdx = 0; roleIdx < NumRoles; ++roleIdx) {
+      inTx_[roleIdx].clear();
+      markers_[roleIdx] = 0;
+    }
   }
 
   // Being in a transaction (either a read or a write one) gives a user of the
@@ -91,20 +97,16 @@ class RingBufferHeader {
   // memory access can be moved before it) and the release memory order when
   // ending it (no earlier memory access can be moved after it).
 
-  [[nodiscard]] bool beginReadTransaction() {
-    return inReadTx_.test_and_set(std::memory_order_acquire);
+  template <int RoleIdx>
+  [[nodiscard]] bool beginTransaction() {
+    static_assert(0 <= RoleIdx && RoleIdx < NumRoles, "");
+    return inTx_[RoleIdx].test_and_set(std::memory_order_acquire);
   }
 
-  [[nodiscard]] bool beginWriteTransaction() {
-    return inWriteTx_.test_and_set(std::memory_order_acquire);
-  }
-
-  void endReadTransaction() {
-    inReadTx_.clear(std::memory_order_release);
-  }
-
-  void endWriteTransaction() {
-    inWriteTx_.clear(std::memory_order_release);
+  template <int RoleIdx>
+  void endTransaction() {
+    static_assert(0 <= RoleIdx && RoleIdx < NumRoles, "");
+    inTx_[RoleIdx].clear(std::memory_order_release);
   }
 
   // Reading the head and tail is what gives a user of the ringbuffer (either a
@@ -116,39 +118,25 @@ class RingBufferHeader {
   // just like we do for the transactions, we need memory barriers around reads
   // and writes to the head and tail, with the same reasoning for memory orders.
 
-  uint64_t readHead() const {
-    return atomicHead_.load(std::memory_order_acquire);
+  template <int RoleIdx>
+  uint64_t readMarker() const {
+    static_assert(0 <= RoleIdx && RoleIdx < NumRoles, "");
+    return markers_[RoleIdx].load(std::memory_order_acquire);
   }
 
-  uint64_t readTail() const {
-    return atomicTail_.load(std::memory_order_acquire);
-  }
-
-  void incHead(uint64_t inc) {
-    atomicHead_.fetch_add(inc, std::memory_order_release);
-  }
-
-  void incTail(uint64_t inc) {
-    atomicTail_.fetch_add(inc, std::memory_order_release);
+  template <int RoleIdx>
+  void incMarker(uint64_t inc) {
+    static_assert(0 <= RoleIdx && RoleIdx < NumRoles, "");
+    markers_[RoleIdx].fetch_add(inc, std::memory_order_release);
   }
 
  protected:
-  // Acquired by producers.
-  std::atomic_flag inWriteTx_ = ATOMIC_FLAG_INIT;
-  // Acquired by consumers.
-  std::atomic_flag inReadTx_ = ATOMIC_FLAG_INIT;
-
-  // Written by producers.
-  std::atomic<uint64_t> atomicHead_{0};
-  // Written by consumers.
-  std::atomic<uint64_t> atomicTail_{0};
+  std::array<std::atomic_flag, NumRoles> inTx_;
+  std::array<std::atomic<uint64_t>, NumRoles> markers_;
 
   // http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2007/n2427.html#atomics.lockfree
   // static_assert(
-  //     decltype(atomicHead_)::is_always_lock_free,
-  //     "Only lock-free atomics are supported");
-  // static_assert(
-  //     decltype(atomicTail_)::is_always_lock_free,
+  //     decltype(markers_)::value_type::is_always_lock_free,
   //     "Only lock-free atomics are supported");
 };
 
@@ -156,21 +144,22 @@ class RingBufferHeader {
 /// Process' view of a ring buffer.
 /// This cannot reside in shared memory since it has pointers.
 ///
+template <int NumRoles>
 class RingBuffer final {
  public:
   RingBuffer() = default;
 
-  RingBuffer(RingBufferHeader* header, uint8_t* data)
+  RingBuffer(RingBufferHeader<NumRoles>* header, uint8_t* data)
       : header_(header), data_(data) {
     TP_THROW_IF_NULLPTR(header_) << "Header cannot be nullptr";
     TP_THROW_IF_NULLPTR(data_) << "Data cannot be nullptr";
   }
 
-  const RingBufferHeader& getHeader() const {
+  const RingBufferHeader<NumRoles>& getHeader() const {
     return *header_;
   }
 
-  RingBufferHeader& getHeader() {
+  RingBufferHeader<NumRoles>& getHeader() {
     return *header_;
   }
 
@@ -183,7 +172,7 @@ class RingBuffer final {
   }
 
  protected:
-  RingBufferHeader* header_ = nullptr;
+  RingBufferHeader<NumRoles>* header_ = nullptr;
   uint8_t* data_ = nullptr;
 };
 

@@ -26,8 +26,7 @@
 #include <tensorpipe/transport/ibv/error.h>
 #include <tensorpipe/transport/ibv/reactor.h>
 #include <tensorpipe/transport/ibv/sockaddr.h>
-#include <tensorpipe/util/ringbuffer/consumer.h>
-#include <tensorpipe/util/ringbuffer/producer.h>
+#include <tensorpipe/util/ringbuffer/role.h>
 
 namespace tensorpipe {
 namespace transport {
@@ -114,7 +113,8 @@ void ConnectionImpl::initImplFromLoop() {
       kBufferSize, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1);
   TP_THROW_ASSERT_IF(error)
       << "Couldn't allocate ringbuffer for connection inbox: " << error.what();
-  inboxRb_ = util::ringbuffer::RingBuffer(&inboxHeader_, inboxBuf_.ptr());
+  inboxRb_ = util::ringbuffer::RingBuffer<kNumInboxRingbufferRoles>(
+      &inboxHeader_, inboxBuf_.ptr());
   inboxMr_ = createIbvMemoryRegion(
       context_->getReactor().getIbvLib(),
       context_->getReactor().getIbvPd(),
@@ -127,7 +127,8 @@ void ConnectionImpl::initImplFromLoop() {
       kBufferSize, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1);
   TP_THROW_ASSERT_IF(error)
       << "Couldn't allocate ringbuffer for connection outbox: " << error.what();
-  outboxRb_ = util::ringbuffer::RingBuffer(&outboxHeader_, outboxBuf_.ptr());
+  outboxRb_ = util::ringbuffer::RingBuffer<kNumOutboxRingbufferRoles>(
+      &outboxHeader_, outboxBuf_.ptr());
   outboxMr_ = createIbvMemoryRegion(
       context_->getReactor().getIbvLib(),
       context_->getReactor().getIbvPd(),
@@ -348,7 +349,7 @@ void ConnectionImpl::processReadOperationsFromLoop() {
     return;
   }
   // Serve read operations
-  util::ringbuffer::Consumer inboxConsumer(inboxRb_);
+  InboxConsumer inboxConsumer(inboxRb_);
   while (!readOperations_.empty()) {
     RingbufferReadOperation& readOperation = readOperations_.front();
     ssize_t len = readOperation.handleRead(inboxConsumer);
@@ -380,29 +381,19 @@ void ConnectionImpl::processWriteOperationsFromLoop() {
     return;
   }
 
-  util::ringbuffer::Producer outboxProducer(outboxRb_);
+  OutboxProducer outboxProducer(outboxRb_);
   while (!writeOperations_.empty()) {
     RingbufferWriteOperation& writeOperation = writeOperations_.front();
     ssize_t len = writeOperation.handleWrite(outboxProducer);
     if (len > 0) {
       ssize_t ret;
-      util::ringbuffer::Consumer outboxConsumer(outboxRb_);
-
-      // In order to get the pointers and lengths to the data that was just
-      // written to the ringbuffer we pretend to start a consumer transaction so
-      // we can use accessContiguous, which we'll however later abort. The data
-      // will only be really consumed once we receive the ACK from the remote.
+      OutboxIbvWriter outboxConsumer(outboxRb_);
 
       ret = outboxConsumer.startTx();
       TP_THROW_SYSTEM_IF(ret < 0, -ret);
 
       ssize_t numBuffers;
-      std::array<util::ringbuffer::Consumer::Buffer, 2> buffers;
-
-      // Skip over the data that was already sent but is still in flight.
-      std::tie(numBuffers, buffers) =
-          outboxConsumer.accessContiguousInTx</*AllowPartial=*/false>(
-              numBytesInFlight_);
+      std::array<OutboxIbvWriter::Buffer, 2> buffers;
 
       std::tie(numBuffers, buffers) =
           outboxConsumer.accessContiguousInTx</*AllowPartial=*/false>(len);
@@ -434,10 +425,8 @@ void ConnectionImpl::processWriteOperationsFromLoop() {
         numWritesInFlight_++;
       }
 
-      ret = outboxConsumer.cancelTx();
+      ret = outboxConsumer.commitTx();
       TP_THROW_SYSTEM_IF(ret < 0, -ret);
-
-      numBytesInFlight_ += len;
     }
     if (writeOperation.completed()) {
       writeOperations_.pop_front();
@@ -451,10 +440,19 @@ void ConnectionImpl::onRemoteProducedData(uint32_t length) {
   TP_DCHECK(context_->inLoop());
   TP_VLOG(9) << "Connection " << id_ << " was signalled that " << length
              << " bytes were written to its inbox on QP " << qp_->qp_num;
-  // We could start a transaction and use the proper methods for this, but as
-  // this method is the only producer for the inbox ringbuffer we can cut it
-  // short and directly increase the head.
-  inboxHeader_.incHead(length);
+
+  ssize_t ret;
+  InboxIbvRecver inboxProducer(inboxRb_);
+
+  ret = inboxProducer.startTx();
+  TP_THROW_SYSTEM_IF(ret < 0, -ret);
+
+  ret = inboxProducer.incMarkerInTx(length);
+  TP_THROW_SYSTEM_IF(ret < 0, -ret);
+
+  ret = inboxProducer.commitTx();
+  TP_THROW_SYSTEM_IF(ret < 0, -ret);
+
   processReadOperationsFromLoop();
 }
 
@@ -462,11 +460,18 @@ void ConnectionImpl::onRemoteConsumedData(uint32_t length) {
   TP_DCHECK(context_->inLoop());
   TP_VLOG(9) << "Connection " << id_ << " was signalled that " << length
              << " bytes were read from its outbox on QP " << qp_->qp_num;
-  // We could start a transaction and use the proper methods for this, but as
-  // this method is the only consumer for the outbox ringbuffer we can cut it
-  // short and directly increase the tail.
-  outboxHeader_.incTail(length);
-  numBytesInFlight_ -= length;
+  ssize_t ret;
+  OutboxIbvAcker outboxConsumer(outboxRb_);
+
+  ret = outboxConsumer.startTx();
+  TP_THROW_SYSTEM_IF(ret < 0, -ret);
+
+  ret = outboxConsumer.incMarkerInTx(length);
+  TP_THROW_SYSTEM_IF(ret < 0, -ret);
+
+  ret = outboxConsumer.commitTx();
+  TP_THROW_SYSTEM_IF(ret < 0, -ret);
+
   processWriteOperationsFromLoop();
 }
 
