@@ -117,33 +117,13 @@ constexpr ShmSegment::PageType getDefaultPageType(uint64_t size) {
   }
 }
 
-#ifdef MAP_SHARED_VALIDATE
-bool isMapSharedValidateSupported() {
-  static bool rc = []() {
-    // If MAP_SHARED_VALIDATE is supported by kernel,
-    // errno should be EOPNOTSUPP, if not EINVAL
-    void* ptr = mmap(nullptr, 8, 0, 0x800000 | MAP_SHARED_VALIDATE, 0, 0);
-    return ptr == MAP_FAILED && errno == EOPNOTSUPP;
-  }();
-  return rc;
-}
-#endif
-
 std::tuple<Error, MmappedPtr> mmapShmFd(
     int fd,
     size_t byteSize,
     bool permWrite,
     optional<ShmSegment::PageType> pageType) {
-#ifdef MAP_SHARED_VALIDATE
-  int flags = isMapSharedValidateSupported() ? MAP_SHARED_VALIDATE : MAP_SHARED;
-#else
-
-#warning \
-    "this version of libc doesn't define MAP_SHARED_VALIDATE, \
-update to obtain the latest correctness checks."
-
   int flags = MAP_SHARED;
-#endif
+
   // Note that in x86 PROT_WRITE implies PROT_READ so there is no
   // point on allowing read protection to be specified.
   // Currently no handling PROT_EXEC because there is no use case for it.
