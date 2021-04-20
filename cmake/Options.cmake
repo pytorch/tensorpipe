@@ -27,10 +27,11 @@ endmacro()
 
 # Try to auto-detect the presence of some libraries in order to enable/disable
 # the transports/channels that make use of them.
-# TODO Add CUDA to this list, in order to fix the TODO below
+# TODO Add CUDA and ROCM to this list, in order to fix the TODO below
 
-# TODO: Default to ON if CUDA available.
+# TODO: Default to ON if CUDA or ROCM is available, mutual exclusive.
 option(TP_USE_CUDA "Enable support for CUDA tensors" OFF)
+option(TP_USE_ROCM "Enable support for ROCM tensors" OFF)
 
 # Optional features
 option(TP_BUILD_BENCHMARK "Build benchmarks" OFF)

@@ -21,6 +21,11 @@ include(Sanitize)
 # Misc checks to cope with various compiler modes.
 include(MiscCheck)
 
+# Trigger hipify if it is ROCm build
+if (TP_USE_ROCM)
+    include(Hipify)
+endif()
+
 add_subdirectory(tensorpipe)
 
 install(EXPORT TensorpipeTargets
