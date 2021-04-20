@@ -247,7 +247,7 @@ PipeImpl::PipeImpl(
   std::tie(transport_, address) = splitSchemeOfURL(url);
   descriptorConnection_ =
       context_->getTransport(transport_)->connect(std::move(address));
-  descriptorConnection_->setId(id_ + ".tr_" + transport_);
+  descriptorConnection_->setId(id_ + ".d.tr_" + transport_);
 }
 
 PipeImpl::PipeImpl(
@@ -264,7 +264,7 @@ PipeImpl::PipeImpl(
       remoteName_(std::move(remoteName)),
       transport_(std::move(transport)),
       descriptorConnection_(std::move(connection)) {
-  descriptorConnection_->setId(id_ + ".tr_" + transport_);
+  descriptorConnection_->setId(id_ + ".d.tr_" + transport_);
 }
 
 void PipeImpl::init() {
@@ -617,6 +617,10 @@ void PipeImpl::handleError() {
 
   descriptorConnection_->close();
 
+  if (descriptorReplyConnection_) {
+    descriptorReplyConnection_->close();
+  }
+
   for (auto& channelIter : channels_) {
     channelIter.second->close();
   }
@@ -899,6 +903,8 @@ void PipeImpl::onReadWhileServerWaitingForBrochure(const Packet& nopPacketIn) {
     nopBrochureAnswer.transportRegistrationIds[ConnectionId::DESCRIPTOR] =
         registerTransport(ConnectionId::DESCRIPTOR);
   }
+  nopBrochureAnswer.transportRegistrationIds[ConnectionId::DESCRIPTOR_REPLY] =
+      registerTransport(ConnectionId::DESCRIPTOR_REPLY);
 
   nopBrochureAnswer.transport = transport.name;
   nopBrochureAnswer.address = transport.address;
@@ -1006,10 +1012,11 @@ void PipeImpl::onReadWhileClientWaitingForBrochureAnswer(
       << " can be used to communicate";
 
   if (transport != transport_) {
-    TP_VLOG(3) << "Pipe " << id_ << " is opening connection (as replacement)";
+    TP_VLOG(3) << "Pipe " << id_
+               << " is opening connection (descriptor, as replacement)";
     std::shared_ptr<transport::Connection> connection =
         transportContext->connect(address);
-    connection->setId(id_ + ".tr_" + transport);
+    connection->setId(id_ + ".d.tr_" + transport);
     const auto& transportRegistrationIter =
         nopBrochureAnswer.transportRegistrationIds.find(
             ConnectionId::DESCRIPTOR);
@@ -1020,6 +1027,22 @@ void PipeImpl::onReadWhileClientWaitingForBrochureAnswer(
 
     transport_ = transport;
     descriptorConnection_ = std::move(connection);
+  }
+
+  {
+    TP_VLOG(3) << "Pipe " << id_ << " is opening connection (descriptor_reply)";
+    std::shared_ptr<transport::Connection> connection =
+        transportContext->connect(address);
+    connection->setId(id_ + ".r.tr_" + transport);
+    const auto& transportRegistrationIter =
+        nopBrochureAnswer.transportRegistrationIds.find(
+            ConnectionId::DESCRIPTOR_REPLY);
+    TP_DCHECK(
+        transportRegistrationIter !=
+        nopBrochureAnswer.transportRegistrationIds.end());
+    initConnection(*connection, transportRegistrationIter->second);
+
+    descriptorReplyConnection_ = std::move(connection);
   }
 
   // Recompute the channel map based on this side's channels and priorities.
@@ -1117,9 +1140,12 @@ void PipeImpl::onAcceptWhileServerWaitingForConnection(
 
   switch (connId) {
     case ConnectionId::DESCRIPTOR:
-      receivedConnection->setId(
-          id_ + ".tr_" + receivedTransport + "_descriptor");
+      receivedConnection->setId(id_ + ".d.tr_" + receivedTransport);
       descriptorConnection_ = std::move(receivedConnection);
+      break;
+    case ConnectionId::DESCRIPTOR_REPLY:
+      receivedConnection->setId(id_ + ".r.tr_" + receivedTransport);
+      descriptorReplyConnection_ = std::move(receivedConnection);
       break;
     default:
       TP_THROW_ASSERT() << "Unrecognized connection identifier";
