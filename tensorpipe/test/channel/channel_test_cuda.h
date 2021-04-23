@@ -90,3 +90,6 @@ class CudaChannelTestSuite
 
 class CudaMultiGPUChannelTestSuite
     : public ::testing::TestWithParam<CudaChannelTestHelper*> {};
+
+class CudaXDTTChannelTestSuite
+    : public ::testing::TestWithParam<CudaChannelTestHelper*> {};

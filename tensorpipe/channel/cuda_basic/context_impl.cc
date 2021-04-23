@@ -48,6 +48,7 @@ std::shared_ptr<ContextImpl> ContextImpl::create(
       cpuContext->deviceDescriptors().count(Device{kCpuDeviceType, 0}), 1);
   const auto cpuDeviceDescriptor =
       cpuContext->deviceDescriptors().begin()->second;
+  deviceDescriptors[Device{kCpuDeviceType, 0}] = cpuDeviceDescriptor;
   for (const auto& device : getCudaDevices(cudaLib)) {
     deviceDescriptors[device] = cpuDeviceDescriptor;
   }

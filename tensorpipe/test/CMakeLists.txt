@@ -63,6 +63,7 @@ if(TP_USE_CUDA)
   target_sources(tensorpipe_test PRIVATE
     channel/channel_test_cuda.cc
     channel/channel_test_cuda_multi_gpu.cc
+    channel/channel_test_cuda_xdtt.cc
     common/cuda_test.cc
     )
 
