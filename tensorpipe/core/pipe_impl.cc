@@ -31,7 +31,6 @@ void parseDescriptorReplyOfMessage(
     WriteOperation& op,
     DescriptorReply nopDescriptorReply) {
   const int numTensors = op.message.tensors.size();
-  TP_DCHECK_EQ(numTensors, nopDescriptorReply.targetDevices.size());
   size_t targetDeviceIdx = 0;
   for (size_t tensorIdx = 0; tensorIdx < numTensors; ++tensorIdx) {
     const Message::Tensor& tensor = op.message.tensors[tensorIdx];
