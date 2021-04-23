@@ -15,6 +15,7 @@
 #include <cuda_runtime.h>
 
 #include <tensorpipe/channel/channel.h>
+#include <tensorpipe/channel/cuda_basic/constants.h>
 #include <tensorpipe/channel/cuda_basic/context_impl.h>
 #include <tensorpipe/common/cpu_buffer.h>
 #include <tensorpipe/common/cuda.h>
@@ -79,27 +80,34 @@ void ChannelImpl::sendImplFromLoop(
     return;
   }
 
-  int deviceIdx = cudaDeviceForPointer(
-      context_->getCudaLib(), buffer.unwrap<CudaBuffer>().ptr);
-  Allocator& cudaHostAllocator = context_->getCudaHostSendAllocator(deviceIdx);
-  const size_t chunkLength = cudaHostAllocator.getChunkLength();
+  const Device device = buffer.device();
+  const size_t chunkLength = kSlotSize;
   const size_t numChunks = ceilOfRatio(length, chunkLength);
-
   for (size_t offset = 0; offset < length; offset += chunkLength) {
     ChunkSendOpIter opIter = chunkSendOps_.emplaceBack(nextChunkBeingSent_++);
     ChunkSendOperation& op = *opIter;
     op.bufferSequenceNumber = sequenceNumber;
     op.chunkId = offset / chunkLength;
     op.numChunks = numChunks;
-    op.stream = buffer.unwrap<CudaBuffer>().stream;
-    op.deviceIdx = deviceIdx;
-    op.cudaPtr =
-        static_cast<uint8_t*>(buffer.unwrap<CudaBuffer>().ptr) + offset;
     op.length = std::min(length - offset, chunkLength);
     // Operations are processed in order, so we can afford to trigger the
     // callback once the last operation is done.
     if (op.chunkId == numChunks - 1) {
       op.callback = std::move(callback);
+    }
+
+    if (device.type == kCpuDeviceType) {
+      op.isCpuBuffer = true;
+      op.devicePtr =
+          static_cast<uint8_t*>(buffer.unwrap<CpuBuffer>().ptr) + offset;
+    } else if (device.type == kCudaDeviceType) {
+      op.isCpuBuffer = false;
+      op.devicePtr =
+          static_cast<uint8_t*>(buffer.unwrap<CudaBuffer>().ptr) + offset;
+      op.stream = buffer.unwrap<CudaBuffer>().stream;
+      op.deviceIdx = device.index;
+    } else {
+      TP_THROW_ASSERT() << "Unexpected device type: " << device.type;
     }
 
     chunkSendOps_.advanceOperation(opIter);
@@ -123,6 +131,19 @@ void ChannelImpl::advanceChunkSendOperation(
       /*cond=*/error_ && prevOpState >= ChunkSendOperation::INVOKED_CALLBACK,
       /*actions=*/{&ChannelImpl::callSendCallback});
 
+  // Needs to go after previous op to ensure predictable and consistent ordering
+  // of send calls on CPU channel.
+  // This transition shortcuts the allocation of/copy to staging memory when the
+  // buffer is already on CPU.
+  chunkSendOps_.attemptTransition(
+      opIter,
+      /*from=*/ChunkSendOperation::UNINITIALIZED,
+      /*to=*/ChunkSendOperation::SENDING_CPU_BUFFER,
+      /*cond=*/!error_ && op.isCpuBuffer &&
+          prevOpState >= ChunkSendOperation::SENDING_CPU_BUFFER,
+      /*actions=*/
+      {&ChannelImpl::writeReadyToSend, &ChannelImpl::sendCpuBuffer});
+
   // Needs to go after previous op to ensure later operations are not holding
   // staging buffers while earlier ones are still blocked waiting for them,
   // because the staging buffer will only be returned to the allocator once the
@@ -132,7 +153,7 @@ void ChannelImpl::advanceChunkSendOperation(
       opIter,
       /*from=*/ChunkSendOperation::UNINITIALIZED,
       /*to=*/ChunkSendOperation::ALLOCATING_CPU_BUFFER,
-      /*cond=*/!error_ &&
+      /*cond=*/!error_ && !op.isCpuBuffer &&
           prevOpState >= ChunkSendOperation::ALLOCATING_CPU_BUFFER,
       /*actions=*/{&ChannelImpl::allocateSendCpuBuffer});
 
@@ -196,7 +217,14 @@ void ChannelImpl::advanceChunkSendOperation(
       opIter,
       /*from=*/ChunkSendOperation::SENDING_CPU_BUFFER,
       /*to=*/ChunkSendOperation::FINISHED,
-      /*cond=*/op.doneSendingCpuBuffer,
+      /*cond=*/op.doneSendingCpuBuffer && op.isCpuBuffer,
+      /*actions=*/{&ChannelImpl::callSendCallback});
+
+  chunkSendOps_.attemptTransition(
+      opIter,
+      /*from=*/ChunkSendOperation::SENDING_CPU_BUFFER,
+      /*to=*/ChunkSendOperation::FINISHED,
+      /*cond=*/op.doneSendingCpuBuffer && !op.isCpuBuffer,
       /*actions=*/{&ChannelImpl::returnSendCpuBuffer});
 }
 
@@ -253,7 +281,7 @@ void ChannelImpl::copyFromGpuToCpu(ChunkSendOpIter opIter) {
              << op.bufferSequenceNumber << " from CUDA device to CPU";
   cudaCopy(
       op.tmpBuffer.get(),
-      op.cudaPtr,
+      op.devicePtr,
       op.length,
       op.deviceIdx,
       op.stream,
@@ -275,7 +303,7 @@ void ChannelImpl::sendCpuBuffer(ChunkSendOpIter opIter) {
              << op.bufferSequenceNumber << " through CPU channel";
 
   cpuChannel_->send(
-      CpuBuffer{.ptr = op.tmpBuffer.get()},
+      CpuBuffer{.ptr = op.isCpuBuffer ? op.devicePtr : op.tmpBuffer.get()},
       op.length,
       callbackWrapper_([opIter](ChannelImpl& impl) {
         TP_VLOG(6) << "Channel " << impl.id_ << " is done sending chunk #"
@@ -314,28 +342,34 @@ void ChannelImpl::recvImplFromLoop(
     return;
   }
 
-  int deviceIdx = cudaDeviceForPointer(
-      context_->getCudaLib(), buffer.unwrap<CudaBuffer>().ptr);
-  Allocator& cudaHostAllocator = context_->getCudaHostRecvAllocator(deviceIdx);
-  const size_t chunkLength = cudaHostAllocator.getChunkLength();
+  const Device device = buffer.device();
+  const size_t chunkLength = kSlotSize;
   const size_t numChunks = ceilOfRatio(length, chunkLength);
-
   for (size_t offset = 0; offset < length; offset += chunkLength) {
-    ChunkRecvOpIter opIter =
-        chunkRecvOps_.emplaceBack(nextChunkBeingReceived_++);
+    ChunkRecvOpIter opIter = chunkRecvOps_.emplaceBack(nextChunkBeingSent_++);
     ChunkRecvOperation& op = *opIter;
     op.bufferSequenceNumber = sequenceNumber;
     op.chunkId = offset / chunkLength;
     op.numChunks = numChunks;
-    op.stream = buffer.unwrap<CudaBuffer>().stream;
-    op.deviceIdx = deviceIdx;
-    op.cudaPtr =
-        static_cast<uint8_t*>(buffer.unwrap<CudaBuffer>().ptr) + offset;
     op.length = std::min(length - offset, chunkLength);
     // Operations are processed in order, so we can afford to trigger the
     // callback once the last operation is done.
     if (op.chunkId == numChunks - 1) {
       op.callback = std::move(callback);
+    }
+
+    if (device.type == kCpuDeviceType) {
+      op.isCpuBuffer = true;
+      op.devicePtr =
+          static_cast<uint8_t*>(buffer.unwrap<CpuBuffer>().ptr) + offset;
+    } else if (device.type == kCudaDeviceType) {
+      op.isCpuBuffer = false;
+      op.devicePtr =
+          static_cast<uint8_t*>(buffer.unwrap<CudaBuffer>().ptr) + offset;
+      op.stream = buffer.unwrap<CudaBuffer>().stream;
+      op.deviceIdx = device.index;
+    } else {
+      TP_THROW_ASSERT() << "Unexpected device type: " << device.type;
     }
 
     chunkRecvOps_.advanceOperation(opIter);
@@ -381,6 +415,18 @@ void ChannelImpl::advanceChunkRecvOperation(
               ChunkRecvOperation::COPYING_FROM_CPU_TO_GPU_AND_INVOKED_CALLBACK,
       /*actions=*/{&ChannelImpl::callRecvCallback});
 
+  // Needs to go after previous op to ensure predictable and consistent ordering
+  // of recv calls on CPU channel.
+  // This operation shortcuts allocating staging memory when receiving directly
+  // on CPU.
+  chunkRecvOps_.attemptTransition(
+      opIter,
+      /*from=*/ChunkRecvOperation::READING_READY_TO_SEND,
+      /*to=*/ChunkRecvOperation::RECEIVING_CPU_BUFFER,
+      /*cond=*/!error_ && op.doneReadingReadyToSend && op.isCpuBuffer &&
+          prevOpState >= ChunkRecvOperation::RECEIVING_CPU_BUFFER,
+      /*actions=*/{&ChannelImpl::receiveCpuBuffer});
+
   // Needs to go after previous op to ensure later operations are not holding
   // staging buffers while earlier ones are still blocked waiting for them,
   // because the staging buffer will only be returned to the allocator once the
@@ -390,7 +436,7 @@ void ChannelImpl::advanceChunkRecvOperation(
       opIter,
       /*from=*/ChunkRecvOperation::READING_READY_TO_SEND,
       /*to=*/ChunkRecvOperation::ALLOCATING_CPU_BUFFER,
-      /*cond=*/!error_ && op.doneReadingReadyToSend &&
+      /*cond=*/!error_ && op.doneReadingReadyToSend && !op.isCpuBuffer &&
           prevOpState >= ChunkRecvOperation::ALLOCATING_CPU_BUFFER,
       /*actions=*/{&ChannelImpl::allocateRecvCpuBuffer});
 
@@ -420,17 +466,25 @@ void ChannelImpl::advanceChunkRecvOperation(
       opIter,
       /*from=*/ChunkRecvOperation::RECEIVING_CPU_BUFFER,
       /*to=*/ChunkRecvOperation::FINISHED,
-      /*cond=*/error_ && op.doneReceivingCpuBuffer &&
+      /*cond=*/error_ && op.doneReceivingCpuBuffer && !op.isCpuBuffer &&
           prevOpState >=
               ChunkRecvOperation::COPYING_FROM_CPU_TO_GPU_AND_INVOKED_CALLBACK,
       /*actions=*/
       {&ChannelImpl::callRecvCallback, &ChannelImpl::returnRecvCpuBuffer});
 
+  // This transition shortcuts the copy to GPU when receiving on CPU memory.
+  chunkRecvOps_.attemptTransition(
+      opIter,
+      /*from=*/ChunkRecvOperation::RECEIVING_CPU_BUFFER,
+      /*to=*/ChunkRecvOperation::FINISHED,
+      /*cond=*/op.doneReceivingCpuBuffer && op.isCpuBuffer,
+      /*actions=*/{&ChannelImpl::callRecvCallback});
+
   chunkRecvOps_.attemptTransition(
       opIter,
       /*from=*/ChunkRecvOperation::RECEIVING_CPU_BUFFER,
       /*to=*/ChunkRecvOperation::COPYING_FROM_CPU_TO_GPU,
-      /*cond=*/!error_ && op.doneReceivingCpuBuffer,
+      /*cond=*/!error_ && op.doneReceivingCpuBuffer && !op.isCpuBuffer,
       /*actions=*/{&ChannelImpl::copyFromCpuToGpu});
 
   // See above for why this needs to go after previous op.
@@ -502,7 +556,7 @@ void ChannelImpl::receiveCpuBuffer(ChunkRecvOpIter opIter) {
              << " of " << op.numChunks << " for buffer #"
              << op.bufferSequenceNumber << " through CPU channel";
   cpuChannel_->recv(
-      CpuBuffer{.ptr = op.tmpBuffer.get()},
+      CpuBuffer{.ptr = op.isCpuBuffer ? op.devicePtr : op.tmpBuffer.get()},
       op.length,
       callbackWrapper_([opIter](ChannelImpl& impl) {
         TP_VLOG(6) << "Channel " << impl.id_ << " is done sending chunk #"
@@ -521,7 +575,7 @@ void ChannelImpl::copyFromCpuToGpu(ChunkRecvOpIter opIter) {
              << " of " << op.numChunks << " for buffer #"
              << op.bufferSequenceNumber << " from CPU to CUDA device";
   cudaCopy(
-      op.cudaPtr,
+      op.devicePtr,
       op.tmpBuffer.get(),
       op.length,
       op.deviceIdx,
