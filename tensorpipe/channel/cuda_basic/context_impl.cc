@@ -14,11 +14,30 @@
 
 #include <tensorpipe/channel/cuda_basic/channel_impl.h>
 #include <tensorpipe/channel/cuda_basic/constants.h>
+#include <tensorpipe/channel/helpers.h>
 #include <tensorpipe/common/cuda.h>
+#include <tensorpipe/common/nop.h>
 
 namespace tensorpipe {
 namespace channel {
 namespace cuda_basic {
+
+namespace {
+
+struct DeviceDescriptor {
+  std::string deviceType;
+  std::string descriptor;
+  NOP_STRUCTURE(DeviceDescriptor, deviceType, descriptor);
+};
+
+DeviceDescriptor deserializeDeviceDescriptor(
+    const std::string& deviceDescriptor) {
+  NopHolder<DeviceDescriptor> nopHolder;
+  loadDescriptor(nopHolder, deviceDescriptor);
+  return std::move(nopHolder.getObject());
+}
+
+} // namespace
 
 std::shared_ptr<ContextImpl> ContextImpl::create(
     std::shared_ptr<Context> cpuContext) {
@@ -48,9 +67,16 @@ std::shared_ptr<ContextImpl> ContextImpl::create(
       cpuContext->deviceDescriptors().count(Device{kCpuDeviceType, 0}), 1);
   const auto cpuDeviceDescriptor =
       cpuContext->deviceDescriptors().begin()->second;
-  deviceDescriptors[Device{kCpuDeviceType, 0}] = cpuDeviceDescriptor;
+
+  NopHolder<DeviceDescriptor> nopHolder;
+  DeviceDescriptor& deviceDescriptor = nopHolder.getObject();
+  deviceDescriptor.descriptor = cpuDeviceDescriptor;
+
+  deviceDescriptor.deviceType = kCpuDeviceType;
+  deviceDescriptors[Device{kCpuDeviceType, 0}] = saveDescriptor(nopHolder);
   for (const auto& device : getCudaDevices(cudaLib)) {
-    deviceDescriptors[device] = cpuDeviceDescriptor;
+    deviceDescriptor.deviceType = kCudaDeviceType;
+    deviceDescriptors[device] = saveDescriptor(nopHolder);
   }
 
   return std::make_shared<ContextImpl>(
@@ -80,6 +106,25 @@ std::shared_ptr<Channel> ContextImpl::createChannel(
 
 size_t ContextImpl::numConnectionsNeeded() const {
   return 1 + cpuContext_->numConnectionsNeeded();
+}
+
+bool ContextImpl::canCommunicateWithRemote(
+    const std::string& localDeviceDescriptor,
+    const std::string& remoteDeviceDescriptor) const {
+  DeviceDescriptor nopLocalDeviceDescriptor =
+      deserializeDeviceDescriptor(localDeviceDescriptor);
+  DeviceDescriptor nopRemoteDeviceDescriptor =
+      deserializeDeviceDescriptor(remoteDeviceDescriptor);
+
+  // Prevent CudaBasic from being mistakenly used for CPU to CPU transfers, as
+  // there are always better options.
+  if (nopLocalDeviceDescriptor.deviceType == kCpuDeviceType &&
+      nopRemoteDeviceDescriptor.deviceType == kCpuDeviceType) {
+    return false;
+  }
+
+  return nopLocalDeviceDescriptor.descriptor ==
+      nopRemoteDeviceDescriptor.descriptor;
 }
 
 const CudaLib& ContextImpl::getCudaLib() {

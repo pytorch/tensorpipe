@@ -33,7 +33,33 @@ class CudaBasicChannelTestHelper : public CudaChannelTestHelper {
 
 CudaBasicChannelTestHelper helper;
 
+class CudaBasicChannelTestSuite : public ChannelTestSuite {};
+
 } // namespace
+
+class CannotCommunicateCpuToCpuTest : public ChannelTestCase {
+ public:
+  void run(ChannelTestHelper* /* unused */) override {
+    ForkedThreadPeerGroup pg;
+    pg.spawn(
+        [&]() {
+          auto cpuContext = tensorpipe::channel::basic::create();
+          auto ctx =
+              tensorpipe::channel::cuda_basic::create(std::move(cpuContext));
+          auto deviceDescriptors = ctx->deviceDescriptors();
+          auto it = deviceDescriptors.find(
+              tensorpipe::Device{tensorpipe::kCpuDeviceType, 0});
+          EXPECT_FALSE(it == deviceDescriptors.end());
+          auto descriptor = it->second;
+          EXPECT_FALSE(ctx->canCommunicateWithRemote(descriptor, descriptor));
+        },
+        [&]() {
+          // Do nothing.
+        });
+  }
+};
+
+CHANNEL_TEST(CudaBasicChannelTestSuite, CannotCommunicateCpuToCpu);
 
 INSTANTIATE_TEST_CASE_P(
     CudaBasic,
@@ -53,4 +79,9 @@ INSTANTIATE_TEST_CASE_P(
 INSTANTIATE_TEST_CASE_P(
     CudaBasic,
     CudaXDTTChannelTestSuite,
+    ::testing::Values(&helper));
+
+INSTANTIATE_TEST_CASE_P(
+    CudaBasic,
+    CudaBasicChannelTestSuite,
     ::testing::Values(&helper));
