@@ -346,7 +346,8 @@ void ChannelImpl::recvImplFromLoop(
   const size_t chunkLength = kSlotSize;
   const size_t numChunks = ceilOfRatio(length, chunkLength);
   for (size_t offset = 0; offset < length; offset += chunkLength) {
-    ChunkRecvOpIter opIter = chunkRecvOps_.emplaceBack(nextChunkBeingSent_++);
+    ChunkRecvOpIter opIter =
+        chunkRecvOps_.emplaceBack(nextChunkBeingReceived_++);
     ChunkRecvOperation& op = *opIter;
     op.bufferSequenceNumber = sequenceNumber;
     op.chunkId = offset / chunkLength;
