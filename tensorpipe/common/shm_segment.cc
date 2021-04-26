@@ -56,11 +56,15 @@ std::tuple<Error, Fd> createMemfd() {
   // wrapper.
 #ifdef SYS_memfd_create
   // We want to pass the MFD_CLOEXEC flag, but we can't rely on glibc exposing
-  // it, thus we hardcode its value, which is equal to 1.
+  // it, thus we redefine its value if needed.
+#ifndef MFD_CLOEXEC
+// https://github.com/torvalds/linux/blob/master/include/uapi/linux/memfd.h
+#define MFD_CLOEXEC 0x0001U
+#endif
   int fd = static_cast<int>(::syscall(
       SYS_memfd_create,
       static_cast<const char*>(kMemfdName),
-      static_cast<unsigned int>(1)));
+      static_cast<unsigned int>(MFD_CLOEXEC)));
   if (fd < 0) {
     return std::make_tuple(
         TP_CREATE_ERROR(SystemError, "memfd_create", errno), Fd());
@@ -76,6 +80,13 @@ std::tuple<Error, Fd> createMemfd() {
 constexpr const char* kBasePath = "/dev/shm";
 
 std::tuple<Error, Fd> openTmpfileInDevShm() {
+  // Some users are compiling on old pre-3.11 kernels. We'd like our backends to
+  // only depend on runtime capabilities, and not on compile-time ones, hence we
+  // "polyfill" the flag so the build will pass and we'll get a runtime error.
+#ifndef O_TMPFILE
+// https://github.com/torvalds/linux/blob/master/include/uapi/asm-generic/fcntl.h
+#define O_TMPFILE (020000000 | 00200000)
+#endif
   int flags = O_TMPFILE | O_EXCL | O_RDWR | O_CLOEXEC;
   int fd = ::open(kBasePath, flags, 0);
   if (fd < 0) {
