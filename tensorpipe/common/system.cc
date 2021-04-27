@@ -165,7 +165,28 @@ optional<std::string> getLinuxNamespaceId(LinuxNamespace ns) {
 // > stat.st_ino fields returned by stat(2).
 optional<std::string> getLinuxNamespaceId(LinuxNamespace ns) {
   struct stat statInfo;
-  int rv = ::stat(getPathForLinuxNamespace(ns).c_str(), &statInfo);
+  std::string procfsNamespacePath = getPathForLinuxNamespace(ns);
+  // First use lstat to stat the link itself, to ensure it's indeed a link.
+  int rv = ::lstat(procfsNamespacePath.c_str(), &statInfo);
+
+  if (rv < 0 && errno == ENOENT) {
+    // These files were first provided in Linux 3.0 (although some of them came
+    // later), however namespaces already existed before then, hence the only
+    // safe thing to do is assume all processes are in different namespaces.
+    return nullopt;
+  }
+  // Other errors, like access/permission ones, are unexpected.
+  TP_THROW_SYSTEM_IF(rv < 0, errno);
+
+  // Between Linux 3.0 and 3.7 these files were hard links. In Linux 3.8 they
+  // became symlinks and only then it became possible to identify namespaces
+  // through these files' inode numbers.
+  if (!S_ISLNK(statInfo.st_mode)) {
+    return nullopt;
+  }
+
+  // Then stat the "file" the link points to, as it's its inode we care about.
+  rv = ::stat(procfsNamespacePath.c_str(), &statInfo);
   TP_THROW_SYSTEM_IF(rv < 0, errno);
 
   // These fields are of types dev_t and ino_t, which I couldn't find described

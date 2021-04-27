@@ -26,29 +26,21 @@ namespace tensorpipe {
 namespace channel {
 namespace xth {
 
-namespace {
-
-std::string generateDomainDescriptor() {
+std::shared_ptr<ContextImpl> ContextImpl::create() {
   std::ostringstream oss;
   auto bootID = getBootID();
   TP_THROW_ASSERT_IF(!bootID) << "Unable to read boot_id";
-
   auto nsID = getLinuxNamespaceId(LinuxNamespace::kPid);
-  TP_THROW_ASSERT_IF(!nsID) << "Unable to read PID namespace ID";
+  if (!nsID.has_value()) {
+    TP_VLOG(5)
+        << "XTH channel is not viable because it couldn't determine the PID namespace ID";
+    return nullptr;
+  }
+  oss << bootID.value() << "_" << nsID.value() << "_" << ::getpid();
+  const std::string domainDescriptor = oss.str();
 
-  pid_t pid = getpid();
-
-  // Combine boot ID, namespace ID and PID.
-  oss << bootID.value() << "-" << nsID.value() << "-" << pid;
-
-  return oss.str();
-}
-
-} // namespace
-
-std::shared_ptr<ContextImpl> ContextImpl::create() {
   std::unordered_map<Device, std::string> deviceDescriptors = {
-      {Device{kCpuDeviceType, 0}, generateDomainDescriptor()}};
+      {Device{kCpuDeviceType, 0}, domainDescriptor}};
   return std::make_shared<ContextImpl>(std::move(deviceDescriptors));
 }
 
