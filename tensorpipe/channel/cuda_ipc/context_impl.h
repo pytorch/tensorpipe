@@ -38,7 +38,8 @@ class ContextImpl final
       CudaLib cudaLib,
       NvmlLib nvmlLib,
       std::vector<std::string> globalUuids,
-      std::vector<std::vector<bool>> p2pSupport);
+      std::vector<std::vector<bool>> p2pSupport,
+      std::string processIdentifier);
 
   std::shared_ptr<Channel> createChannel(
       std::vector<std::shared_ptr<transport::Connection>> connections,

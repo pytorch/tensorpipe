@@ -42,7 +42,10 @@ std::shared_ptr<ContextImpl> ContextImpl::create() {
   // access each other's address they must be in the same Linux kernel network
   // namespace (see network_namespaces(7)).
   auto nsID = getLinuxNamespaceId(LinuxNamespace::kNet);
-  TP_THROW_ASSERT_IF(!nsID.has_value()) << "Unable to read net namespace ID";
+  if (!nsID.has_value()) {
+    TP_VLOG(8) << "Unable to read net namespace ID";
+    return nullptr;
+  }
   oss << '_' << nsID.value();
 
   // Over that UNIX domain socket, the two endpoints exchange file descriptors

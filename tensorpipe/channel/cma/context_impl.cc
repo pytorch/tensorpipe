@@ -143,7 +143,10 @@ std::shared_ptr<ContextImpl> ContextImpl::create() {
   // PID namespace of the former. Since the channel is bidirectional this must
   // be symmetric and thus the PID namespaces must be the same.
   optional<std::string> pidNsID = getLinuxNamespaceId(LinuxNamespace::kPid);
-  TP_THROW_ASSERT_IF(!pidNsID.has_value()) << "Unable to read pid namespace ID";
+  if (!pidNsID.has_value()) {
+    TP_VLOG(5) << "Unable to read pid namespace ID";
+    return nullptr;
+  }
   oss << '_' << pidNsID.value();
 
   // The ability to call process_vm_readv on a target is controlled by the
@@ -165,8 +168,10 @@ std::shared_ptr<ContextImpl> ContextImpl::create() {
   // This does not in fact constitute an extra restriction since the later
   // commoncap/capability LSM check will need to enforce this too.
   optional<std::string> userNsID = getLinuxNamespaceId(LinuxNamespace::kUser);
-  TP_THROW_ASSERT_IF(!userNsID.has_value())
-      << "Unable to read user namespace ID";
+  if (!userNsID.has_value()) {
+    TP_VLOG(5) << "Unable to read user namespace ID";
+    return nullptr;
+  }
   oss << '_' << userNsID.value();
 
   // It is required that our *real* user ID matches the real, effective and

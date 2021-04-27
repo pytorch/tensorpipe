@@ -125,14 +125,6 @@ std::string generateBootId() {
   return bootID.value();
 }
 
-std::string genProcessIdentifier() {
-  std::ostringstream oss;
-  optional<std::string> nsId = getLinuxNamespaceId(LinuxNamespace::kPid);
-  TP_DCHECK(nsId.has_value());
-  oss << nsId.value() << "_" << ::getpid();
-  return oss.str();
-}
-
 // FIXME We'd want this to return a std::vector<CudaEvent>, but CudaEvents
 // aren't default-constructible nor movable. Hence either we make them such,
 // or we use some pointer magic (like placement new). For now, we work around
@@ -264,12 +256,23 @@ std::shared_ptr<ContextImpl> ContextImpl::create() {
   TP_VLOG(4) << "The peer-to-peer support found by the CUDA IPC channel is "
              << formatMatrix(p2pSupport);
 
+  std::ostringstream oss;
+  optional<std::string> nsId = getLinuxNamespaceId(LinuxNamespace::kPid);
+  if (!nsId.has_value()) {
+    TP_VLOG(4)
+        << "CUDA IPC channel is not viable because it couldn't determine the PID namespace ID";
+    return nullptr;
+  }
+  oss << nsId.value() << "_" << pid;
+  std::string processIdentifier = oss.str();
+
   return std::make_shared<ContextImpl>(
       std::move(deviceDescriptors),
       std::move(cudaLib),
       std::move(nvmlLib),
       std::move(globalUuids),
-      std::move(p2pSupport));
+      std::move(p2pSupport),
+      std::move(processIdentifier));
 }
 
 ContextImpl::ContextImpl(
@@ -277,14 +280,15 @@ ContextImpl::ContextImpl(
     CudaLib cudaLib,
     NvmlLib nvmlLib,
     std::vector<std::string> globalUuids,
-    std::vector<std::vector<bool>> p2pSupport)
+    std::vector<std::vector<bool>> p2pSupport,
+    std::string processIdentifier)
     : ContextImplBoilerplate<ContextImpl, ChannelImpl>(
           std::move(deviceDescriptors)),
       cudaLib_(std::move(cudaLib)),
       nvmlLib_(std::move(nvmlLib)),
       globalUuids_(std::move(globalUuids)),
       p2pSupport_(std::move(p2pSupport)),
-      processIdentifier_(genProcessIdentifier()) {}
+      processIdentifier_(processIdentifier) {}
 
 std::shared_ptr<Channel> ContextImpl::createChannel(
     std::vector<std::shared_ptr<transport::Connection>> connections,

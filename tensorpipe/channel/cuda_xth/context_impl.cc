@@ -25,26 +25,6 @@ namespace tensorpipe {
 namespace channel {
 namespace cuda_xth {
 
-namespace {
-
-std::string generateDomainDescriptor() {
-  std::ostringstream oss;
-  auto bootID = getBootID();
-  TP_THROW_ASSERT_IF(!bootID) << "Unable to read boot_id";
-
-  auto nsID = getLinuxNamespaceId(LinuxNamespace::kPid);
-  TP_THROW_ASSERT_IF(!nsID) << "Unable to read PID namespace ID";
-
-  pid_t pid = getpid();
-
-  // Combine boot ID, namespace ID and PID.
-  oss << bootID.value() << "-" << nsID.value() << "-" << pid;
-
-  return oss.str();
-}
-
-} // namespace
-
 std::shared_ptr<ContextImpl> ContextImpl::create() {
   Error error;
   CudaLib cudaLib;
@@ -56,7 +36,18 @@ std::shared_ptr<ContextImpl> ContextImpl::create() {
     return nullptr;
   }
 
-  const std::string domainDescriptor = generateDomainDescriptor();
+  std::ostringstream oss;
+  auto bootID = getBootID();
+  TP_THROW_ASSERT_IF(!bootID) << "Unable to read boot_id";
+  auto nsID = getLinuxNamespaceId(LinuxNamespace::kPid);
+  if (!nsID) {
+    TP_VLOG(5)
+        << "CUDA XTH channel is not viable because it couldn't determine the PID namespace ID";
+    return nullptr;
+  }
+  oss << bootID.value() << "_" << nsID.value() << "_" << ::getpid();
+  const std::string domainDescriptor = oss.str();
+
   std::unordered_map<Device, std::string> deviceDescriptors;
   for (const auto& device : getCudaDevices(cudaLib)) {
     cudaDeviceProp props;
