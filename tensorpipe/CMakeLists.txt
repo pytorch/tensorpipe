@@ -252,6 +252,13 @@ if (TP_BUILD_BENCHMARK)
 endif()
 
 
+## Misc tools
+
+if (TP_BUILD_MISC)
+  add_subdirectory(misc)
+endif()
+
+
 ## Tests
 
 if(TP_BUILD_TESTING)
