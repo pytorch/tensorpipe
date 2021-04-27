@@ -10,6 +10,7 @@
 
 #include <linux/prctl.h>
 #include <sys/prctl.h>
+#include <sys/syscall.h>
 #include <sys/uio.h>
 #include <unistd.h>
 
@@ -35,21 +36,70 @@ namespace {
 // disambiguate descriptors when debugging.
 const std::string kDomainDescriptorPrefix{"cma:"};
 
+Error callProcessVmReadv(
+    void* localPtr,
+    void* remotePtr,
+    size_t length,
+    pid_t pid) {
+#ifdef SYS_process_vm_readv
+  struct iovec localIov {
+    .iov_base = localPtr, .iov_len = length
+  };
+  struct iovec remoteIov {
+    .iov_base = remotePtr, .iov_len = length
+  };
+  ssize_t nread = static_cast<ssize_t>(::syscall(
+      SYS_process_vm_readv,
+      pid,
+      &localIov,
+      /*liovcnt=*/static_cast<unsigned long>(1),
+      &remoteIov,
+      /*riovcnt=*/static_cast<unsigned long>(1),
+      /*flags=*/static_cast<unsigned long>(0)));
+  if (nread < 0) {
+    return TP_CREATE_ERROR(SystemError, "process_vm_readv", errno);
+  } else if (nread != length) {
+    return TP_CREATE_ERROR(ShortReadError, length, nread);
+  }
+  return Error::kSuccess;
+#else
+  return TP_CREATE_ERROR(SystemError, "process_vm_readv", ENOSYS)
+#endif
+}
+
+class BadReadError final : public BaseError {
+ public:
+  BadReadError(uint64_t expected, uint64_t actual)
+      : expected_(expected), actual_(actual) {}
+
+  std::string what() const override {
+    std::ostringstream oss;
+    oss << "Expected to read " << expected_ << ", got " << actual_;
+    return oss.str();
+  }
+
+ private:
+  const uint64_t expected_;
+  const uint64_t actual_;
+};
+
 // Old versions of Docker use a default seccomp-bpf rule that blocks some
 // ptrace-related syscalls. To find this out, we attempt such a call against
 // ourselves, which is always allowed (it shortcuts all checks, including LSMs),
 // hence a failure can only come from a "filter" on the syscall.
-bool isProcessVmReadvSyscallAllowed() {
+// Or, in fact, it could also happen if the kernel doesn't support the syscall.
+Error attemptProcessVmReadvSyscallOnSelf() {
   uint64_t someSourceValue = 0x0123456789abcdef;
   uint64_t someTargetValue = 0;
-  struct iovec source {
-    .iov_base = &someSourceValue, .iov_len = sizeof(someSourceValue)
-  };
-  struct iovec target {
-    .iov_base = &someTargetValue, .iov_len = sizeof(someTargetValue)
-  };
-  ssize_t nread = ::process_vm_readv(::getpid(), &target, 1, &source, 1, 0);
-  return nread == sizeof(uint64_t) && someTargetValue == someSourceValue;
+  Error error = callProcessVmReadv(
+      &someTargetValue, &someSourceValue, sizeof(uint64_t), ::getpid());
+  if (error) {
+    return error;
+  }
+  if (someTargetValue != someSourceValue) {
+    return TP_CREATE_ERROR(BadReadError, someSourceValue, someTargetValue);
+  }
+  return Error::kSuccess;
 }
 
 // According to read(2):
@@ -64,20 +114,13 @@ Error performCopy(
     size_t length,
     pid_t remotePid) {
   for (size_t offset = 0; offset < length; offset += kMaxBytesReadableAtOnce) {
-    size_t chunkLength = std::min(length - offset, kMaxBytesReadableAtOnce);
-    struct iovec local {
-      .iov_base = reinterpret_cast<uint8_t*>(localPtr) + offset,
-      .iov_len = chunkLength
-    };
-    struct iovec remote {
-      .iov_base = reinterpret_cast<uint8_t*>(remotePtr) + offset,
-      .iov_len = chunkLength
-    };
-    auto nread = ::process_vm_readv(remotePid, &local, 1, &remote, 1, 0);
-    if (nread == -1) {
-      return TP_CREATE_ERROR(SystemError, "process_vm_readv", errno);
-    } else if (nread != chunkLength) {
-      return TP_CREATE_ERROR(ShortReadError, chunkLength, nread);
+    Error error = callProcessVmReadv(
+        reinterpret_cast<uint8_t*>(localPtr) + offset,
+        reinterpret_cast<uint8_t*>(remotePtr) + offset,
+        std::min(length - offset, kMaxBytesReadableAtOnce),
+        remotePid);
+    if (error) {
+      return error;
     }
   }
   return Error::kSuccess;
@@ -210,6 +253,14 @@ std::shared_ptr<ContextImpl> ContextImpl::create() {
           // process, especially a security-related one. An "excuse" for doing
           // so is that UCT does the same:
           // https://github.com/openucx/ucx/blob/4d9976b6b8f8faae609c078c72aad8e5b842c43f/src/uct/sm/scopy/cma/cma_md.c#L61
+#ifndef PR_SET_PTRACER
+// https://github.com/torvalds/linux/blob/master/include/uapi/linux/prctl.h
+#define PR_SET_PTRACER 0x59616d61
+#endif
+#ifndef PR_SET_PTRACER_ANY
+// https://github.com/torvalds/linux/blob/master/include/uapi/linux/prctl.h
+#define PR_SET_PTRACER_ANY ((unsigned long)-1)
+#endif
           rv = ::prctl(PR_SET_PTRACER, PR_SET_PTRACER_ANY, 0, 0, 0);
           TP_THROW_SYSTEM_IF(rv < 0, errno);
           break;
@@ -226,9 +277,13 @@ std::shared_ptr<ContextImpl> ContextImpl::create() {
   }
 
   // In addition to the ptrace check, in some cases (I'm looking at you Docker)
-  // the process_vm_readv syscall is outright blocked by seccomp-bpf.
-  if (!isProcessVmReadvSyscallAllowed()) {
-    TP_VLOG(5) << "The process_vm_readv syscall appears to be blocked";
+  // the process_vm_readv syscall is outright blocked by seccomp-bpf. Or just
+  // unsupported by the kernel.
+  Error error = attemptProcessVmReadvSyscallOnSelf();
+  if (error) {
+    TP_VLOG(5)
+        << "The process_vm_readv syscall appears to be unavailable or blocked: "
+        << error.what();
     return nullptr;
   }
 
