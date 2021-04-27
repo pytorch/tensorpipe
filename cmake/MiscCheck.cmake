@@ -14,17 +14,3 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     add_definitions("-Wno-attributes")
   endif()
 endif()
-
-if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-  # Check libc contains process_vm_readv
-  CMAKE_PUSH_CHECK_STATE(RESET)
-  set(CMAKE_REQUIRED_FLAGS "${CMAKE_CXX_FLAGS}")
-  CHECK_CXX_SOURCE_COMPILES("
-    #include <sys/uio.h>
-    int main() {
-      ssize_t rv = ::process_vm_readv(1, nullptr, 0, nullptr, 0, 0);
-      return 0;
-    }" SUPPORT_GLIBCXX_USE_PROCESS_VM_READV)
-  CMAKE_POP_CHECK_STATE()
-endif()
-
