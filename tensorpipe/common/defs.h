@@ -30,6 +30,7 @@
 /// in a single line. Usually uses as r-value so that destructor is called
 /// at end of line that created it, throwing the desired exception.
 /// (See TP_THROW).
+namespace tensorpipe {
 template <class TException>
 class ExceptionThrower final {
  public:
@@ -55,6 +56,7 @@ class ExceptionThrower final {
   std::function<TException(const std::string&)> exBuilder_;
   std::ostringstream oss_;
 };
+} // namespace tensorpipe
 
 //
 // Macros to throw commonly used exceptions.
@@ -80,8 +82,9 @@ class ExceptionThrower final {
   TP_TRIM_FILENAME(__FILE__) << ":" << TP_EXPAND_TO_STR(__LINE__)
 #define TP_LOG_PREFFIX "In " << __func__ << " at " << TP_LOG_LOC
 
-#define TP_THROW(ex_type, ...) \
-  ExceptionThrower<ex_type>(__VA_ARGS__).getStream() << TP_LOG_PREFFIX << " \""
+#define TP_THROW(ex_type, ...)                                     \
+  ::tensorpipe::ExceptionThrower<ex_type>(__VA_ARGS__).getStream() \
+      << TP_LOG_PREFFIX << " \""
 
 #define TP_THROW_EINVAL() TP_THROW(std::invalid_argument)
 
@@ -107,6 +110,7 @@ class ExceptionThrower final {
   TP_THROW_EINVAL() << TP_STRINGIFY(ptr) << " has nullptr value"
 
 // Safe-cast to std::error_code
+namespace tensorpipe {
 inline std::error_code toErrorCode(ssize_t e) {
   if (unlikely(e <= 0)) {
     TP_THROW_EINVAL() << "Error not a positive number. "
@@ -116,6 +120,7 @@ inline std::error_code toErrorCode(ssize_t e) {
   }
   return {static_cast<int>(e), std::system_category()};
 }
+} // namespace tensorpipe
 
 //
 // Simple logging to stderr. This macros can be replaced if a more
@@ -124,6 +129,7 @@ inline std::error_code toErrorCode(ssize_t e) {
 // exceptions for error handling, so the need for logging in
 // the library is reduced.
 //
+namespace tensorpipe {
 class LogEntry final {
  public:
   explicit LogEntry(char type) {
@@ -163,11 +169,16 @@ class LogEntry final {
  protected:
   std::ostringstream oss_;
 };
+} // namespace tensorpipe
 
-#define TP_LOG_DEBUG() LogEntry('V').getStream() << ' ' << TP_LOG_LOC << "] "
-#define TP_LOG_INFO() LogEntry('I').getStream() << ' ' << TP_LOG_LOC << "] "
-#define TP_LOG_WARNING() LogEntry('W').getStream() << ' ' << TP_LOG_LOC << "] "
-#define TP_LOG_ERROR() LogEntry('E').getStream() << ' ' << TP_LOG_LOC << "] "
+#define TP_LOG_DEBUG() \
+  ::tensorpipe::LogEntry('V').getStream() << ' ' << TP_LOG_LOC << "] "
+#define TP_LOG_INFO() \
+  ::tensorpipe::LogEntry('I').getStream() << ' ' << TP_LOG_LOC << "] "
+#define TP_LOG_WARNING() \
+  ::tensorpipe::LogEntry('W').getStream() << ' ' << TP_LOG_LOC << "] "
+#define TP_LOG_ERROR() \
+  ::tensorpipe::LogEntry('E').getStream() << ' ' << TP_LOG_LOC << "] "
 
 #define TP_LOG_DEBUG_IF(cond) \
   if (unlikely(cond))         \
@@ -257,6 +268,7 @@ class LogEntry final {
 // - level 8 is for generic transports stuff
 // - level 9 is for how transports deal with system resources
 
+namespace tensorpipe {
 inline unsigned long getVerbosityLevelInternal() {
   char* levelStr = std::getenv("TP_VERBOSE_LOGGING");
   if (levelStr == nullptr) {
@@ -269,6 +281,7 @@ inline unsigned long getVerbosityLevel() {
   static unsigned long level = getVerbosityLevelInternal();
   return level;
 }
+} // namespace tensorpipe
 
 #define TP_VLOG(level) TP_LOG_DEBUG_IF(level <= getVerbosityLevel())
 
