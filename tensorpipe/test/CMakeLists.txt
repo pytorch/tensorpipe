@@ -88,7 +88,7 @@ endif()
 
 
 add_subdirectory(${PROJECT_SOURCE_DIR}/third_party/googletest
-  ${PROJECT_BINARY_DIR}/third_party/googletest)
+  ${PROJECT_BINARY_DIR}/third_party/googletest EXCLUDE_FROM_ALL)
 
 target_link_libraries(tensorpipe_test PRIVATE
   tensorpipe
