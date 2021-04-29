@@ -185,21 +185,17 @@ SelectedChannels selectChannels(
     const std::unordered_map<Device, std::string>& remoteDeviceDescriptors =
         remoteDescriptorsMapIter->second;
 
-    // For now, only select a channel if it is supported by all pairs of
-    // relevant devices. This will be lifted once we introduce per-device pair
-    // channel selection.
-    bool connectsAllPairs = true;
-    std::vector<std::pair<Device, Device>> devicePairs;
+    bool selected = false;
     for (const auto& localDescIter : localDeviceDescriptors) {
       const Device& localDevice = localDescIter.first;
       const std::string& localDeviceDescriptor = localDescIter.second;
       for (const auto& remoteDescIter : remoteDeviceDescriptors) {
         const Device& remoteDevice = remoteDescIter.first;
         const std::string& remoteDeviceDescriptor = remoteDescIter.second;
+
         if (!channelContext.canCommunicateWithRemote(
                 localDeviceDescriptor, remoteDeviceDescriptor)) {
-          connectsAllPairs = false;
-          break;
+          continue;
         }
 
         if (result.channelForDevicePair.count({localDevice, remoteDevice}) !=
@@ -209,14 +205,12 @@ SelectedChannels selectChannels(
           continue;
         }
 
-        devicePairs.emplace_back(localDevice, remoteDevice);
+        selected = true;
+        result.channelForDevicePair[{localDevice, remoteDevice}] = channelName;
       }
     }
 
-    if (connectsAllPairs && !devicePairs.empty()) {
-      for (const auto& p : devicePairs) {
-        result.channelForDevicePair[p] = channelName;
-      }
+    if (selected) {
       result.descriptorsMap[channelName] = localDeviceDescriptors;
     }
   }
