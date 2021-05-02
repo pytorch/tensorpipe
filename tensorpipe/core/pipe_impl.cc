@@ -17,6 +17,7 @@
 #include <tensorpipe/common/address.h>
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/error_macros.h>
+#include <tensorpipe/core/channel_selection.h>
 #include <tensorpipe/core/context_impl.h>
 #include <tensorpipe/core/error.h>
 #include <tensorpipe/core/listener.h>
@@ -154,68 +155,6 @@ SelectedTransport selectTransport(
   TP_THROW_ASSERT() << "Could not find a viable transport";
   // Returning dummy value to silence compiler warning.
   return {};
-}
-
-struct SelectedChannels {
-  std::unordered_map<std::string, std::unordered_map<Device, std::string>>
-      descriptorsMap;
-  std::unordered_map<std::pair<Device, Device>, std::string>
-      channelForDevicePair;
-};
-
-SelectedChannels selectChannels(
-    const ContextImpl::TOrderedChannels& orderedChannels,
-    const std::unordered_map<
-        std::string,
-        std::unordered_map<Device, std::string>>& remoteDescriptorsMap) {
-  SelectedChannels result;
-
-  for (const auto& channelIter : orderedChannels) {
-    const std::string& channelName = std::get<0>(channelIter.second);
-    const channel::Context& channelContext = *std::get<1>(channelIter.second);
-
-    const auto& remoteDescriptorsMapIter =
-        remoteDescriptorsMap.find(channelName);
-    if (remoteDescriptorsMapIter == remoteDescriptorsMap.end()) {
-      continue;
-    }
-
-    const std::unordered_map<Device, std::string>& localDeviceDescriptors =
-        channelContext.deviceDescriptors();
-    const std::unordered_map<Device, std::string>& remoteDeviceDescriptors =
-        remoteDescriptorsMapIter->second;
-
-    bool selected = false;
-    for (const auto& localDescIter : localDeviceDescriptors) {
-      const Device& localDevice = localDescIter.first;
-      const std::string& localDeviceDescriptor = localDescIter.second;
-      for (const auto& remoteDescIter : remoteDeviceDescriptors) {
-        const Device& remoteDevice = remoteDescIter.first;
-        const std::string& remoteDeviceDescriptor = remoteDescIter.second;
-
-        if (!channelContext.canCommunicateWithRemote(
-                localDeviceDescriptor, remoteDeviceDescriptor)) {
-          continue;
-        }
-
-        if (result.channelForDevicePair.count({localDevice, remoteDevice}) !=
-            0) {
-          // A channel with higher priority has already been selected for this
-          // device pair.
-          continue;
-        }
-
-        selected = true;
-        result.channelForDevicePair[{localDevice, remoteDevice}] = channelName;
-      }
-    }
-
-    if (selected) {
-      result.descriptorsMap[channelName] = localDeviceDescriptors;
-    }
-  }
-
-  return result;
 }
 
 } // namespace
@@ -1010,12 +949,12 @@ void PipeImpl::onReadWhileServerWaitingForBrochure(
   nopBrochureAnswer.address = transport.address;
   nopBrochureAnswer.transportDomainDescriptor = transport.domainDescriptor;
 
-  SelectedChannels selectedChannels = selectChannels(
+  ChannelSelection channelSelection = selectChannels(
       context_->getOrderedChannels(), nopBrochure.channelDeviceDescriptors);
-  channelForDevicePair_ = std::move(selectedChannels.channelForDevicePair);
+  channelForDevicePair_ = std::move(channelSelection.channelForDevicePair);
   nopBrochureAnswer.channelForDevicePair = channelForDevicePair_;
 
-  for (auto& descriptorsIter : selectedChannels.descriptorsMap) {
+  for (auto& descriptorsIter : channelSelection.descriptorsMap) {
     const std::string& channelName = descriptorsIter.first;
     nopBrochureAnswer.channelRegistrationIds[channelName] =
         registerChannel(channelName);
@@ -1144,10 +1083,10 @@ void PipeImpl::onReadWhileClientWaitingForBrochureAnswer(
   }
 
   // Recompute the channel map based on this side's channels and priorities.
-  SelectedChannels selectedChannels = selectChannels(
+  ChannelSelection channelSelection = selectChannels(
       context_->getOrderedChannels(),
       nopBrochureAnswer.channelDeviceDescriptors);
-  channelForDevicePair_ = std::move(selectedChannels.channelForDevicePair);
+  channelForDevicePair_ = std::move(channelSelection.channelForDevicePair);
 
   // Verify that the locally and remotely computed channel maps are consistent.
   TP_THROW_ASSERT_IF(
@@ -1171,7 +1110,7 @@ void PipeImpl::onReadWhileClientWaitingForBrochureAnswer(
   }
 
   for (const auto& channelDeviceDescriptorsIter :
-       selectedChannels.descriptorsMap) {
+       channelSelection.descriptorsMap) {
     const std::string& channelName = channelDeviceDescriptorsIter.first;
     std::shared_ptr<channel::Context> channelContext =
         context_->getChannel(channelName);

@@ -15,6 +15,7 @@ add_executable(tensorpipe_test
   transport/uv/connection_test.cc
   transport/uv/sockaddr_test.cc
   transport/listener_test.cc
+  core/channel_selection_test.cc
   core/context_test.cc
   channel/basic/basic_test.cc
   channel/xth/xth_test.cc

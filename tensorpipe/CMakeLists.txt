@@ -14,6 +14,7 @@ add_library(tensorpipe
   common/fd.cc
   common/socket.cc
   common/system.cc
+  core/channel_selection.cc
   core/context.cc
   core/context_impl.cc
   core/error.cc
