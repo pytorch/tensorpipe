@@ -23,8 +23,31 @@ class CmaChannelTestHelper : public CpuChannelTestHelper {
 
 CmaChannelTestHelper helper;
 
+class CmaChannelTestSuite : public ChannelTestSuite {};
+
 } // namespace
+
+class CmaCanCommunicateWithRemoteTest : public CanCommunicateWithRemoteTest {
+ public:
+  void checkDeviceDescriptors(
+      const tensorpipe::channel::Context& ctx,
+      const std::unordered_map<tensorpipe::Device, std::string>&
+          localDeviceDescriptors,
+      const std::unordered_map<tensorpipe::Device, std::string>&
+          remoteDeviceDescriptors) const override {
+    for (const auto& localIt : localDeviceDescriptors) {
+      for (const auto& remoteIt : remoteDeviceDescriptors) {
+        EXPECT_TRUE(
+            ctx.canCommunicateWithRemote(localIt.second, remoteIt.second));
+      }
+    }
+  }
+};
+
+CHANNEL_TEST(CmaChannelTestSuite, CmaCanCommunicateWithRemote);
 
 INSTANTIATE_TEST_CASE_P(Cma, ChannelTestSuite, ::testing::Values(&helper));
 
 INSTANTIATE_TEST_CASE_P(Cma, CpuChannelTestSuite, ::testing::Values(&helper));
+
+INSTANTIATE_TEST_CASE_P(Cma, CmaChannelTestSuite, ::testing::Values(&helper));

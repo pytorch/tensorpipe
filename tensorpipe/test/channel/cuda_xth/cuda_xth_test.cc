@@ -30,7 +30,29 @@ class CudaXthChannelTestHelper : public CudaChannelTestHelper {
 
 CudaXthChannelTestHelper helper;
 
+class CudaXthChannelTestSuite : public ChannelTestSuite {};
+
 } // namespace
+
+class CudaXthCanCommunicateWithRemoteTest
+    : public CanCommunicateWithRemoteTest {
+ public:
+  void checkDeviceDescriptors(
+      const tensorpipe::channel::Context& ctx,
+      const std::unordered_map<tensorpipe::Device, std::string>&
+          localDeviceDescriptors,
+      const std::unordered_map<tensorpipe::Device, std::string>&
+          remoteDeviceDescriptors) const override {
+    for (const auto& localIt : localDeviceDescriptors) {
+      for (const auto& remoteIt : remoteDeviceDescriptors) {
+        EXPECT_TRUE(
+            ctx.canCommunicateWithRemote(localIt.second, remoteIt.second));
+      }
+    }
+  }
+};
+
+CHANNEL_TEST(CudaXthChannelTestSuite, CudaXthCanCommunicateWithRemote);
 
 INSTANTIATE_TEST_CASE_P(CudaXth, ChannelTestSuite, ::testing::Values(&helper));
 
@@ -42,4 +64,9 @@ INSTANTIATE_TEST_CASE_P(
 INSTANTIATE_TEST_CASE_P(
     CudaXth,
     CudaMultiGPUChannelTestSuite,
+    ::testing::Values(&helper));
+
+INSTANTIATE_TEST_CASE_P(
+    CudaXth,
+    CudaXthChannelTestSuite,
     ::testing::Values(&helper));

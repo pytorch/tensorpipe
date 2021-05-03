@@ -30,7 +30,29 @@ class CudaGdrChannelTestHelper : public CudaChannelTestHelper {
 
 CudaGdrChannelTestHelper helper;
 
+class CudaGdrChannelTestSuite : public ChannelTestSuite {};
+
 } // namespace
+
+class CudaGdrCanCommunicateWithRemoteTest
+    : public CanCommunicateWithRemoteTest {
+ public:
+  void checkDeviceDescriptors(
+      const tensorpipe::channel::Context& ctx,
+      const std::unordered_map<tensorpipe::Device, std::string>&
+          localDeviceDescriptors,
+      const std::unordered_map<tensorpipe::Device, std::string>&
+          remoteDeviceDescriptors) const override {
+    for (const auto& localIt : localDeviceDescriptors) {
+      for (const auto& remoteIt : remoteDeviceDescriptors) {
+        EXPECT_TRUE(
+            ctx.canCommunicateWithRemote(localIt.second, remoteIt.second));
+      }
+    }
+  }
+};
+
+CHANNEL_TEST(CudaGdrChannelTestSuite, CudaGdrCanCommunicateWithRemote);
 
 INSTANTIATE_TEST_CASE_P(CudaGdr, ChannelTestSuite, ::testing::Values(&helper));
 
@@ -42,4 +64,9 @@ INSTANTIATE_TEST_CASE_P(
 INSTANTIATE_TEST_CASE_P(
     CudaGdr,
     CudaMultiGPUChannelTestSuite,
+    ::testing::Values(&helper));
+
+INSTANTIATE_TEST_CASE_P(
+    CudaGdr,
+    CudaGdrChannelTestSuite,
     ::testing::Values(&helper));
