@@ -332,9 +332,9 @@ void ChannelImpl::waitOnEventAndCopyAndSyncWithSourceStream(RecvOpIter opIter) {
     TP_CUDA_CHECK(cudaStreamWaitEvent(op.stream, op.event, 0));
     TP_CUDA_CHECK(cudaMemcpyAsync(
         op.ptr, op.srcPtr, op.length, cudaMemcpyDeviceToDevice, op.stream));
-    TP_CUDA_CHECK(cudaEventRecord(op.event, op.stream));
     {
       CudaDeviceGuard guard(op.srcDeviceIdx);
+      TP_CUDA_CHECK(cudaEventRecord(op.event, op.stream));
       TP_CUDA_CHECK(cudaStreamWaitEvent(op.srcStream, op.event, 0));
     }
   } else if (op.isSrcCudaBuffer && !op.isCudaBuffer) {
