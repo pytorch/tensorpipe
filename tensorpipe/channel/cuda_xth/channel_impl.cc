@@ -28,11 +28,11 @@ namespace cuda_xth {
 namespace {
 
 struct Descriptor {
-  uintptr_t startEvent;
+  uintptr_t event;
   uintptr_t srcPtr;
   int srcDeviceIdx;
   uintptr_t srcStream;
-  NOP_STRUCTURE(Descriptor, startEvent, srcPtr, srcDeviceIdx, srcStream);
+  NOP_STRUCTURE(Descriptor, event, srcPtr, srcDeviceIdx, srcStream);
 };
 
 } // namespace
@@ -48,8 +48,8 @@ SendOperation::SendOperation(
       length(length),
       stream(stream),
       callback(std::move(callback)),
-      startEv(deviceIdx) {
-  startEv.record(stream);
+      event(deviceIdx) {
+  event.record(stream);
 }
 
 RecvOperation::RecvOperation(
@@ -66,14 +66,15 @@ RecvOperation::RecvOperation(
 void RecvOperation::process() {
   {
     CudaDeviceGuard guard(deviceIdx);
-    TP_CUDA_CHECK(cudaStreamWaitEvent(stream, startEvent, 0));
+    TP_CUDA_CHECK(cudaStreamWaitEvent(stream, event, 0));
     TP_CUDA_CHECK(
         cudaMemcpyAsync(ptr, srcPtr, length, cudaMemcpyDeviceToDevice, stream));
+    TP_CUDA_CHECK(cudaEventRecord(event, stream));
   }
-
-  CudaEvent stopEv(deviceIdx);
-  stopEv.record(stream);
-  stopEv.wait(srcStream, srcDeviceIdx);
+  {
+    CudaDeviceGuard guard(srcDeviceIdx);
+    TP_CUDA_CHECK(cudaStreamWaitEvent(srcStream, event, 0));
+  }
 }
 
 ChannelImpl::ChannelImpl(
@@ -151,7 +152,7 @@ void ChannelImpl::writeDescriptor(SendOpIter opIter) {
   Descriptor& nopDescriptor = nopHolder->getObject();
   static_assert(std::is_pointer<cudaEvent_t>::value, "");
   static_assert(std::is_pointer<cudaStream_t>::value, "");
-  nopDescriptor.startEvent = reinterpret_cast<uintptr_t>(op.startEv.raw());
+  nopDescriptor.event = reinterpret_cast<uintptr_t>(op.event.raw());
   nopDescriptor.srcDeviceIdx = op.deviceIdx;
   nopDescriptor.srcPtr = reinterpret_cast<uintptr_t>(op.ptr);
   nopDescriptor.srcStream = reinterpret_cast<uintptr_t>(op.stream);
@@ -250,7 +251,7 @@ void ChannelImpl::advanceRecvOperation(
       /*cond=*/!error_ && op.doneReadingDescriptor &&
           prevOpState >= RecvOperation::FINISHED,
       /*actions=*/
-      {&ChannelImpl::waitOnStartEventAndCopyAndSyncWithSourceStream,
+      {&ChannelImpl::waitOnEventAndCopyAndSyncWithSourceStream,
        &ChannelImpl::callRecvCallback,
        &ChannelImpl::writeCompletion});
 }
@@ -270,8 +271,7 @@ void ChannelImpl::readDescriptor(RecvOpIter opIter) {
           Descriptor& nopDescriptor = nopHolderIn->getObject();
           static_assert(std::is_pointer<cudaEvent_t>::value, "");
           static_assert(std::is_pointer<cudaStream_t>::value, "");
-          opIter->startEvent =
-              reinterpret_cast<cudaEvent_t>(nopDescriptor.startEvent);
+          opIter->event = reinterpret_cast<cudaEvent_t>(nopDescriptor.event);
           opIter->srcPtr = reinterpret_cast<const void*>(nopDescriptor.srcPtr);
           opIter->srcDeviceIdx = nopDescriptor.srcDeviceIdx;
           opIter->srcStream =
@@ -281,8 +281,7 @@ void ChannelImpl::readDescriptor(RecvOpIter opIter) {
       }));
 }
 
-void ChannelImpl::waitOnStartEventAndCopyAndSyncWithSourceStream(
-    RecvOpIter opIter) {
+void ChannelImpl::waitOnEventAndCopyAndSyncWithSourceStream(RecvOpIter opIter) {
   RecvOperation& op = *opIter;
 
   TP_VLOG(6) << "Channel " << id_ << " is copying payload (#"

@@ -41,7 +41,7 @@ struct SendOperation {
   TSendCallback callback;
 
   // Other stuff
-  CudaEvent startEv;
+  CudaEvent event;
 
   SendOperation(
       int deviceIdx,
@@ -69,7 +69,7 @@ struct RecvOperation {
   TRecvCallback callback;
 
   // Other data
-  cudaEvent_t startEvent;
+  cudaEvent_t event;
   const void* srcPtr;
   int srcDeviceIdx;
   cudaStream_t srcStream;
@@ -136,7 +136,7 @@ class ChannelImpl final
   void callSendCallback(SendOpIter opIter);
   // For recv operations:
   void readDescriptor(RecvOpIter opIter);
-  void waitOnStartEventAndCopyAndSyncWithSourceStream(RecvOpIter opIter);
+  void waitOnEventAndCopyAndSyncWithSourceStream(RecvOpIter opIter);
   void callRecvCallback(RecvOpIter opIter);
   void writeCompletion(RecvOpIter opIter);
 };
