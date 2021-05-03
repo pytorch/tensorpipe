@@ -55,7 +55,7 @@ struct SendOperation {
 };
 
 struct RecvOperation {
-  enum State { UNINITIALIZED, READING_DESCRIPTOR, FINISHED };
+  enum State { UNINITIALIZED, READING_DESCRIPTOR, COPYING, FINISHED };
 
   // Fields used by the state machine
   uint64_t sequenceNumber{0};
@@ -63,6 +63,7 @@ struct RecvOperation {
 
   // Progress flags
   bool doneReadingDescriptor{false};
+  bool doneCopying{false};
 
   // Arguments at creation
   bool isCudaBuffer;
@@ -97,6 +98,8 @@ class ChannelImpl final
       std::string id,
       std::shared_ptr<transport::Connection> descriptorConnection,
       std::shared_ptr<transport::Connection> completionConnection);
+
+  ~ChannelImpl() override;
 
  protected:
   // Implement the entry points called by ChannelImplBoilerplate.
@@ -144,6 +147,15 @@ class ChannelImpl final
   void waitOnEventAndCopyAndSyncWithSourceStream(RecvOpIter opIter);
   void callRecvCallback(RecvOpIter opIter);
   void writeCompletion(RecvOpIter opIter);
+
+  // Worker thread for async copies.
+  void deferCopy(std::function<void(const Error&)> callback);
+  void copyLoop();
+
+  std::deque<std::function<void(const Error&)>> pendingCopies_;
+  std::thread copyThread_;
+  std::mutex copyMutex_;
+  std::condition_variable copyCv_;
 };
 
 } // namespace cuda_xth

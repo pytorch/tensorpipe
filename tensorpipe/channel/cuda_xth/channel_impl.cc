@@ -98,7 +98,12 @@ ChannelImpl::ChannelImpl(
           std::move(context),
           std::move(id)),
       descriptorConnection_(std::move(descriptorConnection)),
-      completionConnection_(std::move(completionConnection)) {}
+      completionConnection_(std::move(completionConnection)) {
+  copyThread_ = std::thread([this]() {
+    setThreadName("TP_CudaXth_copy_loop");
+    copyLoop();
+  });
+}
 
 void ChannelImpl::initImplFromLoop() {
   context_->enroll(*this);
@@ -280,18 +285,22 @@ void ChannelImpl::advanceRecvOperation(
       /*cond=*/error_ && op.doneReadingDescriptor,
       /*actions=*/{&ChannelImpl::callRecvCallback});
 
+  recvOps_.attemptTransition(
+      opIter,
+      /*from=*/RecvOperation::READING_DESCRIPTOR,
+      /*to=*/RecvOperation::COPYING,
+      /*cond=*/!error_ && op.doneReadingDescriptor,
+      /*actions=*/{&ChannelImpl::waitOnEventAndCopyAndSyncWithSourceStream});
+
   // Needs to go after previous op to ensure predictable and consistent ordering
   // of write calls on the completion control connection.
   recvOps_.attemptTransition(
       opIter,
-      /*from=*/RecvOperation::READING_DESCRIPTOR,
+      /*from=*/RecvOperation::COPYING,
       /*to=*/RecvOperation::FINISHED,
-      /*cond=*/!error_ && op.doneReadingDescriptor &&
-          prevOpState >= RecvOperation::FINISHED,
+      /*cond=*/op.doneCopying && prevOpState >= RecvOperation::FINISHED,
       /*actions=*/
-      {&ChannelImpl::waitOnEventAndCopyAndSyncWithSourceStream,
-       &ChannelImpl::callRecvCallback,
-       &ChannelImpl::writeCompletion});
+      {&ChannelImpl::callRecvCallback, &ChannelImpl::writeCompletion});
 }
 
 void ChannelImpl::readDescriptor(RecvOpIter opIter) {
@@ -337,20 +346,43 @@ void ChannelImpl::waitOnEventAndCopyAndSyncWithSourceStream(RecvOpIter opIter) {
       CudaDeviceGuard guard(op.srcDeviceIdx);
       TP_CUDA_CHECK(cudaStreamWaitEvent(op.srcStream, op.event, 0));
     }
+    op.doneCopying = true;
+    TP_VLOG(6) << "Channel " << id_ << " done copying payload (#"
+               << op.sequenceNumber << ")";
   } else if (op.isSrcCudaBuffer && !op.isCudaBuffer) {
-    // TODO: This call blocks the host thread, defer it to an other thread.
-    TP_CUDA_CHECK(cudaMemcpyAsync(
-        op.ptr, op.srcPtr, op.length, cudaMemcpyDeviceToHost, op.srcStream));
+    deferCopy(callbackWrapper_([opIter](ChannelImpl& impl) {
+      if (!impl.error_) {
+        TP_CUDA_CHECK(cudaMemcpyAsync(
+            opIter->ptr,
+            opIter->srcPtr,
+            opIter->length,
+            cudaMemcpyDeviceToHost,
+            opIter->srcStream));
+      }
+      opIter->doneCopying = true;
+      TP_VLOG(6) << "Channel " << impl.id_ << " done copying payload (#"
+                 << opIter->sequenceNumber << ")";
+      impl.recvOps_.advanceOperation(opIter);
+    }));
   } else if (!op.isSrcCudaBuffer && op.isCudaBuffer) {
-    // TODO: This call can be made async but in that case we cannot call the
-    // SendOperation's callback until the copy has completed.
-    TP_CUDA_CHECK(
-        cudaMemcpy(op.ptr, op.srcPtr, op.length, cudaMemcpyHostToDevice));
+    deferCopy(callbackWrapper_([opIter](ChannelImpl& impl) {
+      if (!impl.error_) {
+        TP_CUDA_CHECK(cudaMemcpyAsync(
+            opIter->ptr,
+            opIter->srcPtr,
+            opIter->length,
+            cudaMemcpyHostToDevice,
+            opIter->stream));
+        TP_CUDA_CHECK(cudaStreamSynchronize(opIter->stream));
+      }
+      opIter->doneCopying = true;
+      TP_VLOG(6) << "Channel " << impl.id_ << " done copying payload (#"
+                 << opIter->sequenceNumber << ")";
+      impl.recvOps_.advanceOperation(opIter);
+    }));
   } else {
     TP_THROW_ASSERT() << "Attempting CPU-to-CPU transfer with CudaXth";
   }
-  TP_VLOG(6) << "Channel " << id_ << " done copying payload (#"
-             << op.sequenceNumber << ")";
 }
 
 void ChannelImpl::callRecvCallback(RecvOpIter opIter) {
@@ -376,6 +408,11 @@ void ChannelImpl::writeCompletion(RecvOpIter opIter) {
 }
 
 void ChannelImpl::handleErrorImpl() {
+  {
+    std::unique_lock<std::mutex> lock(copyMutex_);
+    copyCv_.notify_all();
+  }
+
   sendOps_.advanceAllOperations();
   recvOps_.advanceAllOperations();
 
@@ -383,6 +420,42 @@ void ChannelImpl::handleErrorImpl() {
   completionConnection_->close();
 
   context_->unenroll(*this);
+}
+
+void ChannelImpl::deferCopy(std::function<void(const Error&)> callback) {
+  std::unique_lock<std::mutex> lock(copyMutex_);
+  if (error_) {
+    callback(error_);
+  } else {
+    pendingCopies_.emplace_back(std::move(callback));
+    copyCv_.notify_all();
+  }
+}
+
+void ChannelImpl::copyLoop() {
+  for (;;) {
+    std::deque<std::function<void(const Error&)>> callbacks;
+    {
+      std::unique_lock<std::mutex> lock(copyMutex_);
+      if (pendingCopies_.empty()) {
+        if (error_) {
+          break;
+        } else {
+          copyCv_.wait(lock);
+        }
+      }
+
+      std::swap(callbacks, pendingCopies_);
+    }
+
+    for (auto& callback : callbacks) {
+      callback(error_);
+    }
+  }
+}
+
+ChannelImpl::~ChannelImpl() {
+  copyThread_.join();
 }
 
 } // namespace cuda_xth
