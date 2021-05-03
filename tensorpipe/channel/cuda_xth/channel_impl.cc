@@ -29,14 +29,14 @@ namespace {
 
 struct Descriptor {
   bool isSrcCudaBuffer;
-  uintptr_t event;
+  uintptr_t startEvent;
   uintptr_t srcPtr;
   int srcDeviceIdx;
   uintptr_t srcStream;
   NOP_STRUCTURE(
       Descriptor,
       isSrcCudaBuffer,
-      event,
+      startEvent,
       srcPtr,
       srcDeviceIdx,
       srcStream);
@@ -56,8 +56,8 @@ SendOperation::SendOperation(
       length(length),
       stream(stream),
       callback(std::move(callback)),
-      event(tensorpipe::in_place, deviceIdx) {
-  event->record(stream);
+      startEv(tensorpipe::in_place, deviceIdx) {
+  startEv->record(stream);
 }
 
 SendOperation::SendOperation(void* ptr, size_t length, TSendCallback callback)
@@ -177,8 +177,8 @@ void ChannelImpl::writeDescriptor(SendOpIter opIter) {
   nopDescriptor.isSrcCudaBuffer = op.isCudaBuffer;
   nopDescriptor.srcPtr = reinterpret_cast<uintptr_t>(op.ptr);
   if (op.isCudaBuffer) {
-    TP_DCHECK(op.event.has_value());
-    nopDescriptor.event = reinterpret_cast<uintptr_t>(op.event->raw());
+    TP_DCHECK(op.startEv.has_value());
+    nopDescriptor.startEvent = reinterpret_cast<uintptr_t>(op.startEv->raw());
     nopDescriptor.srcDeviceIdx = op.deviceIdx;
     nopDescriptor.srcStream = reinterpret_cast<uintptr_t>(op.stream);
   }
@@ -289,7 +289,7 @@ void ChannelImpl::advanceRecvOperation(
       /*cond=*/!error_ && op.doneReadingDescriptor &&
           prevOpState >= RecvOperation::FINISHED,
       /*actions=*/
-      {&ChannelImpl::waitOnEventAndCopyAndSyncWithSourceStream,
+      {&ChannelImpl::waitOnStartEventAndCopyAndSyncWithSourceStream,
        &ChannelImpl::callRecvCallback,
        &ChannelImpl::writeCompletion});
 }
@@ -312,7 +312,8 @@ void ChannelImpl::readDescriptor(RecvOpIter opIter) {
           opIter->isSrcCudaBuffer = nopDescriptor.isSrcCudaBuffer;
           opIter->srcPtr = reinterpret_cast<const void*>(nopDescriptor.srcPtr);
           if (opIter->isSrcCudaBuffer) {
-            opIter->event = reinterpret_cast<cudaEvent_t>(nopDescriptor.event);
+            opIter->startEv =
+                reinterpret_cast<cudaEvent_t>(nopDescriptor.startEvent);
             opIter->srcDeviceIdx = nopDescriptor.srcDeviceIdx;
             opIter->srcStream =
                 reinterpret_cast<cudaStream_t>(nopDescriptor.srcStream);
@@ -322,30 +323,29 @@ void ChannelImpl::readDescriptor(RecvOpIter opIter) {
       }));
 }
 
-void ChannelImpl::waitOnEventAndCopyAndSyncWithSourceStream(RecvOpIter opIter) {
+void ChannelImpl::waitOnStartEventAndCopyAndSyncWithSourceStream(
+    RecvOpIter opIter) {
   RecvOperation& op = *opIter;
 
   TP_VLOG(6) << "Channel " << id_ << " is copying payload (#"
              << op.sequenceNumber << ")";
   if (op.isSrcCudaBuffer && op.isCudaBuffer) {
     CudaDeviceGuard guard(op.deviceIdx);
-    TP_CUDA_CHECK(cudaStreamWaitEvent(op.stream, op.event, 0));
+    TP_CUDA_CHECK(cudaStreamWaitEvent(op.stream, op.startEv, 0));
     TP_CUDA_CHECK(cudaMemcpyAsync(
         op.ptr, op.srcPtr, op.length, cudaMemcpyDeviceToDevice, op.stream));
-    {
-      CudaDeviceGuard guard(op.srcDeviceIdx);
-      TP_CUDA_CHECK(cudaEventRecord(op.event, op.stream));
-      TP_CUDA_CHECK(cudaStreamWaitEvent(op.srcStream, op.event, 0));
-    }
+
+    CudaEvent stopEv(op.deviceIdx);
+    stopEv.record(op.stream);
+    stopEv.wait(op.srcStream, op.srcDeviceIdx);
   } else if (op.isSrcCudaBuffer && !op.isCudaBuffer) {
     // TODO: This call blocks the host thread, defer it to an other thread.
     TP_CUDA_CHECK(cudaMemcpyAsync(
         op.ptr, op.srcPtr, op.length, cudaMemcpyDeviceToHost, op.srcStream));
   } else if (!op.isSrcCudaBuffer && op.isCudaBuffer) {
-    // TODO: This call can be made async but in that case we cannot call the
-    // SendOperation's callback until the copy has completed.
-    TP_CUDA_CHECK(
-        cudaMemcpy(op.ptr, op.srcPtr, op.length, cudaMemcpyHostToDevice));
+    TP_CUDA_CHECK(cudaMemcpyAsync(
+        op.ptr, op.srcPtr, op.length, cudaMemcpyHostToDevice, op.stream));
+    TP_CUDA_CHECK(cudaStreamSynchronize(op.stream));
   } else {
     TP_THROW_ASSERT() << "Attempting CPU-to-CPU transfer with CudaXth";
   }
