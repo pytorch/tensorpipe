@@ -12,6 +12,8 @@
 #include <nop/status.h>
 #include <nop/utility/buffer_reader.h>
 #include <nop/utility/buffer_writer.h>
+#include <nop/utility/stream_reader.h>
+#include <nop/utility/stream_writer.h>
 
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/optional.h>
@@ -239,6 +241,22 @@ class NopHolder : public AbstractNopHolder {
  private:
   T object_;
 };
+
+template <typename T>
+std::string nopToString(T value) {
+  nop::Serializer<nop::StreamWriter<std::stringstream>> serializer;
+  serializer.Write(value);
+  return serializer.writer().stream().str();
+}
+
+template <typename T>
+T nopFromString(std::string serializedValue) {
+  nop::Deserializer<nop::StreamReader<std::stringstream>> serializer{
+      serializedValue};
+  T value;
+  serializer.Read(&value);
+  return value;
+}
 
 } // namespace tensorpipe
 

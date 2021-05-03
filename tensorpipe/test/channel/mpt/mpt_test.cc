@@ -39,6 +39,25 @@ class MptChannelTestSuite : public ChannelTestSuite {};
 
 } // namespace
 
+class MptCanCommunicateWithRemoteTest : public CanCommunicateWithRemoteTest {
+ public:
+  void checkDeviceDescriptors(
+      const tensorpipe::channel::Context& ctx,
+      const std::unordered_map<tensorpipe::Device, std::string>&
+          localDeviceDescriptors,
+      const std::unordered_map<tensorpipe::Device, std::string>&
+          remoteDeviceDescriptors) const override {
+    for (const auto& localIt : localDeviceDescriptors) {
+      for (const auto& remoteIt : remoteDeviceDescriptors) {
+        EXPECT_TRUE(
+            ctx.canCommunicateWithRemote(localIt.second, remoteIt.second));
+      }
+    }
+  }
+};
+
+CHANNEL_TEST(MptChannelTestSuite, MptCanCommunicateWithRemote);
+
 class ContextIsNotJoinedTest : public ChannelTestCase {
   // Because it's static we must define it out-of-line (until C++-17, where we
   // can mark this inline).

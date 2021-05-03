@@ -23,8 +23,31 @@ class XthChannelTestHelper : public CpuChannelTestHelper {
 
 XthChannelTestHelper helper;
 
+class XthChannelTestSuite : public ChannelTestSuite {};
+
 } // namespace
+
+class XthCanCommunicateWithRemoteTest : public CanCommunicateWithRemoteTest {
+ public:
+  void checkDeviceDescriptors(
+      const tensorpipe::channel::Context& ctx,
+      const std::unordered_map<tensorpipe::Device, std::string>&
+          localDeviceDescriptors,
+      const std::unordered_map<tensorpipe::Device, std::string>&
+          remoteDeviceDescriptors) const override {
+    for (const auto& localIt : localDeviceDescriptors) {
+      for (const auto& remoteIt : remoteDeviceDescriptors) {
+        EXPECT_TRUE(
+            ctx.canCommunicateWithRemote(localIt.second, remoteIt.second));
+      }
+    }
+  }
+};
+
+CHANNEL_TEST(XthChannelTestSuite, XthCanCommunicateWithRemote);
 
 INSTANTIATE_TEST_CASE_P(Xth, ChannelTestSuite, ::testing::Values(&helper));
 
 INSTANTIATE_TEST_CASE_P(Xth, CpuChannelTestSuite, ::testing::Values(&helper));
+
+INSTANTIATE_TEST_CASE_P(Xth, XthChannelTestSuite, ::testing::Values(&helper));
