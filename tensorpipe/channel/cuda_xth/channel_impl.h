@@ -34,6 +34,7 @@ struct SendOperation {
   bool doneReadingCompletion{false};
 
   // Arguments at creation
+  bool isCudaBuffer;
   int deviceIdx;
   void* ptr;
   size_t length;
@@ -41,7 +42,7 @@ struct SendOperation {
   TSendCallback callback;
 
   // Other stuff
-  CudaEvent event;
+  optional<CudaEvent> event;
 
   SendOperation(
       int deviceIdx,
@@ -49,6 +50,8 @@ struct SendOperation {
       size_t length,
       cudaStream_t stream,
       TSendCallback callback);
+
+  SendOperation(void* ptr, size_t length, TSendCallback callback);
 };
 
 struct RecvOperation {
@@ -62,25 +65,27 @@ struct RecvOperation {
   bool doneReadingDescriptor{false};
 
   // Arguments at creation
+  bool isCudaBuffer;
   void* const ptr;
   const size_t length;
-  const int deviceIdx;
-  const cudaStream_t stream;
+  int deviceIdx;
+  cudaStream_t stream;
   TRecvCallback callback;
 
   // Other data
+  bool isSrcCudaBuffer;
   cudaEvent_t event;
   const void* srcPtr;
   int srcDeviceIdx;
   cudaStream_t srcStream;
+
+  RecvOperation(CpuBuffer buffer, size_t length, TRecvCallback callback);
 
   RecvOperation(
       int deviceIdx,
       CudaBuffer buffer,
       size_t length,
       TRecvCallback callback);
-
-  void process();
 };
 
 class ChannelImpl final

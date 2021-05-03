@@ -28,11 +28,18 @@ namespace cuda_xth {
 namespace {
 
 struct Descriptor {
+  bool isSrcCudaBuffer;
   uintptr_t event;
   uintptr_t srcPtr;
   int srcDeviceIdx;
   uintptr_t srcStream;
-  NOP_STRUCTURE(Descriptor, event, srcPtr, srcDeviceIdx, srcStream);
+  NOP_STRUCTURE(
+      Descriptor,
+      isSrcCudaBuffer,
+      event,
+      srcPtr,
+      srcDeviceIdx,
+      srcStream);
 };
 
 } // namespace
@@ -43,39 +50,42 @@ SendOperation::SendOperation(
     size_t length,
     cudaStream_t stream,
     TSendCallback callback)
-    : deviceIdx(deviceIdx),
+    : isCudaBuffer(true),
+      deviceIdx(deviceIdx),
       ptr(ptr),
       length(length),
       stream(stream),
       callback(std::move(callback)),
-      event(deviceIdx) {
-  event.record(stream);
+      event(tensorpipe::in_place, deviceIdx) {
+  event->record(stream);
 }
+
+SendOperation::SendOperation(void* ptr, size_t length, TSendCallback callback)
+    : isCudaBuffer(false),
+      ptr(ptr),
+      length(length),
+      callback(std::move(callback)) {}
 
 RecvOperation::RecvOperation(
     int deviceIdx,
     CudaBuffer buffer,
     size_t length,
     TRecvCallback callback)
-    : ptr(buffer.ptr),
+    : isCudaBuffer(true),
+      ptr(buffer.ptr),
       length(length),
       deviceIdx(deviceIdx),
       stream(buffer.stream),
       callback(std::move(callback)) {}
 
-void RecvOperation::process() {
-  {
-    CudaDeviceGuard guard(deviceIdx);
-    TP_CUDA_CHECK(cudaStreamWaitEvent(stream, event, 0));
-    TP_CUDA_CHECK(
-        cudaMemcpyAsync(ptr, srcPtr, length, cudaMemcpyDeviceToDevice, stream));
-    TP_CUDA_CHECK(cudaEventRecord(event, stream));
-  }
-  {
-    CudaDeviceGuard guard(srcDeviceIdx);
-    TP_CUDA_CHECK(cudaStreamWaitEvent(srcStream, event, 0));
-  }
-}
+RecvOperation::RecvOperation(
+    CpuBuffer buffer,
+    size_t length,
+    TRecvCallback callback)
+    : isCudaBuffer(false),
+      ptr(buffer.ptr),
+      length(length),
+      callback(std::move(callback)) {}
 
 ChannelImpl::ChannelImpl(
     ConstructorToken token,
@@ -99,17 +109,29 @@ void ChannelImpl::sendImplFromLoop(
     Buffer buffer,
     size_t length,
     TSendCallback callback) {
-  int deviceIdx = cudaDeviceForPointer(
-      context_->getCudaLib(), buffer.unwrap<CudaBuffer>().ptr);
-  SendOpIter opIter = sendOps_.emplaceBack(
-      sequenceNumber,
-      deviceIdx,
-      buffer.unwrap<CudaBuffer>().ptr,
-      length,
-      buffer.unwrap<CudaBuffer>().stream,
-      std::move(callback));
+  if (buffer.device().type == kCudaDeviceType) {
+    int deviceIdx = cudaDeviceForPointer(
+        context_->getCudaLib(), buffer.unwrap<CudaBuffer>().ptr);
+    SendOpIter opIter = sendOps_.emplaceBack(
+        sequenceNumber,
+        deviceIdx,
+        buffer.unwrap<CudaBuffer>().ptr,
+        length,
+        buffer.unwrap<CudaBuffer>().stream,
+        std::move(callback));
 
-  sendOps_.advanceOperation(opIter);
+    sendOps_.advanceOperation(opIter);
+  } else if (buffer.device().type == kCpuDeviceType) {
+    SendOpIter opIter = sendOps_.emplaceBack(
+        sequenceNumber,
+        buffer.unwrap<CpuBuffer>().ptr,
+        length,
+        std::move(callback));
+
+    sendOps_.advanceOperation(opIter);
+  } else {
+    TP_THROW_ASSERT() << "Unsupported device " << buffer.device().toString();
+  }
 }
 
 void ChannelImpl::advanceSendOperation(
@@ -152,10 +174,14 @@ void ChannelImpl::writeDescriptor(SendOpIter opIter) {
   Descriptor& nopDescriptor = nopHolder->getObject();
   static_assert(std::is_pointer<cudaEvent_t>::value, "");
   static_assert(std::is_pointer<cudaStream_t>::value, "");
-  nopDescriptor.event = reinterpret_cast<uintptr_t>(op.event.raw());
-  nopDescriptor.srcDeviceIdx = op.deviceIdx;
+  nopDescriptor.isSrcCudaBuffer = op.isCudaBuffer;
   nopDescriptor.srcPtr = reinterpret_cast<uintptr_t>(op.ptr);
-  nopDescriptor.srcStream = reinterpret_cast<uintptr_t>(op.stream);
+  if (op.isCudaBuffer) {
+    TP_DCHECK(op.event.has_value());
+    nopDescriptor.event = reinterpret_cast<uintptr_t>(op.event->raw());
+    nopDescriptor.srcDeviceIdx = op.deviceIdx;
+    nopDescriptor.srcStream = reinterpret_cast<uintptr_t>(op.stream);
+  }
 
   TP_VLOG(6) << "Channel " << id_ << " is writing descriptor (#"
              << op.sequenceNumber << ")";
@@ -200,16 +226,28 @@ void ChannelImpl::recvImplFromLoop(
     Buffer buffer,
     size_t length,
     TRecvCallback callback) {
-  int deviceIdx = cudaDeviceForPointer(
-      context_->getCudaLib(), buffer.unwrap<CudaBuffer>().ptr);
-  RecvOpIter opIter = recvOps_.emplaceBack(
-      sequenceNumber,
-      deviceIdx,
-      buffer.unwrap<CudaBuffer>(),
-      length,
-      std::move(callback));
+  if (buffer.device().type == kCudaDeviceType) {
+    int deviceIdx = cudaDeviceForPointer(
+        context_->getCudaLib(), buffer.unwrap<CudaBuffer>().ptr);
+    RecvOpIter opIter = recvOps_.emplaceBack(
+        sequenceNumber,
+        deviceIdx,
+        buffer.unwrap<CudaBuffer>(),
+        length,
+        std::move(callback));
 
-  recvOps_.advanceOperation(opIter);
+    recvOps_.advanceOperation(opIter);
+  } else if (buffer.device().type == kCpuDeviceType) {
+    RecvOpIter opIter = recvOps_.emplaceBack(
+        sequenceNumber,
+        buffer.unwrap<CpuBuffer>(),
+        length,
+        std::move(callback));
+
+    recvOps_.advanceOperation(opIter);
+  } else {
+    TP_THROW_ASSERT() << "Unsupported device " << buffer.device().toString();
+  }
 }
 
 void ChannelImpl::advanceRecvOperation(
@@ -271,11 +309,14 @@ void ChannelImpl::readDescriptor(RecvOpIter opIter) {
           Descriptor& nopDescriptor = nopHolderIn->getObject();
           static_assert(std::is_pointer<cudaEvent_t>::value, "");
           static_assert(std::is_pointer<cudaStream_t>::value, "");
-          opIter->event = reinterpret_cast<cudaEvent_t>(nopDescriptor.event);
+          opIter->isSrcCudaBuffer = nopDescriptor.isSrcCudaBuffer;
           opIter->srcPtr = reinterpret_cast<const void*>(nopDescriptor.srcPtr);
-          opIter->srcDeviceIdx = nopDescriptor.srcDeviceIdx;
-          opIter->srcStream =
-              reinterpret_cast<cudaStream_t>(nopDescriptor.srcStream);
+          if (opIter->isSrcCudaBuffer) {
+            opIter->event = reinterpret_cast<cudaEvent_t>(nopDescriptor.event);
+            opIter->srcDeviceIdx = nopDescriptor.srcDeviceIdx;
+            opIter->srcStream =
+                reinterpret_cast<cudaStream_t>(nopDescriptor.srcStream);
+          }
         }
         impl.recvOps_.advanceOperation(opIter);
       }));
@@ -286,7 +327,28 @@ void ChannelImpl::waitOnEventAndCopyAndSyncWithSourceStream(RecvOpIter opIter) {
 
   TP_VLOG(6) << "Channel " << id_ << " is copying payload (#"
              << op.sequenceNumber << ")";
-  op.process();
+  if (op.isSrcCudaBuffer && op.isCudaBuffer) {
+    CudaDeviceGuard guard(op.deviceIdx);
+    TP_CUDA_CHECK(cudaStreamWaitEvent(op.stream, op.event, 0));
+    TP_CUDA_CHECK(cudaMemcpyAsync(
+        op.ptr, op.srcPtr, op.length, cudaMemcpyDeviceToDevice, op.stream));
+    TP_CUDA_CHECK(cudaEventRecord(op.event, op.stream));
+    {
+      CudaDeviceGuard guard(op.srcDeviceIdx);
+      TP_CUDA_CHECK(cudaStreamWaitEvent(op.srcStream, op.event, 0));
+    }
+  } else if (op.isSrcCudaBuffer && !op.isCudaBuffer) {
+    // TODO: This call blocks the host thread, defer it to an other thread.
+    TP_CUDA_CHECK(cudaMemcpyAsync(
+        op.ptr, op.srcPtr, op.length, cudaMemcpyDeviceToHost, op.srcStream));
+  } else if (!op.isSrcCudaBuffer && op.isCudaBuffer) {
+    // TODO: This call can be made async but in that case we cannot call the
+    // SendOperation's callback until the copy has completed.
+    TP_CUDA_CHECK(
+        cudaMemcpy(op.ptr, op.srcPtr, op.length, cudaMemcpyHostToDevice));
+  } else {
+    TP_THROW_ASSERT() << "Attempting CPU-to-CPU transfer with CudaXth";
+  }
   TP_VLOG(6) << "Channel " << id_ << " done copying payload (#"
              << op.sequenceNumber << ")";
 }

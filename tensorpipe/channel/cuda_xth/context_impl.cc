@@ -18,12 +18,23 @@
 #include <tensorpipe/channel/cuda_xth/channel_impl.h>
 #include <tensorpipe/common/cuda.h>
 #include <tensorpipe/common/defs.h>
+#include <tensorpipe/common/nop.h>
 #include <tensorpipe/common/optional.h>
 #include <tensorpipe/common/system.h>
 
 namespace tensorpipe {
 namespace channel {
 namespace cuda_xth {
+
+namespace {
+
+struct DeviceDescriptor {
+  std::string deviceType;
+  std::string descriptor;
+  NOP_STRUCTURE(DeviceDescriptor, deviceType, descriptor);
+};
+
+} // namespace
 
 std::shared_ptr<ContextImpl> ContextImpl::create() {
   Error error;
@@ -49,6 +60,8 @@ std::shared_ptr<ContextImpl> ContextImpl::create() {
   const std::string domainDescriptor = oss.str();
 
   std::unordered_map<Device, std::string> deviceDescriptors;
+  deviceDescriptors[Device{kCpuDeviceType, 0}] =
+      nopToString(DeviceDescriptor{kCpuDeviceType, domainDescriptor});
   for (const auto& device : getCudaDevices(cudaLib)) {
     cudaDeviceProp props;
     TP_CUDA_CHECK(cudaGetDeviceProperties(&props, device.index));
@@ -61,7 +74,8 @@ std::shared_ptr<ContextImpl> ContextImpl::create() {
                  << device.index << " does not have unified addressing";
       return nullptr;
     }
-    deviceDescriptors[device] = domainDescriptor;
+    deviceDescriptors[device] =
+        nopToString(DeviceDescriptor{kCudaDeviceType, domainDescriptor});
   }
 
   if (deviceDescriptors.empty()) {
@@ -89,6 +103,22 @@ std::shared_ptr<Channel> ContextImpl::createChannel(
 
 size_t ContextImpl::numConnectionsNeeded() const {
   return 2;
+}
+
+bool ContextImpl::canCommunicateWithRemote(
+    const std::string& localDeviceDescriptor,
+    const std::string& remoteDeviceDescriptor) const {
+  auto nopLocalDeviceDescriptor =
+      nopFromString<DeviceDescriptor>(localDeviceDescriptor);
+  auto nopRemoteDeviceDescriptor =
+      nopFromString<DeviceDescriptor>(remoteDeviceDescriptor);
+  if (nopLocalDeviceDescriptor.deviceType == kCpuDeviceType &&
+      nopRemoteDeviceDescriptor.deviceType == kCpuDeviceType) {
+    return false;
+  }
+
+  return nopLocalDeviceDescriptor.descriptor ==
+      nopRemoteDeviceDescriptor.descriptor;
 }
 
 const CudaLib& ContextImpl::getCudaLib() {

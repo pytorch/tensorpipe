@@ -45,8 +45,14 @@ class CudaXthCanCommunicateWithRemoteTest
           remoteDeviceDescriptors) const override {
     for (const auto& localIt : localDeviceDescriptors) {
       for (const auto& remoteIt : remoteDeviceDescriptors) {
-        EXPECT_TRUE(
-            ctx.canCommunicateWithRemote(localIt.second, remoteIt.second));
+        if (localIt.first.type == tensorpipe::kCpuDeviceType &&
+            remoteIt.first.type == tensorpipe::kCpuDeviceType) {
+          EXPECT_FALSE(
+              ctx.canCommunicateWithRemote(localIt.second, remoteIt.second));
+        } else {
+          EXPECT_TRUE(
+              ctx.canCommunicateWithRemote(localIt.second, remoteIt.second));
+        }
       }
     }
   }
@@ -64,6 +70,11 @@ INSTANTIATE_TEST_CASE_P(
 INSTANTIATE_TEST_CASE_P(
     CudaXth,
     CudaMultiGPUChannelTestSuite,
+    ::testing::Values(&helper));
+
+INSTANTIATE_TEST_CASE_P(
+    CudaXth,
+    CudaXDTTChannelTestSuite,
     ::testing::Values(&helper));
 
 INSTANTIATE_TEST_CASE_P(
