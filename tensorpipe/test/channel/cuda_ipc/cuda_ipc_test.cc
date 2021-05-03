@@ -34,6 +34,26 @@ class CudaIpcChannelTestSuite : public ChannelTestSuite {};
 
 } // namespace
 
+class CudaIpcCanCommunicateWithRemoteTest
+    : public CanCommunicateWithRemoteTest {
+ public:
+  void checkDeviceDescriptors(
+      const tensorpipe::channel::Context& ctx,
+      const std::unordered_map<tensorpipe::Device, std::string>&
+          localDeviceDescriptors,
+      const std::unordered_map<tensorpipe::Device, std::string>&
+          remoteDeviceDescriptors) const override {
+    for (const auto& localIt : localDeviceDescriptors) {
+      for (const auto& remoteIt : remoteDeviceDescriptors) {
+        EXPECT_TRUE(
+            ctx.canCommunicateWithRemote(localIt.second, remoteIt.second));
+      }
+    }
+  }
+};
+
+CHANNEL_TEST(CudaIpcChannelTestSuite, CudaIpcCanCommunicateWithRemote);
+
 class CannotCommunicateInSameProcessTest : public ChannelTestCase {
  public:
   void run(ChannelTestHelper* /* unused */) override {

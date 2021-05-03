@@ -37,6 +37,32 @@ class CudaBasicChannelTestSuite : public ChannelTestSuite {};
 
 } // namespace
 
+class CudaBasicCanCommunicateWithRemoteTest
+    : public CanCommunicateWithRemoteTest {
+ public:
+  void checkDeviceDescriptors(
+      const tensorpipe::channel::Context& ctx,
+      const std::unordered_map<tensorpipe::Device, std::string>&
+          localDeviceDescriptors,
+      const std::unordered_map<tensorpipe::Device, std::string>&
+          remoteDeviceDescriptors) const override {
+    for (const auto& localIt : localDeviceDescriptors) {
+      for (const auto& remoteIt : remoteDeviceDescriptors) {
+        bool canCommunicateWithRemote =
+            ctx.canCommunicateWithRemote(localIt.second, remoteIt.second);
+        if (localIt.first.type == tensorpipe::kCpuDeviceType &&
+            remoteIt.first.type == tensorpipe::kCpuDeviceType) {
+          EXPECT_FALSE(canCommunicateWithRemote);
+        } else {
+          EXPECT_TRUE(canCommunicateWithRemote);
+        }
+      }
+    }
+  }
+};
+
+CHANNEL_TEST(CudaBasicChannelTestSuite, CudaBasicCanCommunicateWithRemote);
+
 class CannotCommunicateCpuToCpuTest : public ChannelTestCase {
  public:
   void run(ChannelTestHelper* /* unused */) override {
@@ -60,6 +86,30 @@ class CannotCommunicateCpuToCpuTest : public ChannelTestCase {
 };
 
 CHANNEL_TEST(CudaBasicChannelTestSuite, CannotCommunicateCpuToCpu);
+
+class CanCommunicateGpuToGpuTest : public ChannelTestCase {
+ public:
+  void run(ChannelTestHelper* /* unused */) override {
+    ForkedThreadPeerGroup pg;
+    pg.spawn(
+        [&]() {
+          auto cpuContext = tensorpipe::channel::basic::create();
+          auto ctx =
+              tensorpipe::channel::cuda_basic::create(std::move(cpuContext));
+          auto deviceDescriptors = ctx->deviceDescriptors();
+          auto it = deviceDescriptors.find(
+              tensorpipe::Device{tensorpipe::kCudaDeviceType, 0});
+          EXPECT_FALSE(it == deviceDescriptors.end());
+          auto descriptor = it->second;
+          EXPECT_TRUE(ctx->canCommunicateWithRemote(descriptor, descriptor));
+        },
+        [&]() {
+          // Do nothing.
+        });
+  }
+};
+
+CHANNEL_TEST(CudaBasicChannelTestSuite, CanCommunicateGpuToGpu);
 
 INSTANTIATE_TEST_CASE_P(
     CudaBasic,

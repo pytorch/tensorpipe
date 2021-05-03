@@ -288,6 +288,53 @@ class ClientServerChannelTestCase : public ChannelTestCase {
   std::shared_ptr<PeerGroup> peers_;
 };
 
+namespace tensorpipe {
+
+NOP_EXTERNAL_STRUCTURE(Device, type, index);
+
+} // namespace tensorpipe
+
+class CanCommunicateWithRemoteTest : public ChannelTestCase {
+ public:
+  void run(ChannelTestHelper* helper) override {
+    auto pg = helper->makePeerGroup();
+    pg->spawn(
+        [&]() {
+          auto ctx = helper->makeContext("server");
+          auto localDeviceDescriptors = ctx->deviceDescriptors();
+          pg->send(
+              PeerGroup::kClient,
+              tensorpipe::nopToString(localDeviceDescriptors));
+          auto remoteDeviceDescriptors = tensorpipe::nopFromString<
+              std::unordered_map<tensorpipe::Device, std::string>>(
+              pg->recv(PeerGroup::kServer));
+
+          checkDeviceDescriptors(
+              *ctx, localDeviceDescriptors, remoteDeviceDescriptors);
+        },
+        [&]() {
+          auto ctx = helper->makeContext("client");
+          auto localDeviceDescriptors = ctx->deviceDescriptors();
+          pg->send(
+              PeerGroup::kServer,
+              tensorpipe::nopToString(localDeviceDescriptors));
+          auto remoteDeviceDescriptors = tensorpipe::nopFromString<
+              std::unordered_map<tensorpipe::Device, std::string>>(
+              pg->recv(PeerGroup::kClient));
+
+          checkDeviceDescriptors(
+              *ctx, localDeviceDescriptors, remoteDeviceDescriptors);
+        });
+  }
+
+  virtual void checkDeviceDescriptors(
+      const tensorpipe::channel::Context& ctx,
+      const std::unordered_map<tensorpipe::Device, std::string>&
+          localDeviceDescriptors,
+      const std::unordered_map<tensorpipe::Device, std::string>&
+          remoteDeviceDescriptors) const = 0;
+};
+
 class ChannelTestSuite : public ::testing::TestWithParam<ChannelTestHelper*> {};
 
 // Register a channel test.
