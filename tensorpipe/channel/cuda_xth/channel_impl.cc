@@ -69,10 +69,10 @@ void RecvOperation::process() {
     TP_CUDA_CHECK(cudaStreamWaitEvent(stream, event, 0));
     TP_CUDA_CHECK(
         cudaMemcpyAsync(ptr, srcPtr, length, cudaMemcpyDeviceToDevice, stream));
-    TP_CUDA_CHECK(cudaEventRecord(event, stream));
   }
   {
     CudaDeviceGuard guard(srcDeviceIdx);
+    TP_CUDA_CHECK(cudaEventRecord(event, stream));
     TP_CUDA_CHECK(cudaStreamWaitEvent(srcStream, event, 0));
   }
 }
