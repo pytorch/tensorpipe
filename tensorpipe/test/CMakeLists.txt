@@ -66,6 +66,7 @@ if(TP_USE_CUDA)
     channel/channel_test_cuda_multi_gpu.cc
     channel/channel_test_cuda_xdtt.cc
     common/cuda_test.cc
+    core/pipe_cuda_test.cc
     )
 
   cuda_add_library(tensorpipe_cuda_kernel channel/kernel.cu)
