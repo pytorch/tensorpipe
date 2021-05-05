@@ -20,6 +20,11 @@
 #include <tensorpipe/tensorpipe.h>
 #include <tensorpipe/test/peer_group.h>
 
+#if TENSORPIPE_SUPPORTS_CUDA
+#include <tensorpipe/common/cuda.h>
+#include <tensorpipe/common/cuda_buffer.h>
+#endif // TENSORPIPE_SUPPORTS_CUDA
+
 struct Storage {
   std::vector<std::shared_ptr<void>> payloads;
   std::vector<std::pair<std::shared_ptr<void>, tensorpipe::Buffer>> tensors;
@@ -63,21 +68,41 @@ inline std::pair<tensorpipe::Message, Storage> makeMessage(
 
   for (auto& tensor : imessage.tensors) {
     size_t length = tensor.data.length();
+    tensorpipe::Buffer buffer;
+    std::shared_ptr<void> data;
     if (tensor.device.type == tensorpipe::kCpuDeviceType) {
-      auto data = std::unique_ptr<uint8_t, std::default_delete<uint8_t[]>>(
+      data = std::unique_ptr<uint8_t, std::default_delete<uint8_t[]>>(
           new uint8_t[length]);
       std::memcpy(data.get(), &tensor.data[0], length);
-      tensorpipe::Buffer buffer = tensorpipe::CpuBuffer{.ptr = data.get()};
-      message.tensors.push_back({
-          .buffer = buffer,
-          .length = length,
-          .targetDevice = tensor.targetDevice,
-          .metadata = tensor.metadata,
-      });
-      storage.tensors.push_back({std::move(data), std::move(buffer)});
+      buffer = tensorpipe::CpuBuffer{.ptr = data.get()};
+#if TENSORPIPE_SUPPORTS_CUDA
+    } else if (tensor.device.type == tensorpipe::kCudaDeviceType) {
+      void* cudaPtr;
+      TP_CUDA_CHECK(cudaSetDevice(tensor.device.index));
+      TP_CUDA_CHECK(cudaMalloc(&cudaPtr, length));
+      data = std::unique_ptr<void, std::function<void(void*)>>(
+          cudaPtr, [](void* ptr) { TP_CUDA_CHECK(cudaFree(ptr)); });
+      // TODO: Properly dispose of stream when done.
+      cudaStream_t stream;
+      TP_CUDA_CHECK(cudaStreamCreateWithFlags(&stream, cudaStreamNonBlocking));
+      buffer = tensorpipe::CudaBuffer{
+          .ptr = data.get(),
+          .stream = stream,
+      };
+      TP_CUDA_CHECK(cudaMemcpyAsync(
+          cudaPtr, &tensor.data[0], length, cudaMemcpyDefault, stream));
+#endif // TENSORPIPE_SUPPORTS_CUDA
     } else {
       ADD_FAILURE() << "Unexpected source device: " << tensor.device.toString();
     }
+
+    message.tensors.push_back({
+        .buffer = buffer,
+        .length = length,
+        .targetDevice = tensor.targetDevice,
+        .metadata = tensor.metadata,
+    });
+    storage.tensors.push_back({std::move(data), std::move(buffer)});
   }
 
   message.metadata = imessage.metadata;
@@ -113,6 +138,23 @@ inline std::pair<tensorpipe::Allocation, Storage> makeAllocation(
       tensorpipe::Buffer buffer = tensorpipe::CpuBuffer{.ptr = data.get()};
       allocation.tensors.push_back({.buffer = buffer});
       storage.tensors.push_back({std::move(data), std::move(buffer)});
+#if TENSORPIPE_SUPPORTS_CUDA
+    } else if (targetDevice.type == tensorpipe::kCudaDeviceType) {
+      void* cudaPtr;
+      TP_CUDA_CHECK(cudaSetDevice(targetDevice.index));
+      TP_CUDA_CHECK(cudaMalloc(&cudaPtr, tensor.length));
+      auto data = std::unique_ptr<void, std::function<void(void*)>>(
+          cudaPtr, [](void* ptr) { TP_CUDA_CHECK(cudaFree(ptr)); });
+      // TODO: Properly dispose of stream when done.
+      cudaStream_t stream;
+      TP_CUDA_CHECK(cudaStreamCreateWithFlags(&stream, cudaStreamNonBlocking));
+      tensorpipe::Buffer buffer = tensorpipe::CudaBuffer{
+          .ptr = data.get(),
+          .stream = stream,
+      };
+      allocation.tensors.push_back({.buffer = buffer});
+      storage.tensors.push_back({std::move(data), std::move(buffer)});
+#endif // TENSORPIPE_SUPPORTS_CUDA
     } else {
       ADD_FAILURE() << "Unexpected target device: " << targetDevice.toString();
     }
@@ -215,15 +257,24 @@ inline void expectDescriptorAndStorageMatchMessage(
     EXPECT_TRUE(
         !imessage.tensors[idx].targetDevice ||
         imessage.tensors[idx].targetDevice == device);
-    EXPECT_EQ(
-        imessage.tensors[idx].data.length(), descriptor.tensors[idx].length);
+    size_t length = descriptor.tensors[idx].length;
+    EXPECT_EQ(imessage.tensors[idx].data.length(), length);
     if (device.type == tensorpipe::kCpuDeviceType) {
       const tensorpipe::CpuBuffer& buffer =
           storage.tensors[idx].second.unwrap<tensorpipe::CpuBuffer>();
       EXPECT_EQ(
           imessage.tensors[idx].data,
-          std::string(
-              static_cast<char*>(buffer.ptr), descriptor.tensors[idx].length));
+          std::string(static_cast<char*>(buffer.ptr), length));
+#if TENSORPIPE_SUPPORTS_CUDA
+    } else if (device.type == tensorpipe::kCudaDeviceType) {
+      const tensorpipe::CudaBuffer& buffer =
+          storage.tensors[idx].second.unwrap<tensorpipe::CudaBuffer>();
+      std::string data(length, 0x0);
+      TP_CUDA_CHECK(cudaStreamSynchronize(buffer.stream));
+      TP_CUDA_CHECK(
+          cudaMemcpy(&data[0], buffer.ptr, length, cudaMemcpyDefault));
+      EXPECT_EQ(imessage.tensors[idx].data, data.data());
+#endif // TENSORPIPE_SUPPORTS_CUDA
     } else {
       ADD_FAILURE() << "Unexpected target device: " << device.toString();
     }
@@ -257,10 +308,24 @@ inline std::shared_ptr<tensorpipe::Context> makeContext() {
 #if TENSORPIPE_HAS_SHM_TRANSPORT
   context->registerTransport(1, "shm", tensorpipe::transport::shm::create());
 #endif // TENSORPIPE_HAS_SHM_TRANSPORT
-  context->registerChannel(0, "basic", tensorpipe::channel::basic::create());
+  context->registerChannel(100, "basic", tensorpipe::channel::basic::create());
 #if TENSORPIPE_HAS_CMA_CHANNEL
-  context->registerChannel(1, "cma", tensorpipe::channel::cma::create());
+  context->registerChannel(101, "cma", tensorpipe::channel::cma::create());
 #endif // TENSORPIPE_HAS_CMA_CHANNEL
+
+#if TENSORPIPE_SUPPORTS_CUDA
+  context->registerChannel(
+      10,
+      "cuda_basic",
+      tensorpipe::channel::cuda_basic::create(
+          tensorpipe::channel::basic::create()));
+#if TENSORPIPE_HAS_CUDA_IPC_CHANNEL
+  context->registerChannel(
+      11, "cuda_ipc", tensorpipe::channel::cuda_ipc::create());
+#endif // TENSORPIPE_HAS_CUDA_IPC_CHANNEL
+  context->registerChannel(
+      12, "cuda_xth", tensorpipe::channel::cuda_xth::create());
+#endif // TENSORPIPE_SUPPORTS_CUDA
 
   return context;
 }
