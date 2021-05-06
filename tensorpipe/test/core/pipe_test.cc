@@ -444,3 +444,85 @@ TEST(Pipe, MultipleWriteReadWithSomeTargetDevices) {
   MultipleWriteReadWithSomeTargetDevicesTest test;
   test.run();
 }
+
+class WriteFromBothThenReadTest : public ClientServerPipeTestCase {
+  InlineMessage imessage1_ = {
+      .payloads =
+          {
+              {.data = "payload #1.1", .metadata = "payload metadata #1.1"},
+          },
+      .tensors =
+          {
+              {
+                  .data = "tensor #1.1",
+                  .metadata = "tensor metadata #1.1",
+                  .device = Device{kCpuDeviceType, 0},
+              },
+          },
+      .metadata = "message metadata",
+  };
+
+  InlineMessage imessage2_ = {
+      .payloads =
+          {
+              {.data = "payload #2.1", .metadata = "payload metadata #2.1"},
+          },
+      .tensors =
+          {
+              {
+                  .data = "tensor #2.1",
+                  .metadata = "tensor metadata #2.1",
+                  .device = Device{kCpuDeviceType, 0},
+              },
+          },
+      .metadata = "message metadata",
+  };
+
+ public:
+  void server(Pipe& pipe) override {
+    Message message;
+    Storage writeStorage;
+    std::tie(message, writeStorage) = makeMessage(imessage1_);
+    auto writeFuture = pipeWriteWithFuture(pipe, message);
+
+    auto readFuture = pipeReadWithFuture(
+        pipe,
+        /*targetDevices=*/
+        {
+            Device{kCpuDeviceType, 0},
+        });
+
+    writeFuture.get();
+
+    Descriptor descriptor;
+    Storage readStorage;
+    std::tie(descriptor, readStorage) = readFuture.get();
+    expectDescriptorAndStorageMatchMessage(descriptor, readStorage, imessage2_);
+  }
+
+  void client(Pipe& pipe) override {
+    Message message;
+    Storage writeStorage;
+    std::tie(message, writeStorage) = makeMessage(imessage2_);
+    auto writeFuture = pipeWriteWithFuture(pipe, message);
+
+    auto readFuture = pipeReadWithFuture(
+        pipe,
+        /*targetDevices=*/
+        {
+            Device{kCpuDeviceType, 0},
+        });
+
+    writeFuture.get();
+
+    Descriptor descriptor;
+    Storage readStorage;
+    std::tie(descriptor, readStorage) = readFuture.get();
+    expectDescriptorAndStorageMatchMessage(descriptor, readStorage, imessage1_);
+  }
+};
+
+TEST(Pipe, WriteFromBothThenRead) {
+  WriteFromBothThenReadTest test;
+  test.run();
+}
