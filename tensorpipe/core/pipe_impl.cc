@@ -951,6 +951,8 @@ void PipeImpl::onReadWhileServerWaitingForBrochure(
 
   ChannelSelection channelSelection = selectChannels(
       context_->getOrderedChannels(), nopBrochure.channelDeviceDescriptors);
+  TP_VLOG(3) << "Pipe " << id_ << " selected channels:" << std::endl
+             << channelSelection.toString();
   channelForDevicePair_ = std::move(channelSelection.channelForDevicePair);
   nopBrochureAnswer.channelForDevicePair = channelForDevicePair_;
 
@@ -1086,6 +1088,8 @@ void PipeImpl::onReadWhileClientWaitingForBrochureAnswer(
   ChannelSelection channelSelection = selectChannels(
       context_->getOrderedChannels(),
       nopBrochureAnswer.channelDeviceDescriptors);
+  TP_VLOG(3) << "Pipe " << id_ << " selected channels:" << std::endl
+             << channelSelection.toString();
   channelForDevicePair_ = std::move(channelSelection.channelForDevicePair);
 
   // Verify that the locally and remotely computed channel maps are consistent.

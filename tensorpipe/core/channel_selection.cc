@@ -8,6 +8,8 @@
 
 #include <tensorpipe/core/channel_selection.h>
 
+#include <sstream>
+
 namespace tensorpipe {
 
 ChannelSelection selectChannels(
@@ -63,6 +65,17 @@ ChannelSelection selectChannels(
   }
 
   return result;
+}
+
+std::string ChannelSelection::toString() const {
+  std::ostringstream oss;
+
+  for (const auto& it : channelForDevicePair) {
+    oss << "{" << it.first.first.toString() << ", "
+        << it.first.second.toString() << "}: " << it.second << std::endl;
+  }
+
+  return oss.str();
 }
 
 } // namespace tensorpipe

@@ -21,6 +21,8 @@ struct ChannelSelection {
       descriptorsMap;
   std::unordered_map<std::pair<Device, Device>, std::string>
       channelForDevicePair;
+
+  std::string toString() const;
 };
 
 ChannelSelection selectChannels(
