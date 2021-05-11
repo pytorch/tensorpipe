@@ -11,7 +11,6 @@
 #include <getopt.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 
 #include <tensorpipe/benchmark/channel_registry.h>
 #include <tensorpipe/benchmark/transport_registry.h>
