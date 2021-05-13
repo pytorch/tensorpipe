@@ -63,7 +63,7 @@ Error callProcessVmReadv(
   }
   return Error::kSuccess;
 #else
-  return TP_CREATE_ERROR(SystemError, "process_vm_readv", ENOSYS)
+  return TP_CREATE_ERROR(SystemError, "process_vm_readv", ENOSYS);
 #endif
 }
 
