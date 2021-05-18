@@ -82,15 +82,18 @@ auto applyFunc(IbvNic& subject, TMethod&& method, TArgsTuple&& args) {
 // https://lore.kernel.org/linux-rdma/1455207177-11949-1-git-send-email-artemyko@mellanox.com/
 // The check we use to verify if the peer memory client is active is the same as
 // NCCL's one, see
-// https://github.com/NVIDIA/nccl/blob/911d61f214d45c98df1ee8c0ac23c33fb94b63de/src/transport/net_ib.cc#L216-L227
+// https://github.com/NVIDIA/nccl/blob/ca8485b0d01ca6dfa02f4454932011e68b461175/src/transport/net_ib.cc#L216-L230
 // Whereas TensorFlow does it slightly differently, see
 // https://github.com/tensorflow/networking/blob/671e2548b602f93a6c6502432b8bc131b5cc4914/tensorflow_networking/gdr/gdr_memory_manager.cc#L43-L60
-static std::string kNvidiaPeerMemoryClientPath =
+static std::string kNvMemModulePath =
     "/sys/kernel/mm/memory_peers/nv_mem/version";
+static std::string kNvidiaPeermemModulePath =
+    "/sys/kernel/mm/memory_peers/nvidia-peermem/version";
 
 bool isNvidiaPeerMemoryClientActive() {
-  int rv = ::access(kNvidiaPeerMemoryClientPath.c_str(), F_OK);
-  return rv >= 0;
+  int rv1 = ::access(kNvMemModulePath.c_str(), F_OK);
+  int rv2 = ::access(kNvidiaPeermemModulePath.c_str(), F_OK);
+  return rv1 >= 0 || rv2 >= 0;
 }
 
 // The PCI topology is a tree, with the root being the host bridge, the leaves
