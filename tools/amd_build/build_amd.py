@@ -22,43 +22,16 @@ parser = argparse.ArgumentParser(description='Top-level script for HIPifying, fi
 parser.add_argument(
     '--project-directory',
     type=str,
-    default=os.path.normpath(os.path.join(
-        os.path.realpath(__file__),
-        os.pardir,
-        os.pardir,
-        os.pardir,
-    )),
     help="The root of the project. (default: %(default)s)",
-    required=False)
+    required=True)
 
 parser.add_argument(
     '--output-directory',
     type=str,
-    default=os.path.normpath(os.path.join(
-        os.path.realpath(__file__),
-        os.pardir,
-        os.pardir,
-        os.pardir,
-    )),
     help="The Directory to Store the Hipified Project",
-    required=False)
-
-parser.add_argument(
-    '--list-files-only',
-    action='store_true',
-    help="Only print the list of hipify files.")
+    required=True)
 
 args = parser.parse_args()
-
-amd_build_dir = os.path.dirname(os.path.realpath(__file__))
-proj_dir = os.path.join(os.path.dirname(os.path.dirname(amd_build_dir)))
-
-if args.project_directory:
-    proj_dir = args.project_directory
-
-out_dir = proj_dir
-if args.output_directory:
-    out_dir = args.output_directory
 
 includes = [
     '*'
@@ -67,9 +40,10 @@ includes = [
 ignores = [
 ]
 
-hipify_python.hipify(
-    project_directory=proj_dir,
-    output_directory=out_dir,
+# capturing the return value which is a dict[filename]:HipifyResult
+HipifyFinalResult = hipify_python.hipify(
+    project_directory=args.project_directory,
+    output_directory=args.output_directory,
     includes=includes,
     ignores=ignores,
     is_pytorch_extension=True)
