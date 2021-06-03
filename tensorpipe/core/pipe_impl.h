@@ -29,11 +29,6 @@
 #include <tensorpipe/core/pipe.h>
 #include <tensorpipe/transport/context.h>
 
-#include <tensorpipe/common/cpu_buffer.h>
-#if TENSORPIPE_SUPPORTS_CUDA
-#include <tensorpipe/common/cuda_buffer.h>
-#endif // TENSORPIPE_SUPPORTS_CUDA
-
 namespace tensorpipe {
 
 class ContextImpl;
