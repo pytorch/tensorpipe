@@ -4,7 +4,13 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-add_executable(tensorpipe_test
+# List of source files that we need to build tensorpipe_test executable.
+set(TP_TEST_PUBLIC_SRCS)
+set(TP_TEST_PRIVATE_SRCS)
+set(TP_TEST_CUDA_PRIVATE_SRCS)
+set(TP_TEST_CUDA_KERNEL_SRCS)
+
+list(APPEND TP_TEST_PUBLIC_SRCS
   test.cc
   test_environment.cc
   transport/context_test.cc
@@ -27,7 +33,7 @@ add_executable(tensorpipe_test
   )
 
 if(TP_ENABLE_SHM)
-  target_sources(tensorpipe_test PRIVATE
+  list(APPEND TP_TEST_PRIVATE_SRCS
     common/epoll_loop_test.cc
     common/ringbuffer_test.cc
     common/shm_ringbuffer_test.cc
@@ -40,7 +46,7 @@ if(TP_ENABLE_SHM)
 endif()
 
 if(TP_ENABLE_IBV)
-  target_sources(tensorpipe_test PRIVATE
+  list(APPEND TP_TEST_PRIVATE_SRCS
     common/epoll_loop_test.cc
     common/ringbuffer_test.cc
     transport/ibv/connection_test.cc
@@ -50,18 +56,21 @@ if(TP_ENABLE_IBV)
 endif()
 
 if(TP_ENABLE_CMA)
-  target_sources(tensorpipe_test PRIVATE
+  list(APPEND TP_TEST_PRIVATE_SRCS
     channel/cma/cma_test.cc
     )
   add_subdirectory(channel/cma)
 endif()
+
+add_executable(tensorpipe_test ${TP_TEST_PUBLIC_SRCS})
+target_sources(tensorpipe_test PRIVATE ${TP_TEST_PRIVATE_SRCS})
 
 if(TP_USE_CUDA)
   find_package(CUDA REQUIRED)
   target_link_libraries(tensorpipe_test PRIVATE ${CUDA_LIBRARIES})
   target_include_directories(tensorpipe_test PRIVATE ${CUDA_INCLUDE_DIRS})
 
-  target_sources(tensorpipe_test PRIVATE
+  list(APPEND TP_TEST_CUDA_PRIVATE_SRCS
     channel/channel_test_cuda.cc
     channel/channel_test_cuda_multi_gpu.cc
     channel/channel_test_cuda_xdtt.cc
@@ -69,23 +78,28 @@ if(TP_USE_CUDA)
     core/pipe_cuda_test.cc
     )
 
-  cuda_add_library(tensorpipe_cuda_kernel channel/kernel.cu)
-  target_link_libraries(tensorpipe_test PRIVATE tensorpipe_cuda_kernel)
-
-  target_sources(tensorpipe_test PRIVATE
+  list(APPEND TP_TEST_CUDA_PRIVATE_SRCS
     channel/cuda_xth/cuda_xth_test.cc
     channel/cuda_basic/cuda_basic_test.cc
     )
 
   if(TP_ENABLE_CUDA_IPC)
-    target_sources(tensorpipe_test PRIVATE
+    list(APPEND TP_TEST_CUDA_PRIVATE_SRCS
       channel/cuda_ipc/cuda_ipc_test.cc
       )
   endif()
 
-  target_sources(tensorpipe_test PRIVATE
+  list(APPEND TP_TEST_CUDA_PRIVATE_SRCS
     channel/cuda_gdr/cuda_gdr_test.cc
     )
+
+  target_sources(tensorpipe_test PRIVATE ${TP_TEST_CUDA_PRIVATE_SRCS})
+
+  list(APPEND TP_TEST_CUDA_KERNEL_SRCS
+    channel/kernel.cu
+    )
+  cuda_add_library(tensorpipe_cuda_kernel ${TP_TEST_CUDA_KERNEL_SRCS})
+  target_link_libraries(tensorpipe_test PRIVATE tensorpipe_cuda_kernel)
 endif()
 
 
