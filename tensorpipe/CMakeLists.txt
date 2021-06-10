@@ -98,6 +98,7 @@ if(TP_USE_CUDA)
   target_sources(tensorpipe PRIVATE
     common/cuda_buffer.cc)
   set(TP_PUBLIC_HEADERS ${TP_PUBLIC_HEADERS}
+    tensorpipe_cuda.h
     common/cuda_buffer.h)
   set(TENSORPIPE_SUPPORTS_CUDA 1)
 
