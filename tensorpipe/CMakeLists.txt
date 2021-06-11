@@ -4,16 +4,21 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# List of source files that we need to build libtensorpipe.
-set(TP_PUBLIC_SRCS)
-set(TP_PRIVATE_SRCS)
-set(TP_CUDA_PRIVATE_SRCS)
+# TP_SRCS is the list of source files that we need to build libtensorpipe.
+set(TP_SRCS)
+set(TP_CUDA_SRCS)
 
-# List of header files that we need to install.
+# TP_PUBLIC_HDRS is the list of public header files that we need to install.
 set(TP_PUBLIC_HDRS)
-set(TP_CUDA_HDRS)
+set(TP_PUBLIC_CUDA_HDRS)
 
-list(APPEND TP_PUBLIC_SRCS
+# TP_LINK_LIBRARIES is list of dependent libraries to be linked
+set(TP_LINK_LIBRARIES)
+
+# TP_INCLUDE_DIRS is list of include path to be used
+set(TP_INCLUDE_DIRS)
+
+list(APPEND TP_SRCS
   channel/error.cc
   channel/helpers.cc
   common/address.cc
@@ -53,7 +58,7 @@ list(APPEND TP_PUBLIC_HDRS
 
 ### basic
 
-list(APPEND TP_PRIVATE_SRCS
+list(APPEND TP_SRCS
   channel/basic/channel_impl.cc
   channel/basic/context_impl.cc
   channel/basic/factory.cc)
@@ -61,7 +66,7 @@ list(APPEND TP_PUBLIC_HDRS
   channel/basic/factory.h)
 
 ### xth
-list(APPEND TP_PRIVATE_SRCS
+list(APPEND TP_SRCS
   channel/xth/channel_impl.cc
   channel/xth/context_impl.cc
   channel/xth/factory.cc)
@@ -72,7 +77,7 @@ list(APPEND TP_PUBLIC_HDRS
 tp_conditional_backend(
   TP_ENABLE_CMA "Enable cross-memory attach channel" "LINUX")
 if(TP_ENABLE_CMA)
-  list(APPEND TP_PRIVATE_SRCS
+  list(APPEND TP_SRCS
     channel/cma/channel_impl.cc
     channel/cma/context_impl.cc
     channel/cma/factory.cc)
@@ -83,7 +88,7 @@ endif()
 
 ### mpt
 
-list(APPEND TP_PRIVATE_SRCS
+list(APPEND TP_SRCS
   channel/mpt/channel_impl.cc
   channel/mpt/context_impl.cc
   channel/mpt/factory.cc)
@@ -93,29 +98,33 @@ list(APPEND TP_PUBLIC_HDRS
 ## CUDA channels
 
 if(TP_USE_CUDA)
-  list(APPEND TP_CUDA_PRIVATE_SRCS
+  find_package(CUDA REQUIRED)
+  list(APPEND TP_LINK_LIBRARIES ${CUDA_LIBRARIES})
+  list(APPEND TP_INCLUDE_DIRS ${CUDA_INCLUDE_DIRS})
+
+  list(APPEND TP_CUDA_SRCS
     common/cuda_buffer.cc)
-  list(APPEND TP_CUDA_HDRS
+  list(APPEND TP_PUBLIC_CUDA_HDRS
     common/cuda_buffer.h)
   set(TENSORPIPE_SUPPORTS_CUDA 1)
 
   ### cuda_xth
 
-  list(APPEND TP_CUDA_PRIVATE_SRCS
+  list(APPEND TP_CUDA_SRCS
     channel/cuda_xth/channel_impl.cc
     channel/cuda_xth/context_impl.cc
     channel/cuda_xth/factory.cc)
-  list(APPEND TP_CUDA_HDRS
+  list(APPEND TP_PUBLIC_CUDA_HDRS
     channel/cuda_xth/factory.h)
 
   ### cuda_basic
 
-  list(APPEND TP_CUDA_PRIVATE_SRCS
+  list(APPEND TP_CUDA_SRCS
     channel/cuda_basic/channel_impl.cc
     channel/cuda_basic/context_impl.cc
     channel/cuda_basic/factory.cc
     common/cuda_loop.cc)
-  list(APPEND TP_CUDA_HDRS
+  list(APPEND TP_PUBLIC_CUDA_HDRS
     channel/cuda_basic/factory.h)
 
   ### cuda_ipc
@@ -123,11 +132,11 @@ if(TP_USE_CUDA)
   tp_conditional_backend(
     TP_ENABLE_CUDA_IPC "Enable CUDA inter-process communication channel" "TP_USE_CUDA")
   if(TP_ENABLE_CUDA_IPC)
-    list(APPEND TP_CUDA_PRIVATE_SRCS
+    list(APPEND TP_CUDA_SRCS
       channel/cuda_ipc/channel_impl.cc
       channel/cuda_ipc/context_impl.cc
       channel/cuda_ipc/factory.cc)
-    list(APPEND TP_CUDA_HDRS
+    list(APPEND TP_PUBLIC_CUDA_HDRS
       channel/cuda_ipc/factory.h)
     set(TENSORPIPE_HAS_CUDA_IPC_CHANNEL 1)
   endif()
@@ -137,12 +146,12 @@ if(TP_USE_CUDA)
   tp_conditional_backend(
     TP_ENABLE_CUDA_GDR "Enable CUDA GpuDirect (InfiniBand) channel" "LINUX")
   if(TP_ENABLE_CUDA_GDR)
-    list(APPEND TP_CUDA_PRIVATE_SRCS
+    list(APPEND TP_CUDA_SRCS
       common/ibv.cc
       channel/cuda_gdr/channel_impl.cc
       channel/cuda_gdr/context_impl.cc
       channel/cuda_gdr/factory.cc)
-    list(APPEND TP_CUDA_HDRS
+    list(APPEND TP_PUBLIC_CUDA_HDRS
       channel/cuda_gdr/error.h
       channel/cuda_gdr/factory.h)
     set(TENSORPIPE_HAS_CUDA_GDR_CHANNEL 1)
@@ -153,7 +162,7 @@ endif()
 
 ### uv
 
-list(APPEND TP_PRIVATE_SRCS
+list(APPEND TP_SRCS
   transport/uv/connection_impl.cc
   transport/uv/context_impl.cc
   transport/uv/error.cc
@@ -167,12 +176,16 @@ list(APPEND TP_PUBLIC_HDRS
   transport/uv/factory.h
   transport/uv/utility.h)
 
+# Add uv package
+find_package(uv REQUIRED)
+list(APPEND TP_LINK_LIBRARIES uv::uv)
+
 ### shm
 
 tp_conditional_backend(
   TP_ENABLE_SHM "Enable shared-memory transport" "LINUX")
 if(TP_ENABLE_SHM)
-  list(APPEND TP_PRIVATE_SRCS
+  list(APPEND TP_SRCS
     common/epoll_loop.cc
     common/shm_segment.cc
     transport/shm/connection_impl.cc
@@ -191,7 +204,7 @@ endif()
 tp_conditional_backend(
   TP_ENABLE_IBV "Enable InfiniBand transport" "LINUX")
 if(TP_ENABLE_IBV)
-  list(APPEND TP_PRIVATE_SRCS
+  list(APPEND TP_SRCS
     common/epoll_loop.cc
     common/ibv.cc
     transport/ibv/connection_impl.cc
@@ -211,35 +224,23 @@ endif()
 
 # Handling the file lists
 if(TP_USE_CUDA)
-  list(APPEND TP_PRIVATE_SRCS ${TP_CUDA_PRIVATE_SRCS})
-  list(APPEND TP_PUBLIC_HDRS ${TP_CUDA_HDRS})
-endif()
-
-# Add the library target
-add_library(tensorpipe ${TP_STATIC_OR_SHARED} ${TP_PUBLIC_SRCS})
-target_sources(tensorpipe PRIVATE ${TP_PRIVATE_SRCS})
-
-# Set target properties
-if(BUILD_SHARED_LIBS)
-  set_target_properties(tensorpipe PROPERTIES POSITION_INDEPENDENT_CODE 1)
-endif()
-
-# Add uv package
-find_package(uv REQUIRED)
-target_link_libraries(tensorpipe PRIVATE uv::uv)
-
-# If CUDA is required find the CUDA package and add to link deps
-if(TP_USE_CUDA)
-  find_package(CUDA REQUIRED)
-  target_link_libraries(tensorpipe PUBLIC ${CUDA_LIBRARIES})
-  target_include_directories(tensorpipe PUBLIC ${CUDA_INCLUDE_DIRS})
+  list(APPEND TP_SRCS ${TP_CUDA_SRCS})
+  list(APPEND TP_PUBLIC_HDRS ${TP_PUBLIC_CUDA_HDRS})
 endif()
 
 # MAC OS specific library deps
 if(APPLE)
   find_library(CF CoreFoundation)
   find_library(IOKIT IOKit)
-  target_link_libraries(tensorpipe PRIVATE ${CF} ${IOKIT})
+  list(APPEND TP_LINK_LIBRARIES ${CF} ${IOKIT})
+endif()
+
+# Add the tensorpipe library target
+add_library(tensorpipe ${TP_STATIC_OR_SHARED} ${TP_SRCS})
+
+# Set target properties
+if(BUILD_SHARED_LIBS)
+  set_target_properties(tensorpipe PROPERTIES POSITION_INDEPENDENT_CODE 1)
 endif()
 
 
@@ -247,7 +248,7 @@ endif()
 
 configure_file(config.h.in config.h)
 
-target_include_directories(tensorpipe PUBLIC
+list(APPEND TP_INCLUDE_DIRS
   $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}>
   $<BUILD_INTERFACE:${PROJECT_BINARY_DIR}>
   $<INSTALL_INTERFACE:${TP_INSTALL_INCLUDEDIR}>)
@@ -258,8 +259,11 @@ target_include_directories(tensorpipe PUBLIC
 # We should keep libnop headers private as they should not be exposed to downstream users,
 # but they're currently transitively included by tensorpipe/transport/connection.h (which
 # is still unclear whether it should be a public or private header).
-target_include_directories(tensorpipe PUBLIC $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/third_party/libnop/include>)
+list(APPEND TP_INCLUDE_DIRS $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/third_party/libnop/include>)
 
+# Add all the link libraries and include directories to the tensorpipe target and keeping the link PUBLIC
+target_link_libraries(tensorpipe PRIVATE ${TP_LINK_LIBRARIES})
+target_include_directories(tensorpipe PUBLIC ${TP_INCLUDE_DIRS})
 
 ## Python bindings
 
