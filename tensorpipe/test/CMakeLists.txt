@@ -99,6 +99,8 @@ if(TP_USE_CUDA)
 
   cuda_add_library(tensorpipe_cuda_kernel channel/kernel.cu)
   list(APPEND TP_TEST_LINK_LIBRARIES tensorpipe_cuda_kernel)
+
+  list(APPEND TP_TEST_LINK_LIBRARIES tensorpipe_cuda)
 endif()
 
 add_subdirectory(${PROJECT_SOURCE_DIR}/third_party/googletest
