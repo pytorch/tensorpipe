@@ -9,6 +9,7 @@
 #include <tensorpipe/benchmark/channel_registry.h>
 
 #include <tensorpipe/tensorpipe.h>
+#include <tensorpipe/tensorpipe_cuda.h>
 
 TP_DEFINE_SHARED_REGISTRY(
     TensorpipeChannelRegistry,

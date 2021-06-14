@@ -13,7 +13,6 @@
 #include <utility>
 #include <vector>
 
-#include <tensorpipe/config.h>
 #include <tensorpipe/transport/context.h>
 
 #include <tensorpipe/channel/context.h>

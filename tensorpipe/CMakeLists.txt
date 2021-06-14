@@ -100,7 +100,6 @@ if(TP_USE_CUDA)
   set(TP_PUBLIC_HEADERS ${TP_PUBLIC_HEADERS}
     tensorpipe_cuda.h
     common/cuda_buffer.h)
-  set(TENSORPIPE_SUPPORTS_CUDA 1)
 
   ### cuda_xth
 
@@ -150,6 +149,8 @@ if(TP_USE_CUDA)
       channel/cuda_gdr/factory.h)
     set(TENSORPIPE_HAS_CUDA_GDR_CHANNEL 1)
   endif()
+
+  configure_file(config_cuda.h.in config_cuda.h)
 endif()
 
 ## Transports
@@ -282,3 +283,7 @@ endforeach()
 
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/config.h
         DESTINATION ${TP_INSTALL_INCLUDEDIR}/tensorpipe)
+if(TP_USE_CUDA)
+  install(FILES ${CMAKE_CURRENT_BINARY_DIR}/config_cuda.h
+          DESTINATION ${TP_INSTALL_INCLUDEDIR}/tensorpipe)
+endif()
