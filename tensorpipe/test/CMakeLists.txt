@@ -60,6 +60,7 @@ if(TP_USE_CUDA)
   find_package(CUDA REQUIRED)
   target_link_libraries(tensorpipe_test PRIVATE ${CUDA_LIBRARIES})
   target_include_directories(tensorpipe_test PRIVATE ${CUDA_INCLUDE_DIRS})
+  target_compile_definitions(tensorpipe_test PRIVATE TP_USE_CUDA)
 
   target_sources(tensorpipe_test PRIVATE
     channel/channel_test_cuda.cc

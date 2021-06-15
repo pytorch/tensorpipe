@@ -8,6 +8,21 @@
 
 #pragma once
 
-// For now we just provide this file so that we can migrate users over to it.
-// Once that's done, we can actually move some things from tensorpipe.h here.
-#include <tensorpipe/tensorpipe.h>
+#include <tensorpipe/config_cuda.h>
+
+// High-level API
+
+#include <tensorpipe/common/cuda_buffer.h>
+
+// Channels
+
+#include <tensorpipe/channel/cuda_basic/factory.h>
+#include <tensorpipe/channel/cuda_xth/factory.h>
+
+#if TENSORPIPE_HAS_CUDA_GDR_CHANNEL
+#include <tensorpipe/channel/cuda_gdr/factory.h>
+#endif // TENSORPIPE_HAS_CUDA_GDR_CHANNEL
+
+#if TENSORPIPE_HAS_CUDA_IPC_CHANNEL
+#include <tensorpipe/channel/cuda_ipc/factory.h>
+#endif // TENSORPIPE_HAS_CUDA_IPC_CHANNEL
