@@ -114,7 +114,14 @@ class CudaLib {
   }
     TP_FORALL_CUDA_SYMBOLS(TP_LOAD_SYMBOL)
 #undef TP_LOAD_SYMBOL
-    TP_CUDA_DRIVER_CHECK(lib, lib.init(0));
+    CUresult result = lib.init(0);
+    // If the driver doesn't find any devices it fails to init (beats me why)
+    // but we must support this case, by disabling the channels, rather than
+    // throwing. Hence we treat it as if we couldn't find the driver.
+    if (result == CUDA_ERROR_NO_DEVICE) {
+      return std::make_tuple(std::move(error), CudaLib());
+    }
+    TP_CUDA_DRIVER_CHECK(lib, result);
     return std::make_tuple(Error::kSuccess, std::move(lib));
   }
 
