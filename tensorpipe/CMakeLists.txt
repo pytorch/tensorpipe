@@ -100,6 +100,7 @@ list(APPEND TP_SRCS
 list(APPEND TP_PUBLIC_HDRS
   channel/mpt/factory.h)
 
+
 ## Transports
 
 ### uv
@@ -311,6 +312,116 @@ if(TP_USE_CUDA)
           ARCHIVE DESTINATION ${TP_INSTALL_LIBDIR})
 
   foreach(_header_file ${TP_CUDA_PUBLIC_HDRS})
+    get_filename_component(_TP_HEADER_SUBDIR "${_header_file}" DIRECTORY)
+    install(FILES ${_header_file}
+            DESTINATION ${TP_INSTALL_INCLUDEDIR}/tensorpipe/${_TP_HEADER_SUBDIR})
+  endforeach()
+
+  install(FILES ${CMAKE_CURRENT_BINARY_DIR}/config_cuda.h
+          DESTINATION ${TP_INSTALL_INCLUDEDIR}/tensorpipe)
+
+endif()
+
+
+## ROCM
+
+if(TP_USE_ROCM)
+  # TP_ROCM_SRCS is the list of source files that we need to build libtensorpipe.
+  set(TP_ROCM_SRCS)
+
+  # TP_ROCM_PUBLIC_HDRS is the list of public header files that we need to install.
+  set(TP_ROCM_PUBLIC_HDRS)
+
+  # TP_ROCM_LINK_LIBRARIES is list of dependent libraries to be linked
+  set(TP_ROCM_LINK_LIBRARIES)
+
+  # TP_ROCM_INCLUDE_DIRS is list of include path to be used
+  set(TP_ROCM_INCLUDE_DIRS)
+
+  # Finding of HIP package is already before hipifying the files
+  list(APPEND TP_ROCM_LINK_LIBRARIES ${TP_HIP_HCC_LIBRARIES})
+  list(APPEND TP_ROCM_INCLUDE_DIRS ${TP_HIP_INCLUDE})
+
+  list(APPEND TP_ROCM_SRCS
+    common/hip_buffer.cc)
+  list(APPEND TP_ROCM_PUBLIC_HDRS
+    tensorpipe_hip.h
+    common/hip_buffer.h)
+  #set(TENSORPIPE_SUPPORTS_CUDA 1)
+
+  ### hip_basic
+
+  file(GLOB _temp_list
+    channel/hip_basic/*.cc)
+  list(APPEND TP_ROCM_SRCS
+    ${_temp_list})
+  list(APPEND TP_ROCM_SRCS
+    common/hip_loop.cc)
+  list(APPEND TP_ROCM_PUBLIC_HDRS
+    channel/hip_basic/factory.h)
+
+  ### hip_xth
+
+  tp_conditional_backend(
+    TP_ENABLE_HIP_XTH "Enable HIP XTH communication channel" "TP_USE_ROCM")
+  if(TP_ENABLE_HIP_XTH)
+    file(GLOB _temp_list
+      channel/hip_xth/*.cc)
+    list(APPEND TP_ROCM_SRCS
+      ${_temp_list})
+    list(APPEND TP_ROCM_PUBLIC_HDRS
+      channel/hip_xth/factory.h)
+  endif()
+
+  ### hip_ipc
+
+  tp_conditional_backend(
+    TP_ENABLE_HIP_IPC "Enable HIP inter-process communication channel" "TP_USE_ROCM")
+  if(TP_ENABLE_HIP_IPC)
+    file(GLOB _temp_list
+      channel/hip_ipc/*.cc)
+    list(APPEND TP_ROCM_SRCS
+      ${_temp_list})
+    list(APPEND TP_ROCM_PUBLIC_HDRS
+      channel/hip_ipc/factory.h)
+    set(TENSORPIPE_HAS_CUDA_IPC_CHANNEL 1)
+  endif()
+
+  ### hip_gdr
+
+  tp_conditional_backend(
+    TP_ENABLE_HIP_GDR "Enable HIP GpuDirect (InfiniBand) channel" "LINUX")
+  if(TP_ENABLE_HIP_GDR)
+    file(GLOB _temp_list
+      channel/hip_gdr/*.cc)
+    list(APPEND TP_ROCM_SRCS
+      ${_temp_list})
+    list(APPEND TP_ROCM_SRCS
+      common/ibv.cc)
+    list(APPEND TP_ROCM_PUBLIC_HDRS
+      channel/hip_gdr/error.h
+      channel/hip_gdr/factory.h)
+    set(TENSORPIPE_HAS_CUDA_GDR_CHANNEL 1)
+  endif()
+
+  configure_file(config_cuda.h.in config_cuda.h)
+
+  add_library(tensorpipe_hip ${TP_STATIC_OR_SHARED} ${TP_ROCM_SRCS})
+
+  if(BUILD_SHARED_LIBS)
+    set_target_properties(tensorpipe_hip PROPERTIES POSITION_INDEPENDENT_CODE 1)
+  endif()
+
+  target_link_libraries(tensorpipe_hip PUBLIC tensorpipe)
+  target_link_libraries(tensorpipe_hip PRIVATE ${TP_ROCM_LINK_LIBRARIES})
+  target_include_directories(tensorpipe_hip PUBLIC ${TP_ROCM_INCLUDE_DIRS})
+
+  install(TARGETS tensorpipe_hip
+          EXPORT TensorpipeTargets
+          LIBRARY DESTINATION ${TP_INSTALL_LIBDIR}
+          ARCHIVE DESTINATION ${TP_INSTALL_LIBDIR})
+
+  foreach(_header_file ${TP_ROCM_PUBLIC_HDRS})
     get_filename_component(_TP_HEADER_SUBDIR "${_header_file}" DIRECTORY)
     install(FILES ${_header_file}
             DESTINATION ${TP_INSTALL_INCLUDEDIR}/tensorpipe/${_TP_HEADER_SUBDIR})

@@ -23,7 +23,12 @@ include(MiscCheck)
 
 # ROCm related
 if (TP_USE_ROCM)
-  include(Hipify)
+  include(Hip)
+  if (TP_HAVE_HIP)
+    include(Hipify)
+  else()
+    message(FATAL_ERROR "Not able to find HIP installation, so cant compile with ROCm support.")
+  endif()
 endif()
 
 add_subdirectory(tensorpipe)
