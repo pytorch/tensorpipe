@@ -100,6 +100,7 @@ list(APPEND TP_SRCS
 list(APPEND TP_PUBLIC_HDRS
   channel/mpt/factory.h)
 
+
 ## Transports
 
 ### uv
@@ -219,9 +220,9 @@ install(FILES ${CMAKE_CURRENT_BINARY_DIR}/config.h
         DESTINATION ${TP_INSTALL_INCLUDEDIR}/tensorpipe)
 
 
-## CUDA
+## CUDA AND ROCM
 
-if(TP_USE_CUDA)
+if(TP_USE_CUDA OR TP_USE_ROCM)
   # TP_SRCS is the list of source files that we need to build libtensorpipe.
   set(TP_CUDA_SRCS)
 
@@ -234,9 +235,17 @@ if(TP_USE_CUDA)
   # TP_INCLUDE_DIRS is list of include path to be used
   set(TP_CUDA_INCLUDE_DIRS)
 
-  find_package(CUDA REQUIRED)
-  list(APPEND TP_CUDA_LINK_LIBRARIES ${CUDA_LIBRARIES})
-  list(APPEND TP_CUDA_INCLUDE_DIRS ${CUDA_INCLUDE_DIRS})
+  if (TP_USE_CUDA)
+    set(TP_GPU_LIB_NAME "tensorpipe_cuda")
+    find_package(CUDA REQUIRED)
+    list(APPEND TP_CUDA_LINK_LIBRARIES ${CUDA_LIBRARIES})
+    list(APPEND TP_CUDA_INCLUDE_DIRS ${CUDA_INCLUDE_DIRS})
+  elseif (TP_USE_ROCM)
+    set(TP_GPU_LIB_NAME "tensorpipe_hip")
+    # Finding of HIP package is already before hipifying the files
+    list(APPEND TP_CUDA_LINK_LIBRARIES ${TP_HIP_HCC_LIBRARIES})
+    list(APPEND TP_CUDA_INCLUDE_DIRS ${TP_HIP_INCLUDE})
+  endif()
 
   list(APPEND TP_CUDA_SRCS
     common/cuda_buffer.cc)
@@ -246,12 +255,16 @@ if(TP_USE_CUDA)
 
   ### cuda_xth
 
-  list(APPEND TP_CUDA_SRCS
-    channel/cuda_xth/channel_impl.cc
-    channel/cuda_xth/context_impl.cc
-    channel/cuda_xth/factory.cc)
-  list(APPEND TP_CUDA_PUBLIC_HDRS
-    channel/cuda_xth/factory.h)
+  tp_conditional_backend(
+    TP_ENABLE_HIP_XTH "Enable HIP XTH communication channel" "TP_USE_ROCM")
+  if(TP_ENABLE_HIP_XTH OR TP_USE_CUDA)
+    list(APPEND TP_CUDA_SRCS
+      channel/cuda_xth/channel_impl.cc
+      channel/cuda_xth/context_impl.cc
+      channel/cuda_xth/factory.cc)
+    list(APPEND TP_CUDA_PUBLIC_HDRS
+      channel/cuda_xth/factory.h)
+  endif()
 
   ### cuda_basic
 
@@ -267,7 +280,9 @@ if(TP_USE_CUDA)
 
   tp_conditional_backend(
     TP_ENABLE_CUDA_IPC "Enable CUDA inter-process communication channel" "TP_USE_CUDA")
-  if(TP_ENABLE_CUDA_IPC)
+  tp_conditional_backend(
+    TP_ENABLE_HIP_IPC "Enable HIP inter-process communication channel" "TP_USE_ROCM")
+  if(TP_ENABLE_CUDA_IPC OR TP_ENABLE_HIP_IPC)
     list(APPEND TP_CUDA_SRCS
       channel/cuda_ipc/channel_impl.cc
       channel/cuda_ipc/context_impl.cc
@@ -281,7 +296,9 @@ if(TP_USE_CUDA)
 
   tp_conditional_backend(
     TP_ENABLE_CUDA_GDR "Enable CUDA GpuDirect (InfiniBand) channel" "LINUX")
-  if(TP_ENABLE_CUDA_GDR)
+  tp_conditional_backend(
+    TP_ENABLE_HIP_GDR "Enable HIP GpuDirect (InfiniBand) channel" "LINUX")
+  if((TP_ENABLE_CUDA_GDR AND TP_USE_CUDA) OR (TP_ENABLE_HIP_GDR AND TP_USE_ROCM))
     list(APPEND TP_CUDA_SRCS
       common/ibv.cc
       channel/cuda_gdr/channel_impl.cc
@@ -293,19 +310,24 @@ if(TP_USE_CUDA)
     set(TENSORPIPE_HAS_CUDA_GDR_CHANNEL 1)
   endif()
 
-  configure_file(config_cuda.h.in config_cuda.h)
-
-  add_library(tensorpipe_cuda ${TP_STATIC_OR_SHARED} ${TP_CUDA_SRCS})
-
-  if(BUILD_SHARED_LIBS)
-    set_target_properties(tensorpipe_cuda PROPERTIES POSITION_INDEPENDENT_CODE 1)
+  if(TP_USE_ROCM)
+    get_hipified_list("TP_CUDA_SRCS" "${TP_CUDA_SRCS}" TP_CUDA_SRCS)
+    get_hipified_list("TP_CUDA_PUBLIC_HDRS" "${TP_CUDA_PUBLIC_HDRS}" TP_CUDA_PUBLIC_HDRS)
   endif()
 
-  target_link_libraries(tensorpipe_cuda PUBLIC tensorpipe)
-  target_link_libraries(tensorpipe_cuda PRIVATE ${TP_CUDA_LINK_LIBRARIES})
-  target_include_directories(tensorpipe_cuda PUBLIC ${TP_CUDA_INCLUDE_DIRS})
+  configure_file(config_cuda.h.in config_cuda.h)
 
-  install(TARGETS tensorpipe_cuda
+  add_library(${TP_GPU_LIB_NAME} ${TP_STATIC_OR_SHARED} ${TP_CUDA_SRCS})
+
+  if(BUILD_SHARED_LIBS)
+    set_target_properties(${TP_GPU_LIB_NAME} PROPERTIES POSITION_INDEPENDENT_CODE 1)
+  endif()
+
+  target_link_libraries(${TP_GPU_LIB_NAME} PUBLIC tensorpipe)
+  target_link_libraries(${TP_GPU_LIB_NAME} PRIVATE ${TP_CUDA_LINK_LIBRARIES})
+  target_include_directories(${TP_GPU_LIB_NAME} PUBLIC ${TP_CUDA_INCLUDE_DIRS})
+
+  install(TARGETS ${TP_GPU_LIB_NAME}
           EXPORT TensorpipeTargets
           LIBRARY DESTINATION ${TP_INSTALL_LIBDIR}
           ARCHIVE DESTINATION ${TP_INSTALL_LIBDIR})

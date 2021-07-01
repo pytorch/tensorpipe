@@ -68,11 +68,22 @@ if(TP_ENABLE_CMA)
   add_subdirectory(channel/cma)
 endif()
 
-if(TP_USE_CUDA)
-  find_package(CUDA REQUIRED)
-  list(APPEND TP_TEST_LINK_LIBRARIES ${CUDA_LIBRARIES})
-  list(APPEND TP_TEST_INCLUDE_DIRS ${CUDA_INCLUDE_DIRS})
-  list(APPEND TP_TEST_COMPILE_DEFS TP_USE_CUDA)
+if(TP_USE_CUDA OR TP_USE_ROCM)
+  if(TP_USE_CUDA)
+    set(TP_GPU_KERNEL_LIB_NAME "tensorpipe_cuda_kernel")
+    set(TP_GPU_LIB_NAME "tensorpipe_cuda")
+    find_package(CUDA REQUIRED)
+    list(APPEND TP_TEST_LINK_LIBRARIES ${CUDA_LIBRARIES})
+    list(APPEND TP_TEST_INCLUDE_DIRS ${CUDA_INCLUDE_DIRS})
+    list(APPEND TP_TEST_COMPILE_DEFS TP_USE_CUDA)
+  elseif(TP_USE_ROCM)
+    set(TP_GPU_KERNEL_LIB_NAME "tensorpipe_hip_kernel")
+    set(TP_GPU_LIB_NAME "tensorpipe_hip")
+    # Finding of HIP package is already before hipifying the files
+    list(APPEND TP_TEST_LINK_LIBRARIES ${TP_HIP_HCC_LIBRARIES})
+    list(APPEND TP_TEST_INCLUDE_DIRS ${TP_HIP_INCLUDE})
+    list(APPEND TP_TEST_COMPILE_DEFS TP_USE_ROCM)
+  endif()
 
   list(APPEND TP_TEST_SRCS
     channel/channel_test_cuda.cc
@@ -82,26 +93,39 @@ if(TP_USE_CUDA)
     core/pipe_cuda_test.cc
     )
 
-  list(APPEND TP_TEST_SRCS
-    channel/cuda_xth/cuda_xth_test.cc
-    channel/cuda_basic/cuda_basic_test.cc
-    )
+  if(TP_ENABLE_HIP_XTH OR TP_USE_CUDA)
+    list(APPEND TP_TEST_SRCS
+      channel/cuda_xth/cuda_xth_test.cc
+      channel/cuda_basic/cuda_basic_test.cc
+      )
+  endif()
 
-  if(TP_ENABLE_CUDA_IPC)
+  if(TP_ENABLE_CUDA_IPC OR TP_ENABLE_HIP_IPC)
     list(APPEND TP_TEST_SRCS
       channel/cuda_ipc/cuda_ipc_test.cc
       )
   endif()
 
-  list(APPEND TP_TEST_SRCS
-    channel/cuda_gdr/cuda_gdr_test.cc
-    )
+  if((TP_ENABLE_CUDA_GDR AND TP_USE_CUDA) OR (TP_ENABLE_HIP_GDR AND TP_USE_ROCM))
+    list(APPEND TP_TEST_SRCS
+      channel/cuda_gdr/cuda_gdr_test.cc
+      )
+  endif()
 
-  cuda_add_library(tensorpipe_cuda_kernel channel/kernel.cu)
-  list(APPEND TP_TEST_LINK_LIBRARIES tensorpipe_cuda_kernel)
+  if(TP_USE_CUDA)
+    cuda_add_library(${TP_GPU_KERNEL_LIB_NAME} channel/kernel.cu)
+  elseif(TP_USE_ROCM)
+    # Update the TP_TEST_SRCS file list with hipified file names
+    get_hipified_list("TP_TEST_SRCS" "${TP_TEST_SRCS}" TP_TEST_SRCS)
+    hip_add_library(${TP_GPU_KERNEL_LIB_NAME} channel/kernel.hip)
+    target_compile_options(${TP_GPU_KERNEL_LIB_NAME} PUBLIC ${HIP_CLANG_FLAGS})
+  endif()
 
-  list(APPEND TP_TEST_LINK_LIBRARIES tensorpipe_cuda)
+  list(APPEND TP_TEST_LINK_LIBRARIES ${TP_GPU_KERNEL_LIB_NAME})
+
+  list(APPEND TP_TEST_LINK_LIBRARIES ${TP_GPU_LIB_NAME})
 endif()
+
 
 add_subdirectory(${PROJECT_SOURCE_DIR}/third_party/googletest
   ${PROJECT_BINARY_DIR}/third_party/googletest EXCLUDE_FROM_ALL)
