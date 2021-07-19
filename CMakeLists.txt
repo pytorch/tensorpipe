@@ -10,7 +10,7 @@ project(tensorpipe LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 14)
 
-list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
+list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake" "${PROJECT_SOURCE_DIR}/third_party/hipify/cmake")
 
 # Expose build options.
 include(Options)
@@ -20,6 +20,16 @@ include(Sanitize)
 
 # Misc checks to cope with various compiler modes.
 include(MiscCheck)
+
+# ROCm related
+if (TP_USE_ROCM)
+  include(Hip)
+  if(TP_HAVE_HIP)
+    include(Hipify)
+  else()
+    message(FATAL_ERROR "Not able to find HIP installation, so cant compile with ROCm support.")
+  endif()
+endif()
 
 add_subdirectory(tensorpipe)
 
