@@ -311,8 +311,9 @@ if(TP_USE_CUDA OR TP_USE_ROCM)
   endif()
 
   if(TP_USE_ROCM)
-    get_hipified_list("TP_CUDA_SRCS" "${TP_CUDA_SRCS}" TP_CUDA_SRCS)
-    get_hipified_list("TP_CUDA_PUBLIC_HDRS" "${TP_CUDA_PUBLIC_HDRS}" TP_CUDA_PUBLIC_HDRS)
+    # Replace the cuda file names in TP_CUDA_SRCS & TP_CUDA_PUBLIC_HDRS file lists with hipified file names
+    get_hipified_list("${TP_CUDA_SRCS}" TP_CUDA_SRCS "TP_CUDA_SRCS")
+    get_hipified_list("${TP_CUDA_PUBLIC_HDRS}" TP_CUDA_PUBLIC_HDRS "TP_CUDA_PUBLIC_HDRS")
   endif()
 
   configure_file(config_cuda.h.in config_cuda.h)

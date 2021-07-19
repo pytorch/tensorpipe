@@ -24,8 +24,9 @@ list(APPEND TP_BM_PIPE_SRCS
   channel_registry.cc)
 
 if(TP_USE_ROCM)
-  get_hipified_list("TP_BM_TRANS_SRCS" "${TP_BM_TRANS_SRCS}" TP_BM_TRANS_SRCS)
-  get_hipified_list("TP_BM_PIPE_SRCS" "${TP_BM_PIPE_SRCS}" TP_BM_PIPE_SRCS)
+  # Replace the cuda file names in TP_BM_TRANS_SRCS & TP_BM_PIPE_SRCS file lists with hipified file names
+  get_hipified_list("${TP_BM_TRANS_SRCS}" TP_BM_TRANS_SRCS "TP_BM_TRANS_SRCS")
+  get_hipified_list("${TP_BM_PIPE_SRCS}" TP_BM_PIPE_SRCS "TP_BM_PIPE_SRCS")
   set(TP_GPU_LIB "tensorpipe_hip")
 elseif(TP_USE_CUDA)
   set(TP_GPU_LIB "tensorpipe_cuda")
