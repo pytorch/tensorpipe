@@ -79,7 +79,7 @@ list(APPEND TP_PUBLIC_HDRS
 
 ### cma
 
-tp_conditional_backend(
+TP_CONDITIONAL_BACKEND(
   TP_ENABLE_CMA "Enable cross-memory attach channel" "LINUX")
 if(TP_ENABLE_CMA)
   list(APPEND TP_SRCS
@@ -125,7 +125,7 @@ list(APPEND TP_LINK_LIBRARIES uv::uv)
 
 ### shm
 
-tp_conditional_backend(
+TP_CONDITIONAL_BACKEND(
   TP_ENABLE_SHM "Enable shared-memory transport" "LINUX")
 if(TP_ENABLE_SHM)
   list(APPEND TP_SRCS
@@ -144,7 +144,7 @@ endif()
 
 ### ibv
 
-tp_conditional_backend(
+TP_CONDITIONAL_BACKEND(
   TP_ENABLE_IBV "Enable InfiniBand transport" "LINUX")
 if(TP_ENABLE_IBV)
   list(APPEND TP_SRCS
@@ -255,7 +255,7 @@ if(TP_USE_CUDA OR TP_USE_ROCM)
 
   ### cuda_xth
 
-  tp_conditional_backend(
+  TP_CONDITIONAL_BACKEND(
     TP_ENABLE_HIP_XTH "Enable HIP XTH communication channel" "TP_USE_ROCM")
   if(TP_ENABLE_HIP_XTH OR TP_USE_CUDA)
     list(APPEND TP_CUDA_SRCS
@@ -278,9 +278,9 @@ if(TP_USE_CUDA OR TP_USE_ROCM)
 
   ### cuda_ipc
 
-  tp_conditional_backend(
+  TP_CONDITIONAL_BACKEND(
     TP_ENABLE_CUDA_IPC "Enable CUDA inter-process communication channel" "TP_USE_CUDA")
-  tp_conditional_backend(
+  TP_CONDITIONAL_BACKEND(
     TP_ENABLE_HIP_IPC "Enable HIP inter-process communication channel" "TP_USE_ROCM")
   if(TP_ENABLE_CUDA_IPC OR TP_ENABLE_HIP_IPC)
     list(APPEND TP_CUDA_SRCS
@@ -294,9 +294,9 @@ if(TP_USE_CUDA OR TP_USE_ROCM)
 
   ### cuda_gdr
 
-  tp_conditional_backend(
+  TP_CONDITIONAL_BACKEND(
     TP_ENABLE_CUDA_GDR "Enable CUDA GpuDirect (InfiniBand) channel" "LINUX")
-  tp_conditional_backend(
+  TP_CONDITIONAL_BACKEND(
     TP_ENABLE_HIP_GDR "Enable HIP GpuDirect (InfiniBand) channel" "LINUX")
   if((TP_ENABLE_CUDA_GDR AND TP_USE_CUDA) OR (TP_ENABLE_HIP_GDR AND TP_USE_ROCM))
     list(APPEND TP_CUDA_SRCS
