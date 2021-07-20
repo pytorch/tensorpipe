@@ -10,7 +10,7 @@ project(tensorpipe LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 14)
 
-list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake" "${PROJECT_SOURCE_DIR}/third_party/hipify/cmake")
+list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
 
 # Expose build options.
 include(Options)
@@ -23,6 +23,7 @@ include(MiscCheck)
 
 # ROCm related
 if (TP_USE_ROCM)
+  list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/third_party/hipify/cmake")
   include(Hipify)
 endif()
 
