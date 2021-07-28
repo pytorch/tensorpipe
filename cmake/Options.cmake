@@ -35,7 +35,7 @@ option(TP_USE_ROCM "Enable support for ROCM tensors" OFF)
 
 # if both TP_USE_CUDA and TP_USE_ROCM is set then break
 if(TP_USE_CUDA AND TP_USE_ROCM)
-  message(FATAL_ERROR "Tensorpipe can be built either for CUDA or ROCm, TP_USE_CUDA and TP_USE_ROCM both are set, erroring out!!!!")
+  message(FATAL_ERROR "TensorPipe does not support building for CUDA and ROCM at the same time. Please unset either TP_USE_CUDA or TP_USE_ROCM.")
 endif()
 
 # Optional features
