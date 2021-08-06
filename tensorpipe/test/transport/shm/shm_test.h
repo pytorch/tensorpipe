@@ -22,11 +22,6 @@ class SHMTransportTestHelper : public TransportTestHelper {
 
  public:
   std::string defaultAddr() override {
-    const ::testing::TestInfo* const testInfo =
-        ::testing::UnitTest::GetInstance()->current_test_info();
-    std::ostringstream ss;
-    // Once we upgrade googletest, also use test_info->test_suite_name() here.
-    ss << "tensorpipe_test_" << testInfo->name() << "_" << getpid();
-    return ss.str();
+    return "";
   }
 };

@@ -119,4 +119,16 @@ Error Socket::connect(const Sockaddr& addr) {
   return Error::kSuccess;
 }
 
+std::tuple<Error, struct sockaddr_storage, socklen_t> Socket::getSockName()
+    const {
+  struct sockaddr_storage addr;
+  socklen_t addrlen = sizeof(addr);
+  int rv = ::getsockname(fd_, reinterpret_cast<sockaddr*>(&addr), &addrlen);
+  if (rv < 0) {
+    return std::make_tuple(
+        TP_CREATE_ERROR(SystemError, "getsockname", errno), addr, addrlen);
+  }
+  return std::make_tuple(Error::kSuccess, addr, addrlen);
+}
+
 } // namespace tensorpipe

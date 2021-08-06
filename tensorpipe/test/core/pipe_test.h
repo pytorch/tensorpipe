@@ -279,20 +279,11 @@ inline void expectDescriptorAndStorageMatchMessage(
   }
 }
 
-inline std::string createUniqueShmAddr() {
-  const ::testing::TestInfo* const testInfo =
-      ::testing::UnitTest::GetInstance()->current_test_info();
-  std::ostringstream ss;
-  // Once we upgrade googletest, also use test_info->test_suite_name() here.
-  ss << "shm://tensorpipe_test_" << testInfo->name() << "_" << getpid();
-  return ss.str();
-}
-
 inline std::vector<std::string> genUrls() {
   std::vector<std::string> res;
 
 #if TENSORPIPE_HAS_SHM_TRANSPORT
-  res.push_back(createUniqueShmAddr());
+  res.push_back("shm://");
 #endif // TENSORPIPE_HAS_SHM_TRANSPORT
   res.push_back("uv://127.0.0.1");
 

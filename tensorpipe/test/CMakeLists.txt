@@ -46,6 +46,7 @@ if(TP_ENABLE_SHM)
     common/shm_segment_test.cc
     transport/shm/reactor_test.cc
     transport/shm/connection_test.cc
+    transport/shm/listener_test.cc
     transport/shm/sockaddr_test.cc
     transport/shm/shm_test.cc
     )
