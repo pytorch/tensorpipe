@@ -272,8 +272,8 @@ static void serverPongPingNonBlock(
                           descriptor.payloads[payloadIdx].length),
                       0);
                   message.payloads[payloadIdx] = {
-                      .length = descriptor.payloads[payloadIdx].length,
                       .data = data.expectedPayload[payloadIdx].get(),
+                      .length = descriptor.payloads[payloadIdx].length,
                   };
                 }
               } else {
@@ -303,6 +303,8 @@ static void serverPongPingNonBlock(
                   message.tensors[tensorIdx] = {
                       .buffer = allocation.tensors[tensorIdx].buffer,
                       .length = descriptor.tensors[tensorIdx].length,
+                      .targetDevice =
+                          descriptor.tensors[tensorIdx].sourceDevice,
                   };
                 }
               } else {
@@ -483,11 +485,13 @@ static void clientPingPongNonBlock(
       if (data.tensorType == TensorType::kCpu) {
         tensor.buffer =
             CpuBuffer{.ptr = data.expectedCpuTensor[tensorIdx].get()};
+        tensor.targetDevice = Device(kCpuDeviceType, 0);
       } else if (data.tensorType == TensorType::kCuda) {
         tensor.buffer = CudaBuffer{
             .ptr = data.expectedCudaTensor[tensorIdx].get(),
             .stream = data.cudaStream.get(),
         };
+        tensor.targetDevice = Device(kCudaDeviceType, 0);
       } else {
         TP_THROW_ASSERT() << "Unknown tensor type";
       }
