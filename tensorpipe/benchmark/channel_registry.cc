@@ -88,3 +88,17 @@ std::shared_ptr<tensorpipe::channel::Context> makeCudaGdrChannel() {
 
 TP_REGISTER_CREATOR(TensorpipeChannelRegistry, cuda_gdr, makeCudaGdrChannel);
 #endif // TENSORPIPE_HAS_CUDA_GDR_CHANNEL
+
+void validateChannelContext(
+    std::shared_ptr<tensorpipe::channel::Context> context) {
+  if (!context) {
+    auto keys = TensorpipeChannelRegistry().keys();
+    std::cout
+        << "The channel you passed in is not supported. The following channels are valid: ";
+    for (const auto& key : keys) {
+      std::cout << key << ", ";
+    }
+    std::cout << "\n";
+    exit(EXIT_FAILURE);
+  }
+}

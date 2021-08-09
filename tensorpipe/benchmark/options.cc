@@ -12,37 +12,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#include <tensorpipe/benchmark/channel_registry.h>
-#include <tensorpipe/benchmark/transport_registry.h>
-
 namespace tensorpipe {
 namespace benchmark {
-
-void validateTransportContext(std::shared_ptr<transport::Context> context) {
-  if (!context) {
-    auto keys = TensorpipeTransportRegistry().keys();
-    std::cout
-        << "The transport you passed in is not supported. The following transports are valid: ";
-    for (const auto& key : keys) {
-      std::cout << key << ", ";
-    }
-    std::cout << "\n";
-    exit(EXIT_FAILURE);
-  }
-}
-
-void validateChannelContext(std::shared_ptr<channel::Context> context) {
-  if (!context) {
-    auto keys = TensorpipeChannelRegistry().keys();
-    std::cout
-        << "The channel you passed in is not supported. The following channels are valid: ";
-    for (const auto& key : keys) {
-      std::cout << key << ", ";
-    }
-    std::cout << "\n";
-    exit(EXIT_FAILURE);
-  }
-}
 
 static void usage(int status, const char* argv0) {
   if (status != EXIT_SUCCESS) {
