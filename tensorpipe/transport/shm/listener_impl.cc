@@ -90,7 +90,12 @@ void ListenerImpl::acceptImplFromLoop(accept_callback_fn fn) {
 
 std::string ListenerImpl::addrImplFromLoop() const {
   TP_DCHECK(context_->inLoop());
-  return sockaddr_.str();
+  Error error;
+  struct sockaddr_storage addr;
+  socklen_t addrlen;
+  std::tie(error, addr, addrlen) = socket_.getSockName();
+  TP_THROW_ASSERT_IF(error) << error.what();
+  return Sockaddr(reinterpret_cast<struct sockaddr*>(&addr), addrlen).str();
 }
 
 void ListenerImpl::handleEventsFromLoop(int events) {

@@ -215,6 +215,9 @@ class Socket final : public Fd {
   // Connect to address.
   [[nodiscard]] Error connect(const Sockaddr& addr);
 
+  [[nodiscard]] std::tuple<Error, struct sockaddr_storage, socklen_t>
+  getSockName() const;
+
   // Send file descriptor.
   template <typename... Fds>
   [[nodiscard]] Error sendFds(const Fds&... fds) {

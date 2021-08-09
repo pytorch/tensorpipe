@@ -38,9 +38,9 @@ class Sockaddr final : public tensorpipe::Sockaddr {
 
   std::string str() const;
 
- private:
   explicit Sockaddr(const struct sockaddr* addr, socklen_t addrlen);
 
+ private:
   struct sockaddr_storage addr_;
   socklen_t addrlen_;
 };
