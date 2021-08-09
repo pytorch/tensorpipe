@@ -41,3 +41,17 @@ std::shared_ptr<tensorpipe::transport::Context> makeUvContext() {
 }
 
 TP_REGISTER_CREATOR(TensorpipeTransportRegistry, uv, makeUvContext);
+
+void validateTransportContext(
+    std::shared_ptr<tensorpipe::transport::Context> context) {
+  if (!context) {
+    auto keys = TensorpipeTransportRegistry().keys();
+    std::cout
+        << "The transport you passed in is not supported. The following transports are valid: ";
+    for (const auto& key : keys) {
+      std::cout << key << ", ";
+    }
+    std::cout << "\n";
+    exit(EXIT_FAILURE);
+  }
+}

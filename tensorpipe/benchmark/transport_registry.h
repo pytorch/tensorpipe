@@ -14,3 +14,6 @@
 TP_DECLARE_SHARED_REGISTRY(
     TensorpipeTransportRegistry,
     tensorpipe::transport::Context);
+
+void validateTransportContext(
+    std::shared_ptr<tensorpipe::transport::Context> context);
