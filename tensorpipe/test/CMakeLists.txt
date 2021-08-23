@@ -116,7 +116,7 @@ if(TP_USE_CUDA OR TP_USE_ROCM)
     cuda_add_library(${TP_GPU_KERNEL_LIB_NAME} channel/kernel.cu)
   elseif(TP_USE_ROCM)
     # Replace the cuda file names in TP_TEST_SRCS file list with hipified file names
-    get_hipified_list("${TP_TEST_SRCS}" TP_TEST_SRCS "TP_TEST_SRCS")
+    get_hipified_list("${TP_TEST_SRCS}" TP_TEST_SRCS)
     hip_add_library(${TP_GPU_KERNEL_LIB_NAME} channel/kernel.hip)
     target_compile_options(${TP_GPU_KERNEL_LIB_NAME} PUBLIC ${HIP_CLANG_FLAGS})
   endif()
