@@ -25,6 +25,7 @@ include(MiscCheck)
 if (TP_USE_ROCM)
   list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/third_party/hipify/cmake")
   include(Hipify)
+  hipify(CUDA_SOURCE_DIR ${PROJECT_SOURCE_DIR})
 endif()
 
 add_subdirectory(tensorpipe)
