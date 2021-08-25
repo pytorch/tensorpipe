@@ -235,6 +235,9 @@ if(TP_USE_CUDA OR TP_USE_ROCM)
   # TP_INCLUDE_DIRS is list of include path to be used
   set(TP_CUDA_INCLUDE_DIRS)
 
+  # TP_CUDA_COMPILE_DEFS is list of compiler definitions to be used
+  set(TP_CUDA_COMPILE_DEFS)
+
   if (TP_USE_CUDA)
     set(TP_GPU_LIB_NAME "tensorpipe_cuda")
     find_package(CUDA REQUIRED)
@@ -245,6 +248,9 @@ if(TP_USE_CUDA OR TP_USE_ROCM)
     # Finding of HIP package is already before hipifying the files
     list(APPEND TP_CUDA_LINK_LIBRARIES ${TP_HIP_HCC_LIBRARIES})
     list(APPEND TP_CUDA_INCLUDE_DIRS ${TP_HIP_INCLUDE})
+    list(APPEND TP_CUDA_COMPILE_DEFS TP_USE_ROCM)
+    option(TP_ROCM_TMP_COMPILE "This variable enables temp code for compilation on ROCm platform" OFF)
+    list(APPEND TP_CUDA_COMPILE_DEFS TP_ROCM_TMP_COMPILE)
   endif()
 
   list(APPEND TP_CUDA_SRCS
@@ -327,6 +333,7 @@ if(TP_USE_CUDA OR TP_USE_ROCM)
   target_link_libraries(${TP_GPU_LIB_NAME} PUBLIC tensorpipe)
   target_link_libraries(${TP_GPU_LIB_NAME} PRIVATE ${TP_CUDA_LINK_LIBRARIES})
   target_include_directories(${TP_GPU_LIB_NAME} PUBLIC ${TP_CUDA_INCLUDE_DIRS})
+  target_compile_definitions(${TP_GPU_LIB_NAME} PUBLIC ${TP_CUDA_COMPILE_DEFS})
 
   install(TARGETS ${TP_GPU_LIB_NAME}
           EXPORT TensorpipeTargets

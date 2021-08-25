@@ -20,6 +20,10 @@
 
 #include <tensorpipe/common/error_macros.h>
 
+#ifdef TP_USE_ROCM
+#define CUDART_CB
+#endif
+
 namespace tensorpipe {
 
 class CudaLoop {
