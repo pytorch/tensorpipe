@@ -54,11 +54,17 @@ Sockaddr::Sockaddr(const struct sockaddr* addr, socklen_t addrlen) {
 }
 
 std::string Sockaddr::str() const {
-  const struct sockaddr_un* sun{
-      reinterpret_cast<const struct sockaddr_un*>(&addr_)};
-  constexpr size_t offset = 1;
-  const size_t len = addrlen_ - sizeof(sun->sun_family) - offset;
-  return std::string(&sun->sun_path[offset], len);
+  TP_DCHECK_GE(addrlen_, sizeof(sockaddr_un::sun_family));
+  if (addrlen_ == sizeof(sockaddr_un::sun_family)) {
+    return "";
+  } else {
+    const struct sockaddr_un* sun{
+        reinterpret_cast<const struct sockaddr_un*>(&addr_)};
+    TP_DCHECK_EQ(sun->sun_path[0], '\0');
+    constexpr size_t offset = 1;
+    const size_t len = addrlen_ - sizeof(sun->sun_family) - offset;
+    return std::string(&sun->sun_path[offset], len);
+  }
 }
 
 } // namespace shm
