@@ -164,6 +164,29 @@ if(TP_ENABLE_IBV)
   set(TENSORPIPE_HAS_IBV_TRANSPORT 1)
 endif()
 
+### EFA
+
+tp_conditional_backend(
+  TP_ENABLE_EFA "Enable EFA transport" "LINUX")
+if(TP_ENABLE_EFA)
+  list(APPEND TP_SRCS
+    common/fabric.cc
+    transport/efa/connection_impl.cc
+    transport/efa/context_impl.cc
+    transport/efa/error.cc
+    transport/efa/factory.cc
+    transport/efa/listener_impl.cc
+    transport/efa/reactor.cc
+    transport/efa/sockaddr.cc
+    transport/efa/utility.cc)
+  list(APPEND TP_PUBLIC_HDRS
+    transport/efa/error.h
+    transport/efa/factory.h
+    transport/efa/utility.h)
+  set(TENSORPIPE_HAS_EFA_TRANSPORT 1)
+  list(APPEND TP_INCLUDE_DIRS $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/third_party/libfabric/include>)
+  # list(APPEND TP_STATIC_OR_SHARED fabric)
+endif()
 
 ## MAC OS specific library deps
 
