@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <tensorpipe/common/fabric.h>
+#include <tensorpipe/common/efa.h>
 #include <tensorpipe/common/defs.h>
 #include <rdma/fabric.h>
 #include <rdma/fi_eq.h>
@@ -92,11 +92,31 @@ UniqueFabricPtr<fi_info> FabricContext::getFabricInfo(){
     struct fi_info* info_;
     int ret =
         fi_getinfo(FABRIC_VERSION, nullptr, nullptr, 0, hints.get(), &info_);
-    info.reset(info_);
-    TP_THROW_ASSERT() << "Could not find any optimal provider. Return Code: "
-                      << ret << ". ERROR: " << fi_strerror(-ret);
+    info.reset(info_);    
+    TP_CHECK_EFA_RET(ret, "fi_getinfo failed");
+    // TP_THROW_ASSERT() << "Could not find any optimal provider. Return Code: "
+    //                   << ret << ". ERROR: " << fi_strerror(-ret);
     return info;
-    // TP_CHECK_EFA_RET(ret, "fi_getinfo failed");
+}
+
+bool FabricEndpoint::isEfaAvailable(){
+    UniqueFabricPtr<struct fi_info> hints(fi_allocinfo());
+    hints->mode = FI_CONTEXT;
+    hints->ep_attr->type = FI_EP_RDM; // Reliable Datagram
+    hints->caps = FI_TAGGED | FI_MSG | FI_REMOTE_COMM | FI_DIRECTED_RECV | FI_LOCAL_COMM | FI_SOURCE;
+    hints->tx_attr->msg_order = FI_ORDER_SAS;
+    hints->rx_attr->msg_order = FI_ORDER_SAS;
+    hints->domain_attr->control_progress = FI_PROGRESS_AUTO;
+    hints->domain_attr->data_progress = FI_PROGRESS_AUTO;
+    hints->domain_attr->caps =
+        FI_LOCAL_COMM | FI_REMOTE_COMM; // Enable local loopback
+    hints->domain_attr->av_type = FI_AV_TABLE;
+    hints->fabric_attr->prov_name = strdup("efa");
+    UniqueFabricPtr<fi_info> info;
+    struct fi_info* info_;
+    int ret =
+        fi_getinfo(FABRIC_VERSION, nullptr, nullptr, 0, hints.get(), &info_);
+    return info_ == nullptr;
 }
 
 FabricEndpoint::FabricEndpoint(){

@@ -18,7 +18,7 @@
 #include <tensorpipe/common/efa_read_write_ops.h>
 #include <tensorpipe/common/epoll_loop.h>
 #include <tensorpipe/common/error_macros.h>
-#include <tensorpipe/common/fabric.h>
+#include <tensorpipe/common/efa.h>
 #include <tensorpipe/common/memory.h>
 #include <tensorpipe/common/socket.h>
 #include <tensorpipe/transport/efa/context_impl.h>

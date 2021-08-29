@@ -7,7 +7,8 @@
  */
 
 #include <tensorpipe/transport/efa/context_impl.h>
-
+#include <tensorpipe/common/efa_lib.h>
+#include <tensorpipe/common/efa.h>
 #include <tensorpipe/transport/efa/connection_impl.h>
 #include <tensorpipe/transport/efa/listener_impl.h>
 
@@ -35,14 +36,21 @@ std::string generateDomainDescriptor() {
 
 std::shared_ptr<ContextImpl> ContextImpl::create() {
   Error error;
-  // efaLib efaLib;
-  // std::tie(error, efaLib) = efaLib::create();
-  // if (error) {
-  //   TP_VLOG(7)
-  //       << "efa transport is not viable because libefaerbs couldn't be loaded: "
-  //       << error.what();
-  //   return nullptr;
-  // }
+  EfaLib efaLib;
+  std::tie(error, efaLib) = EfaLib::create();
+  if (error) {
+    TP_VLOG(7)
+        << "efa transport is not viable because libfabric couldn't be loaded: "
+        << error.what();
+    return nullptr;
+  }
+
+  bool isEfaAvailable = FabricEndpoint::isEfaAvailable();
+  if (!FabricEndpoint::isEfaAvailable()){
+    TP_VLOG(7)
+        << "libfabric cannot find efa provider.";
+    return nullptr;
+  }
 
   // efaDeviceList deviceList;
   // std::tie(error, deviceList) = efaDeviceList::create(efaLib);

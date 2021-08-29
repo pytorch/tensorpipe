@@ -15,7 +15,7 @@
 #include <string>
 
 #include <tensorpipe/common/epoll_loop.h>
-#include <tensorpipe/common/fabric.h>
+#include <tensorpipe/common/efa.h>
 #include <tensorpipe/common/memory.h>
 #include <tensorpipe/common/nop.h>
 #include <tensorpipe/common/efa_read_write_ops.h>

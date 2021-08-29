@@ -17,7 +17,8 @@ namespace transport {
 namespace efa {
 
 Reactor::Reactor() {
-  postRecvRequests(kNumPendingRecvReqs);
+  // postRecvRequests(kNumPendingRecvReqs);
+  endpoint = std::make_shared<FabricEndpoint>();
   startThread("TP_efa_reactor");
 }
 

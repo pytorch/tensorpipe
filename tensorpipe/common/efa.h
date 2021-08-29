@@ -6,7 +6,9 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#pragma once
+#ifndef COMMON_EFA_H_
+#define COMMON_EFA_H_
+
 
 #include <iostream>
 #include <memory>
@@ -140,7 +142,12 @@ class FabricEndpoint {
 
   int PollCQ(struct fi_cq_tagged_entry* cq_entries, fi_addr_t* src_addrs, size_t count);
 
+  static bool isEfaAvailable();
+
   // Fabric Context contains everything
   std::unique_ptr<FabricContext> fabric_ctx;
 };
 } // namespace tensorpipe
+
+
+#endif // COMMON_EFA_H_

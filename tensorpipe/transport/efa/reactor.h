@@ -20,7 +20,7 @@
 #include <tensorpipe/common/busy_polling_loop.h>
 #include <tensorpipe/common/callback.h>
 #include <tensorpipe/common/fd.h>
-#include <tensorpipe/common/fabric.h>
+#include <tensorpipe/common/efa.h>
 #include <tensorpipe/common/optional.h>
 #include <tensorpipe/transport/efa/constants.h>
 
@@ -132,7 +132,7 @@ class Reactor final : public BusyPollingLoop {
 
   std::shared_ptr<FabricEndpoint> endpoint;
 
-  void postRecvRequests(int num);
+  // void postRecvRequests(int num);
 
   std::atomic<bool> closed_{false};
   std::atomic<bool> joined_{false};
