@@ -79,8 +79,9 @@ int Reactor::postPendingSends() {
       // Unknown failure, raise exception
       TP_CHECK_EFA_RET(ret, "Unable to do fi_tsend message");
     }
-    return 0;
   }
+  
+  return 0;
 }
 
 int Reactor::postPendingRecvs() {
