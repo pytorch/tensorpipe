@@ -74,6 +74,7 @@ FabricContext::FabricContext(){
     fi_av_straddr(av.get(), addr.name, readable_addr.name, &readable_addr.len);
 }
 
+
 UniqueFabricPtr<fi_info> FabricContext::getFabricInfo(){    
     UniqueFabricPtr<struct fi_info> hints(fi_allocinfo());
     hints->mode = FI_CONTEXT;
@@ -116,7 +117,8 @@ bool FabricEndpoint::isEfaAvailable(){
     struct fi_info* info_;
     int ret =
         fi_getinfo(FABRIC_VERSION, nullptr, nullptr, 0, hints.get(), &info_);
-    return info_ == nullptr;
+    info.reset(info_);
+    return (ret == 0);
 }
 
 FabricEndpoint::FabricEndpoint(){
@@ -145,5 +147,14 @@ int FabricEndpoint::PushRecvEvent(void* buffer, size_t size, uint64_t tag, fi_ad
 }
 
 
+fi_addr_t FabricEndpoint::AddPeerAddr(FabricAddr* addr){
+    TP_VLOG(9) << "Add addr";
+    fi_addr_t peer_addr;
+    int ret =
+      fi_av_insert(fabric_ctx->av.get(), addr->name, 1, &peer_addr, 0, nullptr);
+    TP_DCHECK_EQ(ret, 1);
+    TP_CHECK_EFA_RET(ret, "Unable to add address to endpoint");
+    return peer_addr;
+};
 
 } // namespace tensorpipe

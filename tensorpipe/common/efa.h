@@ -32,7 +32,7 @@ namespace tensorpipe {
 
 #define TP_CHECK_EFA_RET(ret, msg)                           \
   do {                                                       \
-    if (ret != 0) {                                          \
+    if (ret < 0) {                                          \
       TP_THROW_ASSERT() << msg << ". Return Code: " << ret   \
                         << ". ERROR: " << fi_strerror(-ret); \
     }                                                        \

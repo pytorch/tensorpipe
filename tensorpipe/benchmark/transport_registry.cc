@@ -42,6 +42,17 @@ std::shared_ptr<tensorpipe::transport::Context> makeUvContext() {
 
 TP_REGISTER_CREATOR(TensorpipeTransportRegistry, uv, makeUvContext);
 
+// EFA
+
+#if TENSORPIPE_HAS_EFA_TRANSPORT
+std::shared_ptr<tensorpipe::transport::Context> makeEfaContext() {
+  return tensorpipe::transport::efa::create();
+}
+
+TP_REGISTER_CREATOR(TensorpipeTransportRegistry, efa, makeEfaContext);
+#endif // TENSORPIPE_HAS_EFA_TRANSPORT
+
+
 void validateTransportContext(
     std::shared_ptr<tensorpipe::transport::Context> context) {
   if (!context) {
