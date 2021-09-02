@@ -28,20 +28,14 @@ namespace tensorpipe {
 namespace transport {
 namespace efa {
 
-// class efaEventHandler {
-//  public:
-//   virtual void onRecvLength(uint32_t msg_idx) = 0;
+class efaEventHandler {
+ public:
+  virtual void onWriteCompleted() = 0;
 
-//   virtual void onSendData(uint32_t msg_idx) = 0;
+  virtual void onReadCompleted() = 0;
 
-//   virtual void onSendCompleted(uint32_t msg_idx) = 0;
-
-//   virtual void onRecvCompleted(uint32_t msg_idx) = 0;
-
-//   virtual void onError(int errno) = 0;
-
-//   virtual ~efaEventHandler() = default;
-// };
+  virtual ~efaEventHandler() = default;
+};
 
 enum efaTag: uint64_t{
   kLength = 1ULL << 32,
@@ -81,9 +75,9 @@ class Reactor final : public BusyPollingLoop {
   //   return addr_;
   // }
 
-  // void registerQp(uint32_t qpn, std::shared_ptr<efaEventHandler> eventHandler);
+  void registerHandler(fi_addr_t peer_addr, std::shared_ptr<efaEventHandler> eventHandler);
 
-  // void unregisterQp(uint32_t qpn);
+  void unregisterHandler(fi_addr_t peer_addr);
 
   void postSend(void* buffer, size_t size, uint64_t tag, fi_addr_t peer_addr, void* context);
 
@@ -97,6 +91,9 @@ class Reactor final : public BusyPollingLoop {
   void join();
 
   ~Reactor();
+
+  
+  std::shared_ptr<FabricEndpoint> endpoint;
 
  protected:
   bool pollOnce() override;
@@ -130,7 +127,6 @@ class Reactor final : public BusyPollingLoop {
   int postPendingRecvs();
   int postPendingSends();
 
-  std::shared_ptr<FabricEndpoint> endpoint;
 
   // void postRecvRequests(int num);
 
@@ -145,8 +141,8 @@ class Reactor final : public BusyPollingLoop {
   std::string id_{"N/A"};
 
   // The registered event handlers for each queue pair.
-  // std::unordered_map<fi_addr_t, std::shared_ptr<efaEventHandler>>
-  //     efaEventHandler_;
+  std::unordered_map<fi_addr_t, std::shared_ptr<efaEventHandler>>
+      efaEventHandler_;
 
   // uint32_t numAvailableWrites_{kNumPendingWriteReqs};
   // uint32_t numAvailableAcks_{kNumPendingAckReqs};

@@ -15,10 +15,10 @@
 
 #include <tensorpipe/common/callback.h>
 #include <tensorpipe/common/defs.h>
+#include <tensorpipe/common/efa.h>
 #include <tensorpipe/common/efa_read_write_ops.h>
 #include <tensorpipe/common/epoll_loop.h>
 #include <tensorpipe/common/error_macros.h>
-#include <tensorpipe/common/efa.h>
 #include <tensorpipe/common/memory.h>
 #include <tensorpipe/common/socket.h>
 #include <tensorpipe/transport/efa/context_impl.h>
@@ -30,28 +30,6 @@
 namespace tensorpipe {
 namespace transport {
 namespace efa {
-
-namespace {
-
-// When the connection gets closed, to avoid leaks, it needs to "reclaim" all
-// the work requests that it had posted, by waiting for their completion. They
-// may however complete with error, which makes it harder to identify and
-// distinguish them from failing incoming requests because, in principle, we
-// cannot access the opcode field of a failed work completion. Therefore, we
-// assign a special ID to those types of requests, to match them later on.
-constexpr uint64_t kWriteRequestId = 1;
-constexpr uint64_t kAckRequestId = 2;
-
-// The data that each queue pair endpoint needs to send to the other endpoint in
-// order to set up the queue pair itself. This data is transferred over a TCP
-// connection.
-// struct Exchange {
-//   efaSetupInformation setupInfo;
-//   uint64_t memoryRegionPtr;
-//   uint32_t memoryRegionKey;
-// };
-
-} // namespace
 
 ConnectionImpl::ConnectionImpl(
     ConstructorToken token,
@@ -77,9 +55,10 @@ ConnectionImpl::ConnectionImpl(
 
 void ConnectionImpl::initImplFromLoop() {
   context_->enroll(*this);
-
   Error error;
   // The connection either got a socket or an address, but not both.
+  endpoint = context_->getReactor().endpoint;
+
   TP_DCHECK(socket_.hasValue() ^ sockaddr_.has_value());
   if (!socket_.hasValue()) {
     std::tie(error, socket_) =
@@ -106,9 +85,6 @@ void ConnectionImpl::initImplFromLoop() {
     setError(std::move(error));
     return;
   }
-  // Register methods to be called when our peer writes to our inbox and reads
-  // from our outbox.
-  // context_->getReactor().registerQp(qp_->qp_num, shared_from_this());
 
   // We're sending address first, so wait for writability.
   state_ = SEND_ADDR;
@@ -120,22 +96,6 @@ void ConnectionImpl::readImplFromLoop(read_callback_fn fn) {
 
   processReadOperationsFromLoop();
 }
-
-// void ConnectionImpl::readImplFromLoop(
-//     AbstractNopHolder& object,
-//     read_nop_callback_fn fn) {
-//   readOperations_.emplace_back(
-//       &object,
-//       [fn{std::move(fn)}](
-//           const Error& error, const void* /* unused */, size_t /* unused */)
-//           {
-//         fn(error);
-//       });
-
-//   // If the inbox already contains some data, we may be able to process this
-//   // operation right away.
-//   processReadOperationsFromLoop();
-// }
 
 void ConnectionImpl::readImplFromLoop(
     void* ptr,
@@ -211,18 +171,20 @@ void ConnectionImpl::handleEventInFromLoop() {
   TP_DCHECK(context_->inLoop());
   if (state_ == RECV_ADDR) {
     struct FabricAddr addr;
-
-    auto err = socket_.read(&addr.name, 64);
+    // auto x = &addr.name;
+    auto err = socket_.read(addr.name, sizeof(addr.name));
     // Crossing our fingers that the exchange information is small enough that
     // it can be read in a single chunk.
-    if (err != 64) {
-      setError(TP_CREATE_ERROR(ShortReadError, 64, err));
+    if (err != sizeof(addr.name)) {
+      setError(TP_CREATE_ERROR(ShortReadError, sizeof(addr.name), err));
       return;
     }
 
-    peer_addr = endpoint->AddPeerAddr(&addr);
+    peer_addr = endpoint->addPeerAddr(&addr);
 
     // The connection is usable now.
+    context_->getReactor().registerHandler(peer_addr, shared_from_this());
+
     state_ = ESTABLISHED;
     processWriteOperationsFromLoop();
     // Trigger read operations in case a pair of local read() and remote
@@ -247,12 +209,12 @@ void ConnectionImpl::handleEventOutFromLoop() {
   TP_DCHECK(context_->inLoop());
   if (state_ == SEND_ADDR) {
     FabricAddr addr = endpoint->fabric_ctx->addr;
-
-    auto err = socket_.write(reinterpret_cast<void*>(&addr.name), 64);
+    auto err =
+        socket_.write(reinterpret_cast<void*>(addr.name), sizeof(addr.name));
     // Crossing our fingers that the exchange information is small enough that
     // it can be written in a single chunk.
-    if (err != 64) {
-      setError(TP_CREATE_ERROR(ShortWriteError, 64, err));
+    if (err != sizeof(addr.name)) {
+      setError(TP_CREATE_ERROR(ShortWriteError, sizeof(addr.name), err));
       return;
     }
 
@@ -274,44 +236,45 @@ void ConnectionImpl::processReadOperationsFromLoop() {
     return;
   }
 
-  // pop out finished event at front
-  while (!readOperations_.empty()) {
-    EFAReadOperation& readOperation = readOperations_.front();
-    if (readOperation.completeFromLoop()) {
-      readOperation.callbackFromLoop(Error::kSuccess);
-      readOperations_.pop_front();
-    } else {
-      break;
-    }
-  }
-
-  // Serve read operations
-  // while (!readOperations_.empty()) {
-  //   EFAReadOperation& readOperation = readOperations_.front();
-  //   context_->getReactor().postRecv(
-  //       &readOperation.readLength_,
-  //       sizeof(size_t),
-  //       kLength,
-  //       peer_addr,
-  //       0xffffffff, // ignore lower bits for msg index
-  //       &readOperation);
-  // }
-
   for (int i = 0; i < readOperations_.size(); i++) {
     EFAReadOperation& readOperation = readOperations_[i];
-    if (readOperation.mode_ == EFAReadOperation::Mode::READ_LENGTH) {
+    if (!readOperation.posted()) {
       // context_->getReactor().;
       context_->getReactor().postRecv(
-          &readOperation.readLength_,
+          readOperation.getLengthPtr(),
           sizeof(size_t),
           kLength,
           peer_addr,
           0xffffffff, // ignore lower bits for msg index
           &readOperation);
-      readOperation.mode_ = EFAReadOperation::Mode::READ_PAYLOAD;
+      readOperation.setWaitToCompleted();
     } else {
       // if the operation is not READ_LENGTH, all operations back are all not
       // READ_LENGTH, we can skip more checks
+      break;
+    }
+  }
+}
+
+void ConnectionImpl::onWriteCompleted() {
+  while (!writeOperations_.empty()) {
+    EFAWriteOperation& writeOperation = writeOperations_.front();
+    if (writeOperation.completed()) {
+      writeOperation.callbackFromLoop(Error::kSuccess);
+      writeOperations_.pop_front();
+    } else {
+      break;
+    }
+  }
+}
+
+void ConnectionImpl::onReadCompleted() {
+  while (!readOperations_.empty()) {
+    EFAReadOperation& readOperation = readOperations_.front();
+    if (readOperation.completed()) {
+      readOperation.callbackFromLoop(Error::kSuccess);
+      readOperations_.pop_front();
+    } else {
       break;
     }
   }
@@ -324,21 +287,13 @@ void ConnectionImpl::processWriteOperationsFromLoop() {
     return;
   }
 
-  while (!writeOperations_.empty()) {
-    EFAWriteOperation& writeOperation = writeOperations_.front();
-    if (writeOperation.mode_ == EFAWriteOperation::Mode::COMPLETE) {
-      writeOperations_.pop_front();
-    } else {
-      break;
-    }
-  }
-
   for (int i = 0; i < writeOperations_.size(); i++) {
     EFAWriteOperation& writeOperation = writeOperations_[i];
-    if (writeOperation.mode_ == EFAWriteOperation::Mode::WRITE_LENGTH) {
+    if (!writeOperation.posted()) {
       EFAWriteOperation::Buf* buf_array;
       size_t size;
       std::tie(buf_array, size) = writeOperation.getBufs();
+      writeOperation.setPeerAddr(peer_addr);
       // auto size_buf = std::get<0>(writeOperation.getBufs());
       // auto payload_buf = std::get<1>(writeOperation.getBufs());
       context_->getReactor().postSend(
@@ -356,7 +311,6 @@ void ConnectionImpl::processWriteOperationsFromLoop() {
             &writeOperation);
       }
       sendIdx++;
-      writeOperation.mode_ = EFAWriteOperation::Mode::WAIT_TO_COMPLETE;
     } else {
       // if the operation is not WAIT_TO_SEND, all operations back are all not
       // WAIT_TO_SEND, we can skip more checks
@@ -364,18 +318,6 @@ void ConnectionImpl::processWriteOperationsFromLoop() {
     }
   }
 }
-
-// void ConnectionImpl::onError(efaLib::wc_status status, uint64_t wrId) {
-//   TP_DCHECK(context_->inLoop());
-//   // setError(TP_CREATE_ERROR(
-//   //     efaError,
-//   context_->getReactor().getefaLib().wc_status_str(status)));
-//   // if (wrId == kWriteRequestId) {
-//   //   onWriteCompleted();
-//   // } else if (wrId == kAckRequestId) {
-//   //   onAckCompleted();
-//   // }
-// }
 
 void ConnectionImpl::handleErrorImpl() {
   for (auto& readOperation : readOperations_) {
@@ -388,7 +330,7 @@ void ConnectionImpl::handleErrorImpl() {
   }
   writeOperations_.clear();
 
-  tryCleanup();
+  cleanup();
 
   if (socket_.hasValue()) {
     if (state_ > INITIALIZING) {
@@ -400,44 +342,11 @@ void ConnectionImpl::handleErrorImpl() {
   context_->unenroll(*this);
 }
 
-void ConnectionImpl::tryCleanup() {
-  TP_DCHECK(context_->inLoop());
-  // Setting the queue pair to an error state will cause all its work requests
-  // (both those that had started being served, and those that hadn't; including
-  // those from a shared receive queue) to be flushed. We need to wait for the
-  // completion events of all those requests to be retrieved from the completion
-  // queue before we can destroy the queue pair. We can do so by deferring the
-  // destruction to the loop, since the reactor will only proceed to invoke
-  // deferred functions once it doesn't have any completion events to handle.
-  // However the RDMA writes and the sends may be queued up inside the reactor
-  // and thus may not have even been scheduled yet, so we explicitly wait for
-  // them to complete.
-  // if (error_) {
-  //   if (numWritesInFlight_ == 0 && numAcksInFlight_ == 0) {
-  //     TP_VLOG(8) << "Connection " << id_ << " is ready to clean up";
-  //     context_->deferToLoop([impl{shared_from_this()}]() { impl->cleanup();
-  //     });
-  //   } else {
-  //     TP_VLOG(9) << "Connection " << id_
-  //                << " cannot proceed to cleanup because it has "
-  //                << numWritesInFlight_ << " pending RDMA write requests and "
-  //                << numAcksInFlight_ << " pending send requests on QP "
-  //                << qp_->qp_num;
-  //   }
-  // }
-}
-
 void ConnectionImpl::cleanup() {
   TP_DCHECK(context_->inLoop());
   TP_VLOG(8) << "Connection " << id_ << " is cleaning up";
-
-  // context_->getReactor().unregisterQp(qp_->qp_num);
-
-  // qp_.reset();
-  // inboxMr_.reset();
-  // inboxBuf_.reset();
-  // outboxMr_.reset();
-  // outboxBuf_.reset();
+  context_->getReactor().unregisterHandler(peer_addr);
+  endpoint->removePeerAddr(peer_addr);
 }
 
 } // namespace efa

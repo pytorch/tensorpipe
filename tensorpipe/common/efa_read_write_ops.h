@@ -28,10 +28,10 @@ namespace tensorpipe {
 // to expected, and dynamically allocate, or 2) know how many bytes
 // to expect, and preallocate the destination memory.
 class EFAReadOperation {
-  public:
+ public:
   enum Mode {
-    READ_LENGTH,
-    READ_PAYLOAD,
+    WAIT_TO_POST,
+    WAIT_TO_COMPLETE,
     COMPLETE,
   };
 
@@ -50,13 +50,23 @@ class EFAReadOperation {
   //   inline void readFromLoop();
 
   // Returns if this read operation is complete.
-  inline bool completeFromLoop() const;
+  inline bool completed() const;
+  inline bool posted() const;
+
+  inline void setCompleted();
+
+  inline void setWaitToCompleted();
+
+  inline size_t getReadLength();
+
+  inline size_t* getLengthPtr();
+  inline char* getBufferPtr();
 
   // Invoke user callback.
   inline void callbackFromLoop(const Error& error);
 
-  //  private:
-  Mode mode_{READ_LENGTH};
+ private:
+  Mode mode_{WAIT_TO_POST};
   char* ptr_{nullptr};
 
   // Number of bytes as specified by the user (if applicable).
@@ -95,38 +105,31 @@ void EFAReadOperation::allocFromLoop() {
   }
 }
 
-// void EFAReadOperation::readFromLoop(size_t nread) {
-//   bytesRead_ += nread;
-//   if (mode_ == READ_LENGTH) {
-//     TP_DCHECK_LE(bytesRead_, sizeof(readLength_));
-//     if (bytesRead_ == sizeof(readLength_)) {
-//       if (givenLength_.has_value()) {
-//         TP_DCHECK(ptr_ != nullptr || givenLength_.value() == 0);
-//         TP_DCHECK_EQ(readLength_, givenLength_.value());
-//       } else {
-//         TP_DCHECK(ptr_ == nullptr);
-//         buffer_ = std::make_unique<char[]>(readLength_);
-//         ptr_ = buffer_.get();
-//       }
-//       if (readLength_ == 0) {
-//         mode_ = COMPLETE;
-//       } else {
-//         mode_ = READ_PAYLOAD;
-//       }
-//       bytesRead_ = 0;
-//     }
-//   } else if (mode_ == READ_PAYLOAD) {
-//     TP_DCHECK_LE(bytesRead_, readLength_);
-//     if (bytesRead_ == readLength_) {
-//       mode_ = COMPLETE;
-//     }
-//   } else {
-//     TP_THROW_ASSERT() << "invalid mode " << mode_;
-//   }
-// }
+inline size_t* EFAReadOperation::getLengthPtr() {
+  return &readLength_;
+};
+inline char* EFAReadOperation::getBufferPtr() {
+  return ptr_;
+};
 
-bool EFAReadOperation::completeFromLoop() const {
+inline size_t EFAReadOperation::getReadLength() {
+  return readLength_;
+};
+
+bool EFAReadOperation::completed() const {
   return mode_ == COMPLETE;
+}
+
+bool EFAReadOperation::posted() const {
+  return !(mode_ == WAIT_TO_POST);
+}
+
+void EFAReadOperation::setCompleted() {
+  mode_ = COMPLETE;
+}
+
+void EFAReadOperation::setWaitToCompleted() {
+  mode_ = WAIT_TO_COMPLETE;
 }
 
 void EFAReadOperation::callbackFromLoop(const Error& error) {
@@ -141,10 +144,8 @@ void EFAReadOperation::callbackFromLoop(const Error& error) {
 // must remain valid until the write callback has been called.
 class EFAWriteOperation {
  public:
- 
   enum Mode {
-    WRITE_LENGTH,
-    WRITE_PAYLOAD, // Not used
+    WAIT_TO_POST,
     WAIT_TO_COMPLETE,
     COMPLETE,
   };
@@ -165,11 +166,27 @@ class EFAWriteOperation {
 
   // Invoke user callback.
   inline void callbackFromLoop(const Error& error);
+  // set mode to WAIT_TO_COMPLETE
+  inline void setWaitComplete();
 
-  //  private:  
-  Mode mode_{WRITE_LENGTH};
+  inline bool posted();
+
+  // Returns if this write operation is complete.
+  inline bool completed() const;
+  // set mode to complete
+  inline void setCompleted();
+  // get peer address
+  inline fi_addr_t getPeerAddr();
+  // set peer address
+  inline void setPeerAddr(fi_addr_t peer_addr);
+  // get length
+  inline size_t getLength() const;
+
+ private:
+  Mode mode_{WAIT_TO_POST};
   const char* ptr_;
   const size_t length_;
+  fi_addr_t peer_addr_;
 
   // Buffers (structs with pointers and lengths) to write to stream.
   std::array<Buf, 2> bufs_;
@@ -196,6 +213,34 @@ std::tuple<EFAWriteOperation::Buf*, size_t> EFAWriteOperation::getBufs() {
 
 void EFAWriteOperation::callbackFromLoop(const Error& error) {
   fn_(error);
+}
+
+bool EFAWriteOperation::posted() {
+  return !(mode_ == WAIT_TO_POST);
+}
+
+size_t EFAWriteOperation::getLength() const {
+  return length_;
+}
+
+void EFAWriteOperation::setWaitComplete() {
+  mode_ = WAIT_TO_COMPLETE;
+}
+
+void EFAWriteOperation::setCompleted() {
+  mode_ = COMPLETE;
+}
+
+bool EFAWriteOperation::completed() const {
+  return mode_ == COMPLETE;
+}
+
+void EFAWriteOperation::setPeerAddr(fi_addr_t peer_addr) {
+  peer_addr_ = peer_addr;
+}
+
+fi_addr_t EFAWriteOperation::getPeerAddr() {
+  return peer_addr_;
 }
 
 } // namespace tensorpipe

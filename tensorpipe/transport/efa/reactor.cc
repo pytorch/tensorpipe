@@ -8,8 +8,8 @@
 
 #include <tensorpipe/transport/efa/reactor.h>
 
-#include <tensorpipe/common/system.h>
 #include <tensorpipe/common/efa_read_write_ops.h>
+#include <tensorpipe/common/system.h>
 #include <tensorpipe/transport/efa/constants.h>
 
 namespace tensorpipe {
@@ -28,43 +28,27 @@ void Reactor::postSend(
     uint64_t tag,
     fi_addr_t peer_addr,
     void* context) {
-  // First try send all messages in pending queue
-  while (!pendingSends_.empty()) {
-    EFASendEvent sevent = pendingSends_.front();
-    int ret =
-        this->endpoint->PushSendEvent(sevent.buffer, sevent.size, sevent.tag, sevent.peer_addr, sevent.context);
-    if (ret == 0) {
-      // Send successfully, pop out events
-      pendingSends_.pop_front();
-    } else if (ret == -FI_EAGAIN) {
-      // Event queue is full now, push the event into pending queue and return
-      pendingSends_.push_back({buffer, size, tag, peer_addr, context});
-      return;
-    } else if (ret < 0) {
-      // Unknown failure, raise exception
-      TP_CHECK_EFA_RET(ret, "Unable to do fi_tsend message");
-    }
-  }
+  pendingSends_.push_back({buffer, size, tag, peer_addr, context});
+  postPendingRecvs();
+}
 
-  // No pending events, send out directly
-  int ret =
-      this->endpoint->PushSendEvent(buffer, size, tag, peer_addr, context);
-  if (ret == 0) {
-    // Send successfully
-    return;
-  } else if (ret == -FI_EAGAIN) {
-    // Event queue is full now, push the event into pending queue and return
-    pendingSends_.push_back({buffer, size, tag, peer_addr, context});
-    return;
-  } else if (ret < 0) {
-    TP_CHECK_EFA_RET(ret, "Unable to do fi_tsend message");
-  }
+void Reactor::postRecv(
+    void* buffer,
+    size_t size,
+    uint64_t tag,
+    fi_addr_t dest_addr,
+    uint64_t ignore,
+    void* context) {
+  // First try send all messages in pending queue
+  pendingRecvs_.push_back({buffer, size, tag, dest_addr, ignore, context});
+  postPendingRecvs();
 }
 
 int Reactor::postPendingSends() {
+  // TP_LOG_WARNING() << "Post send event";
   while (!pendingSends_.empty()) {
     EFASendEvent sevent = pendingSends_.front();
-    int ret = this->endpoint->PushSendEvent(
+    int ret = this->endpoint->post_send(
         sevent.buffer,
         sevent.size,
         sevent.tag,
@@ -80,14 +64,14 @@ int Reactor::postPendingSends() {
       TP_CHECK_EFA_RET(ret, "Unable to do fi_tsend message");
     }
   }
-  
+
   return 0;
 }
 
 int Reactor::postPendingRecvs() {
   while (!pendingRecvs_.empty()) {
     EFARecvEvent revent = pendingRecvs_.front();
-    int ret = this->endpoint->PushRecvEvent(
+    int ret = this->endpoint->post_recv(
         revent.buffer,
         revent.size,
         revent.tag,
@@ -101,56 +85,11 @@ int Reactor::postPendingRecvs() {
       return pendingRecvs_.size();
     } else if (ret < 0) {
       // Unknown failure, raise exception
-      TP_CHECK_EFA_RET(ret, "Unable to do fi_tsend message");
+      TP_CHECK_EFA_RET(ret, "Unable to do fi_trecv message");
     }
   }
   return 0;
 }
-
-void Reactor::postRecv(
-    void* buffer,
-    size_t size,
-    uint64_t tag,
-    fi_addr_t dest_addr,
-    uint64_t ignore,
-    void* context) {
-  // First try send all messages in pending queue
-  int pendingRecvNum = postPendingRecvs();
-  if (pendingRecvNum == 0){
-    // No pending events, send out directly
-    int ret =
-        this->endpoint->PushRecvEvent(buffer, size, tag, dest_addr, ignore, context);
-    if (ret == 0) {
-      // Send successfully
-      return;
-    } else if (ret == -FI_EAGAIN) {
-      // Event queue is full now, push the event into pending queue and return
-      pendingRecvs_.push_back({buffer, size, tag, dest_addr, ignore, context});
-      return;
-    } else if (ret < 0) {
-      TP_CHECK_EFA_RET(ret, "Unable to do fi_tsend message");
-    }
-  } else {
-    pendingRecvs_.push_back({buffer, size, tag, dest_addr, ignore, context});
-    return;
-  }
-
-}
-
-// void Reactor::postRecvRequests(int num) {
-//   while (num > 0) {
-//     efaLib::recv_wr* badRecvWr = nullptr;
-//     std::array<efaLib::recv_wr, kNumPolledWorkCompletions> wrs;
-//     std::memset(wrs.data(), 0, sizeof(wrs));
-//     for (int i = 0; i < std::min(num, kNumPolledWorkCompletions) - 1; i++) {
-//       wrs[i].next = &wrs[i + 1];
-//     }
-//     int rv = getefaLib().post_srq_recv(srq_.get(), wrs.data(), &badRecvWr);
-//     TP_THROW_SYSTEM_IF(rv != 0, errno);
-//     TP_THROW_ASSERT_IF(badRecvWr != nullptr);
-//     num -= std::min(num, kNumPolledWorkCompletions);
-//   }
-// }
 
 void Reactor::setId(std::string id) {
   id_ = std::move(id);
@@ -176,7 +115,7 @@ Reactor::~Reactor() {
 
 // void Reactor::postRecvRequests(int num){
 //   uint64_t size_buffer;
-//   int ret = endpoint->PushRecvEvent(&size_buffer, sizeof(uint64_t), kLength,
+//   int ret = endpoint->post_recv(&size_buffer, sizeof(uint64_t), kLength,
 //   FI_ADDR_UNSPEC);
 
 // }
@@ -184,13 +123,18 @@ Reactor::~Reactor() {
 bool Reactor::pollOnce() {
   std::array<struct fi_cq_tagged_entry, kNumPolledWorkCompletions> cq_entries;
   std::array<fi_addr_t, kNumPolledWorkCompletions> src_addrs;
-  auto rv =
-      endpoint->PollCQ(cq_entries.data(), src_addrs.data(), cq_entries.size());
 
-  if (rv == 0) {
+  postPendingSends();
+  postPendingRecvs();
+
+  auto rv =
+      endpoint->poll_cq(cq_entries.data(), src_addrs.data(), cq_entries.size());
+
+  if (rv == 0 || rv == -FI_EAGAIN) {
     return false;
+  } else {
+    TP_CHECK_EFA_RET(rv, "Completion queue poll error.");
   }
-  TP_THROW_SYSTEM_IF(rv < 0, errno);
 
   int numRecvs = 0;
   int numWrites = 0;
@@ -199,68 +143,63 @@ bool Reactor::pollOnce() {
     struct fi_cq_tagged_entry& cq = cq_entries[cqIdx];
     fi_addr_t& src_addr = src_addrs[cqIdx];
     uint32_t msg_idx = static_cast<uint32_t>(cq.tag);
-    if (cq.flags && FI_SEND) {
+    if (cq.flags & FI_SEND) {
       // Send event
-      if (cq.flags && kLength) {
+      if (cq.tag & kLength) {
         // Send size finished, check whether it's zero sized message
         auto* operation_ptr = static_cast<EFAWriteOperation*>(cq.op_context);
-        if (operation_ptr->length_ == 0){
-           operation_ptr->mode_ = EFAWriteOperation::Mode::COMPLETE;
-           operation_ptr->callbackFromLoop(Error::kSuccess);
+        if (operation_ptr->getLength() == 0) {
+          operation_ptr->setCompleted();
+          efaEventHandler_[operation_ptr->getPeerAddr()]->onWriteCompleted();
         }
-      } else if (cq.flags && kPayload) {
+      } else if (cq.tag & kPayload) {
         auto* operation_ptr = static_cast<EFAWriteOperation*>(cq.op_context);
-        operation_ptr->mode_ = EFAWriteOperation::Mode::COMPLETE;
-        operation_ptr->callbackFromLoop(Error::kSuccess);
+        operation_ptr->setCompleted();
+        efaEventHandler_[operation_ptr->getPeerAddr()]->onWriteCompleted();
       }
-    } else if (cq.flags && FI_RECV) {
+    } else if (cq.flags & FI_RECV) {
       // Receive event
-      // auto iter = efaEventHandler_.find(src_addr);
-      if (cq.tag && kLength) {
+      if (cq.tag & kLength) {
         // Received length information
         auto* operation_ptr = static_cast<EFAReadOperation*>(cq.op_context);
-        operation_ptr->mode_ = EFAReadOperation::Mode::READ_PAYLOAD;
-        operation_ptr->allocFromLoop();
-        //  postRecv()
-        //  void* buffer = operation_ptr->perpareBuffer();
-        postRecv(
-            operation_ptr->ptr_,
-            operation_ptr->readLength_,
-            kPayload | msg_idx,
-            src_addr,
-            0, // Exact match of tag
-            operation_ptr);
-        //  iter->second->onRecvLength(msg_idx);
-      } else if (cq.tag && kPayload) {
+        if (operation_ptr->getReadLength() == 0) {
+          operation_ptr->setCompleted();
+          efaEventHandler_[src_addr]->onReadCompleted();
+        } else {
+          // operation_ptr->mode_ = EFAReadOperation::Mode::READ_PAYLOAD;
+          operation_ptr->allocFromLoop();
+          postRecv(
+              operation_ptr->getBufferPtr(),
+              operation_ptr->getReadLength(),
+              kPayload | msg_idx,
+              src_addr,
+              0, // Exact match of tag
+              operation_ptr);
+          operation_ptr->setWaitToCompleted();
+        }
+      } else if (cq.tag & kPayload) {
         // Received payload
         auto* operation_ptr = static_cast<EFAReadOperation*>(cq.op_context);
-        operation_ptr->mode_ = EFAReadOperation::Mode::COMPLETE;
-        operation_ptr->callbackFromLoop(Error::kSuccess);
+        operation_ptr->setCompleted();
+        efaEventHandler_[src_addr]->onReadCompleted();
       }
     }
-    // auto iter = queuePairEventHandler_.find(wc.qp_num);
-    // TP_THROW_ASSERT_IF(iter == queuePairEventHandler_.end())
-    //     << "Got work completion for unknown queue pair " << wc.qp_num;
-
-    // if (wc.status != efaLib::WC_SUCCESS) {
-    //   iter->second->onError(wc.status, wc.wr_id);
-    //   continue;
-    // }
   }
 
   return true;
 }
 
 bool Reactor::readyToClose() {
-  return true;
-  // return queuePairEventHandler_.size() == 0;
+  return efaEventHandler_.size() == 0;
 }
 
-// void Reactor::registerQp(
-//     uint32_t qpn,
-//     std::shared_ptr<efaEventHandler> eventHandler) {
-//   queuePairEventHandler_.emplace(qpn, std::move(eventHandler));
-// }
+void Reactor::registerHandler(fi_addr_t peer_addr, std::shared_ptr<efaEventHandler> eventHandler) {
+  efaEventHandler_.emplace(peer_addr, std::move(eventHandler));
+}
+
+void Reactor::unregisterHandler(fi_addr_t peer_addr){
+  efaEventHandler_.erase(peer_addr);
+}
 
 } // namespace efa
 } // namespace transport

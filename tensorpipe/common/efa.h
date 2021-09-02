@@ -6,8 +6,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#ifndef COMMON_EFA_H_
-#define COMMON_EFA_H_
+#ifndef TENSORPIPE_COMMON_EFA_H_
+#define TENSORPIPE_COMMON_EFA_H_
 
 
 #include <iostream>
@@ -135,12 +135,13 @@ class FabricEndpoint {
  public:
   FabricEndpoint();
 
-  fi_addr_t AddPeerAddr(FabricAddr* addr);
+  fi_addr_t addPeerAddr(FabricAddr* addr);
+  void removePeerAddr(fi_addr_t peer_addr);
 
-  int PushSendEvent(void* buffer, size_t size, uint64_t tag, fi_addr_t dst_addr, void* context = nullptr);
-  int PushRecvEvent(void* buffer, size_t size, uint64_t tag, fi_addr_t src_addr, uint64_t ignore, void* context = nullptr);
+  int post_send(void* buffer, size_t size, uint64_t tag, fi_addr_t dst_addr, void* context = nullptr);
+  int post_recv(void* buffer, size_t size, uint64_t tag, fi_addr_t src_addr, uint64_t ignore, void* context = nullptr);
 
-  int PollCQ(struct fi_cq_tagged_entry* cq_entries, fi_addr_t* src_addrs, size_t count);
+  int poll_cq(struct fi_cq_tagged_entry* cq_entries, fi_addr_t* src_addrs, size_t count);
 
   static bool isEfaAvailable();
 
@@ -150,4 +151,4 @@ class FabricEndpoint {
 } // namespace tensorpipe
 
 
-#endif // COMMON_EFA_H_
+#endif // TENSORPIPE_COMMON_EFA_H_

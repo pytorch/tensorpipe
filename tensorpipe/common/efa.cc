@@ -125,12 +125,12 @@ FabricEndpoint::FabricEndpoint(){
     fabric_ctx = std::make_unique<FabricContext>();    
 }
 
-int FabricEndpoint::PollCQ(struct fi_cq_tagged_entry* cq_entries, fi_addr_t* src_addrs, size_t count){
-    int ret = fi_cq_readfrom(fabric_ctx->cq.get(), &cq_entries, count, src_addrs);
+int FabricEndpoint::poll_cq(struct fi_cq_tagged_entry* cq_entries, fi_addr_t* src_addrs, size_t count){
+    int ret = fi_cq_readfrom(fabric_ctx->cq.get(), cq_entries, count, src_addrs);
     return ret;
 }
 
-int FabricEndpoint::PushSendEvent(void* buffer, size_t size, uint64_t tag, fi_addr_t dest_addr, void* context){
+int FabricEndpoint::post_send(void* buffer, size_t size, uint64_t tag, fi_addr_t dest_addr, void* context){
     int ret = fi_tsend(fabric_ctx->ep.get(), buffer, size, nullptr, dest_addr, tag, context);
     if (ret < 0 && ret != -FI_EAGAIN) {
         TP_CHECK_EFA_RET(ret, "Unable to do fi_tsend message");
@@ -138,7 +138,7 @@ int FabricEndpoint::PushSendEvent(void* buffer, size_t size, uint64_t tag, fi_ad
     return ret;
 }
 
-int FabricEndpoint::PushRecvEvent(void* buffer, size_t size, uint64_t tag, fi_addr_t dest_addr, uint64_t ignore, void* context){
+int FabricEndpoint::post_recv(void* buffer, size_t size, uint64_t tag, fi_addr_t dest_addr, uint64_t ignore, void* context){
     int ret = fi_trecv(fabric_ctx->ep.get(), buffer, size, nullptr, dest_addr, tag, ignore, context);
     if (ret < 0 && ret != -FI_EAGAIN) {
         TP_CHECK_EFA_RET(ret, "Unable to do fi_trecv message");
@@ -147,14 +147,20 @@ int FabricEndpoint::PushRecvEvent(void* buffer, size_t size, uint64_t tag, fi_ad
 }
 
 
-fi_addr_t FabricEndpoint::AddPeerAddr(FabricAddr* addr){
-    TP_VLOG(9) << "Add addr";
+fi_addr_t FabricEndpoint::addPeerAddr(FabricAddr* addr){
     fi_addr_t peer_addr;
+    // TP_LOG_WARNING() << "Add: " << addr->DebugStr();
     int ret =
       fi_av_insert(fabric_ctx->av.get(), addr->name, 1, &peer_addr, 0, nullptr);
     TP_DCHECK_EQ(ret, 1);
     TP_CHECK_EFA_RET(ret, "Unable to add address to endpoint");
     return peer_addr;
 };
+
+ void FabricEndpoint::removePeerAddr(fi_addr_t peer_addr){
+    int ret =
+      fi_av_remove(fabric_ctx->av.get(), &peer_addr, 1, 0);
+    TP_DCHECK_EQ(ret, 0);
+ };
 
 } // namespace tensorpipe

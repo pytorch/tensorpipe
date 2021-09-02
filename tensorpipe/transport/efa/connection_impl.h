@@ -14,11 +14,11 @@
 #include <memory>
 #include <string>
 
-#include <tensorpipe/common/epoll_loop.h>
 #include <tensorpipe/common/efa.h>
+#include <tensorpipe/common/efa_read_write_ops.h>
+#include <tensorpipe/common/epoll_loop.h>
 #include <tensorpipe/common/memory.h>
 #include <tensorpipe/common/nop.h>
-#include <tensorpipe/common/efa_read_write_ops.h>
 #include <tensorpipe/common/socket.h>
 #include <tensorpipe/transport/connection_impl_boilerplate.h>
 #include <tensorpipe/transport/efa/reactor.h>
@@ -35,17 +35,8 @@ class ConnectionImpl final : public ConnectionImplBoilerplate<
                                  ContextImpl,
                                  ListenerImpl,
                                  ConnectionImpl>,
+                             public efaEventHandler,
                              public EpollLoop::EventHandler {
-//   constexpr static size_t kBufferSize = 2 * 1024 * 1024;
-
-//   constexpr static int kNumOutboxRingbufferRoles = 3;
-//   using OutboxefaAcker = RingBufferRole<kNumOutboxRingbufferRoles, 0>;
-//   using OutboxefaWriter = RingBufferRole<kNumOutboxRingbufferRoles, 1>;
-//   using OutboxProducer = RingBufferRole<kNumOutboxRingbufferRoles, 2>;
-
-//   constexpr static int kNumInboxRingbufferRoles = 2;
-//   using InboxConsumer = RingBufferRole<kNumInboxRingbufferRoles, 0>;
-//   using InboxefaRecver = RingBufferRole<kNumInboxRingbufferRoles, 1>;
 
   enum State {
     INITIALIZING = 1,
@@ -73,10 +64,11 @@ class ConnectionImpl final : public ConnectionImplBoilerplate<
   void handleEventsFromLoop(int events) override;
 
   // Implementation of efaEventHandler.
-//   void onRemoteProducedData(uint32_t length) override;
-//   void onRemoteConsumedData(uint32_t length) override;
-//   void onWriteCompleted() override;
-//   void onAckCompleted() override;
+  //   void onRemoteProducedData(uint32_t length) override;
+  //   void onRemoteConsumedData(uint32_t length) override;
+  void onWriteCompleted() override;
+  void onReadCompleted() override;
+  //   void onAckCompleted() override;
   // void onError(efaLib::wc_status status, uint64_t wrId) override;
 
  protected:
@@ -108,39 +100,7 @@ class ConnectionImpl final : public ConnectionImplBoilerplate<
   std::shared_ptr<tensorpipe::FabricEndpoint> endpoint;
   fi_addr_t peer_addr;
 
-//   efaQueuePair qp_;
-  uint32_t sendIdx, recvIdx;
-
-
-  // Inbox.
-  // Initialize header during construction because it isn't assignable.
-//   RingBufferHeader<kNumInboxRingbufferRoles> inboxHeader_{kBufferSize};
-  // Use mmapped memory so it's page-aligned (and, one day, to use huge pages).
-//   MmappedPtr inboxBuf_;
-//   RingBuffer<kNumInboxRingbufferRoles> inboxRb_;
-//   efaMemoryRegion inboxMr_;
-
-  // Outbox.
-  // Initialize header during construction because it isn't assignable.
-//   RingBufferHeader<kNumOutboxRingbufferRoles> outboxHeader_{kBufferSize};
-  // Use mmapped memory so it's page-aligned (and, one day, to use huge pages).
-//   MmappedPtr outboxBuf_;
-//   RingBuffer<kNumOutboxRingbufferRoles> outboxRb_;
-//   efaMemoryRegion outboxMr_;
-
-  // Peer inbox key, pointer and head.
-//   uint32_t peerInboxKey_{0};
-//   uint64_t peerInboxPtr_{0};
-//   uint64_t peerInboxHead_{0};
-
-  // The connection performs two types of send requests: writing to the remote
-  // inbox, or acknowledging a write into its own inbox. These send operations
-  // could be delayed and stalled by the reactor as only a limited number of
-  // work requests can be outstanding at the same time globally. Thus we keep
-  // count of how many we have pending to make sure they have all completed or
-  // flushed when we close, and that none is stuck in the pipeline.
-//   uint32_t numWritesInFlight_{0};
-//   uint32_t numAcksInFlight_{0};
+  uint32_t sendIdx = 0;
 
   // Pending read operations.
   std::deque<EFAReadOperation> readOperations_;
@@ -170,7 +130,6 @@ class ConnectionImpl final : public ConnectionImplBoilerplate<
   // a new write operation is queued.
   void processWriteOperationsFromLoop();
 
-  void tryCleanup();
   void cleanup();
 };
 

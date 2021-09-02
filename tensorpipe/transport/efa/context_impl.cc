@@ -45,7 +45,7 @@ std::shared_ptr<ContextImpl> ContextImpl::create() {
     return nullptr;
   }
 
-  bool isEfaAvailable = FabricEndpoint::isEfaAvailable();
+  // bool isEfaAvailable = FabricEndpoint::isEfaAvailable();
   if (!FabricEndpoint::isEfaAvailable()){
     TP_VLOG(7)
         << "libfabric cannot find efa provider.";
@@ -73,6 +73,12 @@ std::shared_ptr<ContextImpl> ContextImpl::create() {
   //     std::move(efaLib), std::move(deviceList));
   return std::make_shared<ContextImpl>();
 }
+
+
+ContextImpl::ContextImpl()
+    : ContextImplBoilerplate<ContextImpl, ListenerImpl, ConnectionImpl>(
+          generateDomainDescriptor()) {
+          }
 
 // ContextImpl::ContextImpl(efaLib efaLib, efaDeviceList deviceList)
 //     : ContextImplBoilerplate<ContextImpl, ListenerImpl, ConnectionImpl>(
