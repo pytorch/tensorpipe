@@ -113,13 +113,6 @@ Reactor::~Reactor() {
   join();
 }
 
-// void Reactor::postRecvRequests(int num){
-//   uint64_t size_buffer;
-//   int ret = endpoint->post_recv(&size_buffer, sizeof(uint64_t), kLength,
-//   FI_ADDR_UNSPEC);
-
-// }
-
 bool Reactor::pollOnce() {
   std::array<struct fi_cq_tagged_entry, kNumPolledWorkCompletions> cq_entries;
   std::array<fi_addr_t, kNumPolledWorkCompletions> src_addrs;

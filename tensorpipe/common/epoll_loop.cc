@@ -129,7 +129,7 @@ bool EpollLoop::hasRegisteredHandlers() {
 }
 
 void EpollLoop::loop() {
-  setThreadName("TP_IBV_loop");
+  setThreadName("TP_epoll_loop");
 
   // Stop when another thread has asked the loop the close and when all
   // handlers have been unregistered except for the wakeup eventfd one.

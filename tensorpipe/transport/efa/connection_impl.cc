@@ -249,8 +249,8 @@ void ConnectionImpl::processReadOperationsFromLoop() {
           &readOperation);
       readOperation.setWaitToCompleted();
     } else {
-      // if the operation is not READ_LENGTH, all operations back are all not
-      // READ_LENGTH, we can skip more checks
+      // if the operation is posted, all operations back should be posted
+      // we can skip more checks
       break;
     }
   }
@@ -312,8 +312,8 @@ void ConnectionImpl::processWriteOperationsFromLoop() {
       }
       sendIdx++;
     } else {
-      // if the operation is not WAIT_TO_SEND, all operations back are all not
-      // WAIT_TO_SEND, we can skip more checks
+      // if the operation is posted, all operations back should be posted
+      // we can skip more checks
       break;
     }
   }
