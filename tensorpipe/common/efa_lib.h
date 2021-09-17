@@ -22,24 +22,10 @@ namespace tensorpipe {
 
 #define TP_FORALL_FABRIC_SYMBOLS(_) \
   _(fi_freeinfo)                    \
-  _(fi_allocinfo)                   \
+  _(fi_dupinfo)                     \
   _(fi_fabric)                      \
-  _(fi_domain)                      \
   _(fi_strerror)                    \
-  _(fi_av_open)                     \
-  _(fi_cq_open)                     \
-  _(fi_endpoint)                    \
-  _(fi_ep_bind)                     \
-  _(fi_enable)                      \
-  _(fi_getname)                     \
-  _(fi_cq_readfrom)                 \
-  _(fi_tsendmsg)                       \
-  _(fi_trecvmsg)                       \
-  _(fi_av_insert)                   \
-  _(fi_av_remove)                   \
-  _(fi_close)                       \
-  _(fi_getinfo)                     \
-  _(fi_av_straddr)
+  _(fi_getinfo)
 
 // Wrapper for libfabric.
 
@@ -80,6 +66,7 @@ class EfaLib {
     std::tie(error, dlhandle) =
         DynamicLibraryHandle::create("libfabric.so", RTLD_LOCAL | RTLD_LAZY);
     if (error) {
+      TP_LOG_WARNING() << "Load so fail";
       return std::make_tuple(std::move(error), EfaLib());
     }
     // Log at level 9 as we can't know whether this will be used in a transport
@@ -95,18 +82,18 @@ class EfaLib {
       return "Found shared library libfabric.so at " + filename;
     }();
     EfaLib lib(std::move(dlhandle));
-#define TP_LOAD_SYMBOL(function_name)                               \
-  {                                                                 \
-    void* ptr;                                                      \
-    std::tie(error, ptr) = lib.dlhandle_.loadSymbol(function_name); \
-    if (error) {                                                    \
-      return std::make_tuple(std::move(error), EfaLib());           \
-    }                                                               \
-    TP_THROW_ASSERT_IF(ptr == nullptr);                             \
-    lib.function_name##_ptr_ =                                      \
-        reinterpret_cast<decltype(function_name##_ptr_)>(ptr);      \
-  }                                                                 \
-  TP_FORALL_FABRIC_SYMBOLS(TP_LOAD_SYMBOL)
+#define TP_LOAD_SYMBOL(function_name)                                \
+  {                                                                  \
+    void* ptr;                                                       \
+    std::tie(error, ptr) = lib.dlhandle_.loadSymbol(#function_name); \
+    if (error) {                                                     \
+      return std::make_tuple(std::move(error), EfaLib());            \
+    }                                                                \
+    TP_THROW_ASSERT_IF(ptr == nullptr);                              \
+    lib.function_name##_ptr_ =                                       \
+        reinterpret_cast<decltype(function_name##_ptr_)>(ptr);       \
+  }
+    TP_FORALL_FABRIC_SYMBOLS(TP_LOAD_SYMBOL)
 #undef TP_LOAD_SYMBOL
     return std::make_tuple(Error::kSuccess, std::move(lib));
   }

@@ -170,7 +170,6 @@ tp_conditional_backend(
   TP_ENABLE_EFA "Enable EFA transport" "LINUX")
 if(TP_ENABLE_EFA)
   list(APPEND TP_SRCS
-    common/efa.cc
     transport/efa/connection_impl.cc
     transport/efa/context_impl.cc
     transport/efa/error.cc

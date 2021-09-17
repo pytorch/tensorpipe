@@ -41,31 +41,31 @@ struct FabricDeleter {
   }
   void operator()(fid* fid) {
     if (fid)
-      efaLib->fi_close_op(fid);
+      fi_close(fid);
   }
   void operator()(fid_domain* fid) {
     if (fid)
-      efaLib->fi_close_op((fid_t)fid);
+      fi_close((fid_t)fid);
   }
   void operator()(fid_fabric* fid) {
     if (fid)
-      efaLib->fi_close_op((fid_t)fid);
+      fi_close((fid_t)fid);
   }
   void operator()(fid_cq* fid) {
     if (fid)
-      efaLib->fi_close_op((fid_t)fid);
+      fi_close((fid_t)fid);
   }
   void operator()(fid_av* fid) {
     if (fid)
-      efaLib->fi_close_op((fid_t)fid);
+      fi_close((fid_t)fid);
   }
   void operator()(fid_ep* fid) {
     if (fid)
-      efaLib->fi_close_op((fid_t)fid);
+      fi_close((fid_t)fid);
   }
   void operator()(fid_eq* fid) {
     if (fid)
-      efaLib->fi_close_op((fid_t)fid);
+      fi_close((fid_t)fid);
   }
 
   EfaLib* efaLib;
@@ -106,7 +106,7 @@ struct EfaAddress {
 };
 
 inline EfaLib::device* getEfaDevices(EfaLib& efaLib) {
-  EfaLib::device* hints = efaLib.fi_allocinfo_op();
+  EfaLib::device* hints = efaLib.fi_dupinfo_op((const fi_info*)NULL);
   hints->mode = FI_CONTEXT;
   hints->ep_attr->type = FI_EP_RDM; // Reliable Datagram
   hints->caps = FI_TAGGED | FI_MSG | FI_REMOTE_COMM | FI_DIRECTED_RECV |
@@ -119,7 +119,6 @@ inline EfaLib::device* getEfaDevices(EfaLib& efaLib) {
       FI_LOCAL_COMM | FI_REMOTE_COMM; // Enable local loopback
   hints->domain_attr->av_type = FI_AV_TABLE;
   hints->fabric_attr->prov_name = strdup("efa");
-  UniqueFabricPtr<fi_info> info;
   // info.
   struct fi_info* info_;
   int ret =
@@ -141,7 +140,7 @@ inline EfaDomain createEfaDomain(
     EfaFabric& fabric,
     EfaLib::device* info) {
   struct fid_domain* domain_;
-  int ret = efaLib.fi_domain_op(fabric.get(), info, &domain_, nullptr);
+  int ret = fi_domain(fabric.get(), info, &domain_, nullptr);
   TP_CHECK_EFA_RET(ret, "Couldn't open a fabric access domain");
   return EfaDomain(domain_, FabricDeleter{&efaLib});
 }
@@ -152,7 +151,7 @@ inline EfaEndpoint createEfaEndpoint(
     EfaDomain& domain,
     EfaLib::device* info) {
   struct fid_ep* ep_;
-  int ret = efaLib.fi_endpoint_op(domain.get(), info, &ep_, nullptr);
+  int ret = fi_endpoint(domain.get(), info, &ep_, nullptr);
   TP_CHECK_EFA_RET(ret, "Couldn't allocate endpoint");
   return EfaEndpoint(ep_, FabricDeleter{&efaLib});
 }
@@ -166,7 +165,7 @@ inline EfaCompletionQueue createEfaCompletionQueue(
   struct fi_cq_attr cq_attr = {};
   cq_attr.format = FI_CQ_FORMAT_TAGGED;
   cq_attr.size = info->rx_attr->size;
-  int ret = efaLib.fi_cq_open_op(domain.get(), &cq_attr, &cq_, nullptr);
+  int ret = fi_cq_open(domain.get(), &cq_attr, &cq_, nullptr);
   TP_CHECK_EFA_RET(ret, "Couldn't open CQ");
   return EfaCompletionQueue(cq_, FabricDeleter{&efaLib});
 }
@@ -176,8 +175,8 @@ inline EfaAdressVector createEfaAdressVector(
     EfaLib& efaLib,
     EfaDomain& domain) {
   struct fi_av_attr av_attr = {};
-  struct fid_av* av_;
-  int ret = efaLib.fi_av_open_op(domain.get(), &av_attr, &av_, nullptr);
+  struct fid_av* av_;  
+  int ret = fi_av_open(domain.get(), &av_attr, &av_, nullptr);
   TP_CHECK_EFA_RET(ret, "Couldn't open AV");
   return EfaAdressVector(av_, FabricDeleter{&efaLib});
 }
@@ -189,18 +188,18 @@ inline EfaAddress enableEndpoint(
     EfaCompletionQueue& cq) {
   // fi_ep_bind: bind CQ and AV to the endpoint
   int ret;
-  ret = efaLib.fi_ep_bind_op(ep.get(), (fid_t)cq.get(), FI_RECV | FI_TRANSMIT);
+  ret = fi_ep_bind(ep.get(), (fid_t)cq.get(), FI_RECV | FI_TRANSMIT);
   TP_CHECK_EFA_RET(ret, "Couldn't bind EP-CQ");
-  ret = efaLib.fi_ep_bind_op(ep.get(), (fid_t)av.get(), 0);
+  ret = fi_ep_bind(ep.get(), (fid_t)av.get(), 0);
   TP_CHECK_EFA_RET(ret, "Couldn't bind EP-AV");
 
   // fi_enable: enable endpoint for communication
-  ret = efaLib.fi_enable_op(ep.get());
+  ret = fi_enable(ep.get());
   TP_CHECK_EFA_RET(ret, "Couldn't enable endpoint");
 
   // fi_getname: get endpoint name
   EfaAddress addr;
-  ret = efaLib.fi_getname_op((fid_t)ep.get(), addr.name, &addr.len);
+  ret = fi_getname((fid_t)ep.get(), addr.name, &addr.len);
   TP_CHECK_EFA_RET(ret, "Call to fi_getname() failed");
   return addr;
 }

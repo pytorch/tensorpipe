@@ -66,7 +66,7 @@ void Reactor::postRecv(
 int Reactor::postPendingSends() {
   while (!pendingSends_.empty()) {
     fi_msg_tagged* sevent = pendingSends_.front().get();
-    int ret = efaLib_.fi_tsendmsg_op(ep_.get(), sevent, 0);
+    int ret = fi_tsendmsg(ep_.get(), sevent, 0);
     if (ret == 0) {
       // Send successfully, pop out events
       pendingSends_.pop_front();
@@ -84,21 +84,21 @@ int Reactor::postPendingSends() {
 fi_addr_t Reactor::addPeerAddr(EfaAddress& addr) {
   fi_addr_t peer_addr;
   int ret =
-      efaLib_.fi_av_insert_op(av_.get(), addr.name, 1, &peer_addr, 0, nullptr);
+      fi_av_insert(av_.get(), addr.name, 1, &peer_addr, 0, nullptr);
   TP_THROW_ASSERT_IF(ret != 1) << "Unable to add address to endpoint";
   TP_CHECK_EFA_RET(ret, "Unable to add address to endpoint");
   return peer_addr;
 }
 
 void Reactor::removePeerAddr(fi_addr_t faddr) {
-  int ret = efaLib_.fi_av_remove_op(av_.get(), &faddr, 1, 0);
+  int ret = fi_av_remove(av_.get(), &faddr, 1, 0);
   TP_CHECK_EFA_RET(ret, "Unable to remove address from endpoint");
 };
 
 int Reactor::postPendingRecvs() {
   while (!pendingRecvs_.empty()) {
     fi_msg_tagged* revent = pendingRecvs_.front().get();
-    int ret = efaLib_.fi_trecvmsg_op(ep_.get(), revent, 0);
+    int ret = fi_trecvmsg(ep_.get(), revent, 0);
     if (ret == 0) {
       // Send successfully, pop out events
       pendingRecvs_.pop_front();
@@ -140,7 +140,7 @@ bool Reactor::pollOnce() {
 
   postPendingSends();
   postPendingRecvs();
-  int rv = efaLib_.fi_cq_readfrom_op(
+  int rv = fi_cq_readfrom(
       cq_.get(), cq_entries.data(), cq_entries.size(), src_addrs.data());
   if (rv == 0 || rv == -FI_EAGAIN) {
     return false;
