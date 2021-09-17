@@ -42,8 +42,7 @@ constexpr uint32_t kNumPendingWriteReqs = 1024;
 // will be either the completed receive requests of the SRQ, or the completed
 // send requests from a connection's queue pair. We can bound the former value
 // but not the latter, so we try to add some margin.
-constexpr int kCompletionQueueSize =
-    kNumPendingRecvReqs + kNumPendingWriteReqs;
+constexpr int kCompletionQueueSize = kNumPendingRecvReqs + kNumPendingWriteReqs;
 
 // How many work completions to poll from the completion queue at each reactor
 // iteration.

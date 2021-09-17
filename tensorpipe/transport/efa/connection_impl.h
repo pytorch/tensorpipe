@@ -37,7 +37,6 @@ class ConnectionImpl final : public ConnectionImplBoilerplate<
                                  ConnectionImpl>,
                              public efaEventHandler,
                              public EpollLoop::EventHandler {
-
   enum State {
     INITIALIZING = 1,
     SEND_ADDR,

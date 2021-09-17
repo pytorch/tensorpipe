@@ -17,10 +17,10 @@
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/epoll_loop.h>
 #include <tensorpipe/common/optional.h>
-#include <tensorpipe/transport/error.h>
 #include <tensorpipe/transport/efa/connection_impl.h>
 #include <tensorpipe/transport/efa/context_impl.h>
 #include <tensorpipe/transport/efa/sockaddr.h>
+#include <tensorpipe/transport/error.h>
 
 namespace tensorpipe {
 namespace transport {

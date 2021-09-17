@@ -6,10 +6,10 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <tensorpipe/transport/efa/context_impl.h>
-#include <tensorpipe/common/efa_lib.h>
 #include <tensorpipe/common/efa.h>
+#include <tensorpipe/common/efa_lib.h>
 #include <tensorpipe/transport/efa/connection_impl.h>
+#include <tensorpipe/transport/efa/context_impl.h>
 #include <tensorpipe/transport/efa/listener_impl.h>
 
 namespace tensorpipe {
@@ -55,15 +55,14 @@ std::shared_ptr<ContextImpl> ContextImpl::create() {
   TP_THROW_ASSERT_IF(error)
       << "Couldn't get list of EFA devices: " << error.what();
 
-  return std::make_shared<ContextImpl>(std::move(efaLib), std::move(deviceList));
+  return std::make_shared<ContextImpl>(
+      std::move(efaLib), std::move(deviceList));
 }
-
 
 ContextImpl::ContextImpl(EfaLib efaLib, EfaDeviceList deviceList)
     : ContextImplBoilerplate<ContextImpl, ListenerImpl, ConnectionImpl>(
           generateDomainDescriptor()),
       reactor_(std::move(efaLib), std::move(deviceList)) {}
-
 
 void ContextImpl::handleErrorImpl() {
   loop_.close();
