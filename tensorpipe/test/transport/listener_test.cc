@@ -118,3 +118,92 @@ TEST_P(TransportTest, Listener_IncomingConnectionsAreQueued) {
 
   context->join();
 }
+
+TEST_P(TransportTest, Listener_CreateThenCloseAndThenGetAddress) {
+  auto context = GetParam()->getContext();
+
+  auto listener = context->listen(GetParam()->defaultAddr());
+  listener->close();
+  auto addr = listener->addr();
+
+  std::promise<void> acceptPromise;
+  listener->accept(
+      [&](const Error& error, std::shared_ptr<Connection> /*unused*/) {
+        if (error) {
+          acceptPromise.set_exception(
+              std::make_exception_ptr(std::runtime_error(error.what())));
+        } else {
+          acceptPromise.set_value();
+        }
+      });
+
+  auto connection = context->connect(addr);
+  std::promise<void> writePromise;
+  connection->write(nullptr, 0, [&](const Error& error) {
+    if (error) {
+      writePromise.set_exception(
+          std::make_exception_ptr(std::runtime_error(error.what())));
+    } else {
+      writePromise.set_value();
+    }
+  });
+
+  try {
+    acceptPromise.get_future().get();
+  } catch (const std::runtime_error&) {
+    // Expected
+  }
+
+  try {
+    writePromise.get_future().get();
+  } catch (const std::runtime_error&) {
+    // Expected
+  }
+
+  context->join();
+}
+
+TEST_P(TransportTest, Listener_CreateAfterClosingContextAndThenGetAddress) {
+  auto context = GetParam()->getContext();
+
+  // This means the listener will be created in an already-closed state.
+  context->close();
+  auto listener = context->listen(GetParam()->defaultAddr());
+  auto addr = listener->addr();
+
+  std::promise<void> acceptPromise;
+  listener->accept(
+      [&](const Error& error, std::shared_ptr<Connection> /*unused*/) {
+        if (error) {
+          acceptPromise.set_exception(
+              std::make_exception_ptr(std::runtime_error(error.what())));
+        } else {
+          acceptPromise.set_value();
+        }
+      });
+
+  auto connection = context->connect(addr);
+  std::promise<void> writePromise;
+  connection->write(nullptr, 0, [&](const Error& error) {
+    if (error) {
+      writePromise.set_exception(
+          std::make_exception_ptr(std::runtime_error(error.what())));
+    } else {
+      writePromise.set_value();
+    }
+  });
+
+  try {
+    acceptPromise.get_future().get();
+  } catch (const std::runtime_error&) {
+    // Expected
+  }
+
+  try {
+    writePromise.get_future().get();
+  } catch (const std::runtime_error&) {
+    // Expected
+  }
+
+  context->join();
+}

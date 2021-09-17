@@ -46,6 +46,8 @@ void ListenerImpl::initImplFromLoop() {
       [this]() { this->closeCallbackFromLoop(); });
   handle_->listenFromLoop(
       [this](int status) { this->connectionCallbackFromLoop(status); });
+
+  sockaddr_ = handle_->sockNameFromLoop();
 }
 
 void ListenerImpl::acceptImplFromLoop(accept_callback_fn fn) {
@@ -53,7 +55,7 @@ void ListenerImpl::acceptImplFromLoop(accept_callback_fn fn) {
 }
 
 std::string ListenerImpl::addrImplFromLoop() const {
-  return handle_->sockNameFromLoop().str();
+  return sockaddr_.str();
 }
 
 void ListenerImpl::connectionCallbackFromLoop(int status) {
