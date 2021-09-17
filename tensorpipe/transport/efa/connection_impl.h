@@ -97,7 +97,7 @@ class ConnectionImpl final : public ConnectionImplBoilerplate<
   State state_{INITIALIZING};
   Socket socket_;
   optional<Sockaddr> sockaddr_;
-  std::shared_ptr<tensorpipe::FabricEndpoint> endpoint;
+
   fi_addr_t peer_addr;
 
   uint32_t sendIdx = 0;

@@ -8,24 +8,68 @@
 
 #pragma once
 
-#include <memory>
-
+#include <rdma/fabric.h>
+#include <rdma/fi_cm.h>
+#include <rdma/fi_endpoint.h>
+#include <rdma/fi_eq.h>
+#include <rdma/fi_errno.h>
+#include <rdma/fi_tagged.h>
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/dl.h>
+#include <memory>
 
 namespace tensorpipe {
 
-// Wrapper for libibverbs.
+#define TP_FORALL_FABRIC_SYMBOLS(_) \
+  _(fi_freeinfo)                    \
+  _(fi_allocinfo)                   \
+  _(fi_fabric)                      \
+  _(fi_domain)                      \
+  _(fi_strerror)                    \
+  _(fi_av_open)                     \
+  _(fi_cq_open)                     \
+  _(fi_endpoint)                    \
+  _(fi_ep_bind)                     \
+  _(fi_enable)                      \
+  _(fi_getname)                     \
+  _(fi_cq_readfrom)                 \
+  _(fi_tsendmsg)                       \
+  _(fi_trecvmsg)                       \
+  _(fi_av_insert)                   \
+  _(fi_av_remove)                   \
+  _(fi_close)                       \
+  _(fi_getinfo)                     \
+  _(fi_av_straddr)
+
+// Wrapper for libfabric.
 
 class EfaLib {
  public:
+  using device = struct fi_info;
+
  private:
   explicit EfaLib(DynamicLibraryHandle dlhandle)
       : dlhandle_(std::move(dlhandle)) {}
 
   DynamicLibraryHandle dlhandle_;
+
+  decltype(&fi_allocinfo) fi_allocptr = nullptr;
+
+#define TP_DECLARE_FIELD(function_name) \
+  decltype(&function_name) function_name##_ptr_ = nullptr;
+  TP_FORALL_FABRIC_SYMBOLS(TP_DECLARE_FIELD)
+#undef TP_DECLARE_FIELD
+
  public:
   EfaLib() = default;
+
+#define TP_FORWARD_CALL(function_name)                           \
+  template <typename... Args>                                    \
+  auto function_name##_op(Args&&... args) {                      \
+    return (*function_name##_ptr_)(std::forward<Args>(args)...); \
+  }
+  TP_FORALL_FABRIC_SYMBOLS(TP_FORWARD_CALL)
+#undef TP_FORWARD_CALL
 
   static std::tuple<Error, EfaLib> create() {
     Error error;
@@ -51,10 +95,21 @@ class EfaLib {
       return "Found shared library libfabric.so at " + filename;
     }();
     EfaLib lib(std::move(dlhandle));
+#define TP_LOAD_SYMBOL(function_name)                               \
+  {                                                                 \
+    void* ptr;                                                      \
+    std::tie(error, ptr) = lib.dlhandle_.loadSymbol(function_name); \
+    if (error) {                                                    \
+      return std::make_tuple(std::move(error), EfaLib());           \
+    }                                                               \
+    TP_THROW_ASSERT_IF(ptr == nullptr);                             \
+    lib.function_name##_ptr_ =                                      \
+        reinterpret_cast<decltype(function_name##_ptr_)>(ptr);      \
+  }                                                                 \
+  TP_FORALL_FABRIC_SYMBOLS(TP_LOAD_SYMBOL)
+#undef TP_LOAD_SYMBOL
     return std::make_tuple(Error::kSuccess, std::move(lib));
   }
-
 };
-
 
 } // namespace tensorpipe

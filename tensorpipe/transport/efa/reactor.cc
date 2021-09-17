@@ -16,9 +16,16 @@ namespace tensorpipe {
 namespace transport {
 namespace efa {
 
-Reactor::Reactor() {
-  // postRecvRequests(kNumPendingRecvReqs);
-  endpoint = std::make_shared<FabricEndpoint>();
+Reactor::Reactor(EfaLib efaLib, EfaDeviceList efaDeviceList) {
+  efaLib_ = std::move(efaLib);
+  // AWS p4d instances may have multiple EFAs. Only use device 0 for now
+  EfaLib::device* device = &efaDeviceList[0];
+  fabric_ = createEfaFabric(efaLib, device);
+  domain_ = createEfaDomain(efaLib, fabric_, device);
+  ep_ = createEfaEndpoint(efaLib, domain_, device);
+  av_ = createEfaAdressVector(efaLib, domain_);
+  cq_ = createEfaCompletionQueue(efaLib, domain_, device);
+  addr_ = enableEndpoint(efaLib, ep_, av_, cq_);
   startThread("TP_efa_reactor");
 }
 
@@ -28,7 +35,13 @@ void Reactor::postSend(
     uint64_t tag,
     fi_addr_t peer_addr,
     void* context) {
-  pendingSends_.push_back({buffer, size, tag, peer_addr, context});
+  pendingSends_.emplace_back(EfaEvent(new
+  fi_msg_tagged{
+      .msg_iov = new iovec{.iov_base = buffer, .iov_len = size},
+      .iov_count = 1,
+      .addr = peer_addr,
+      .tag = tag,
+      .context = context}));
   postPendingRecvs();
 }
 
@@ -39,21 +52,21 @@ void Reactor::postRecv(
     fi_addr_t dest_addr,
     uint64_t ignore,
     void* context) {
-  // First try send all messages in pending queue
-  pendingRecvs_.push_back({buffer, size, tag, dest_addr, ignore, context});
+  pendingRecvs_.emplace_back(EfaEvent(new
+  fi_msg_tagged{
+      .msg_iov = new iovec{.iov_base = buffer, .iov_len = size},
+      .iov_count = 1,
+      .addr = dest_addr,
+      .tag = tag,
+      .ignore = ignore,
+      .context = context}));
   postPendingRecvs();
 }
 
 int Reactor::postPendingSends() {
-  // TP_LOG_WARNING() << "Post send event";
   while (!pendingSends_.empty()) {
-    EFASendEvent sevent = pendingSends_.front();
-    int ret = this->endpoint->post_send(
-        sevent.buffer,
-        sevent.size,
-        sevent.tag,
-        sevent.peer_addr,
-        sevent.context); // ignore low 32 bits on tag matching
+    fi_msg_tagged* sevent = pendingSends_.front().get();
+    int ret = efaLib_.fi_tsendmsg_op(ep_.get(), sevent, 0);
     if (ret == 0) {
       // Send successfully, pop out events
       pendingSends_.pop_front();
@@ -68,16 +81,24 @@ int Reactor::postPendingSends() {
   return 0;
 }
 
+fi_addr_t Reactor::addPeerAddr(EfaAddress& addr) {
+  fi_addr_t peer_addr;
+  int ret =
+      efaLib_.fi_av_insert_op(av_.get(), addr.name, 1, &peer_addr, 0, nullptr);
+  TP_THROW_ASSERT_IF(ret != 1) << "Unable to add address to endpoint";
+  TP_CHECK_EFA_RET(ret, "Unable to add address to endpoint");
+  return peer_addr;
+}
+
+void Reactor::removePeerAddr(fi_addr_t faddr) {
+  int ret = efaLib_.fi_av_remove_op(av_.get(), &faddr, 1, 0);
+  TP_CHECK_EFA_RET(ret, "Unable to remove address from endpoint");
+};
+
 int Reactor::postPendingRecvs() {
   while (!pendingRecvs_.empty()) {
-    EFARecvEvent revent = pendingRecvs_.front();
-    int ret = this->endpoint->post_recv(
-        revent.buffer,
-        revent.size,
-        revent.tag,
-        revent.peer_addr,
-        revent.ignore,
-        revent.context); // ignore low 32 bits on tag matching
+    fi_msg_tagged* revent = pendingRecvs_.front().get();
+    int ret = efaLib_.fi_trecvmsg_op(ep_.get(), revent, 0);
     if (ret == 0) {
       // Send successfully, pop out events
       pendingRecvs_.pop_front();
@@ -119,10 +140,8 @@ bool Reactor::pollOnce() {
 
   postPendingSends();
   postPendingRecvs();
-
-  auto rv =
-      endpoint->poll_cq(cq_entries.data(), src_addrs.data(), cq_entries.size());
-
+  int rv = efaLib_.fi_cq_readfrom_op(
+      cq_.get(), cq_entries.data(), cq_entries.size(), src_addrs.data());
   if (rv == 0 || rv == -FI_EAGAIN) {
     return false;
   } else {
@@ -186,11 +205,13 @@ bool Reactor::readyToClose() {
   return efaEventHandler_.size() == 0;
 }
 
-void Reactor::registerHandler(fi_addr_t peer_addr, std::shared_ptr<efaEventHandler> eventHandler) {
+void Reactor::registerHandler(
+    fi_addr_t peer_addr,
+    std::shared_ptr<efaEventHandler> eventHandler) {
   efaEventHandler_.emplace(peer_addr, std::move(eventHandler));
 }
 
-void Reactor::unregisterHandler(fi_addr_t peer_addr){
+void Reactor::unregisterHandler(fi_addr_t peer_addr) {
   efaEventHandler_.erase(peer_addr);
 }
 

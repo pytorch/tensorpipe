@@ -45,45 +45,25 @@ std::shared_ptr<ContextImpl> ContextImpl::create() {
     return nullptr;
   }
 
-  // bool isEfaAvailable = FabricEndpoint::isEfaAvailable();
-  if (!FabricEndpoint::isEfaAvailable()){
-    TP_VLOG(7)
-        << "libfabric cannot find efa provider.";
+  EfaDeviceList deviceList;
+  std::tie(error, deviceList) = EfaDeviceList::create(efaLib);
+  if (error) {
+    TP_VLOG(7) << "EFA transport is not viable because it couldn't find any"
+               << "EFA devices";
     return nullptr;
   }
+  TP_THROW_ASSERT_IF(error)
+      << "Couldn't get list of EFA devices: " << error.what();
 
-  // efaDeviceList deviceList;
-  // std::tie(error, deviceList) = efaDeviceList::create(efaLib);
-  // if (error && error.isOfType<SystemError>() &&
-  //     error.castToType<SystemError>()->errorCode() == ENOSYS) {
-  //   TP_VLOG(7) << "efa transport is not viable because it couldn't get list of "
-  //              << "InfiniBand devices because the kernel module isn't loaded";
-  //   return nullptr;
-  // }
-  // TP_THROW_ASSERT_IF(error)
-  //     << "Couldn't get list of InfiniBand devices: " << error.what();
-
-  // if (deviceList.size() == 0) {
-  //   TP_VLOG(7) << "efa transport is not viable because it couldn't find any "
-  //              << "InfiniBand NICs";
-  //   return nullptr;
-  // }
-
-  // return std::make_shared<ContextImpl>(
-  //     std::move(efaLib), std::move(deviceList));
-  return std::make_shared<ContextImpl>();
+  return std::make_shared<ContextImpl>(std::move(efaLib), std::move(deviceList));
 }
 
 
-ContextImpl::ContextImpl()
+ContextImpl::ContextImpl(EfaLib efaLib, EfaDeviceList deviceList)
     : ContextImplBoilerplate<ContextImpl, ListenerImpl, ConnectionImpl>(
-          generateDomainDescriptor()) {
-          }
+          generateDomainDescriptor()),
+      reactor_(std::move(efaLib), std::move(deviceList)) {}
 
-// ContextImpl::ContextImpl(efaLib efaLib, efaDeviceList deviceList)
-//     : ContextImplBoilerplate<ContextImpl, ListenerImpl, ConnectionImpl>(
-//           generateDomainDescriptor()),
-//       reactor_(std::move(efaLib), std::move(deviceList)) {}
 
 void ContextImpl::handleErrorImpl() {
   loop_.close();

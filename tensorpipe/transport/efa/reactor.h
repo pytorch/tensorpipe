@@ -19,8 +19,8 @@
 
 #include <tensorpipe/common/busy_polling_loop.h>
 #include <tensorpipe/common/callback.h>
-#include <tensorpipe/common/fd.h>
 #include <tensorpipe/common/efa.h>
+#include <tensorpipe/common/fd.h>
 #include <tensorpipe/common/optional.h>
 #include <tensorpipe/transport/efa/constants.h>
 
@@ -37,7 +37,7 @@ class efaEventHandler {
   virtual ~efaEventHandler() = default;
 };
 
-enum efaTag: uint64_t{
+enum efaTag : uint64_t {
   kLength = 1ULL << 32,
   kPayload = 1ULL << 33,
 };
@@ -52,37 +52,48 @@ enum efaTag: uint64_t{
 //
 class Reactor final : public BusyPollingLoop {
  public:
-  // Reactor(efaLib efaLib, efaDeviceList deviceList);
-  Reactor();
+  Reactor(EfaLib efaLib, EfaDeviceList efaDeviceList);
 
-  // const efaLib& getefaLib() {
-  //   return efaLib_;
-  // }
+  const EfaLib& getefaLib() {
+    return efaLib_;
+  }
 
-  // efaProtectionDomain& getefaPd() {
-  //   return pd_;
-  // }
+  EfaDomain& getefaDomain() {
+    return domain_;
+  }
 
-  // efaCompletionQueue& getefaCq() {
-  //   return cq_;
-  // }
+  EfaCompletionQueue& getefaCq() {
+    return cq_;
+  }
 
-  // efaSharedReceiveQueue& getefaSrq() {
-  //   return srq_;
-  // }
+  const EfaAddress& getEfaAddress() {
+    return addr_;
+  }
 
-  // const efaAddress& getefaAddress() {
-  //   return addr_;
-  // }
-
-  void registerHandler(fi_addr_t peer_addr, std::shared_ptr<efaEventHandler> eventHandler);
+  void registerHandler(
+      fi_addr_t peer_addr,
+      std::shared_ptr<efaEventHandler> eventHandler);
 
   void unregisterHandler(fi_addr_t peer_addr);
 
-  void postSend(void* buffer, size_t size, uint64_t tag, fi_addr_t peer_addr, void* context);
+  void postSend(
+      void* buffer,
+      size_t size,
+      uint64_t tag,
+      fi_addr_t peer_addr,
+      void* context);
 
-  void postRecv(void* buffer, size_t size, uint64_t tag, fi_addr_t peer_addr, uint64_t ignore, void* context);
-  // void postAck(efaQueuePair& qp, efaLib::send_wr& wr);
+  void postRecv(
+      void* buffer,
+      size_t size,
+      uint64_t tag,
+      fi_addr_t peer_addr,
+      uint64_t ignore,
+      void* context);
+
+  fi_addr_t addPeerAddr(EfaAddress& addr);
+
+  void removePeerAddr(fi_addr_t faddr);
 
   void setId(std::string id);
 
@@ -92,48 +103,33 @@ class Reactor final : public BusyPollingLoop {
 
   ~Reactor();
 
-  
-  std::shared_ptr<FabricEndpoint> endpoint;
-
  protected:
   bool pollOnce() override;
 
   bool readyToClose() override;
 
-  struct EFASendEvent{
-    void* buffer;
-    size_t size;
-    uint64_t tag;
-    fi_addr_t peer_addr;
-    void* context;
+  class EfaEventDeleter {
+   public:
+    void operator()(fi_msg_tagged* msg) {
+      delete msg->msg_iov;
+    }
   };
+  using EfaEvent = std::unique_ptr<fi_msg_tagged, EfaEventDeleter>;
 
-  struct EFARecvEvent{
-    void* buffer;
-    size_t size;
-    uint64_t tag;
-    fi_addr_t peer_addr;
-    uint64_t ignore;
-    void* context;
-  };
  private:
-  // InfiniBand stuff
-  // const efaLib efaLib_;
-  // efaContext ctx_;
-  // efaProtectionDomain pd_;
-  // efaCompletionQueue cq_;
-  // efaSharedReceiveQueue srq_;
-  // efaAddress addr_;
+  EfaLib efaLib_;
+  EfaFabric fabric_;
+  EfaDomain domain_;
+  EfaEndpoint ep_;
+  EfaCompletionQueue cq_;
+  EfaAdressVector av_;
+  EfaAddress addr_;
+
   int postPendingRecvs();
   int postPendingSends();
 
-
-  // void postRecvRequests(int num);
-
   std::atomic<bool> closed_{false};
   std::atomic<bool> joined_{false};
-
-  std::array<uint64_t, kNumPendingRecvReqs> size_buffer;
 
   // An identifier for the context, composed of the identifier for the context,
   // combined with the transport's name. It will only be used for logging and
@@ -144,11 +140,8 @@ class Reactor final : public BusyPollingLoop {
   std::unordered_map<fi_addr_t, std::shared_ptr<efaEventHandler>>
       efaEventHandler_;
 
-  // uint32_t numAvailableWrites_{kNumPendingWriteReqs};
-  // uint32_t numAvailableAcks_{kNumPendingAckReqs};
-  std::deque<EFASendEvent> pendingSends_;
-  std::deque<EFARecvEvent> pendingRecvs_;
-  // std::deque<std::tuple<efaQueuePair&, efaLib::send_wr>> pendingQpAcks_;
+  std::deque<EfaEvent> pendingSends_;
+  std::deque<EfaEvent> pendingRecvs_;
 };
 
 } // namespace efa

@@ -29,7 +29,7 @@ class ContextImpl final
  public:
   static std::shared_ptr<ContextImpl> create();
 
-//   ContextImpl(efaLib efaLib, efaDeviceList deviceList);
+  ContextImpl(EfaLib efaLib, EfaDeviceList deviceList);
   ContextImpl();
 
   // Implement the DeferredExecutor interface.

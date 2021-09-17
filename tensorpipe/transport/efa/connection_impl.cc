@@ -57,7 +57,6 @@ void ConnectionImpl::initImplFromLoop() {
   context_->enroll(*this);
   Error error;
   // The connection either got a socket or an address, but not both.
-  endpoint = context_->getReactor().endpoint;
 
   TP_DCHECK(socket_.hasValue() ^ sockaddr_.has_value());
   if (!socket_.hasValue()) {
@@ -170,7 +169,7 @@ void ConnectionImpl::handleEventsFromLoop(int events) {
 void ConnectionImpl::handleEventInFromLoop() {
   TP_DCHECK(context_->inLoop());
   if (state_ == RECV_ADDR) {
-    struct FabricAddr addr;
+    struct EfaAddress addr;
     // auto x = &addr.name;
     auto err = socket_.read(addr.name, sizeof(addr.name));
     // Crossing our fingers that the exchange information is small enough that
@@ -180,7 +179,7 @@ void ConnectionImpl::handleEventInFromLoop() {
       return;
     }
 
-    peer_addr = endpoint->addPeerAddr(&addr);
+    peer_addr = context_->getReactor().addPeerAddr(addr);
 
     // The connection is usable now.
     context_->getReactor().registerHandler(peer_addr, shared_from_this());
@@ -208,7 +207,7 @@ void ConnectionImpl::handleEventInFromLoop() {
 void ConnectionImpl::handleEventOutFromLoop() {
   TP_DCHECK(context_->inLoop());
   if (state_ == SEND_ADDR) {
-    FabricAddr addr = endpoint->fabric_ctx->addr;
+    EfaAddress addr = context_->getReactor().getEfaAddress();
     auto err =
         socket_.write(reinterpret_cast<void*>(addr.name), sizeof(addr.name));
     // Crossing our fingers that the exchange information is small enough that
@@ -346,7 +345,7 @@ void ConnectionImpl::cleanup() {
   TP_DCHECK(context_->inLoop());
   TP_VLOG(8) << "Connection " << id_ << " is cleaning up";
   context_->getReactor().unregisterHandler(peer_addr);
-  endpoint->removePeerAddr(peer_addr);
+  context_->getReactor().removePeerAddr(peer_addr);
 }
 
 } // namespace efa

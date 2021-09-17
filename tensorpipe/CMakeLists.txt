@@ -184,7 +184,6 @@ if(TP_ENABLE_EFA)
     transport/efa/factory.h
     transport/efa/utility.h)
   set(TENSORPIPE_HAS_EFA_TRANSPORT 1)
-  list(APPEND TP_LINK_LIBRARIES fabric)
   list(APPEND TP_INCLUDE_DIRS $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/third_party/libfabric/include>)
 endif()
 
