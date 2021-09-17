@@ -175,7 +175,7 @@ inline EfaAdressVector createEfaAdressVector(
     EfaLib& efaLib,
     EfaDomain& domain) {
   struct fi_av_attr av_attr = {};
-  struct fid_av* av_;  
+  struct fid_av* av_;
   int ret = fi_av_open(domain.get(), &av_attr, &av_, nullptr);
   TP_CHECK_EFA_RET(ret, "Couldn't open AV");
   return EfaAdressVector(av_, FabricDeleter{&efaLib});

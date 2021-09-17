@@ -35,13 +35,15 @@ void Reactor::postSend(
     uint64_t tag,
     fi_addr_t peer_addr,
     void* context) {
-  pendingSends_.emplace_back(EfaEvent(new
-  fi_msg_tagged{
-      .msg_iov = new iovec{.iov_base = buffer, .iov_len = size},
-      .iov_count = 1,
-      .addr = peer_addr,
-      .tag = tag,
-      .context = context}));
+  pendingSends_.emplace_back(EfaEvent((new fi_msg_tagged{
+      /* msg_iov */ new iovec{.iov_base = buffer, .iov_len = size},
+      /* desc */ 0,
+      /* iov_count */ 1,
+      /* peer addr */ peer_addr,
+      /* tag */ tag,
+      /* ignore */ 0,
+      /* context */ context,
+      /* data */ 0})));
   postPendingRecvs();
 }
 
@@ -52,14 +54,15 @@ void Reactor::postRecv(
     fi_addr_t dest_addr,
     uint64_t ignore,
     void* context) {
-  pendingRecvs_.emplace_back(EfaEvent(new
-  fi_msg_tagged{
-      .msg_iov = new iovec{.iov_base = buffer, .iov_len = size},
-      .iov_count = 1,
-      .addr = dest_addr,
-      .tag = tag,
-      .ignore = ignore,
-      .context = context}));
+  pendingRecvs_.emplace_back(EfaEvent(new fi_msg_tagged{
+      /* msg_iov */ new iovec{.iov_base = buffer, .iov_len = size},
+      /* desc */ 0,
+      /* iov_count */ 1,
+      /* peer addr */ dest_addr,
+      /* tag */ tag,
+      /* ignore */ ignore,
+      /* context */ context,
+      /* data */ 0}));
   postPendingRecvs();
 }
 
@@ -83,8 +86,7 @@ int Reactor::postPendingSends() {
 
 fi_addr_t Reactor::addPeerAddr(EfaAddress& addr) {
   fi_addr_t peer_addr;
-  int ret =
-      fi_av_insert(av_.get(), addr.name, 1, &peer_addr, 0, nullptr);
+  int ret = fi_av_insert(av_.get(), addr.name, 1, &peer_addr, 0, nullptr);
   TP_THROW_ASSERT_IF(ret != 1) << "Unable to add address to endpoint";
   TP_CHECK_EFA_RET(ret, "Unable to add address to endpoint");
   return peer_addr;
