@@ -52,7 +52,6 @@ std::shared_ptr<tensorpipe::transport::Context> makeEfaContext() {
 TP_REGISTER_CREATOR(TensorpipeTransportRegistry, efa, makeEfaContext);
 #endif // TENSORPIPE_HAS_EFA_TRANSPORT
 
-
 void validateTransportContext(
     std::shared_ptr<tensorpipe::transport::Context> context) {
   if (!context) {
