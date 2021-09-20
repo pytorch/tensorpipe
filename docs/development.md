@@ -29,7 +29,7 @@ It is imperative to check out the submodules before running CMake.
 Find the list of submodules and a description of what they're used for
 on [this page][third_party].
 
-[third_party]: https://github.com/pytorch/tensorpipe/tree/master/third_party
+[third_party]: https://github.com/pytorch/tensorpipe/tree/main/third_party
 
 ## Using CMake
 
