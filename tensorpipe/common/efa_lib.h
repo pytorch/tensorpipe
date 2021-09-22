@@ -39,8 +39,6 @@ class EfaLib {
 
   DynamicLibraryHandle dlhandle_;
 
-  decltype(&fi_allocinfo) fi_allocptr = nullptr;
-
 #define TP_DECLARE_FIELD(function_name) \
   decltype(&function_name) function_name##_ptr_ = nullptr;
   TP_FORALL_FABRIC_SYMBOLS(TP_DECLARE_FIELD)
