@@ -347,11 +347,21 @@ bool IbvNic::pollOnce() {
 
 void IbvNic::postSend(
     IbvQueuePair& qp,
-    IbvLib::send_wr& wr,
+    SendInfo info,
     std::function<void(const Error&)> cb) {
-  TP_DCHECK_EQ(wr.wr_id, 0);
   if (numAvailableSendSlots_ > 0) {
+    IbvLib::sge list;
+    list.addr = reinterpret_cast<uint64_t>(info.addr);
+    list.length = info.length;
+    list.lkey = info.lkey;
+
+    IbvLib::send_wr wr;
+    std::memset(&wr, 0, sizeof(wr));
     wr.wr_id = nextRequestId_++;
+    wr.sg_list = &list;
+    wr.num_sge = 1;
+    wr.opcode = IbvLib::WR_SEND;
+
     IbvLib::send_wr* badWr = nullptr;
     TP_VLOG(6) << "Channel context " << id_ << " posting send on device "
                << name_ << " for QP " << qp->qp_num;
@@ -362,17 +372,26 @@ void IbvNic::postSend(
   } else {
     TP_VLOG(6) << "Channel context " << id_ << " queueing up send on device "
                << name_ << " for QP " << qp->qp_num;
-    sendsWaitingForSlots_.emplace_back(qp, wr, std::move(cb));
+    sendsWaitingForSlots_.emplace_back(qp, info, std::move(cb));
   }
 }
 
 void IbvNic::postRecv(
     IbvQueuePair& qp,
-    IbvLib::recv_wr& wr,
+    RecvInfo info,
     std::function<void(const Error&)> cb) {
-  TP_DCHECK_EQ(wr.wr_id, 0);
   if (numAvailableRecvSlots_ > 0) {
+    IbvLib::sge list;
+    list.addr = reinterpret_cast<uint64_t>(info.addr);
+    list.length = info.length;
+    list.lkey = info.lkey;
+
+    IbvLib::recv_wr wr;
+    std::memset(&wr, 0, sizeof(wr));
     wr.wr_id = nextRequestId_++;
+    wr.sg_list = &list;
+    wr.num_sge = 1;
+
     IbvLib::recv_wr* badWr = nullptr;
     TP_VLOG(6) << "Channel context " << id_ << " posting recv on device "
                << name_ << " for QP " << qp->qp_num;
@@ -383,7 +402,7 @@ void IbvNic::postRecv(
   } else {
     TP_VLOG(6) << "Channel context " << id_ << " queueing up recv on device "
                << name_ << " for QP " << qp->qp_num;
-    recvsWaitingForSlots_.emplace_back(qp, wr, std::move(cb));
+    recvsWaitingForSlots_.emplace_back(qp, info, std::move(cb));
   }
 }
 
