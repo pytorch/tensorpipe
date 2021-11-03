@@ -56,14 +56,26 @@ class IbvNic {
     return addr_;
   }
 
+  struct SendInfo {
+    void* addr;
+    size_t length;
+    uint32_t lkey;
+  };
+
   void postSend(
       IbvQueuePair& qp,
-      IbvLib::send_wr& wr,
+      SendInfo info,
       std::function<void(const Error&)> cb);
+
+  struct RecvInfo {
+    void* addr;
+    size_t length;
+    uint32_t lkey;
+  };
 
   void postRecv(
       IbvQueuePair& qp,
-      IbvLib::recv_wr& wr,
+      RecvInfo info,
       std::function<void(const Error&)> cb);
 
   bool pollOnce();
@@ -89,17 +101,13 @@ class IbvNic {
   IbvAddress addr_;
 
   size_t numAvailableRecvSlots_ = kNumRecvs;
-  std::deque<std::tuple<
-      IbvQueuePair&,
-      IbvLib::recv_wr&,
-      std::function<void(const Error&)>>>
+  std::deque<
+      std::tuple<IbvQueuePair&, RecvInfo, std::function<void(const Error&)>>>
       recvsWaitingForSlots_;
 
   size_t numAvailableSendSlots_ = kNumSends;
-  std::deque<std::tuple<
-      IbvQueuePair&,
-      IbvLib::send_wr&,
-      std::function<void(const Error&)>>>
+  std::deque<
+      std::tuple<IbvQueuePair&, SendInfo, std::function<void(const Error&)>>>
       sendsWaitingForSlots_;
 
   // We need one common map for both send and recv requests because in principle

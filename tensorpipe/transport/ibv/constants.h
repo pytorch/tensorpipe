@@ -53,4 +53,13 @@ constexpr int kCompletionQueueSize =
 // iteration.
 constexpr int kNumPolledWorkCompletions = 32;
 
+// When the connection gets closed, to avoid leaks, it needs to "reclaim" all
+// the work requests that it had posted, by waiting for their completion. They
+// may however complete with error, which makes it harder to identify and
+// distinguish them from failing incoming requests because, in principle, we
+// cannot access the opcode field of a failed work completion. Therefore, we
+// assign a special ID to those types of requests, to match them later on.
+constexpr uint64_t kWriteRequestId = 1;
+constexpr uint64_t kAckRequestId = 2;
+
 } // namespace
