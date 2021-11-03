@@ -49,6 +49,12 @@ constexpr uint32_t kNumPendingAckReqs = 1024;
 constexpr int kCompletionQueueSize =
     kNumPendingRecvReqs + kNumPendingWriteReqs + kNumPendingAckReqs;
 
+// How many pending outgoing work requests each send queue should be able to
+// hold. The operations we post on a send queue are the RDMA_WRITEs to send
+// outgoing data and the SENDs to acknowledge incoming data, hence we size the
+// queue to the sum of the maximum amount of these two ops.
+constexpr int kSendQueueSize = kNumPendingWriteReqs + kNumPendingAckReqs;
+
 // How many work completions to poll from the completion queue at each reactor
 // iteration.
 constexpr int kNumPolledWorkCompletions = 32;

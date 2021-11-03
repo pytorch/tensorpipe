@@ -135,7 +135,7 @@ void ConnectionImpl::initImplFromLoop() {
     initAttr.qp_type = IbvLib::QPT_RC;
     initAttr.send_cq = context_->getReactor().getIbvCq().get();
     initAttr.recv_cq = context_->getReactor().getIbvCq().get();
-    initAttr.cap.max_send_wr = kNumPendingWriteReqs;
+    initAttr.cap.max_send_wr = kSendQueueSize;
     initAttr.cap.max_send_sge = 1;
     initAttr.srq = context_->getReactor().getIbvSrq().get();
     initAttr.sq_sig_all = 1;
