@@ -50,4 +50,12 @@ TEST_P(UVTransportContextTest, LookupInterfaceAddress) {
 }
 #endif
 
+TEST_P(UVTransportContextTest, LookupAddressLikeNccl) {
+  Error error;
+  std::string addr;
+  std::tie(error, addr) = transport::uv::lookupAddrLikeNccl();
+  EXPECT_FALSE(error) << error.what();
+  EXPECT_NE(addr, "");
+}
+
 INSTANTIATE_TEST_CASE_P(Uv, UVTransportContextTest, ::testing::Values(&helper));
