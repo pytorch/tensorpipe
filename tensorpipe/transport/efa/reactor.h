@@ -13,8 +13,8 @@
 #include <future>
 #include <list>
 #include <mutex>
-#include <set>
 #include <thread>
+#include <unordered_set>
 #include <vector>
 
 #include <tensorpipe/common/busy_polling_loop.h>
@@ -28,16 +28,16 @@ namespace tensorpipe {
 namespace transport {
 namespace efa {
 
-class efaEventHandler {
+class EfaEventHandler {
  public:
   virtual void onWriteCompleted() = 0;
 
   virtual void onReadCompleted() = 0;
 
-  virtual ~efaEventHandler() = default;
+  virtual ~EfaEventHandler() = default;
 };
 
-enum efaTag : uint64_t {
+enum EfaTag : uint64_t {
   kLength = 1ULL << 32,
   kPayload = 1ULL << 33,
 };
@@ -70,24 +70,18 @@ class Reactor final : public BusyPollingLoop {
     return addr_;
   }
 
-  void registerHandler(
-      fi_addr_t peer_addr,
-      std::shared_ptr<efaEventHandler> eventHandler);
-
-  void unregisterHandler(fi_addr_t peer_addr);
-
   void postSend(
       void* buffer,
       size_t size,
       uint64_t tag,
-      fi_addr_t peer_addr,
+      fi_addr_t peerAddr,
       void* context);
 
   void postRecv(
       void* buffer,
       size_t size,
       uint64_t tag,
-      fi_addr_t peer_addr,
+      fi_addr_t peerAddr,
       uint64_t ignore,
       void* context);
 
@@ -136,9 +130,8 @@ class Reactor final : public BusyPollingLoop {
   // debugging purposes.
   std::string id_{"N/A"};
 
-  // The registered event handlers for each queue pair.
-  std::unordered_map<fi_addr_t, std::shared_ptr<efaEventHandler>>
-      efaEventHandler_;
+  // The registered connections for each queue pair.
+  std::unordered_set<fi_addr_t> efaAddrSet_;
 
   std::deque<EfaEvent> pendingSends_;
   std::deque<EfaEvent> pendingRecvs_;

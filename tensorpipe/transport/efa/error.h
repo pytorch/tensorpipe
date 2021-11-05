@@ -16,9 +16,9 @@ namespace tensorpipe {
 namespace transport {
 namespace efa {
 
-class efaError final : public BaseError {
+class EfaError final : public BaseError {
  public:
-  explicit efaError(std::string error) : error_(error) {}
+  explicit EfaError(std::string error) : error_(error) {}
 
   std::string what() const override;
 

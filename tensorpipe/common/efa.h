@@ -6,8 +6,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#ifndef TENSORPIPE_COMMON_EFA_H_
-#define TENSORPIPE_COMMON_EFA_H_
+#ifndef COMMON_EFA_H_
+#define COMMON_EFA_H_
 
 #include <iostream>
 #include <memory>
@@ -94,14 +94,14 @@ struct EfaAddress {
     return std::string(name, len);
   }
 
-  void CopyFrom(void* ep_name, const size_t ep_name_len) {
-    len = ep_name_len;
-    memcpy(name, ep_name, sizeof(name));
+  void copyFrom(void* epName, const size_t epNameLen) {
+    len = epNameLen;
+    memcpy(name, epName, sizeof(name));
   }
 
-  void CopyTo(char* ep_name, size_t* ep_name_len) {
-    *(ep_name_len) = len;
-    memcpy(ep_name, name, sizeof(name));
+  void copyTo(char* epName, size_t* epNameLen) {
+    *(epNameLen) = len;
+    memcpy(epName, name, sizeof(name));
   }
 };
 
@@ -259,4 +259,4 @@ class EfaDeviceList {
 
 } // namespace tensorpipe
 
-#endif // TENSORPIPE_COMMON_EFA_H_
+#endif // COMMON_EFA_H_

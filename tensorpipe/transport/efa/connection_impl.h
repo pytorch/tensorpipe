@@ -35,7 +35,6 @@ class ConnectionImpl final : public ConnectionImplBoilerplate<
                                  ContextImpl,
                                  ListenerImpl,
                                  ConnectionImpl>,
-                             public efaEventHandler,
                              public EpollLoop::EventHandler {
   enum State {
     INITIALIZING = 1,
@@ -65,8 +64,8 @@ class ConnectionImpl final : public ConnectionImplBoilerplate<
   // Implementation of efaEventHandler.
   //   void onRemoteProducedData(uint32_t length) override;
   //   void onRemoteConsumedData(uint32_t length) override;
-  void onWriteCompleted() override;
-  void onReadCompleted() override;
+  void onWriteCompleted();
+  void onReadCompleted();
   //   void onAckCompleted() override;
   // void onError(efaLib::wc_status status, uint64_t wrId) override;
 
@@ -97,9 +96,10 @@ class ConnectionImpl final : public ConnectionImplBoilerplate<
   Socket socket_;
   optional<Sockaddr> sockaddr_;
 
-  fi_addr_t peer_addr;
+  fi_addr_t peerAddr_;
 
-  uint32_t sendIdx = 0;
+  uint32_t sendIdx_ = 0;
+  uint32_t recvIdx_ = 0;
 
   // Pending read operations.
   std::deque<EFAReadOperation> readOperations_;

@@ -9,12 +9,14 @@
 #pragma once
 
 #include <array>
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <tuple>
 #include <utility>
 
 #include <tensorpipe/common/defs.h>
+#include <tensorpipe/common/efa_lib.h>
 #include <tensorpipe/common/error.h>
 #include <tensorpipe/common/optional.h>
 
@@ -39,9 +41,13 @@ class EFAReadOperation {
   using read_callback_fn =
       std::function<void(const Error& error, const void* ptr, size_t len)>;
 
-  explicit inline EFAReadOperation(read_callback_fn fn);
+  explicit inline EFAReadOperation(void* opContext, read_callback_fn fn);
 
-  inline EFAReadOperation(void* ptr, size_t length, read_callback_fn fn);
+  inline EFAReadOperation(
+      void* ptr,
+      size_t length,
+      void* opContext,
+      read_callback_fn fn);
 
   // Called when a buffer is needed to read data from stream.
   inline void allocFromLoop();
@@ -62,12 +68,16 @@ class EFAReadOperation {
   inline size_t* getLengthPtr();
   inline char* getBufferPtr();
 
+  // Get op context
+  inline void* getOpContext();
+
   // Invoke user callback.
   inline void callbackFromLoop(const Error& error);
 
  private:
   Mode mode_{WAIT_TO_POST};
   char* ptr_{nullptr};
+  void* opContext_{nullptr};
 
   // Number of bytes as specified by the user (if applicable).
   optional<size_t> givenLength_;
@@ -86,13 +96,18 @@ class EFAReadOperation {
   read_callback_fn fn_;
 };
 
-EFAReadOperation::EFAReadOperation(read_callback_fn fn) : fn_(std::move(fn)) {}
+EFAReadOperation::EFAReadOperation(void* opContext, read_callback_fn fn)
+    : opContext_(opContext), fn_(std::move(fn)) {}
 
 EFAReadOperation::EFAReadOperation(
     void* ptr,
     size_t length,
+    void* opContext,
     read_callback_fn fn)
-    : ptr_(static_cast<char*>(ptr)), givenLength_(length), fn_(std::move(fn)) {}
+    : ptr_(static_cast<char*>(ptr)),
+      givenLength_(length),
+      opContext_(opContext),
+      fn_(std::move(fn)) {}
 
 void EFAReadOperation::allocFromLoop() {
   if (givenLength_.has_value()) {
@@ -136,6 +151,10 @@ void EFAReadOperation::callbackFromLoop(const Error& error) {
   fn_(error, ptr_, readLength_);
 }
 
+void* EFAReadOperation::getOpContext() {
+  return opContext_;
+}
+
 // The write operation captures all state associated with writing a
 // fixed length chunk of data from the underlying connection. The
 // write includes a word-sized header containing the length of the
@@ -155,6 +174,7 @@ class EFAWriteOperation {
   inline EFAWriteOperation(
       const void* ptr,
       size_t length,
+      void* opContext,
       write_callback_fn fn);
 
   struct Buf {
@@ -175,18 +195,17 @@ class EFAWriteOperation {
   inline bool completed() const;
   // set mode to complete
   inline void setCompleted();
-  // get peer address
-  inline fi_addr_t getPeerAddr();
-  // set peer address
-  inline void setPeerAddr(fi_addr_t peer_addr);
   // get length
   inline size_t getLength() const;
+  // get op context
+  inline void* getOpContext();
 
  private:
   Mode mode_{WAIT_TO_POST};
   const char* ptr_;
   const size_t length_;
-  fi_addr_t peer_addr_;
+  fi_addr_t peerAddr_;
+  void* opContext_{nullptr};
 
   // Buffers (structs with pointers and lengths) to write to stream.
   std::array<Buf, 2> bufs_;
@@ -198,8 +217,12 @@ class EFAWriteOperation {
 EFAWriteOperation::EFAWriteOperation(
     const void* ptr,
     size_t length,
+    void* opContext,
     write_callback_fn fn)
-    : ptr_(static_cast<const char*>(ptr)), length_(length), fn_(std::move(fn)) {
+    : ptr_(static_cast<const char*>(ptr)),
+      length_(length),
+      opContext_(opContext),
+      fn_(std::move(fn)) {
   bufs_[0].base = const_cast<char*>(reinterpret_cast<const char*>(&length_));
   bufs_[0].len = sizeof(length_);
   bufs_[1].base = const_cast<char*>(ptr_);
@@ -235,12 +258,8 @@ bool EFAWriteOperation::completed() const {
   return mode_ == COMPLETE;
 }
 
-void EFAWriteOperation::setPeerAddr(fi_addr_t peer_addr) {
-  peer_addr_ = peer_addr;
-}
-
-fi_addr_t EFAWriteOperation::getPeerAddr() {
-  return peer_addr_;
+void* EFAWriteOperation::getOpContext() {
+  return opContext_;
 }
 
 } // namespace tensorpipe

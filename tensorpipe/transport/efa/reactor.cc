@@ -10,6 +10,7 @@
 
 #include <tensorpipe/common/efa_read_write_ops.h>
 #include <tensorpipe/common/system.h>
+#include <tensorpipe/transport/efa/connection_impl.h>
 #include <tensorpipe/transport/efa/constants.h>
 
 namespace tensorpipe {
@@ -33,13 +34,13 @@ void Reactor::postSend(
     void* buffer,
     size_t size,
     uint64_t tag,
-    fi_addr_t peer_addr,
+    fi_addr_t peerAddr,
     void* context) {
   pendingSends_.emplace_back(EfaEvent((new fi_msg_tagged{
       /* msg_iov */ new iovec{.iov_base = buffer, .iov_len = size},
       /* desc */ 0,
       /* iov_count */ 1,
-      /* peer addr */ peer_addr,
+      /* peer addr */ peerAddr,
       /* tag */ tag,
       /* ignore */ 0,
       /* context */ context,
@@ -51,14 +52,14 @@ void Reactor::postRecv(
     void* buffer,
     size_t size,
     uint64_t tag,
-    fi_addr_t dest_addr,
+    fi_addr_t peerAddr,
     uint64_t ignore,
     void* context) {
   pendingRecvs_.emplace_back(EfaEvent(new fi_msg_tagged{
       /* msg_iov */ new iovec{.iov_base = buffer, .iov_len = size},
       /* desc */ 0,
       /* iov_count */ 1,
-      /* peer addr */ dest_addr,
+      /* peer addr */ peerAddr,
       /* tag */ tag,
       /* ignore */ ignore,
       /* context */ context,
@@ -85,16 +86,18 @@ int Reactor::postPendingSends() {
 }
 
 fi_addr_t Reactor::addPeerAddr(EfaAddress& addr) {
-  fi_addr_t peer_addr;
-  int ret = fi_av_insert(av_.get(), addr.name, 1, &peer_addr, 0, nullptr);
+  fi_addr_t peerAddr;
+  int ret = fi_av_insert(av_.get(), addr.name, 1, &peerAddr, 0, nullptr);
   TP_THROW_ASSERT_IF(ret != 1) << "Unable to add address to endpoint";
   TP_CHECK_EFA_RET(ret, "Unable to add address to endpoint");
-  return peer_addr;
+  efaAddrSet_.emplace(peerAddr);
+  return peerAddr;
 }
 
 void Reactor::removePeerAddr(fi_addr_t faddr) {
   int ret = fi_av_remove(av_.get(), &faddr, 1, 0);
   TP_CHECK_EFA_RET(ret, "Unable to remove address from endpoint");
+  efaAddrSet_.erase(faddr);
 };
 
 int Reactor::postPendingRecvs() {
@@ -137,13 +140,13 @@ Reactor::~Reactor() {
 }
 
 bool Reactor::pollOnce() {
-  std::array<struct fi_cq_tagged_entry, kNumPolledWorkCompletions> cq_entries;
-  std::array<fi_addr_t, kNumPolledWorkCompletions> src_addrs;
+  std::array<struct fi_cq_tagged_entry, kNumPolledWorkCompletions> cqEntries;
+  std::array<fi_addr_t, kNumPolledWorkCompletions> srcAddrs;
 
   postPendingSends();
   postPendingRecvs();
   int rv = fi_cq_readfrom(
-      cq_.get(), cq_entries.data(), cq_entries.size(), src_addrs.data());
+      cq_.get(), cqEntries.data(), cqEntries.size(), srcAddrs.data());
   if (rv == 0 || rv == -FI_EAGAIN) {
     return false;
   } else {
@@ -154,48 +157,52 @@ bool Reactor::pollOnce() {
   int numWrites = 0;
   int numAcks = 0;
   for (int cqIdx = 0; cqIdx < rv; cqIdx++) {
-    struct fi_cq_tagged_entry& cq = cq_entries[cqIdx];
-    fi_addr_t& src_addr = src_addrs[cqIdx];
-    uint32_t msg_idx = static_cast<uint32_t>(cq.tag);
+    struct fi_cq_tagged_entry& cq = cqEntries[cqIdx];
+    fi_addr_t& srcAddr = srcAddrs[cqIdx];
+    uint32_t msgIdx = static_cast<uint32_t>(cq.tag);
     if (cq.flags & FI_SEND) {
       // Send event
       if (cq.tag & kLength) {
         // Send size finished, check whether it's zero sized message
-        auto* operation_ptr = static_cast<EFAWriteOperation*>(cq.op_context);
-        if (operation_ptr->getLength() == 0) {
-          operation_ptr->setCompleted();
-          efaEventHandler_[operation_ptr->getPeerAddr()]->onWriteCompleted();
+        auto* operationPtr = static_cast<EFAWriteOperation*>(cq.op_context);
+        if (operationPtr->getLength() == 0) {
+          operationPtr->setCompleted();
+          reinterpret_cast<ConnectionImpl*>(operationPtr->getOpContext())
+              ->onWriteCompleted();
         }
       } else if (cq.tag & kPayload) {
-        auto* operation_ptr = static_cast<EFAWriteOperation*>(cq.op_context);
-        operation_ptr->setCompleted();
-        efaEventHandler_[operation_ptr->getPeerAddr()]->onWriteCompleted();
+        auto* operationPtr = static_cast<EFAWriteOperation*>(cq.op_context);
+        operationPtr->setCompleted();
+        reinterpret_cast<ConnectionImpl*>(operationPtr->getOpContext())
+            ->onWriteCompleted();
       }
     } else if (cq.flags & FI_RECV) {
       // Receive event
       if (cq.tag & kLength) {
         // Received length information
-        auto* operation_ptr = static_cast<EFAReadOperation*>(cq.op_context);
-        if (operation_ptr->getReadLength() == 0) {
-          operation_ptr->setCompleted();
-          efaEventHandler_[src_addr]->onReadCompleted();
+        auto* operationPtr = static_cast<EFAReadOperation*>(cq.op_context);
+        if (operationPtr->getReadLength() == 0) {
+          operationPtr->setCompleted();
+          reinterpret_cast<ConnectionImpl*>(operationPtr->getOpContext())
+              ->onReadCompleted();
         } else {
           // operation_ptr->mode_ = EFAReadOperation::Mode::READ_PAYLOAD;
-          operation_ptr->allocFromLoop();
+          operationPtr->allocFromLoop();
           postRecv(
-              operation_ptr->getBufferPtr(),
-              operation_ptr->getReadLength(),
-              kPayload | msg_idx,
-              src_addr,
+              operationPtr->getBufferPtr(),
+              operationPtr->getReadLength(),
+              kPayload | msgIdx,
+              srcAddr,
               0, // Exact match of tag
-              operation_ptr);
-          operation_ptr->setWaitToCompleted();
+              operationPtr);
+          operationPtr->setWaitToCompleted();
         }
       } else if (cq.tag & kPayload) {
         // Received payload
-        auto* operation_ptr = static_cast<EFAReadOperation*>(cq.op_context);
-        operation_ptr->setCompleted();
-        efaEventHandler_[src_addr]->onReadCompleted();
+        auto* operationPtr = static_cast<EFAReadOperation*>(cq.op_context);
+        operationPtr->setCompleted();
+        reinterpret_cast<ConnectionImpl*>(operationPtr->getOpContext())
+            ->onReadCompleted();
       }
     }
   }
@@ -204,17 +211,7 @@ bool Reactor::pollOnce() {
 }
 
 bool Reactor::readyToClose() {
-  return efaEventHandler_.size() == 0;
-}
-
-void Reactor::registerHandler(
-    fi_addr_t peer_addr,
-    std::shared_ptr<efaEventHandler> eventHandler) {
-  efaEventHandler_.emplace(peer_addr, std::move(eventHandler));
-}
-
-void Reactor::unregisterHandler(fi_addr_t peer_addr) {
-  efaEventHandler_.erase(peer_addr);
+  return efaAddrSet_.size() == 0;
 }
 
 } // namespace efa

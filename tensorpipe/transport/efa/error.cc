@@ -18,7 +18,7 @@ namespace tensorpipe {
 namespace transport {
 namespace efa {
 
-std::string efaError::what() const {
+std::string EfaError::what() const {
   return error_;
 }
 
