@@ -6,8 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#ifndef COMMON_EFA_H_
-#define COMMON_EFA_H_
+#pragma once
 
 #include <iostream>
 #include <memory>
@@ -80,7 +79,7 @@ struct EfaAddress {
   // length of endpoint name
   size_t len = sizeof(name);
 
-  std::string DebugStr() const {
+  std::string debugStr() const {
     std::stringstream ss;
     ss << "[";
     for (size_t i = 0; i < len; i++) {
@@ -215,7 +214,7 @@ class EfaDeviceList {
   static std::tuple<Error, EfaDeviceList> create(EfaLib& efaLib) {
     int size;
     EfaLib::device* ptr = getEfaDevices(efaLib);
-    EfaLib::device* first_ptr = ptr;
+    EfaLib::device* firstDevice = ptr;
     if (ptr == nullptr) {
       return std::make_tuple(
           TP_CREATE_ERROR(SystemError, "fi_getinfo", -1), EfaDeviceList());
@@ -226,16 +225,16 @@ class EfaDeviceList {
       size++;
     };
     return std::make_tuple(
-        Error::kSuccess, EfaDeviceList(efaLib, first_ptr, size));
+        Error::kSuccess, EfaDeviceList(efaLib, firstDevice, size));
   }
 
   int size() {
     return size_;
   }
 
-  EfaLib::device& operator[](int i) {
+  EfaLib::device& operator[](int index) {
     EfaLib::device* ptr = deviceList_.get();
-    for (int j = 0; j < i; j++) {
+    for (int j = 0; j < index; j++) {
       ptr = ptr->next;
     }
     return *ptr;
@@ -258,5 +257,3 @@ class EfaDeviceList {
 };
 
 } // namespace tensorpipe
-
-#endif // COMMON_EFA_H_
