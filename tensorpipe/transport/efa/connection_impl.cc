@@ -183,11 +183,11 @@ void ConnectionImpl::handleEventInFromLoop() {
 
     // The connection is usable now.
     state_ = ESTABLISHED;
-    processWriteOperationsFromLoop();
     // Trigger read operations in case a pair of local read() and remote
     // write() happened before connection is established. Otherwise read()
     // callback would lose if it's the only read() request.
     processReadOperationsFromLoop();
+    processWriteOperationsFromLoop();
     return;
   }
 
@@ -249,7 +249,7 @@ void ConnectionImpl::processReadOperationsFromLoop() {
     } else {
       // if the operation is posted, all operations back should be posted
       // we can skip more checks
-      break;
+      // break;
     }
   }
 }
@@ -313,7 +313,7 @@ void ConnectionImpl::processWriteOperationsFromLoop() {
     } else {
       // if the operation is posted, all operations back should be posted
       // we can skip more checks
-      break;
+      // break;
     }
   }
 }

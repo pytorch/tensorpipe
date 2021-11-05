@@ -28,15 +28,6 @@ namespace tensorpipe {
 namespace transport {
 namespace efa {
 
-class EfaEventHandler {
- public:
-  virtual void onWriteCompleted() = 0;
-
-  virtual void onReadCompleted() = 0;
-
-  virtual ~EfaEventHandler() = default;
-};
-
 enum EfaTag : uint64_t {
   kLength = 1ULL << 32,
   kPayload = 1ULL << 33,
