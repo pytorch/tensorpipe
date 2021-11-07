@@ -291,9 +291,6 @@ void ConnectionImpl::processWriteOperationsFromLoop() {
       EFAWriteOperation::Buf* bufArray;
       size_t size;
       std::tie(bufArray, size) = writeOperation.getBufs();
-      // writeOperation.setPeerAddr(peerAddr_);
-      // auto size_buf = std::get<0>(writeOperation.getBufs());
-      // auto payload_buf = std::get<1>(writeOperation.getBufs());
       context_->getReactor().postSend(
           bufArray[0].base,
           bufArray[0].len,

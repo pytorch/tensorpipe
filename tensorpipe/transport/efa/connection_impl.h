@@ -61,16 +61,10 @@ class ConnectionImpl final : public ConnectionImplBoilerplate<
   // Implementation of EventHandler.
   void handleEventsFromLoop(int events) override;
 
-  // Implementation of efaEventHandler.
-  //   void onRemoteProducedData(uint32_t length) override;
-  //   void onRemoteConsumedData(uint32_t length) override;
   void onWriteCompleted();
   void onReadCompleted();
-  //   void onAckCompleted() override;
-  // void onError(efaLib::wc_status status, uint64_t wrId) override;
 
  protected:
-  // Implement the entry points called by ConnectionImplBoilerplate.
   // Implement the entry points called by ConnectionImplBoilerplate.
   void initImplFromLoop() override;
   void readImplFromLoop(read_callback_fn fn) override;
