@@ -307,7 +307,8 @@ bool IbvNic::pollOnce() {
     TP_THROW_ASSERT_IF(iter == requestsInFlight_.end())
         << "Got work completion with unknown ID " << wc.wr_id;
 
-    std::function<void(const Error&)> cb = std::move(iter->second);
+    IbvLib::wc_opcode opcode = std::move(std::get<0>(iter->second));
+    std::function<void(const Error&)> cb = std::move(std::get<1>(iter->second));
     requestsInFlight_.erase(iter);
 
     if (wc.status != IbvLib::WC_SUCCESS) {
@@ -316,7 +317,7 @@ bool IbvNic::pollOnce() {
       cb(Error::kSuccess);
     }
 
-    switch (wc.opcode) {
+    switch (opcode) {
       case IbvLib::WC_RECV:
         numRecvs++;
         break;
@@ -324,7 +325,7 @@ bool IbvNic::pollOnce() {
         numSends++;
         break;
       default:
-        TP_THROW_ASSERT() << "Unknown opcode: " << wc.opcode;
+        TP_THROW_ASSERT() << "Unknown opcode: " << opcode;
     }
   }
 
@@ -368,7 +369,8 @@ void IbvNic::postSend(
     TP_CHECK_IBV_INT(ibvLib_.post_send(qp.get(), &wr, &badWr));
     TP_THROW_ASSERT_IF(badWr != nullptr);
     numAvailableSendSlots_--;
-    requestsInFlight_.emplace(wr.wr_id, std::move(cb));
+    requestsInFlight_.emplace(
+        wr.wr_id, std::make_tuple(IbvLib::WC_SEND, std::move(cb)));
   } else {
     TP_VLOG(6) << "Channel context " << id_ << " queueing up send on device "
                << name_ << " for QP " << qp->qp_num;
@@ -398,7 +400,8 @@ void IbvNic::postRecv(
     TP_CHECK_IBV_INT(ibvLib_.post_recv(qp.get(), &wr, &badWr));
     TP_THROW_ASSERT_IF(badWr != nullptr);
     numAvailableRecvSlots_--;
-    requestsInFlight_.emplace(wr.wr_id, std::move(cb));
+    requestsInFlight_.emplace(
+        wr.wr_id, std::make_tuple(IbvLib::WC_RECV, std::move(cb)));
   } else {
     TP_VLOG(6) << "Channel context " << id_ << " queueing up recv on device "
                << name_ << " for QP " << qp->qp_num;
