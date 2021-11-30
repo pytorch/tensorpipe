@@ -115,7 +115,9 @@ class IbvNic {
   // match it to its callback. However, we could group them by QP number or, in
   // fact, we could have the QP store these requests and we just wake it up when
   // a completion occurs.
-  std::unordered_map<uint64_t, std::function<void(const Error&)>>
+  std::unordered_map<
+      uint64_t,
+      std::tuple<IbvLib::wc_opcode, std::function<void(const Error&)>>>
       requestsInFlight_;
   uint64_t nextRequestId_ = 0;
 
