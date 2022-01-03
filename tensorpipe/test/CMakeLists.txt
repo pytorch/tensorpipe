@@ -96,6 +96,7 @@ if(TP_USE_CUDA)
 
   list(APPEND TP_TEST_SRCS
     channel/cuda_gdr/cuda_gdr_test.cc
+    channel/cuda_gdr_xdtt/cuda_gdr_xdtt_test.cc
     )
 
   cuda_add_library(tensorpipe_cuda_kernel channel/kernel.cu)
