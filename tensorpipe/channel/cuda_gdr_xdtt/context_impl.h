@@ -80,6 +80,7 @@ class IbvNic {
 
   bool pollOnce();
 
+  IbvMemoryRegion& registerMemory(CpuBuffer buffer, size_t allocSize);
   IbvMemoryRegion& registerMemory(CudaBuffer buffer);
 
   bool readyToClose() const;

@@ -409,6 +409,25 @@ void IbvNic::postRecv(
   }
 }
 
+IbvMemoryRegion& IbvNic::registerMemory(CpuBuffer buffer, size_t allocSize) {
+  unsigned long long bufferId =
+      reinterpret_cast<unsigned long long>(buffer.ptr);
+
+  auto iter = memoryRegions_.find(bufferId);
+  if (iter != memoryRegions_.end()) {
+    return iter->second;
+  }
+  std::tie(iter, std::ignore) = memoryRegions_.emplace(
+      bufferId,
+      createIbvMemoryRegion(
+          ibvLib_,
+          pd_,
+          reinterpret_cast<void*>(buffer.ptr),
+          allocSize,
+          IbvLib::ACCESS_LOCAL_WRITE));
+  return iter->second;
+}
+
 IbvMemoryRegion& IbvNic::registerMemory(CudaBuffer buffer) {
   // FIXME Instead of re-querying the device, have the caller provide it.
   CudaDeviceGuard guard(cudaDeviceForPointer(cudaLib_, buffer.ptr));
