@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <tensorpipe/channel/cuda_gdr/channel_impl.h>
+#include <tensorpipe/channel/cuda_gdr_xdtt/channel_impl.h>
 
 #include <algorithm>
 #include <cstring>
@@ -15,7 +15,7 @@
 #include <utility>
 #include <vector>
 
-#include <tensorpipe/channel/cuda_gdr/context_impl.h>
+#include <tensorpipe/channel/cuda_gdr_xdtt/context_impl.h>
 #include <tensorpipe/common/cuda_buffer.h>
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/error.h>
@@ -23,7 +23,7 @@
 
 namespace tensorpipe {
 namespace channel {
-namespace cuda_gdr {
+namespace cuda_gdr_xdtt {
 
 namespace {
 
@@ -620,6 +620,6 @@ void ChannelImpl::cleanup() {
   context_->unenroll(*this);
 }
 
-} // namespace cuda_gdr
+} // namespace cuda_gdr_xdtt
 } // namespace channel
 } // namespace tensorpipe

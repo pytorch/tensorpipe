@@ -16,11 +16,11 @@
 
 namespace tensorpipe {
 namespace channel {
-namespace cuda_gdr {
+namespace cuda_gdr_xdtt {
 
 std::shared_ptr<Context> create(
     optional<std::vector<std::string>> gpuIdxToNicName = nullopt);
 
-} // namespace cuda_gdr
+} // namespace cuda_gdr_xdtt
 } // namespace channel
 } // namespace tensorpipe

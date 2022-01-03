@@ -6,15 +6,15 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <tensorpipe/channel/cuda_gdr/factory.h>
+#include <tensorpipe/channel/cuda_gdr_xdtt/factory.h>
 
 #include <tensorpipe/channel/context_boilerplate.h>
-#include <tensorpipe/channel/cuda_gdr/channel_impl.h>
-#include <tensorpipe/channel/cuda_gdr/context_impl.h>
+#include <tensorpipe/channel/cuda_gdr_xdtt/channel_impl.h>
+#include <tensorpipe/channel/cuda_gdr_xdtt/context_impl.h>
 
 namespace tensorpipe {
 namespace channel {
-namespace cuda_gdr {
+namespace cuda_gdr_xdtt {
 
 std::shared_ptr<Context> create(
     optional<std::vector<std::string>> gpuIdxToNicName) {
@@ -22,6 +22,6 @@ std::shared_ptr<Context> create(
       std::move(gpuIdxToNicName));
 }
 
-} // namespace cuda_gdr
+} // namespace cuda_gdr_xdtt
 } // namespace channel
 } // namespace tensorpipe

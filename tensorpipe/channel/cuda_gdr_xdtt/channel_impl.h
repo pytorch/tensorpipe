@@ -26,7 +26,7 @@
 
 namespace tensorpipe {
 namespace channel {
-namespace cuda_gdr {
+namespace cuda_gdr_xdtt {
 
 class ContextImpl;
 
@@ -245,10 +245,10 @@ class ChannelImpl final
   // This struct is used to bundle the queue pair with some additional metadata.
   struct QueuePair {
     IbvQueuePair queuePair;
-    // The CUDA GDR channel could be asked to transmit arbitrarily large tensors
-    // and in principle it could directly forward them to the NIC as they are.
-    // However IB NICs have limits on the size of each message. Hence we
-    // determine these sizes, one per queue pair (as the minimum of the local
+    // The CUDA GDR XDTT channel could be asked to transmit arbitrarily large
+    // tensors and in principle it could directly forward them to the NIC as
+    // they are. However IB NICs have limits on the size of each message. Hence
+    // we determine these sizes, one per queue pair (as the minimum of the local
     // and remote sizes) and then split our tensors in chunks of that size.
     uint32_t maximumMessageSize;
   };
@@ -297,6 +297,6 @@ class ChannelImpl final
   void callRecvCallback(RecvOpIter opIter);
 };
 
-} // namespace cuda_gdr
+} // namespace cuda_gdr_xdtt
 } // namespace channel
 } // namespace tensorpipe

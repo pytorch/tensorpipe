@@ -12,7 +12,7 @@
 
 namespace tensorpipe {
 namespace channel {
-namespace cuda_gdr {
+namespace cuda_gdr_xdtt {
 
 namespace {
 
@@ -41,6 +41,6 @@ constexpr int kNumPolledWorkCompletions = 32;
 
 } // namespace
 
-} // namespace cuda_gdr
+} // namespace cuda_gdr_xdtt
 } // namespace channel
 } // namespace tensorpipe

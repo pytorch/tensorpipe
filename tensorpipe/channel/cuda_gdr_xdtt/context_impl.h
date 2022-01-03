@@ -19,7 +19,7 @@
 #include <vector>
 
 #include <tensorpipe/channel/context_impl_boilerplate.h>
-#include <tensorpipe/channel/cuda_gdr/constants.h>
+#include <tensorpipe/channel/cuda_gdr_xdtt/constants.h>
 #include <tensorpipe/common/busy_polling_loop.h>
 #include <tensorpipe/common/cuda.h>
 #include <tensorpipe/common/cuda_buffer.h>
@@ -32,7 +32,7 @@
 
 namespace tensorpipe {
 namespace channel {
-namespace cuda_gdr {
+namespace cuda_gdr_xdtt {
 
 class ChannelImpl;
 
@@ -188,6 +188,6 @@ class ContextImpl final
       std::function<void(const Error&)> cb);
 };
 
-} // namespace cuda_gdr
+} // namespace cuda_gdr_xdtt
 } // namespace channel
 } // namespace tensorpipe

@@ -14,7 +14,7 @@
 
 namespace tensorpipe {
 namespace channel {
-namespace cuda_gdr {
+namespace cuda_gdr_xdtt {
 
 class IbvError final : public BaseError {
  public:
@@ -28,6 +28,6 @@ class IbvError final : public BaseError {
   std::string error_;
 };
 
-} // namespace cuda_gdr
+} // namespace cuda_gdr_xdtt
 } // namespace channel
 } // namespace tensorpipe

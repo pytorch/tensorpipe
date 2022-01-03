@@ -6,7 +6,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-#include <tensorpipe/channel/cuda_gdr/context_impl.h>
+#include <tensorpipe/channel/cuda_gdr_xdtt/context_impl.h>
 
 #include <array>
 #include <climits>
@@ -27,15 +27,15 @@
 #include <cuda.h>
 #include <cuda_runtime.h>
 
-#include <tensorpipe/channel/cuda_gdr/channel_impl.h>
-#include <tensorpipe/channel/cuda_gdr/error.h>
+#include <tensorpipe/channel/cuda_gdr_xdtt/channel_impl.h>
+#include <tensorpipe/channel/cuda_gdr_xdtt/error.h>
 #include <tensorpipe/common/cuda.h>
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/error_macros.h>
 
 namespace tensorpipe {
 namespace channel {
-namespace cuda_gdr {
+namespace cuda_gdr_xdtt {
 
 namespace {
 
@@ -459,7 +459,7 @@ std::shared_ptr<ContextImpl> ContextImpl::create(
   // a way to set the context in an error state, and use that for viability.
   if (error) {
     TP_VLOG(5)
-        << "CUDA GDR channel is not viable because libcuda could not be loaded: "
+        << "CUDA GDR XDTT channel is not viable because libcuda could not be loaded: "
         << error.what();
     return nullptr;
   }
@@ -470,14 +470,14 @@ std::shared_ptr<ContextImpl> ContextImpl::create(
   // a way to set the context in an error state, and use that for viability.
   if (error) {
     TP_VLOG(5)
-        << "CUDA GDR channel is not viable because libibverbs could not be loaded: "
+        << "CUDA GDR XDTT channel is not viable because libibverbs could not be loaded: "
         << error.what();
     return nullptr;
   }
 
   if (!isNvidiaPeerMemoryClientActive()) {
     TP_VLOG(5)
-        << "CUDA GDR channel is not viable because the nv_peer_mem kernel module isn't active";
+        << "CUDA GDR XDTT channel is not viable because the nv_peer_mem kernel module isn't active";
     return nullptr;
   }
 
@@ -486,7 +486,7 @@ std::shared_ptr<ContextImpl> ContextImpl::create(
   if (error && error.isOfType<SystemError>() &&
       error.castToType<SystemError>()->errorCode() == ENOSYS) {
     TP_VLOG(5)
-        << "CUDA GDR channel couldn't get list of InfiniBand devices because the kernel module isn't "
+        << "CUDA GDR XDTT channel couldn't get list of InfiniBand devices because the kernel module isn't "
         << "loaded";
     return nullptr;
   }
@@ -494,7 +494,7 @@ std::shared_ptr<ContextImpl> ContextImpl::create(
       << "Couldn't get list of InfiniBand devices: " << error.what();
   if (deviceList.size() == 0) {
     TP_VLOG(5)
-        << "CUDA GDR channel is not viable because it couldn't find any InfiniBand NICs";
+        << "CUDA GDR XDTT channel is not viable because it couldn't find any InfiniBand NICs";
     return nullptr;
   }
 
@@ -502,7 +502,7 @@ std::shared_ptr<ContextImpl> ContextImpl::create(
   // but keep working with the other ones (if any).
   if (!allGpusHaveEnoughBar1Size()) {
     TP_VLOG(5)
-        << "CUDA GDR channel is not viable because some GPUs don't have a large enough PCIe BAR1 size";
+        << "CUDA GDR XDTT channel is not viable because some GPUs don't have a large enough PCIe BAR1 size";
     return nullptr;
   }
 
@@ -544,7 +544,7 @@ ContextImpl::ContextImpl(
   }
 
   for (int gpuIdx = 0; gpuIdx < actualGpuIdxToNicName.size(); gpuIdx++) {
-    TP_VLOG(5) << "CUDA GDR channel mapped GPU #" << gpuIdx
+    TP_VLOG(5) << "CUDA GDR XDTT channel mapped GPU #" << gpuIdx
                << " to InfiniBand NIC " << actualGpuIdxToNicName[gpuIdx];
   }
 
@@ -562,8 +562,8 @@ ContextImpl::ContextImpl(
     std::string deviceName(TP_CHECK_IBV_PTR(ibvLib.get_device_name(&device)));
     auto iter = nicNames.find(deviceName);
     if (iter != nicNames.end()) {
-      TP_VLOG(5) << "CUDA GDR channel is using InfiniBand NIC " << deviceName
-                 << " as device #" << nicIdx;
+      TP_VLOG(5) << "CUDA GDR XDTT channel is using InfiniBand NIC "
+                 << deviceName << " as device #" << nicIdx;
       ibvNics_.emplace_back(*iter, device, ibvLib_, cudaLib_);
       nicNameToNicIdx[*iter] = nicIdx;
       nicIdx++;
@@ -577,7 +577,7 @@ ContextImpl::ContextImpl(
     gpuToNic_.push_back(nicNameToNicIdx[actualGpuIdxToNicName[gpuIdx]]);
   }
 
-  startThread("TP_CUDA_GDR_loop");
+  startThread("TP_CUDA_GDR_XDTT_loop");
 }
 
 const CudaLib& ContextImpl::getCudaLib() {
@@ -677,6 +677,6 @@ size_t ContextImpl::numConnectionsNeeded() const {
   return 2;
 }
 
-} // namespace cuda_gdr
+} // namespace cuda_gdr_xdtt
 } // namespace channel
 } // namespace tensorpipe
