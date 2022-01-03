@@ -46,3 +46,8 @@ INSTANTIATE_TEST_CASE_P(
     CudaGdrXdtt,
     CudaMultiGPUChannelTestSuite,
     ::testing::Values(&helper));
+
+INSTANTIATE_TEST_CASE_P(
+    CudaGdrXdtt,
+    CudaXDTTChannelTestSuite,
+    ::testing::Values(&helper));

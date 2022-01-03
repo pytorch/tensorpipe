@@ -526,6 +526,7 @@ std::shared_ptr<ContextImpl> ContextImpl::create(
   }
 
   std::unordered_map<Device, std::string> deviceDescriptors;
+  deviceDescriptors[Device(kCpuDeviceType, 0)] = "*";
   for (const auto& device : getCudaDevices(cudaLib)) {
     deviceDescriptors[device] = "*";
   }
