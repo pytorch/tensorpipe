@@ -295,15 +295,17 @@ CHANNEL_TEST(ChannelTestSuite, EmptyTensor);
 // Call send and recv with a length of 0, between sends and recvs with
 // positive length.
 class EmptyAndNonEmptyTensorsTest : public ClientServerChannelTestCase {
+  static constexpr int kDataSize = 256;
+
   void server(std::shared_ptr<Channel> channel) override {
-    std::vector<uint8_t> data(1);
+    std::vector<uint8_t> data(kDataSize);
     std::unique_ptr<DataWrapper> wrappedData = helper_->makeDataWrapper(data);
     Buffer buffer = wrappedData->buffer();
 
     std::vector<std::future<Error>> sendFutures;
-    sendFutures.push_back(sendWithFuture(channel, buffer, 1));
+    sendFutures.push_back(sendWithFuture(channel, buffer, kDataSize));
     sendFutures.push_back(sendWithFuture(channel, buffer, 0));
-    sendFutures.push_back(sendWithFuture(channel, buffer, 1));
+    sendFutures.push_back(sendWithFuture(channel, buffer, kDataSize));
 
     for (auto& f : sendFutures) {
       Error sendError = f.get();
@@ -315,13 +317,14 @@ class EmptyAndNonEmptyTensorsTest : public ClientServerChannelTestCase {
   }
 
   void client(std::shared_ptr<Channel> channel) override {
-    std::unique_ptr<DataWrapper> wrappedData = helper_->makeDataWrapper(1);
+    std::unique_ptr<DataWrapper> wrappedData =
+        helper_->makeDataWrapper(kDataSize);
     Buffer buffer = wrappedData->buffer();
 
     std::vector<std::future<Error>> sendFutures;
-    sendFutures.push_back(recvWithFuture(channel, buffer, 1));
+    sendFutures.push_back(recvWithFuture(channel, buffer, kDataSize));
     sendFutures.push_back(recvWithFuture(channel, buffer, 0));
-    sendFutures.push_back(recvWithFuture(channel, buffer, 1));
+    sendFutures.push_back(recvWithFuture(channel, buffer, kDataSize));
 
     for (auto& f : sendFutures) {
       Error sendError = f.get();
