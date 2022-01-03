@@ -114,14 +114,26 @@ struct SendOperation {
   uint64_t numChunksBeingSent{0};
 
   // Arguments at creation
-  const CudaBuffer buffer;
+  const Buffer buffer;
   const size_t length;
   const size_t localNicIdx;
   TSendCallback callback;
 
   // Other stuff
-  CudaEvent event;
+  bool isCpuBuffer{true};
+  optional<CudaEvent> event;
   size_t remoteNicIdx;
+
+  SendOperation(
+      CpuBuffer buffer,
+      size_t length,
+      TSendCallback callback,
+      size_t localNicIdx)
+      : buffer(buffer),
+        length(length),
+        localNicIdx(localNicIdx),
+        callback(std::move(callback)),
+        isCpuBuffer(true) {}
 
   SendOperation(
       CudaBuffer buffer,
@@ -133,7 +145,8 @@ struct SendOperation {
         length(length),
         localNicIdx(localNicIdx),
         callback(std::move(callback)),
-        event(localGpuIdx) {}
+        isCpuBuffer(false),
+        event(in_place_t{}, localGpuIdx) {}
 };
 
 struct RecvOperation {
@@ -155,14 +168,26 @@ struct RecvOperation {
   uint64_t numChunksBeingReceived{0};
 
   // Arguments at creation
-  const CudaBuffer buffer;
+  const Buffer buffer;
   const size_t length;
   const size_t localNicIdx;
   TSendCallback callback;
 
   // Other stuff
+  bool isCpuBuffer{true};
   size_t remoteNicIdx;
-  CudaEvent event;
+  optional<CudaEvent> event;
+
+  RecvOperation(
+      CpuBuffer buffer,
+      size_t length,
+      TSendCallback callback,
+      size_t localNicIdx)
+      : buffer(buffer),
+        length(length),
+        localNicIdx(localNicIdx),
+        callback(std::move(callback)),
+        isCpuBuffer(true) {}
 
   RecvOperation(
       CudaBuffer buffer,
@@ -174,7 +199,8 @@ struct RecvOperation {
         length(length),
         localNicIdx(localNicIdx),
         callback(std::move(callback)),
-        event(deviceIdx) {}
+        isCpuBuffer(false),
+        event(in_place_t{}, deviceIdx) {}
 };
 
 // First "round" of handshake.
@@ -293,7 +319,7 @@ class ChannelImpl final
   // For recv operations:
   void readDescriptor(RecvOpIter opIter);
   void waitForRecvCudaEvent(RecvOpIter opIter);
-  void recvOverIbAndWriteReadyToRecive(RecvOpIter opIter);
+  void recvOverIbAndWriteReadyToReceive(RecvOpIter opIter);
   void callRecvCallback(RecvOpIter opIter);
 };
 

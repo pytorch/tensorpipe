@@ -194,20 +194,35 @@ void ChannelImpl::sendImplFromLoop(
     Buffer buffer,
     size_t length,
     TSendCallback callback) {
-  size_t localGpuIdx = cudaDeviceForPointer(
-      context_->getCudaLib(), buffer.unwrap<CudaBuffer>().ptr);
-  size_t localNicIdx = context_->getGpuToNicMapping()[localGpuIdx];
+  const Device device = buffer.device();
 
-  SendOpIter opIter = sendOps_.emplaceBack(
-      sequenceNumber,
-      buffer.unwrap<CudaBuffer>(),
-      length,
-      std::move(callback),
-      localGpuIdx,
-      localNicIdx);
-  opIter->event.record(buffer.unwrap<CudaBuffer>().stream);
+  if (device.type == kCpuDeviceType) {
+    size_t localNicIdx = 0; // TODO: Use all available NICs.
 
-  sendOps_.advanceOperation(opIter);
+    SendOpIter opIter = sendOps_.emplaceBack(
+        sequenceNumber,
+        buffer.unwrap<CpuBuffer>(),
+        length,
+        std::move(callback),
+        localNicIdx);
+
+    sendOps_.advanceOperation(opIter);
+  } else {
+    size_t localGpuIdx = cudaDeviceForPointer(
+        context_->getCudaLib(), buffer.unwrap<CudaBuffer>().ptr);
+    size_t localNicIdx = context_->getGpuToNicMapping()[localGpuIdx];
+
+    SendOpIter opIter = sendOps_.emplaceBack(
+        sequenceNumber,
+        buffer.unwrap<CudaBuffer>(),
+        length,
+        std::move(callback),
+        localGpuIdx,
+        localNicIdx);
+    opIter->event->record(buffer.unwrap<CudaBuffer>().stream);
+
+    sendOps_.advanceOperation(opIter);
+  }
 }
 
 void ChannelImpl::advanceSendOperation(
@@ -243,6 +258,17 @@ void ChannelImpl::advanceSendOperation(
       /*cond=*/error_ && op.doneReadingReadyToReceive,
       /*actions=*/{&ChannelImpl::callSendCallback});
 
+  // Needs to go after previous op to ensure predictable and consistent ordering
+  // of send calls on InfiniBand queue pair.
+  // This transition shortcuts waiting on CUDA event for CPU buffers.
+  sendOps_.attemptTransition(
+      opIter,
+      /*from=*/SendOperation::READING_READY_TO_RECEIVE,
+      /*to=*/SendOperation::SENDING_OVER_IB,
+      /*cond=*/!error_ && op.isCpuBuffer && op.doneReadingReadyToReceive &&
+          prevOpState >= SendOperation::SENDING_OVER_IB,
+      /*actions=*/{&ChannelImpl::sendOverIb});
+
   // This doesn't strictly need to go after the previous op, but it doesn't make
   // sense to busy poll multiple events if only one of them is actually able to
   // then make progress.
@@ -250,7 +276,7 @@ void ChannelImpl::advanceSendOperation(
       opIter,
       /*from=*/SendOperation::READING_READY_TO_RECEIVE,
       /*to=*/SendOperation::WAITING_FOR_CUDA_EVENT,
-      /*cond=*/!error_ && op.doneReadingReadyToReceive &&
+      /*cond=*/!error_ && !op.isCpuBuffer && op.doneReadingReadyToReceive &&
           prevOpState >= SendOperation::SENDING_OVER_IB,
       /*actions=*/{&ChannelImpl::waitForSendCudaEvent});
 
@@ -327,7 +353,7 @@ void ChannelImpl::waitForSendCudaEvent(SendOpIter opIter) {
   TP_VLOG(6) << "Channel " << id_ << " is waiting for CUDA event to send (#"
              << op.sequenceNumber << ")";
   context_->waitForCudaEvent(
-      op.event, callbackWrapper_([opIter](ChannelImpl& impl) {
+      *op.event, callbackWrapper_([opIter](ChannelImpl& impl) {
         TP_VLOG(6) << "Channel " << impl.id_
                    << " done waiting for CUDA event to send (# "
                    << opIter->sequenceNumber << ")";
@@ -348,13 +374,18 @@ void ChannelImpl::sendOverIb(SendOpIter opIter) {
 
   // This could be VEEERY slow the first time we encounter the buffer, but the
   // result will be cached and subsequent calls will be much faster.
-  IbvMemoryRegion& mr = localNic.registerMemory(op.buffer);
+  IbvMemoryRegion& mr = op.isCpuBuffer
+      ? localNic.registerMemory(op.buffer.unwrap<CpuBuffer>(), op.length)
+      : localNic.registerMemory(op.buffer.unwrap<CudaBuffer>());
+
+  uint8_t* basePtr = op.isCpuBuffer
+      ? reinterpret_cast<uint8_t*>(op.buffer.unwrap<CpuBuffer>().ptr)
+      : reinterpret_cast<uint8_t*>(op.buffer.unwrap<CudaBuffer>().ptr);
 
   size_t numChunks = ceilOfRatio(op.length, chunkSize);
   for (size_t chunkIdx = 0; chunkIdx < numChunks; chunkIdx++) {
     IbvNic::SendInfo info;
-    info.addr =
-        reinterpret_cast<uint8_t*>(op.buffer.ptr) + chunkIdx * chunkSize;
+    info.addr = basePtr + chunkIdx * chunkSize;
     info.length = std::min(op.length - chunkIdx * chunkSize, chunkSize);
     info.lkey = mr->lkey;
 
@@ -391,20 +422,35 @@ void ChannelImpl::recvImplFromLoop(
     Buffer buffer,
     size_t length,
     TRecvCallback callback) {
-  size_t localGpuIdx = cudaDeviceForPointer(
-      context_->getCudaLib(), buffer.unwrap<CudaBuffer>().ptr);
-  size_t localNicIdx = context_->getGpuToNicMapping()[localGpuIdx];
+  const Device device = buffer.device();
 
-  RecvOpIter opIter = recvOps_.emplaceBack(
-      sequenceNumber,
-      buffer.unwrap<CudaBuffer>(),
-      length,
-      std::move(callback),
-      localGpuIdx,
-      localNicIdx);
-  opIter->event.record(buffer.unwrap<CudaBuffer>().stream);
+  if (device.type == kCpuDeviceType) {
+    size_t localNicIdx = 0; // TODO: Use all available NICs.
 
-  recvOps_.advanceOperation(opIter);
+    RecvOpIter opIter = recvOps_.emplaceBack(
+        sequenceNumber,
+        buffer.unwrap<CpuBuffer>(),
+        length,
+        std::move(callback),
+        localNicIdx);
+
+    recvOps_.advanceOperation(opIter);
+  } else {
+    size_t localGpuIdx = cudaDeviceForPointer(
+        context_->getCudaLib(), buffer.unwrap<CudaBuffer>().ptr);
+    size_t localNicIdx = context_->getGpuToNicMapping()[localGpuIdx];
+
+    RecvOpIter opIter = recvOps_.emplaceBack(
+        sequenceNumber,
+        buffer.unwrap<CudaBuffer>(),
+        length,
+        std::move(callback),
+        localGpuIdx,
+        localNicIdx);
+    opIter->event->record(buffer.unwrap<CudaBuffer>().stream);
+
+    recvOps_.advanceOperation(opIter);
+  }
 }
 
 void ChannelImpl::advanceRecvOperation(
@@ -438,6 +484,18 @@ void ChannelImpl::advanceRecvOperation(
       /*cond=*/error_ && op.doneReadingDescriptor,
       /*actions=*/{&ChannelImpl::callRecvCallback});
 
+  // Needs to go after previous op to ensure predictable and consistent ordering
+  // of recv calls on InfiniBand queue pair and write calls on the completion
+  // control connection.
+  // This transition shortcuts waiting on CUDA event for CPU buffers.
+  recvOps_.attemptTransition(
+      opIter,
+      /*from=*/RecvOperation::READING_DESCRIPTOR,
+      /*to=*/RecvOperation::RECEIVING_OVER_IB,
+      /*cond=*/!error_ && op.isCpuBuffer && op.doneReadingDescriptor &&
+          prevOpState >= RecvOperation::RECEIVING_OVER_IB,
+      /*actions=*/{&ChannelImpl::recvOverIbAndWriteReadyToReceive});
+
   // This doesn't strictly need to go after the previous op, but it doesn't make
   // sense to busy poll multiple events if only one of them is actually able to
   // then make progress.
@@ -445,7 +503,7 @@ void ChannelImpl::advanceRecvOperation(
       opIter,
       /*from=*/RecvOperation::READING_DESCRIPTOR,
       /*to=*/RecvOperation::WAITING_FOR_CUDA_EVENT,
-      /*cond=*/!error_ && op.doneReadingDescriptor &&
+      /*cond=*/!error_ && !op.isCpuBuffer && op.doneReadingDescriptor &&
           prevOpState >= RecvOperation::RECEIVING_OVER_IB,
       /*actions=*/{&ChannelImpl::waitForRecvCudaEvent});
 
@@ -465,7 +523,7 @@ void ChannelImpl::advanceRecvOperation(
       /*to=*/RecvOperation::RECEIVING_OVER_IB,
       /*cond=*/!error_ && op.doneWaitingForCudaEvent &&
           prevOpState >= RecvOperation::RECEIVING_OVER_IB,
-      /*actions=*/{&ChannelImpl::recvOverIbAndWriteReadyToRecive});
+      /*actions=*/{&ChannelImpl::recvOverIbAndWriteReadyToReceive});
 
   recvOps_.attemptTransition(
       opIter,
@@ -504,7 +562,7 @@ void ChannelImpl::waitForRecvCudaEvent(RecvOpIter opIter) {
   TP_VLOG(6) << "Channel " << id_ << " is waiting for CUDA event to recv (#"
              << op.sequenceNumber << ")";
   context_->waitForCudaEvent(
-      op.event, callbackWrapper_([opIter](ChannelImpl& impl) {
+      *op.event, callbackWrapper_([opIter](ChannelImpl& impl) {
         TP_VLOG(6) << "Channel " << impl.id_
                    << " done waiting for CUDA event to recv (# "
                    << opIter->sequenceNumber << ")";
@@ -513,7 +571,7 @@ void ChannelImpl::waitForRecvCudaEvent(RecvOpIter opIter) {
       }));
 }
 
-void ChannelImpl::recvOverIbAndWriteReadyToRecive(RecvOpIter opIter) {
+void ChannelImpl::recvOverIbAndWriteReadyToReceive(RecvOpIter opIter) {
   TP_DCHECK(context_->inLoop());
 
   RecvOperation& op = *opIter;
@@ -525,13 +583,18 @@ void ChannelImpl::recvOverIbAndWriteReadyToRecive(RecvOpIter opIter) {
 
   // This could be VEEERY slow the first time we encounter the buffer, but the
   // result will be cached and subsequent calls will be much faster.
-  IbvMemoryRegion& mr = localNic.registerMemory(op.buffer);
+  IbvMemoryRegion& mr = op.isCpuBuffer
+      ? localNic.registerMemory(op.buffer.unwrap<CpuBuffer>(), op.length)
+      : localNic.registerMemory(op.buffer.unwrap<CudaBuffer>());
+
+  uint8_t* basePtr = op.isCpuBuffer
+      ? reinterpret_cast<uint8_t*>(op.buffer.unwrap<CpuBuffer>().ptr)
+      : reinterpret_cast<uint8_t*>(op.buffer.unwrap<CudaBuffer>().ptr);
 
   size_t numChunks = ceilOfRatio(op.length, chunkSize);
   for (size_t chunkIdx = 0; chunkIdx < numChunks; chunkIdx++) {
     IbvNic::RecvInfo info;
-    info.addr =
-        reinterpret_cast<uint8_t*>(op.buffer.ptr) + chunkIdx * chunkSize;
+    info.addr = basePtr + chunkIdx * chunkSize;
     info.length = std::min(op.length - chunkIdx * chunkSize, chunkSize);
     info.lkey = mr->lkey;
 
