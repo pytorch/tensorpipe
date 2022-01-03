@@ -293,6 +293,22 @@ if(TP_USE_CUDA)
     set(TENSORPIPE_HAS_CUDA_GDR_CHANNEL 1)
   endif()
 
+  ### cuda_gdr_xdtt
+
+  tp_conditional_backend(
+    TP_ENABLE_CUDA_GDR_XDTT "Enable CUDA GpuDirect (InfiniBand) XDTT channel" "LINUX")
+  if(TP_ENABLE_CUDA_GDR_XDTT)
+    list(APPEND TP_CUDA_SRCS
+      common/ibv.cc
+      channel/cuda_gdr_xdtt/channel_impl.cc
+      channel/cuda_gdr_xdtt/context_impl.cc
+      channel/cuda_gdr_xdtt/factory.cc)
+    list(APPEND TP_CUDA_PUBLIC_HDRS
+      channel/cuda_gdr_xdtt/error.h
+      channel/cuda_gdr_xdtt/factory.h)
+    set(TENSORPIPE_HAS_CUDA_GDR_XDTT_CHANNEL 1)
+  endif()
+
   configure_file(config_cuda.h.in config_cuda.h)
 
   add_library(tensorpipe_cuda ${TP_STATIC_OR_SHARED} ${TP_CUDA_SRCS})
