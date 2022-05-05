@@ -16,6 +16,7 @@ namespace tensorpipe {
 
 const std::string kCpuDeviceType{"cpu"};
 const std::string kCudaDeviceType{"cuda"};
+const std::string kMetaDeviceType{"meta"};
 
 struct Device {
   std::string type;

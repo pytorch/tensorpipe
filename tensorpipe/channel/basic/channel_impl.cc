@@ -13,7 +13,6 @@
 #include <utility>
 
 #include <tensorpipe/channel/basic/context_impl.h>
-#include <tensorpipe/common/cpu_buffer.h>
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/error.h>
 #include <tensorpipe/transport/connection.h>
@@ -44,7 +43,7 @@ void ChannelImpl::sendImplFromLoop(
     TSendCallback callback) {
   SendOpIter opIter = sendOps_.emplaceBack(sequenceNumber);
   SendOperation& op = *opIter;
-  op.ptr = buffer.unwrap<CpuBuffer>().ptr;
+  op.ptr = buffer.pointer();
   op.length = length;
   op.callback = std::move(callback);
 
@@ -111,7 +110,7 @@ void ChannelImpl::recvImplFromLoop(
     TRecvCallback callback) {
   RecvOpIter opIter = recvOps_.emplaceBack(sequenceNumber);
   RecvOperation& op = *opIter;
-  op.ptr = buffer.unwrap<CpuBuffer>().ptr;
+  op.ptr = buffer.pointer();
   op.length = length;
   op.callback = std::move(callback);
 

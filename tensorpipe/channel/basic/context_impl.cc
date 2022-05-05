@@ -19,7 +19,7 @@ namespace basic {
 
 std::shared_ptr<ContextImpl> ContextImpl::create() {
   std::unordered_map<Device, std::string> deviceDescriptors = {
-      {Device{kCpuDeviceType, 0}, "any"}};
+      {Device{kCpuDeviceType, 0}, "any"}, {Device{"meta", 0}, "any"}};
   return std::make_shared<ContextImpl>(std::move(deviceDescriptors));
 }
 
