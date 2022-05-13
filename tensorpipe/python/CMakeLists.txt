@@ -14,3 +14,8 @@ endif()
 set(PYBIND11_CPP_STANDARD -std=c++14)
 pybind11_add_module(pytensorpipe tensorpipe.cc)
 target_link_libraries(pytensorpipe PRIVATE tensorpipe)
+
+install(TARGETS pytensorpipe
+        EXPORT TensorpipeTargets
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})

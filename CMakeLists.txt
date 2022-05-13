@@ -24,5 +24,16 @@ include(MiscCheck)
 add_subdirectory(tensorpipe)
 
 install(EXPORT TensorpipeTargets
-        DESTINATION share/cmake/Tensorpipe
+        DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/cmake/Tensorpipe
         FILE TensorpipeTargets.cmake)
+
+# Create TensorpipeConfig.cmake for find_package(Tensorpipe CONFIG)
+include(CMakePackageConfigHelpers)
+get_filename_component(CONFIG_FILE_PATH ${CMAKE_CURRENT_BINARY_DIR}/TensorpipeConfig.cmake ABSOLUTE)
+configure_package_config_file(
+  cmake/TensorpipeConfig.cmake.in ${CONFIG_FILE_PATH}
+  INSTALL_DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/cmake/Tensorpipe)
+
+# Install the generated config file
+install(FILES ${CONFIG_FILE_PATH}
+        DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/cmake/Tensorpipe)
