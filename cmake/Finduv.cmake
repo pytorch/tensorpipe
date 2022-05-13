@@ -36,7 +36,7 @@ if((NOT TP_BUILD_LIBUV) AND PkgConfig_FOUND)
 endif()
 
 if(NOT uv_FOUND)
-  set(uv_VERSION "1.38.1")
+  set(uv_VERSION "1.41.0")
   set(uv_LIBRARY_DIRS "submodule")
 
   set(libuv_DIR ${PROJECT_SOURCE_DIR}/third_party/libuv)
