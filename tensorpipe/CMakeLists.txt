@@ -228,15 +228,7 @@ if(TP_USE_CUDA)
   # TP_PUBLIC_HDRS is the list of public header files that we need to install.
   set(TP_CUDA_PUBLIC_HDRS)
 
-  # TP_LINK_LIBRARIES is list of dependent libraries to be linked
-  set(TP_CUDA_LINK_LIBRARIES)
-
-  # TP_INCLUDE_DIRS is list of include path to be used
-  set(TP_CUDA_INCLUDE_DIRS)
-
-  find_package(CUDA REQUIRED)
-  list(APPEND TP_CUDA_LINK_LIBRARIES ${CUDA_LIBRARIES})
-  list(APPEND TP_CUDA_INCLUDE_DIRS ${CUDA_INCLUDE_DIRS})
+  include(Cuda)
 
   list(APPEND TP_CUDA_SRCS
     common/cuda_buffer.cc)
