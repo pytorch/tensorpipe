@@ -57,7 +57,7 @@ optional<std::string> getBootIDInternal() {
   // See https://developer.apple.com/documentation/iokit/iokitlib_h for IOKitLib
   // API documentation.
   io_registry_entry_t ioRegistryRoot =
-      IORegistryEntryFromPath(kIOMasterPortDefault, "IOService:/");
+      IORegistryEntryFromPath(kIOMainPortDefault, "IOService:/");
   CFStringRef uuidCf = (CFStringRef)IORegistryEntryCreateCFProperty(
       ioRegistryRoot, CFSTR(kIOPlatformUUIDKey), kCFAllocatorDefault, 0);
   IOObjectRelease(ioRegistryRoot);
