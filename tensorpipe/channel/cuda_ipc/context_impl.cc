@@ -233,7 +233,9 @@ std::shared_ptr<ContextImpl> ContextImpl::create() {
 
     // The other two compute modes are "exclusive" and "prohibited", both of
     // which prevent access from an other process.
-    if (props.computeMode != cudaComputeModeDefault) {
+    int computeMode = -1;
+    TP_CUDA_CHECK(cudaDeviceGetAttribute(&computeMode, cudaDevAttrComputeMode, device.index));
+    if (computeMode != cudaComputeModeDefault) {
       TP_VLOG(4) << "CUDA IPC channel is not viable because CUDA device "
                  << device.index << " is not in default compute mode";
       return nullptr;
