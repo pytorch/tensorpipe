@@ -11,6 +11,6 @@ if(NOT (COMMAND pybind11_add_module))
     EXCLUDE_FROM_ALL)
 endif()
 
-set(PYBIND11_CPP_STANDARD -std=c++14)
+set(PYBIND11_CPP_STANDARD -std=c++17)
 pybind11_add_module(pytensorpipe tensorpipe.cc)
 target_link_libraries(pytensorpipe PRIVATE tensorpipe)
