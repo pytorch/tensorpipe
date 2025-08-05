@@ -10,6 +10,7 @@
 
 #include <sys/mman.h>
 
+#include <cstdint>
 #include <memory>
 
 #include <tensorpipe/common/defs.h>
