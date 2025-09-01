@@ -31,6 +31,12 @@ endmacro()
 
 # TODO: Default to ON if CUDA available.
 option(TP_USE_CUDA "Enable support for CUDA tensors" OFF)
+option(TP_USE_ROCM "Enable support for ROCM tensors" OFF)
+
+# if both TP_USE_CUDA and TP_USE_ROCM is set then break
+if(TP_USE_CUDA AND TP_USE_ROCM)
+  message(FATAL_ERROR "Tensorpipe can be built either for CUDA or ROCm, TP_USE_CUDA and TP_USE_ROCM both are set, erroring out!!!!")
+endif()
 
 # Optional features
 option(TP_BUILD_BENCHMARK "Build benchmarks" OFF)
