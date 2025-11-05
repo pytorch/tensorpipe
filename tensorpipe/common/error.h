@@ -46,7 +46,7 @@ class Error final {
   Error(std::shared_ptr<BaseError> error, std::string file, int line)
       : error_(std::move(error)), file_(std::move(file)), line_(line) {}
 
-  virtual ~Error() = default;
+  ~Error() = default;
 
   // Converting to boolean means checking if there is an error. This
   // means we don't need to use an `std::optional` and allows for a
