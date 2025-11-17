@@ -104,6 +104,20 @@ if(TP_USE_CUDA)
   list(APPEND TP_TEST_LINK_LIBRARIES tensorpipe_cuda)
 endif()
 
+if(TP_USE_XPU)
+  find_package(IntelSYCL REQUIRED)
+  list(APPEND TP_TEST_LINK_LIBRARIES ${SYCL_LIBRARY})
+  list(APPEND TP_TEST_INCLUDE_DIRS ${SYCL_INCLUDE_DIR})
+  list(APPEND TP_TEST_COMPILE_DEFS TP_USE_XPU)
+
+  list(APPEND TP_TEST_SRCS
+    channel/channel_test_xpu.cc
+    channel/xpu_basic/xpu_basic_test.cc
+    )
+ 
+  list(APPEND TP_TEST_LINK_LIBRARIES tensorpipe_xpu)
+endif()
+
 add_subdirectory(${PROJECT_SOURCE_DIR}/third_party/googletest
   ${PROJECT_BINARY_DIR}/third_party/googletest EXCLUDE_FROM_ALL)
 
@@ -114,7 +128,8 @@ list(APPEND TP_TEST_LINK_LIBRARIES
   gtest_main)
 
 add_executable(tensorpipe_test ${TP_TEST_SRCS})
-
+message(STATUS "TP_TEST_LINK_LIBRARIES: ${TP_TEST_LINK_LIBRARIES}")
+message(STATUS "TP_TEST_INCLUDE_DIRS: ${TP_TEST_INCLUDE_DIRS}")
 # Add all the dependent link libraries to the tensorpipe_test target
 target_link_libraries(tensorpipe_test PRIVATE ${TP_TEST_LINK_LIBRARIES})
 target_include_directories(tensorpipe_test PUBLIC ${TP_TEST_INCLUDE_DIRS})
