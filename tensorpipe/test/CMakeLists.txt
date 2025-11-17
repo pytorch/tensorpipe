@@ -104,6 +104,20 @@ if(TP_USE_CUDA)
   list(APPEND TP_TEST_LINK_LIBRARIES tensorpipe_cuda)
 endif()
 
+if(TP_USE_XPU)
+  find_package(IntelSYCL REQUIRED)
+  list(APPEND TP_TEST_LINK_LIBRARIES ${SYCL_LIBRARIES})
+  list(APPEND TP_TEST_INCLUDE_DIRS ${SYCL_INCLUDE_DIRS})
+  list(APPEND TP_TEST_COMPILE_DEFS TP_USE_XPU)
+
+  list(APPEND TP_TEST_SRCS
+    channel/channel_test_xpu.cc
+    channel/xpu_basic/xpu_basic_test.cc
+    )
+ 
+  list(APPEND TP_TEST_LINK_LIBRARIES tensorpipe_xpu)
+endif()
+
 add_subdirectory(${PROJECT_SOURCE_DIR}/third_party/googletest
   ${PROJECT_BINARY_DIR}/third_party/googletest EXCLUDE_FROM_ALL)
 
