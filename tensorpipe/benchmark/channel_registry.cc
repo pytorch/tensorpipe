@@ -89,6 +89,18 @@ std::shared_ptr<tensorpipe::channel::Context> makeCudaGdrChannel() {
 TP_REGISTER_CREATOR(TensorpipeChannelRegistry, cuda_gdr, makeCudaGdrChannel);
 #endif // TENSORPIPE_HAS_CUDA_GDR_CHANNEL
 
+// XPU BASIC
+
+std::shared_ptr<tensorpipe::channel::Context> makeXpuBasicChannel() {
+  return tensorpipe::channel::xpu_basic::create(
+      tensorpipe::channel::basic::create());
+}
+
+TP_REGISTER_CREATOR(
+    TensorpipeChannelRegistry,
+    xpu_basic,
+    makeXpuBasicChannel);
+
 void validateChannelContext(
     std::shared_ptr<tensorpipe::channel::Context> context) {
   if (!context) {
