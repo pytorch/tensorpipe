@@ -31,6 +31,7 @@ endmacro()
 
 # TODO: Default to ON if CUDA available.
 option(TP_USE_CUDA "Enable support for CUDA tensors" OFF)
+option(TP_USE_XPU "Enable support for XPU tensors" OFF)
 
 # Optional features
 option(TP_BUILD_BENCHMARK "Build benchmarks" OFF)

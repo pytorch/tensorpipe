@@ -321,6 +321,65 @@ if(TP_USE_CUDA)
 
 endif()
 
+## XPU
+
+if(TP_USE_XPU)
+  # TP_SRCS is the list of source files that we need to build libtensorpipe.
+  set(TP_XPU_SRCS)
+
+  # TP_PUBLIC_HDRS is the list of public header files that we need to install.
+  set(TP_XPU_PUBLIC_HDRS)
+
+  # TP_LINK_LIBRARIES is list of dependent libraries to be linked
+  set(TP_XPU_LINK_LIBRARIES)
+
+  # TP_INCLUDE_DIRS is list of include path to be used
+  set(TP_XPU_INCLUDE_DIRS)
+
+  find_package(IntelSYCL REQUIRED)
+  list(APPEND TP_XPU_LINK_LIBRARIES ${SYCL_LIBRARY})
+  list(APPEND TP_XPU_INCLUDE_DIRS ${SYCL_INCLUDE_DIR})
+  list(APPEND TP_XPU_SRCS
+    common/xpu_buffer.cc)
+  list(APPEND TP_XPU_PUBLIC_HDRS
+    tensorpipe_xpu.h
+    common/xpu_buffer.h)
+
+  ### xpu_basic
+
+  list(APPEND TP_XPU_SRCS
+    channel/xpu_basic/channel_impl.cc
+    channel/xpu_basic/context_impl.cc
+    channel/xpu_basic/factory.cc
+    common/xpu_loop.cc)
+  list(APPEND TP_XPU_PUBLIC_HDRS
+    channel/xpu_basic/factory.h)
+
+  add_library(tensorpipe_xpu ${TP_STATIC_OR_SHARED} ${TP_XPU_SRCS})
+
+  if(BUILD_SHARED_LIBS)
+    set_target_properties(tensorpipe_xpu PROPERTIES POSITION_INDEPENDENT_CODE 1)
+  endif()
+
+  target_link_libraries(tensorpipe_xpu PUBLIC tensorpipe)
+  target_link_libraries(tensorpipe_xpu PRIVATE ${TP_XPU_LINK_LIBRARIES})
+  target_include_directories(tensorpipe_xpu PUBLIC ${TP_XPU_INCLUDE_DIRS})
+
+  install(TARGETS tensorpipe_xpu
+          EXPORT TensorpipeTargets
+          LIBRARY DESTINATION ${TP_INSTALL_LIBDIR}
+          ARCHIVE DESTINATION ${TP_INSTALL_LIBDIR})
+
+  foreach(_header_file ${TP_XPU_PUBLIC_HDRS})
+    get_filename_component(_TP_HEADER_SUBDIR "${_header_file}" DIRECTORY)
+    install(FILES ${_header_file}
+            DESTINATION ${TP_INSTALL_INCLUDEDIR}/tensorpipe/${_TP_HEADER_SUBDIR})
+  endforeach()
+
+  install(FILES ${CMAKE_CURRENT_BINARY_DIR}/config.h
+          DESTINATION ${TP_INSTALL_INCLUDEDIR}/tensorpipe)
+
+endif()
 
 ## Python bindings
 
