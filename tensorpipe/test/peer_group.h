@@ -15,6 +15,7 @@
 #include <unistd.h>
 
 #include <gtest/gtest.h>
+#include <sys/wait.h>
 
 #include <tensorpipe/common/defs.h>
 #include <tensorpipe/common/queue.h>

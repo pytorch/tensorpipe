@@ -101,7 +101,10 @@ std::string getPathForLinuxNamespace(LinuxNamespace ns) {
   }
   return oss.str();
 }
-
+#else
+optional<std::string> getBootIDInternal() {
+  return {};
+}
 #endif
 
 } // namespace
