@@ -4,6 +4,8 @@ The TensorPipe project provides a tensor-aware channel to transfer rich objects
 from one process to another while using the fastest transport for the tensors
 contained therein (e.g., CUDA device-to-device copy).
 
+> :warning: Update (2025-12) tensorpipe is in maintenance mode and no new changes are planned beyond minimal build fixes. Please see https://github.com/meta-pytorch/torchcomms and https://github.com/meta-pytorch/monarch for alternatives.
+
 ## Getting started
 
 First clone the repository:
