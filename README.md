@@ -16,7 +16,7 @@ $ git clone --recursive https://github.com/pytorch/tensorpipe
 
 Then, build as follows (using ninja instead of make):
 
-``` shell
+```shell
 $ cd tensorpipe
 $ mkdir build
 $ cd build
@@ -24,7 +24,23 @@ $ cmake ../ -GNinja
 $ ninja
 ```
 
+### Running Tests
+
+Tests can be built using this variant of the above cmake / ninja build:
+
+```shell
+$ cmake ../ -GNinja -DTP_BUILD_TESTING=ON
+$ ninja tensorpipe_test
+```
+
 You can find test executables in `build/tensorpipe/test`.
+
+Tests can be run using (e.g.)
+```shell
+$ ./tensorpipe_test --gtest_filter='-*Ibv*' 
+```
+
+The filter `--gtest_filter='-*Ibv*'` prevents the tests from stalling if your system doesn't have Infiniband.
 
 ## Interface
 
