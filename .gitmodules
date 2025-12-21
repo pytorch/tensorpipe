@@ -11,3 +11,6 @@
 [submodule "third_party/libnop"]
 	path = third_party/libnop
 	url = https://github.com/google/libnop.git
+[submodule "third_party/libfabric"]
+	path = third_party/libfabric
+	url = https://github.com/ofiwg/libfabric

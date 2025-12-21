@@ -41,6 +41,12 @@
 #include <tensorpipe/transport/ibv/utility.h>
 #endif // TENSORPIPE_HAS_IBV_TRANSPORT
 
+#if TENSORPIPE_HAS_EFA_TRANSPORT
+#include <tensorpipe/transport/efa/error.h>
+#include <tensorpipe/transport/efa/factory.h>
+#include <tensorpipe/transport/efa/utility.h>
+#endif // TENSORPIPE_HAS_EFA_TRANSPORT
+
 // Channels
 
 #include <tensorpipe/channel/context.h>
