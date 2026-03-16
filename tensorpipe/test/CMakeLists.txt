@@ -70,9 +70,9 @@ if(TP_ENABLE_CMA)
 endif()
 
 if(TP_USE_CUDA)
-  find_package(CUDA REQUIRED)
-  list(APPEND TP_TEST_LINK_LIBRARIES ${CUDA_LIBRARIES})
-  list(APPEND TP_TEST_INCLUDE_DIRS ${CUDA_INCLUDE_DIRS})
+  include(Cuda)
+  list(APPEND TP_TEST_LINK_LIBRARIES ${TP_CUDA_LINK_LIBRARIES})
+  list(APPEND TP_TEST_INCLUDE_DIRS ${TP_CUDA_INCLUDE_DIRS})
   list(APPEND TP_TEST_COMPILE_DEFS TP_USE_CUDA)
 
   list(APPEND TP_TEST_SRCS
@@ -98,7 +98,15 @@ if(TP_USE_CUDA)
     channel/cuda_gdr/cuda_gdr_test.cc
     )
 
-  cuda_add_library(tensorpipe_cuda_kernel channel/kernel.cu)
+  if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.10)
+    enable_language(CUDA)
+    add_library(tensorpipe_cuda_kernel channel/kernel.cu)
+  else()
+    cuda_add_library(tensorpipe_cuda_kernel channel/kernel.cu)
+  endif()
+  target_link_libraries(tensorpipe_cuda_kernel PRIVATE ${TP_CUDA_LINK_LIBRARIES})
+  target_include_directories(tensorpipe_cuda_kernel PRIVATE ${TP_CUDA_INCLUDE_DIRS})
+
   list(APPEND TP_TEST_LINK_LIBRARIES tensorpipe_cuda_kernel)
 
   list(APPEND TP_TEST_LINK_LIBRARIES tensorpipe_cuda)
